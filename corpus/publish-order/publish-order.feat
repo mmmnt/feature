@@ -1,0 +1,63 @@
+feat 1.0
+
+# Corpus exemplar #4 — ordering semantics (ADR-0004) and the third prediction
+# type. Multi-record predictions: the acid outbox asserts ordered by default
+# and the eventual broker unordered by default; both defaults are overridden
+# once to exercise the override grammar. Includes predict error <CODE>.
+
+spec SPEC-ORD-001 "PublishOrder Saga Step"
+context Fulfillment
+aggregate Order
+type saga
+
+construct:
+  handler at sagas/publish-order/handler.ts
+  imports OrderAggregate from core/domain/order-aggregate
+  emit to fulfillment-order-{orderId}
+
+enforce:
+  apply PublishOrder through OrderAggregate.publish
+  write OrderPublished then OrderPriced to the outbox in that order
+  broadcast both events to the broker; broker delivery order is not guaranteed
+  on payment-provider outage return PROVIDER_UNAVAILABLE and write nothing
+
+contract:
+  input PublishOrderInput from "core/contracts/commands"
+  event OrderPublishedEvent from "core/contracts/events"
+  event OrderPricedEvent from "core/contracts/events"
+  error RFC7807 from "contracts/adrs/error-format"
+
+scenario "publishes and prices in order":
+  when: PublishOrder { orderId: "3c9d8e72-5f4a-4b6c-9d0e-1f2a3b4c5d6e" }
+  predict success:
+    response 200 OrderPublishedResponse { orderId: @when.orderId }
+    outbox has [
+      OrderPublished with OrderPublishedEvent { orderId: @when.orderId },
+      OrderPriced with OrderPricedEvent { orderId: @when.orderId, total: any number }
+    ]
+    eventBroker has [
+      OrderPublished with OrderPublishedEvent,
+      OrderPriced with OrderPricedEvent
+    ]
+
+scenario "outbox order relaxed when explicitly unordered":
+  when: PublishOrder { orderId: "3c9d8e72-5f4a-4b6c-9d0e-1f2a3b4c5d6e" }
+  predict success:
+    response 200 OrderPublishedResponse
+    outbox has unordered [
+      OrderPriced with OrderPricedEvent,
+      OrderPublished with OrderPublishedEvent
+    ]
+    eventBroker has ordered [
+      OrderPublished with OrderPublishedEvent,
+      OrderPriced with OrderPricedEvent
+    ]
+
+scenario "payment provider outage":
+  given:
+    The payment provider is unreachable.
+  when: PublishOrder { orderId: "3c9d8e72-5f4a-4b6c-9d0e-1f2a3b4c5d6e" }
+  predict error PROVIDER_UNAVAILABLE:
+    response 503 RFC7807 { status: 503 }
+    outbox has []
+    eventBroker has []

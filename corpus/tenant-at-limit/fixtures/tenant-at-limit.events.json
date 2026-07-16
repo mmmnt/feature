@@ -1,0 +1,7 @@
+[
+  { "type": "FlowCreated", "schemaName": "FlowCreatedEvent", "values": { "flowId": "11111111-0000-4000-8000-000000000001", "name": "Flow-1", "tenantId": "0b7e9c14-2d3f-4a5b-8c6d-7e8f9a0b1c2d", "createdAt": "2026-07-01T09:00:00Z" } },
+  { "type": "FlowCreated", "schemaName": "FlowCreatedEvent", "values": { "flowId": "11111111-0000-4000-8000-000000000002", "name": "Flow-2", "tenantId": "0b7e9c14-2d3f-4a5b-8c6d-7e8f9a0b1c2d", "createdAt": "2026-07-01T09:01:00Z" } },
+  { "type": "FlowCreated", "schemaName": "FlowCreatedEvent", "values": { "flowId": "11111111-0000-4000-8000-000000000003", "name": "Flow-3", "tenantId": "0b7e9c14-2d3f-4a5b-8c6d-7e8f9a0b1c2d", "createdAt": "2026-07-01T09:02:00Z" } },
+  { "type": "FlowCreated", "schemaName": "FlowCreatedEvent", "values": { "flowId": "11111111-0000-4000-8000-000000000004", "name": "Flow-4", "tenantId": "0b7e9c14-2d3f-4a5b-8c6d-7e8f9a0b1c2d", "createdAt": "2026-07-01T09:03:00Z" } },
+  { "type": "FlowCreated", "schemaName": "FlowCreatedEvent", "values": { "flowId": "11111111-0000-4000-8000-000000000005", "name": "Flow-5", "tenantId": "0b7e9c14-2d3f-4a5b-8c6d-7e8f9a0b1c2d", "createdAt": "2026-07-01T09:04:00Z" } }
+]

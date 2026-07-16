@@ -1,0 +1,64 @@
+{
+  "featVersion": "1.0",
+  "identity": {
+    "id": "SPEC-AUT-002",
+    "name": "CreateFlow at tenant limit",
+    "context": "Automation",
+    "aggregate": "Flow",
+    "type": "command"
+  },
+  "construct": [
+    { "kind": "handler", "path": "features/create-flow/handler.ts" },
+    { "kind": "import", "symbol": "FlowAggregate", "path": "core/domain/flow-aggregate" }
+  ],
+  "enforce": [
+    { "kind": "load", "text": "load FlowAggregate from FlowRepository by tenantId" },
+    { "kind": "constraint", "text": "reject when the tenant's flow count has reached the plan limit" },
+    { "kind": "constraint", "text": "The flow limit for the \"starter\" plan is 5." }
+  ],
+  "contract": [
+    { "kind": "input", "schemaName": "CreateFlowInput", "from": "core/contracts/commands" },
+    { "kind": "error", "schemaName": "RFC7807", "from": "contracts/adrs/error-format" }
+  ],
+  "scenarios": [
+    {
+      "name": "tenant at flow limit",
+      "given": {
+        "context": ["The tenant is on the starter plan and already has 5 flows."],
+        "seeds": [
+          {
+            "service": "projectionStore",
+            "records": [
+              {
+                "type": "TenantRecord",
+                "schemaName": "TenantSchema",
+                "values": {
+                  "tenantId": "0b7e9c14-2d3f-4a5b-8c6d-7e8f9a0b1c2d",
+                  "plan": "starter",
+                  "flowCount": 5
+                }
+              }
+            ]
+          },
+          {
+            "service": "eventStore",
+            "fixture": "fixtures/tenant-at-limit.events.json"
+          }
+        ]
+      },
+      "when": {
+        "command": "CreateFlow",
+        "payload": { "name": "Flow-6", "tenantId": "0b7e9c14-2d3f-4a5b-8c6d-7e8f9a0b1c2d" }
+      },
+      "prediction": {
+        "type": "rejection",
+        "rejectionId": "FLOW_LIMIT",
+        "response": { "status": 409, "schemaName": "RFC7807" },
+        "services": {
+          "eventStore": { "records": [] },
+          "projectionStore": { "records": [] }
+        }
+      }
+    }
+  ]
+}

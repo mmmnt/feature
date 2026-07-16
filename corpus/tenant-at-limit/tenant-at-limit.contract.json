@@ -1,0 +1,43 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-AUT-002",
+  "schemas": {
+    "CreateFlowInput": {
+      "type": "object",
+      "required": ["name", "tenantId"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "tenantId": { "type": "string", "format": "uuid" }
+      }
+    },
+    "TenantSchema": {
+      "type": "object",
+      "required": ["tenantId", "plan", "flowCount"],
+      "properties": {
+        "tenantId": { "type": "string", "format": "uuid" },
+        "plan": { "enum": ["starter", "pro"] },
+        "flowCount": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "FlowCreatedEvent": {
+      "type": "object",
+      "required": ["flowId", "name", "tenantId", "createdAt"],
+      "properties": {
+        "flowId": { "type": "string", "format": "uuid" },
+        "name": { "type": "string" },
+        "tenantId": { "type": "string", "format": "uuid" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "RFC7807": {
+      "type": "object",
+      "required": ["type", "title", "status"],
+      "properties": {
+        "type": { "type": "string" },
+        "title": { "type": "string" },
+        "status": { "type": "integer" }
+      }
+    }
+  }
+}

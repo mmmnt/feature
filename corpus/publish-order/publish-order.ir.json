@@ -1,0 +1,123 @@
+{
+  "featVersion": "1.0",
+  "identity": {
+    "id": "SPEC-ORD-001",
+    "name": "PublishOrder Saga Step",
+    "context": "Fulfillment",
+    "aggregate": "Order",
+    "type": "saga"
+  },
+  "construct": [
+    { "kind": "handler", "path": "sagas/publish-order/handler.ts" },
+    { "kind": "import", "symbol": "OrderAggregate", "path": "core/domain/order-aggregate" },
+    { "kind": "emitsTo", "streamPattern": "fulfillment-order-{orderId}" }
+  ],
+  "enforce": [
+    { "kind": "apply", "text": "apply PublishOrder through OrderAggregate.publish" },
+    { "kind": "constraint", "text": "write OrderPublished then OrderPriced to the outbox in that order" },
+    { "kind": "constraint", "text": "broadcast both events to the broker; broker delivery order is not guaranteed" },
+    { "kind": "constraint", "text": "on payment-provider outage return PROVIDER_UNAVAILABLE and write nothing" }
+  ],
+  "contract": [
+    { "kind": "input", "schemaName": "PublishOrderInput", "from": "core/contracts/commands" },
+    { "kind": "event", "schemaName": "OrderPublishedEvent", "from": "core/contracts/events" },
+    { "kind": "event", "schemaName": "OrderPricedEvent", "from": "core/contracts/events" },
+    { "kind": "error", "schemaName": "RFC7807", "from": "contracts/adrs/error-format" }
+  ],
+  "scenarios": [
+    {
+      "name": "publishes and prices in order",
+      "when": {
+        "command": "PublishOrder",
+        "payload": { "orderId": "3c9d8e72-5f4a-4b6c-9d0e-1f2a3b4c5d6e" }
+      },
+      "prediction": {
+        "type": "success",
+        "response": {
+          "status": 200,
+          "schemaName": "OrderPublishedResponse",
+          "valueBlock": {
+            "orderId": { "matcher": "whenRef", "path": "orderId" }
+          }
+        },
+        "services": {
+          "outbox": {
+            "records": [
+              {
+                "type": "OrderPublished",
+                "schemaName": "OrderPublishedEvent",
+                "valueBlock": { "orderId": { "matcher": "whenRef", "path": "orderId" } }
+              },
+              {
+                "type": "OrderPriced",
+                "schemaName": "OrderPricedEvent",
+                "valueBlock": {
+                  "orderId": { "matcher": "whenRef", "path": "orderId" },
+                  "total": { "matcher": "any", "ofType": "number" }
+                }
+              }
+            ]
+          },
+          "eventBroker": {
+            "records": [
+              { "type": "OrderPublished", "schemaName": "OrderPublishedEvent" },
+              { "type": "OrderPriced", "schemaName": "OrderPricedEvent" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "outbox order relaxed when explicitly unordered",
+      "when": {
+        "command": "PublishOrder",
+        "payload": { "orderId": "3c9d8e72-5f4a-4b6c-9d0e-1f2a3b4c5d6e" }
+      },
+      "prediction": {
+        "type": "success",
+        "response": { "status": 200, "schemaName": "OrderPublishedResponse" },
+        "services": {
+          "outbox": {
+            "ordering": "unordered",
+            "records": [
+              { "type": "OrderPriced", "schemaName": "OrderPricedEvent" },
+              { "type": "OrderPublished", "schemaName": "OrderPublishedEvent" }
+            ]
+          },
+          "eventBroker": {
+            "ordering": "ordered",
+            "records": [
+              { "type": "OrderPublished", "schemaName": "OrderPublishedEvent" },
+              { "type": "OrderPriced", "schemaName": "OrderPricedEvent" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "payment provider outage",
+      "given": {
+        "context": ["The payment provider is unreachable."]
+      },
+      "when": {
+        "command": "PublishOrder",
+        "payload": { "orderId": "3c9d8e72-5f4a-4b6c-9d0e-1f2a3b4c5d6e" }
+      },
+      "prediction": {
+        "type": "error",
+        "errorCode": "PROVIDER_UNAVAILABLE",
+        "response": {
+          "status": 503,
+          "schemaName": "RFC7807",
+          "valueBlock": {
+            "status": { "matcher": "literal", "value": 503 }
+          }
+        },
+        "services": {
+          "outbox": { "records": [] },
+          "eventBroker": { "records": [] }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+feat 1.0
+
+# Corpus exemplar #2 — CRUD-only, no event sourcing: one acid service, no
+# convergence timeouts. Proves the language carries zero infrastructure vocabulary.
+
+spec SPEC-USR-001 "CreateUser"
+context Users
+aggregate User
+type command
+
+construct:
+  handler at handlers/create-user.ts
+  imports UserRepository from repositories/user-repository
+  Uses Prisma ORM for database access.
+
+enforce:
+  validate input against CreateUserInput
+  check email uniqueness via UserRepository.findByEmail
+  insert new user record
+  return created user
+
+contract:
+  input CreateUserInput from "schemas/user-input"
+  error ErrorResponse from "schemas/error"
+
+scenario "successful user creation":
+  given:
+    No user with this email exists.
+  when: CreateUser { email: "alice@example.com", name: "Alice" }
+  predict success:
+    response 201 UserResponse { id: any uuid, email: @when.email, name: @when.name }
+    database has [ INSERT with UserRow {
+      email: @when.email
+      name: @when.name
+      id: any uuid
+      status: "active"
+      deletedAt: absent
+    } ]
+
+scenario "rejects duplicate email":
+  given:
+    execute CreateUser { email: "alice@example.com", name: "Alice" }
+  when: CreateUser { email: "alice@example.com", name: "Bob" }
+  predict rejection DUPLICATE_EMAIL:
+    response 409 ErrorResponse { code: "DUPLICATE_EMAIL" }
+    database has []

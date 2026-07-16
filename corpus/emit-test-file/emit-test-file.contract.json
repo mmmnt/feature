@@ -1,0 +1,46 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-FEAT-001",
+  "schemas": {
+    "EmitInput": {
+      "type": "object",
+      "required": ["specId", "outputPath"],
+      "additionalProperties": false,
+      "properties": {
+        "specId": { "type": "string" },
+        "outputPath": { "type": "string" }
+      }
+    },
+    "EmitResult": {
+      "type": "object",
+      "required": ["path", "bytesWritten"],
+      "properties": {
+        "path": { "type": "string" },
+        "bytesWritten": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "EmittedFile": {
+      "type": "object",
+      "required": ["path", "header"],
+      "properties": {
+        "path": { "type": "string" },
+        "header": {
+          "type": "object",
+          "required": ["specId", "inputsHash"],
+          "properties": {
+            "specId": { "type": "string" },
+            "inputsHash": { "type": "string" }
+          }
+        }
+      }
+    },
+    "EmitError": {
+      "type": "object",
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "type": "string" },
+        "message": { "type": "string" }
+      }
+    }
+  }
+}

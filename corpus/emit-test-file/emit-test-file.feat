@@ -1,0 +1,41 @@
+feat 1.0
+
+# Corpus exemplar #5 — compiler-shaped: the dogfood pattern Feature's own specs
+# will use. Response adapter = handler (direct function invocation); service =
+# filesystem (fs adapter captures emitted files). Previews the M1 spec style.
+
+spec SPEC-FEAT-001 "Emit test file from topology"
+context Toolchain
+aggregate Emitter
+type infrastructure
+
+construct:
+  handler at packages/feat-emit-ts/src/emit.ts
+  imports TestTopology from @mmmnt/feat-types
+  The emitter is a pure function of (topology, resolvedSchemas, emitterVersion).
+  Output must satisfy the deterministic header contract (ADR-0006): no timestamps.
+
+enforce:
+  render one describe block per test case in topology order
+  inline resolved schemas as constants
+  generated imports reference @mmmnt/feat-runtime only
+  identical inputs must produce byte-identical output
+
+contract:
+  input EmitInput from "schemas/emit-input"
+  error EmitError from "schemas/emit-error"
+
+scenario "emits a complete test file":
+  when: Emit { specId: "SPEC-USR-001", outputPath: "create-user.test.ts" }
+  predict success:
+    response OK EmitResult { path: "create-user.test.ts", bytesWritten: any number }
+    filesystem has [ FILE_WRITTEN with EmittedFile {
+      path: @when.outputPath
+      header: { specId: @when.specId, inputsHash: matching "^sha256:[0-9a-f]{64}$" }
+    } ]
+
+scenario "rejects topology referencing an unresolved schema":
+  when: Emit { specId: "SPEC-BAD-999", outputPath: "bad.test.ts" }
+  predict rejection UNRESOLVED_SCHEMA:
+    response ERR EmitError { code: "UNRESOLVED_SCHEMA" }
+    filesystem has []

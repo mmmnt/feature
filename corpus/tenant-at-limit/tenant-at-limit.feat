@@ -1,0 +1,38 @@
+feat 1.0
+
+# Corpus exemplar #3 — the seed mechanism (ADR-0003): fixture-form bulk state
+# and inline-form non-command state. This tenant's flow limit is 5; the fixture
+# seeds exactly 5 FlowCreated events, so the next CreateFlow must reject.
+
+spec SPEC-AUT-002 "CreateFlow at tenant limit"
+context Automation
+aggregate Flow
+type command
+
+construct:
+  handler at features/create-flow/handler.ts
+  imports FlowAggregate from core/domain/flow-aggregate
+
+enforce:
+  load FlowAggregate from FlowRepository by tenantId
+  reject when the tenant's flow count has reached the plan limit
+  The flow limit for the "starter" plan is 5.
+
+contract:
+  input CreateFlowInput from "core/contracts/commands"
+  error RFC7807 from "contracts/adrs/error-format"
+
+scenario "tenant at flow limit":
+  given:
+    The tenant is on the starter plan and already has 5 flows.
+    seed projectionStore [ TenantRecord with TenantSchema {
+      tenantId: "0b7e9c14-2d3f-4a5b-8c6d-7e8f9a0b1c2d"
+      plan: "starter"
+      flowCount: 5
+    } ]
+    seed eventStore from "fixtures/tenant-at-limit.events.json"
+  when: CreateFlow { name: "Flow-6", tenantId: "0b7e9c14-2d3f-4a5b-8c6d-7e8f9a0b1c2d" }
+  predict rejection FLOW_LIMIT:
+    response 409 RFC7807
+    eventStore has []
+    projectionStore has []

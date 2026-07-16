@@ -1,0 +1,101 @@
+{
+  "featVersion": "1.0",
+  "identity": {
+    "id": "SPEC-AUT-001",
+    "name": "CreateFlow Command Handler",
+    "context": "Automation",
+    "aggregate": "Flow",
+    "type": "command"
+  },
+  "construct": [
+    { "kind": "handler", "path": "features/create-flow/handler.ts" },
+    { "kind": "import", "symbol": "FlowAggregate", "path": "core/domain/flow-aggregate" },
+    { "kind": "import", "symbol": "FlowRepository", "path": "core/domain/flow-repository" },
+    { "kind": "import", "symbol": "CreateFlowInput", "path": "core/contracts/commands" },
+    { "kind": "import", "symbol": "FlowCreatedEvent", "path": "core/contracts/events" },
+    { "kind": "register", "registrationKind": "mutation", "name": "createFlow", "path": "resolvers/mutations.ts" },
+    { "kind": "emitsTo", "streamPattern": "automation-flow-{flowId}" }
+  ],
+  "enforce": [
+    { "kind": "validate", "text": "validate input against CreateFlowInput" },
+    { "kind": "load", "text": "load FlowAggregate from FlowRepository by tenantId" },
+    { "kind": "apply", "text": "apply CreateFlow through FlowAggregate.create factory method" },
+    { "kind": "onSuccess", "text": "on success emit FlowCreated to event stream" },
+    { "kind": "onRejection", "text": "on rejection return error per contract error format" },
+    { "kind": "constraint", "text": "Lambda cannot write directly to Kurrent." },
+    { "kind": "constraint", "text": "Handler is a pure function: input -> Result<FlowCreated, FlowError>." }
+  ],
+  "contract": [
+    { "kind": "input", "schemaName": "CreateFlowInput", "from": "core/contracts/commands" },
+    { "kind": "event", "schemaName": "FlowCreatedEvent", "from": "core/contracts/events" },
+    { "kind": "error", "schemaName": "RFC7807", "from": "contracts/adrs/error-format" },
+    { "kind": "stream", "pattern": "automation-flow-{flowId}" }
+  ],
+  "scenarios": [
+    {
+      "name": "successful flow creation",
+      "given": {
+        "context": ["No flow named \"Welcome\" exists for this tenant."]
+      },
+      "when": {
+        "command": "CreateFlow",
+        "payload": { "name": "Welcome", "tenantId": "7f0e8a52-4b1c-4d2e-9f3a-1b2c3d4e5f60" }
+      },
+      "prediction": {
+        "type": "success",
+        "response": {
+          "status": 201,
+          "schemaName": "FlowCreatedResponse",
+          "valueBlock": {
+            "flowId": { "matcher": "any", "ofType": "uuid" },
+            "name": { "matcher": "whenRef", "path": "name" }
+          }
+        },
+        "services": {
+          "eventStore": {
+            "records": [
+              {
+                "type": "FlowCreated",
+                "schemaName": "FlowCreatedEvent",
+                "valueBlock": {
+                  "name": { "matcher": "whenRef", "path": "name" },
+                  "tenantId": { "matcher": "whenRef", "path": "tenantId" },
+                  "flowId": { "matcher": "any", "ofType": "uuid" },
+                  "createdAt": { "matcher": "any", "ofType": "timestamp" }
+                }
+              }
+            ]
+          },
+          "projectionStore": { "records": [] },
+          "eventBroker": { "records": [] }
+        }
+      }
+    },
+    {
+      "name": "rejects duplicate flow name",
+      "given": {
+        "context": ["A flow with this name already exists for the tenant."],
+        "executes": [
+          {
+            "command": "CreateFlow",
+            "payload": { "name": "Welcome", "tenantId": "7f0e8a52-4b1c-4d2e-9f3a-1b2c3d4e5f60" }
+          }
+        ]
+      },
+      "when": {
+        "command": "CreateFlow",
+        "payload": { "name": "Welcome", "tenantId": "7f0e8a52-4b1c-4d2e-9f3a-1b2c3d4e5f60" }
+      },
+      "prediction": {
+        "type": "rejection",
+        "rejectionId": "UNIQUE_NAME",
+        "response": { "status": 409, "schemaName": "RFC7807" },
+        "services": {
+          "eventStore": { "records": [] },
+          "projectionStore": { "records": [] },
+          "eventBroker": { "records": [] }
+        }
+      }
+    }
+  ]
+}

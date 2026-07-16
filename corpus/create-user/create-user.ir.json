@@ -1,0 +1,95 @@
+{
+  "featVersion": "1.0",
+  "identity": {
+    "id": "SPEC-USR-001",
+    "name": "CreateUser",
+    "context": "Users",
+    "aggregate": "User",
+    "type": "command"
+  },
+  "construct": [
+    { "kind": "handler", "path": "handlers/create-user.ts" },
+    { "kind": "import", "symbol": "UserRepository", "path": "repositories/user-repository" },
+    { "kind": "custom", "text": "Uses Prisma ORM for database access." }
+  ],
+  "enforce": [
+    { "kind": "validate", "text": "validate input against CreateUserInput" },
+    { "kind": "constraint", "text": "check email uniqueness via UserRepository.findByEmail" },
+    { "kind": "constraint", "text": "insert new user record" },
+    { "kind": "constraint", "text": "return created user" }
+  ],
+  "contract": [
+    { "kind": "input", "schemaName": "CreateUserInput", "from": "schemas/user-input" },
+    { "kind": "error", "schemaName": "ErrorResponse", "from": "schemas/error" }
+  ],
+  "scenarios": [
+    {
+      "name": "successful user creation",
+      "given": {
+        "context": ["No user with this email exists."]
+      },
+      "when": {
+        "command": "CreateUser",
+        "payload": { "email": "alice@example.com", "name": "Alice" }
+      },
+      "prediction": {
+        "type": "success",
+        "response": {
+          "status": 201,
+          "schemaName": "UserResponse",
+          "valueBlock": {
+            "id": { "matcher": "any", "ofType": "uuid" },
+            "email": { "matcher": "whenRef", "path": "email" },
+            "name": { "matcher": "whenRef", "path": "name" }
+          }
+        },
+        "services": {
+          "database": {
+            "records": [
+              {
+                "type": "INSERT",
+                "schemaName": "UserRow",
+                "valueBlock": {
+                  "email": { "matcher": "whenRef", "path": "email" },
+                  "name": { "matcher": "whenRef", "path": "name" },
+                  "id": { "matcher": "any", "ofType": "uuid" },
+                  "status": { "matcher": "literal", "value": "active" },
+                  "deletedAt": { "matcher": "absent" }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "rejects duplicate email",
+      "given": {
+        "executes": [
+          {
+            "command": "CreateUser",
+            "payload": { "email": "alice@example.com", "name": "Alice" }
+          }
+        ]
+      },
+      "when": {
+        "command": "CreateUser",
+        "payload": { "email": "alice@example.com", "name": "Bob" }
+      },
+      "prediction": {
+        "type": "rejection",
+        "rejectionId": "DUPLICATE_EMAIL",
+        "response": {
+          "status": 409,
+          "schemaName": "ErrorResponse",
+          "valueBlock": {
+            "code": { "matcher": "literal", "value": "DUPLICATE_EMAIL" }
+          }
+        },
+        "services": {
+          "database": { "records": [] }
+        }
+      }
+    }
+  ]
+}

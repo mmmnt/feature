@@ -1,0 +1,46 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-ORD-001",
+  "schemas": {
+    "PublishOrderInput": {
+      "type": "object",
+      "required": ["orderId"],
+      "additionalProperties": false,
+      "properties": {
+        "orderId": { "type": "string", "format": "uuid" }
+      }
+    },
+    "OrderPublishedResponse": {
+      "type": "object",
+      "required": ["orderId"],
+      "properties": {
+        "orderId": { "type": "string", "format": "uuid" }
+      }
+    },
+    "OrderPublishedEvent": {
+      "type": "object",
+      "required": ["orderId", "publishedAt"],
+      "properties": {
+        "orderId": { "type": "string", "format": "uuid" },
+        "publishedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "OrderPricedEvent": {
+      "type": "object",
+      "required": ["orderId", "total"],
+      "properties": {
+        "orderId": { "type": "string", "format": "uuid" },
+        "total": { "type": "number" }
+      }
+    },
+    "RFC7807": {
+      "type": "object",
+      "required": ["type", "title", "status"],
+      "properties": {
+        "type": { "type": "string" },
+        "title": { "type": "string" },
+        "status": { "type": "integer" }
+      }
+    }
+  }
+}

@@ -1,0 +1,87 @@
+{
+  "featVersion": "1.0",
+  "identity": {
+    "id": "SPEC-FEAT-001",
+    "name": "Emit test file from topology",
+    "context": "Toolchain",
+    "aggregate": "Emitter",
+    "type": "infrastructure"
+  },
+  "construct": [
+    { "kind": "handler", "path": "packages/feat-emit-ts/src/emit.ts" },
+    { "kind": "import", "symbol": "TestTopology", "path": "@mmmnt/feat-types" },
+    { "kind": "custom", "text": "The emitter is a pure function of (topology, resolvedSchemas, emitterVersion)." },
+    { "kind": "custom", "text": "Output must satisfy the deterministic header contract (ADR-0006): no timestamps." }
+  ],
+  "enforce": [
+    { "kind": "constraint", "text": "render one describe block per test case in topology order" },
+    { "kind": "constraint", "text": "inline resolved schemas as constants" },
+    { "kind": "constraint", "text": "generated imports reference @mmmnt/feat-runtime only" },
+    { "kind": "constraint", "text": "identical inputs must produce byte-identical output" }
+  ],
+  "contract": [
+    { "kind": "input", "schemaName": "EmitInput", "from": "schemas/emit-input" },
+    { "kind": "error", "schemaName": "EmitError", "from": "schemas/emit-error" }
+  ],
+  "scenarios": [
+    {
+      "name": "emits a complete test file",
+      "when": {
+        "command": "Emit",
+        "payload": { "specId": "SPEC-USR-001", "outputPath": "create-user.test.ts" }
+      },
+      "prediction": {
+        "type": "success",
+        "response": {
+          "status": "OK",
+          "schemaName": "EmitResult",
+          "valueBlock": {
+            "path": { "matcher": "literal", "value": "create-user.test.ts" },
+            "bytesWritten": { "matcher": "any", "ofType": "number" }
+          }
+        },
+        "services": {
+          "filesystem": {
+            "records": [
+              {
+                "type": "FILE_WRITTEN",
+                "schemaName": "EmittedFile",
+                "valueBlock": {
+                  "path": { "matcher": "whenRef", "path": "outputPath" },
+                  "header": {
+                    "matcher": "nested",
+                    "fields": {
+                      "specId": { "matcher": "whenRef", "path": "specId" },
+                      "inputsHash": { "matcher": "regex", "pattern": "^sha256:[0-9a-f]{64}$" }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "rejects topology referencing an unresolved schema",
+      "when": {
+        "command": "Emit",
+        "payload": { "specId": "SPEC-BAD-999", "outputPath": "bad.test.ts" }
+      },
+      "prediction": {
+        "type": "rejection",
+        "rejectionId": "UNRESOLVED_SCHEMA",
+        "response": {
+          "status": "ERR",
+          "schemaName": "EmitError",
+          "valueBlock": {
+            "code": { "matcher": "literal", "value": "UNRESOLVED_SCHEMA" }
+          }
+        },
+        "services": {
+          "filesystem": { "records": [] }
+        }
+      }
+    }
+  ]
+}

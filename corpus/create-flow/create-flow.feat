@@ -1,0 +1,61 @@
+feat 1.0
+
+# Corpus exemplar #1 — the founding example (PRD §1), upgraded to feat 1.0:
+# version pragma, execute precondition, matchers, @when references.
+# Exercises: full dual-zone shape, all construct keywords, freeform directives,
+# predict success + rejection, value blocks, eventual-consistency services.
+
+spec SPEC-AUT-001 "CreateFlow Command Handler"
+context Automation
+aggregate Flow
+type command
+
+construct:
+  handler at features/create-flow/handler.ts
+  imports FlowAggregate from core/domain/flow-aggregate
+  imports FlowRepository from core/domain/flow-repository
+  imports CreateFlowInput from core/contracts/commands
+  imports FlowCreatedEvent from core/contracts/events
+  register mutation createFlow in resolvers/mutations.ts
+  emit to automation-flow-{flowId}
+
+enforce:
+  validate input against CreateFlowInput
+  load FlowAggregate from FlowRepository by tenantId
+  apply CreateFlow through FlowAggregate.create factory method
+  on success emit FlowCreated to event stream
+  on rejection return error per contract error format
+  Lambda cannot write directly to Kurrent.
+  Handler is a pure function: input -> Result<FlowCreated, FlowError>.
+
+contract:
+  input CreateFlowInput from "core/contracts/commands"
+  event FlowCreatedEvent from "core/contracts/events"
+  error RFC7807 from "contracts/adrs/error-format"
+  stream "automation-flow-{flowId}"
+
+scenario "successful flow creation":
+  given:
+    No flow named "Welcome" exists for this tenant.
+  when: CreateFlow { name: "Welcome", tenantId: "7f0e8a52-4b1c-4d2e-9f3a-1b2c3d4e5f60" }
+  predict success:
+    response 201 FlowCreatedResponse { flowId: any uuid, name: @when.name }
+    eventStore has [ FlowCreated with FlowCreatedEvent {
+      name: @when.name
+      tenantId: @when.tenantId
+      flowId: any uuid
+      createdAt: any timestamp
+    } ]
+    projectionStore has []
+    eventBroker has []
+
+scenario "rejects duplicate flow name":
+  given:
+    A flow with this name already exists for the tenant.
+    execute CreateFlow { name: "Welcome", tenantId: "7f0e8a52-4b1c-4d2e-9f3a-1b2c3d4e5f60" }
+  when: CreateFlow { name: "Welcome", tenantId: "7f0e8a52-4b1c-4d2e-9f3a-1b2c3d4e5f60" }
+  predict rejection UNIQUE_NAME:
+    response 409 RFC7807
+    eventStore has []
+    projectionStore has []
+    eventBroker has []
