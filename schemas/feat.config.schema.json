@@ -4,7 +4,7 @@
   "title": "FeatConfig",
   "description": "feat.config.json — service, adapter, and pipeline configuration. Loaded once per run (INV-8); validated by @mmmnt/feat-runtime loadConfig (ADR-0001).",
   "type": "object",
-  "required": ["schemas", "response", "services", "specs"],
+  "required": ["schemas", "services", "specs"],
   "additionalProperties": false,
   "properties": {
     "featVersion": {
@@ -22,6 +22,7 @@
     },
     "response": {
       "type": "object",
+      "description": "Required only when specs use when:/execute (deliver-only projects omit it); enforced cross-file at parse time (ADR-0009/0011).",
       "required": ["adapter", "commands"],
       "additionalProperties": false,
       "properties": {

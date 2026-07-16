@@ -1,0 +1,25 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-AUT-003",
+  "schemas": {
+    "FlowCreatedEvent": {
+      "type": "object",
+      "required": ["flowId", "name", "tenantId", "createdAt"],
+      "properties": {
+        "flowId": { "type": "string", "format": "uuid" },
+        "name": { "type": "string" },
+        "tenantId": { "type": "string", "format": "uuid" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "FlowViewSchema": {
+      "type": "object",
+      "required": ["flowId", "name", "tenantId"],
+      "properties": {
+        "flowId": { "type": "string", "format": "uuid" },
+        "name": { "type": "string" },
+        "tenantId": { "type": "string", "format": "uuid" }
+      }
+    }
+  }
+}

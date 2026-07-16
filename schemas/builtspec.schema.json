@@ -99,15 +99,32 @@
     },
     "scenario": {
       "type": "object",
-      "required": ["name", "when", "prediction"],
+      "required": ["name", "prediction"],
+      "oneOf": [ { "required": ["when"] }, { "required": ["delivers"] } ],
       "additionalProperties": false,
-      "description": "Scenario names are unique within a spec (parser-enforced, ADR-0010) and serve as failure anchors.",
+      "description": "Scenario names are unique within a spec (parser-enforced, ADR-0010) and serve as failure anchors. Trigger: when (command/query) XOR delivers (projection/policy/saga) — per-type enforcement per ADR-0011.",
       "properties": {
         "name": { "type": "string" },
         "given": { "$ref": "#/definitions/given" },
         "when": { "$ref": "#/definitions/invocation" },
+        "delivers": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Ordered event deliveries (ADR-0011); multiple entries = saga sequence. Excluded from capture.",
+          "items": { "$ref": "#/definitions/delivery" }
+        },
         "prediction": { "$ref": "#/definitions/prediction" },
         "loc": { "$ref": "#/definitions/loc" }
+      }
+    },
+    "delivery": {
+      "type": "object",
+      "required": ["event", "payload", "service"],
+      "additionalProperties": false,
+      "properties": {
+        "event": { "type": "string" },
+        "payload": { "type": "object" },
+        "service": { "type": "string" }
       }
     },
     "loc": {
@@ -173,8 +190,9 @@
     },
     "prediction": {
       "type": "object",
-      "required": ["type", "response", "services"],
+      "required": ["type"],
       "additionalProperties": false,
+      "description": "response: required for when:-triggered scenarios, absent for deliver-triggered (ADR-0011). services: required with one entry per configured key (INV-6) except type query, where services are implicitly zero (has [X] is a parse error) and the property is omitted.",
       "properties": {
         "type": { "enum": ["success", "rejection", "error"] },
         "rejectionId": { "type": "string" },
@@ -191,12 +209,11 @@
         },
         "services": {
           "type": "object",
-          "description": "One entry per configured service key (INV-6).",
           "minProperties": 1,
           "additionalProperties": {
             "type": "object",
-            "required": ["records"],
             "additionalProperties": false,
+            "anyOf": [ { "required": ["records"] }, { "required": ["contains"] } ],
             "properties": {
               "ordering": {
                 "enum": ["ordered", "unordered"],
@@ -204,20 +221,28 @@
               },
               "records": {
                 "type": "array",
-                "items": {
-                  "type": "object",
-                  "required": ["type", "schemaName"],
-                  "additionalProperties": false,
-                  "properties": {
-                    "type": { "type": "string" },
-                    "schemaName": { "type": "string" },
-                    "valueBlock": { "$ref": "#/definitions/valueBlock" }
-                  }
-                }
+                "description": "Captured-write assertions (`has`).",
+                "items": { "$ref": "#/definitions/predictedRecord" }
+              },
+              "contains": {
+                "type": "array",
+                "minItems": 1,
+                "description": "Resulting-state assertions via adapter read() (`contains`, ADR-0011).",
+                "items": { "$ref": "#/definitions/predictedRecord" }
               }
             }
           }
         }
+      }
+    },
+    "predictedRecord": {
+      "type": "object",
+      "required": ["type", "schemaName"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "type": "string" },
+        "schemaName": { "type": "string" },
+        "valueBlock": { "$ref": "#/definitions/valueBlock" }
       }
     },
     "valueBlock": {
@@ -243,6 +268,16 @@
           "properties": {
             "matcher": { "const": "whenRef" },
             "path": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["matcher", "path"],
+          "additionalProperties": false,
+          "properties": {
+            "matcher": { "const": "deliverRef" },
+            "path": { "type": "string" },
+            "index": { "type": "integer", "minimum": 0, "description": "Required when the scenario has multiple deliveries (saga sequences)." }
           }
         },
         {

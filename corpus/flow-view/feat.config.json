@@ -1,0 +1,10 @@
+{
+  "featVersion": "1.0",
+  "schemas": { "adapter": "@mmmnt/feat-schema-json" },
+  "services": {
+    "eventStore": { "adapter": "@mmmnt/feat-adapter-kurrent", "consistency": "eventual", "convergenceTimeout": 5000 },
+    "projectionStore": { "adapter": "@mmmnt/feat-adapter-dynamodb", "consistency": "eventual", "convergenceTimeout": 5000 }
+  },
+  "specs": { "dir": ".", "pattern": "*.feat", "contractPattern": "*.contract.json", "outputPattern": "{name}.test.ts" },
+  "report": { "format": ["console"] }
+}

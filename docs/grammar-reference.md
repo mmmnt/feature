@@ -210,9 +210,19 @@ Seed records take **full literal values only** — no matchers, no `@when` (seed
 `given` precedes `when`). Optional `with <Schema>` validates seed data at generate time.
 Fixture JSON is data, not glue code — DP-3 stands; imperative seed scripts are forbidden.
 
-### 5.2 `when:` — the invocation under test
+### 5.2 The trigger — `when:` or `deliver` (ADR-0011)
 
-`when: <Command> { <json> }` — exactly one per scenario. Payload is inline JSON.
+The spec `type` declares its trigger discipline (parse error on mismatch):
+
+| Spec types | Trigger | Form |
+| --- | --- | --- |
+| `command`, `query` | `when:` | `when: <Command> { <json> }` — exactly one; command name ∈ `response.commands` |
+| `projection`, `policy`, `saga` | `deliver` | `deliver <EventType> { <json> }` `to <service>` — one or more, in order; saga sequences chain multiple lines |
+
+Delivered stimuli are **excluded from capture** — they are the input, not the output — so
+`eventStore has []` on a projection asserts "the projection emitted nothing new."
+Deliver-triggered scenarios have **no `response` surface**, and `predict rejection` is invalid
+for them (lint ERROR; `success`/`error` only).
 
 ### 5.3 `predict` — the measurement contract
 
@@ -229,12 +239,16 @@ Prediction lines:
 | Form | Meaning |
 | --- | --- |
 | `response <status> <Schema> [{ <value block> }]` | Response surface: status + body schema (+ optional value assertions) |
-| `<service> has [ <record>, ... ]` | Exactly these records captured on that service |
+| `<service> has [ <record>, ... ]` | Exactly these records **captured** (writes during the window) |
 | `<service> has []` | Zero records captured (explicit absence assertion) |
 | `<service> has ordered [...]` / `has unordered [...]` | Ordering override (ADR-0004) |
+| `<service> contains [ <record>, ... ]` | **Resulting state** via adapter `read()` (ADR-0011) — polled to convergence for eventual services; may appear alongside `has` for the same service |
 
 **Completeness (INV-6)**: every configured service must appear in every prediction — `has []`
 is the explicit "nothing happens here". Omission is a validation error.
+**Query guarantee (ADR-0011)**: for `type query`, service predictions are implicitly `has []`
+everywhere and writing any `has [X]` is a **parse error** — side-effect freedom is unviolable
+by construction. Queries predict `response` (+ optional `contains`).
 **Closed key space (INV-7)**: a service key not present in `feat.config.json` is a parse-time
 error listing the configured keys.
 
@@ -270,6 +284,7 @@ matcher     := LITERAL | "@when." PATH | "any" [ "uuid"|"timestamp"|"string"|"nu
 | --- | --- |
 | `"str"`, `42`, `true`, `null` | Strict equality |
 | `@when.<path>` | Equals the value sent in the `when:` payload |
+| `@deliver.<path>` / `@deliver[i].<path>` | Equals the value in the delivered stimulus (index required for saga sequences) |
 | `any` | Present, any value |
 | `any uuid` · `any timestamp` · `any string` · `any number` · `any boolean` | Present + format/type check |
 | `matching "<regex>"` | String matches pattern |
@@ -358,7 +373,8 @@ Generated tests import only `@mmmnt/feat-runtime` and run standalone under `npx 
 **Construct:** `handler at` `imports … from` `register … in` `emit to` `touches`
 **Enforce:** `rejects … when`
 **Given:** `execute` `seed` `from` `with`
-**Predict:** `success` `rejection` `error` `response` `has` `ordered` `unordered` `with`
+**Trigger:** `when:` `deliver … to`
+**Predict:** `success` `rejection` `error` `response` `has` `contains` `ordered` `unordered` `with`
 **Value blocks:** `any` (`uuid` `timestamp` `string` `number` `boolean`) `matching` `absent`
 `@when.<path>`
 **Pragma:** `feat <major>.<minor>`

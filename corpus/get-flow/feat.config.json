@@ -1,0 +1,16 @@
+{
+  "featVersion": "1.0",
+  "schemas": { "adapter": "@mmmnt/feat-schema-json" },
+  "response": {
+    "adapter": "@mmmnt/feat-adapter-http",
+    "invoke": { "baseUrl": "http://localhost:3000" },
+    "commands": {
+      "GetFlow": { "method": "GET", "path": "/flows/{flowId}" }
+    }
+  },
+  "services": {
+    "projectionStore": { "adapter": "@mmmnt/feat-adapter-dynamodb", "consistency": "eventual", "convergenceTimeout": 5000 }
+  },
+  "specs": { "dir": ".", "pattern": "*.feat", "contractPattern": "*.contract.json", "outputPattern": "{name}.test.ts" },
+  "report": { "format": ["console"] }
+}

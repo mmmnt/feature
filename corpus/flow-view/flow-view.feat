@@ -1,0 +1,39 @@
+feat 1.0
+
+# Corpus exemplar #6 — projection (ADR-0011): the deliver trigger, contains state
+# assertions via adapter read(), @deliver stimulus references, and the rule that
+# delivered stimuli are excluded from capture.
+
+spec SPEC-AUT-003 "Flow read model projection"
+context Automation
+aggregate Flow
+type projection
+status agreed
+
+construct:
+  handler at projections/flow-view/handler.ts
+  touches projections/flow-view/**
+  imports FlowViewRepository from core/read/flow-view-repository
+
+enforce:
+  on FlowCreated upsert the FlowView read model keyed by flowId
+  projection is idempotent: replaying the same event produces the same state
+  never emit events; a projection only writes its own read model
+
+contract:
+  event FlowCreatedEvent
+  record FlowViewSchema
+
+scenario "projects a created flow into the read model":
+  deliver FlowCreated { flowId: "5e2a7c90-1b3d-4e5f-8a6b-9c0d1e2f3a4b", name: "Welcome", tenantId: "7f0e8a52-4b1c-4d2e-9f3a-1b2c3d4e5f60", createdAt: "2026-07-01T09:00:00Z" } to eventStore
+  predict success:
+    projectionStore has [ UPSERT with FlowViewSchema {
+      flowId: @deliver.flowId
+      name: @deliver.name
+    } ]
+    projectionStore contains [ FlowView with FlowViewSchema {
+      flowId: @deliver.flowId
+      name: @deliver.name
+      tenantId: @deliver.tenantId
+    } ]
+    eventStore has []

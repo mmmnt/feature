@@ -1,0 +1,41 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-AUT-004",
+  "schemas": {
+    "GetFlowInput": {
+      "type": "object",
+      "required": ["flowId"],
+      "additionalProperties": false,
+      "properties": {
+        "flowId": { "type": "string", "format": "uuid" }
+      }
+    },
+    "FlowViewResponse": {
+      "type": "object",
+      "required": ["flowId", "name", "tenantId"],
+      "properties": {
+        "flowId": { "type": "string", "format": "uuid" },
+        "name": { "type": "string" },
+        "tenantId": { "type": "string", "format": "uuid" }
+      }
+    },
+    "FlowViewSchema": {
+      "type": "object",
+      "required": ["flowId", "name", "tenantId"],
+      "properties": {
+        "flowId": { "type": "string", "format": "uuid" },
+        "name": { "type": "string" },
+        "tenantId": { "type": "string", "format": "uuid" }
+      }
+    },
+    "RFC7807": {
+      "type": "object",
+      "required": ["type", "title", "status"],
+      "properties": {
+        "type": { "type": "string" },
+        "title": { "type": "string" },
+        "status": { "type": "integer" }
+      }
+    }
+  }
+}

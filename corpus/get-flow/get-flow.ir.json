@@ -1,0 +1,83 @@
+{
+  "featVersion": "1.0",
+  "identity": {
+    "id": "SPEC-AUT-004",
+    "name": "GetFlow query",
+    "context": "Automation",
+    "aggregate": "Flow",
+    "type": "query",
+    "status": "agreed"
+  },
+  "construct": [
+    { "kind": "handler", "path": "features/get-flow/handler.ts" },
+    { "kind": "touches", "glob": "features/get-flow/**" },
+    { "kind": "import", "symbol": "FlowViewRepository", "path": "core/read/flow-view-repository" }
+  ],
+  "enforce": [
+    { "kind": "constraint", "text": "read the FlowView by flowId from the projection store" },
+    { "kind": "constraint", "text": "never mutate state; a query is a pure read" },
+    { "kind": "rejects", "rejectionId": "NOT_FOUND", "text": "no flow view exists for the requested id" }
+  ],
+  "contract": [
+    { "kind": "input", "schemaName": "GetFlowInput" },
+    { "kind": "response", "schemaName": "FlowViewResponse" },
+    { "kind": "record", "schemaName": "FlowViewSchema" },
+    { "kind": "error", "schemaName": "RFC7807", "from": "contracts/adrs/error-format" }
+  ],
+  "scenarios": [
+    {
+      "name": "returns the flow view",
+      "given": {
+        "seeds": [
+          {
+            "service": "projectionStore",
+            "records": [
+              {
+                "type": "FlowView",
+                "schemaName": "FlowViewSchema",
+                "values": {
+                  "flowId": "5e2a7c90-1b3d-4e5f-8a6b-9c0d1e2f3a4b",
+                  "name": "Welcome",
+                  "tenantId": "7f0e8a52-4b1c-4d2e-9f3a-1b2c3d4e5f60"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "when": {
+        "command": "GetFlow",
+        "payload": { "flowId": "5e2a7c90-1b3d-4e5f-8a6b-9c0d1e2f3a4b" }
+      },
+      "prediction": {
+        "type": "success",
+        "response": {
+          "status": 200,
+          "schemaName": "FlowViewResponse",
+          "valueBlock": {
+            "flowId": { "matcher": "whenRef", "path": "flowId" },
+            "name": { "matcher": "literal", "value": "Welcome" }
+          }
+        }
+      }
+    },
+    {
+      "name": "unknown flow",
+      "when": {
+        "command": "GetFlow",
+        "payload": { "flowId": "00000000-0000-4000-8000-000000000000" }
+      },
+      "prediction": {
+        "type": "rejection",
+        "rejectionId": "NOT_FOUND",
+        "response": {
+          "status": 404,
+          "schemaName": "RFC7807",
+          "valueBlock": {
+            "status": { "matcher": "literal", "value": 404 }
+          }
+        }
+      }
+    }
+  ]
+}

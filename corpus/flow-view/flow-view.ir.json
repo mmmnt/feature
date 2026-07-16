@@ -1,0 +1,71 @@
+{
+  "featVersion": "1.0",
+  "identity": {
+    "id": "SPEC-AUT-003",
+    "name": "Flow read model projection",
+    "context": "Automation",
+    "aggregate": "Flow",
+    "type": "projection",
+    "status": "agreed"
+  },
+  "construct": [
+    { "kind": "handler", "path": "projections/flow-view/handler.ts" },
+    { "kind": "touches", "glob": "projections/flow-view/**" },
+    { "kind": "import", "symbol": "FlowViewRepository", "path": "core/read/flow-view-repository" }
+  ],
+  "enforce": [
+    { "kind": "constraint", "text": "on FlowCreated upsert the FlowView read model keyed by flowId" },
+    { "kind": "constraint", "text": "projection is idempotent: replaying the same event produces the same state" },
+    { "kind": "constraint", "text": "never emit events; a projection only writes its own read model" }
+  ],
+  "contract": [
+    { "kind": "event", "schemaName": "FlowCreatedEvent" },
+    { "kind": "record", "schemaName": "FlowViewSchema" }
+  ],
+  "scenarios": [
+    {
+      "name": "projects a created flow into the read model",
+      "delivers": [
+        {
+          "event": "FlowCreated",
+          "payload": {
+            "flowId": "5e2a7c90-1b3d-4e5f-8a6b-9c0d1e2f3a4b",
+            "name": "Welcome",
+            "tenantId": "7f0e8a52-4b1c-4d2e-9f3a-1b2c3d4e5f60",
+            "createdAt": "2026-07-01T09:00:00Z"
+          },
+          "service": "eventStore"
+        }
+      ],
+      "prediction": {
+        "type": "success",
+        "services": {
+          "projectionStore": {
+            "records": [
+              {
+                "type": "UPSERT",
+                "schemaName": "FlowViewSchema",
+                "valueBlock": {
+                  "flowId": { "matcher": "deliverRef", "path": "flowId" },
+                  "name": { "matcher": "deliverRef", "path": "name" }
+                }
+              }
+            ],
+            "contains": [
+              {
+                "type": "FlowView",
+                "schemaName": "FlowViewSchema",
+                "valueBlock": {
+                  "flowId": { "matcher": "deliverRef", "path": "flowId" },
+                  "name": { "matcher": "deliverRef", "path": "name" },
+                  "tenantId": { "matcher": "deliverRef", "path": "tenantId" }
+                }
+              }
+            ]
+          },
+          "eventStore": { "records": [] }
+        }
+      }
+    }
+  ]
+}
