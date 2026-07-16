@@ -1,0 +1,29 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://feat.dev/schemas/contract.json",
+  "title": "ContractJson",
+  "description": ".contract.json — the schema registry paired (by basename) with a .feat spec (GAP-S04). Holds JSON Schemas referenced from predictions via `with <Name>`. Shapes live here; behavior lives in the .feat file.",
+  "type": "object",
+  "required": ["$schema", "specId", "schemas"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "const": "https://feat.dev/schemas/contract.json"
+    },
+    "specId": {
+      "type": "string",
+      "pattern": "^SPEC-[A-Z0-9]+-[0-9]+$",
+      "description": "Must match the paired .feat file's spec ID."
+    },
+    "schemas": {
+      "type": "object",
+      "description": "Named schemas: each value is a JSON Schema or a $ref to one. Resolved at compile time by the schema adapter (GAP-S10) and inlined into generated tests (ADR-0001).",
+      "minProperties": 1,
+      "propertyNames": { "pattern": "^[A-Za-z][A-Za-z0-9_]*$" },
+      "additionalProperties": {
+        "type": "object",
+        "description": "A JSON Schema (draft-07) or { \"$ref\": \"<path>\" }."
+      }
+    }
+  }
+}

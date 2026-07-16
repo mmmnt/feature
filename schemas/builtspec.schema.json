@@ -1,0 +1,266 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://feat.dev/schemas/builtspec.json",
+  "title": "BuiltSpec IR",
+  "description": "The language-neutral intermediate representation produced by parsing a .feat file (F13 hedge: a future Go toolchain binds to this same contract). Corpus .ir.json fixtures instantiate this schema and are the parser's ground truth. TS types in @mmmnt/feat-types derive from this document.",
+  "type": "object",
+  "required": ["featVersion", "identity", "construct", "enforce", "contract", "scenarios"],
+  "additionalProperties": false,
+  "properties": {
+    "featVersion": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+$" },
+    "identity": {
+      "type": "object",
+      "required": ["id", "name", "context", "aggregate", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^SPEC-[A-Z0-9]+-[0-9]+$" },
+        "name": { "type": "string" },
+        "context": { "type": "string" },
+        "aggregate": { "type": "string" },
+        "type": { "enum": ["command", "query", "policy", "projection", "saga", "infrastructure", "integration", "scaffold"] }
+      }
+    },
+    "construct": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/constructInstruction" }
+    },
+    "enforce": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/enforceStep" }
+    },
+    "contract": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/contractReference" }
+    },
+    "scenarios": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/scenario" }
+    }
+  },
+  "definitions": {
+    "constructInstruction": {
+      "type": "object",
+      "required": ["kind"],
+      "oneOf": [
+        {
+          "properties": { "kind": { "const": "handler" }, "path": { "type": "string" } },
+          "required": ["kind", "path"], "additionalProperties": false
+        },
+        {
+          "properties": { "kind": { "const": "import" }, "symbol": { "type": "string" }, "path": { "type": "string" } },
+          "required": ["kind", "symbol", "path"], "additionalProperties": false
+        },
+        {
+          "properties": { "kind": { "const": "register" }, "registrationKind": { "type": "string" }, "name": { "type": "string" }, "path": { "type": "string" } },
+          "required": ["kind", "registrationKind", "name", "path"], "additionalProperties": false
+        },
+        {
+          "properties": { "kind": { "const": "emitsTo" }, "streamPattern": { "type": "string" } },
+          "required": ["kind", "streamPattern"], "additionalProperties": false
+        },
+        {
+          "properties": { "kind": { "const": "custom" }, "text": { "type": "string" } },
+          "required": ["kind", "text"], "additionalProperties": false
+        }
+      ]
+    },
+    "enforceStep": {
+      "type": "object",
+      "required": ["kind", "text"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "enum": ["validate", "load", "apply", "onSuccess", "onRejection", "constraint"] },
+        "text": { "type": "string", "description": "The directive line, verbatim." }
+      }
+    },
+    "contractReference": {
+      "type": "object",
+      "required": ["kind"],
+      "oneOf": [
+        {
+          "properties": { "kind": { "enum": ["input", "event", "error"] }, "schemaName": { "type": "string" }, "from": { "type": "string" } },
+          "required": ["kind", "schemaName", "from"], "additionalProperties": false
+        },
+        {
+          "properties": { "kind": { "const": "stream" }, "pattern": { "type": "string" } },
+          "required": ["kind", "pattern"], "additionalProperties": false
+        }
+      ]
+    },
+    "scenario": {
+      "type": "object",
+      "required": ["name", "when", "prediction"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "given": { "$ref": "#/definitions/given" },
+        "when": { "$ref": "#/definitions/invocation" },
+        "prediction": { "$ref": "#/definitions/prediction" }
+      }
+    },
+    "given": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Freeform lines, verbatim."
+        },
+        "executes": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/invocation" }
+        },
+        "seeds": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/seed" }
+        }
+      }
+    },
+    "invocation": {
+      "type": "object",
+      "required": ["command", "payload"],
+      "additionalProperties": false,
+      "properties": {
+        "command": { "type": "string" },
+        "payload": { "type": "object" }
+      }
+    },
+    "seed": {
+      "type": "object",
+      "required": ["service"],
+      "additionalProperties": false,
+      "properties": {
+        "service": { "type": "string" },
+        "records": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["type", "values"],
+            "additionalProperties": false,
+            "properties": {
+              "type": { "type": "string" },
+              "schemaName": { "type": "string" },
+              "values": { "type": "object" }
+            }
+          }
+        },
+        "fixture": { "type": "string", "description": "Path to a JSON fixture file (bulk form)." }
+      },
+      "oneOf": [ { "required": ["records"] }, { "required": ["fixture"] } ]
+    },
+    "prediction": {
+      "type": "object",
+      "required": ["type", "response", "services"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "enum": ["success", "rejection", "error"] },
+        "rejectionId": { "type": "string" },
+        "errorCode": { "type": "string" },
+        "response": {
+          "type": "object",
+          "required": ["status", "schemaName"],
+          "additionalProperties": false,
+          "properties": {
+            "status": { "type": ["integer", "string"] },
+            "schemaName": { "type": "string" },
+            "valueBlock": { "$ref": "#/definitions/valueBlock" }
+          }
+        },
+        "services": {
+          "type": "object",
+          "description": "One entry per configured service key (INV-6).",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "object",
+            "required": ["records"],
+            "additionalProperties": false,
+            "properties": {
+              "ordering": {
+                "enum": ["ordered", "unordered"],
+                "description": "Present only when explicitly overridden (ADR-0004); otherwise derive resolves from the service's consistency model."
+              },
+              "records": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["type", "schemaName"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": { "type": "string" },
+                    "schemaName": { "type": "string" },
+                    "valueBlock": { "$ref": "#/definitions/valueBlock" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "valueBlock": {
+      "type": "object",
+      "description": "Field path → matcher (ADR-0002).",
+      "additionalProperties": { "$ref": "#/definitions/matcher" }
+    },
+    "matcher": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["matcher"],
+          "additionalProperties": false,
+          "properties": {
+            "matcher": { "const": "literal" },
+            "value": { "type": ["string", "number", "boolean", "null"] }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["matcher", "path"],
+          "additionalProperties": false,
+          "properties": {
+            "matcher": { "const": "whenRef" },
+            "path": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["matcher"],
+          "additionalProperties": false,
+          "properties": {
+            "matcher": { "const": "any" },
+            "ofType": { "enum": ["uuid", "timestamp", "string", "number", "boolean"] }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["matcher", "pattern"],
+          "additionalProperties": false,
+          "properties": {
+            "matcher": { "const": "regex" },
+            "pattern": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["matcher"],
+          "additionalProperties": false,
+          "properties": { "matcher": { "const": "absent" } }
+        },
+        {
+          "type": "object",
+          "required": ["matcher", "fields"],
+          "additionalProperties": false,
+          "properties": {
+            "matcher": { "const": "nested" },
+            "fields": { "$ref": "#/definitions/valueBlock" }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,86 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://feat.dev/schemas/feat.config.json",
+  "title": "FeatConfig",
+  "description": "feat.config.json — service, adapter, and pipeline configuration. Loaded once per run (INV-8); validated by @mmmnt/feat-runtime loadConfig (ADR-0001).",
+  "type": "object",
+  "required": ["schemas", "response", "services", "specs"],
+  "additionalProperties": false,
+  "properties": {
+    "featVersion": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+$",
+      "description": "Language version this project targets (ADR-0005)."
+    },
+    "schemas": {
+      "type": "object",
+      "required": ["adapter"],
+      "additionalProperties": false,
+      "properties": {
+        "adapter": { "$ref": "#/definitions/moduleSpecifier" }
+      }
+    },
+    "response": {
+      "type": "object",
+      "required": ["adapter"],
+      "additionalProperties": false,
+      "properties": {
+        "adapter": { "$ref": "#/definitions/moduleSpecifier" },
+        "invoke": {
+          "type": "object",
+          "description": "Adapter-specific invocation config (baseUrl/headers, host/protoPath, entrypoint/method).",
+          "additionalProperties": true
+        }
+      }
+    },
+    "services": {
+      "type": "object",
+      "description": "User-defined service keys — the only valid prediction targets (INV-7).",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "required": ["adapter", "consistency"],
+        "additionalProperties": false,
+        "properties": {
+          "adapter": { "$ref": "#/definitions/moduleSpecifier" },
+          "consistency": { "enum": ["acid", "strong", "eventual"] },
+          "convergenceTimeout": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Milliseconds to wait before capturing eventual services. Required when consistency is 'eventual'."
+          }
+        }
+      }
+    },
+    "specs": {
+      "type": "object",
+      "required": ["dir", "pattern", "contractPattern", "outputPattern"],
+      "additionalProperties": false,
+      "properties": {
+        "dir": { "type": "string" },
+        "pattern": { "type": "string" },
+        "contractPattern": { "type": "string" },
+        "outputPattern": { "type": "string" }
+      }
+    },
+    "report": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "format": {
+          "type": "array",
+          "items": { "enum": ["console", "junit"] },
+          "minItems": 1
+        },
+        "junitOutput": { "type": "string" }
+      }
+    }
+  },
+  "definitions": {
+    "moduleSpecifier": {
+      "type": "string",
+      "minLength": 1,
+      "description": "npm package name or local path; the module must export createAdapter(config) (INV-10, ADR-0001)."
+    }
+  }
+}
