@@ -287,7 +287,9 @@ Default by consistency model: `acid`/`strong` → **ordered**; `eventual` → **
   "featVersion": "1.0",
   "schemas":  { "adapter": "@mmmnt/feat-schema-json" },
   "response": { "adapter": "@mmmnt/feat-adapter-handler",
-                "invoke": { "entrypoint": "src/index.ts", "method": "handle" } },
+                "commands": {
+                  "CreateFlow": { "module": "features/create-flow/handler.ts", "export": "handle" }
+                } },
   "services": {
     "eventStore": { "adapter": "@mmmnt/feat-adapter-kurrent",
                     "consistency": "eventual", "convergenceTimeout": 5000 }
@@ -299,6 +301,12 @@ Default by consistency model: `acid`/`strong` → **ordered**; `eventual` → **
 ```
 
 - Service keys defined here are the only valid prediction targets (INV-7).
+- **Command routing (ADR-0009)**: `response.commands` maps every command name to an
+  adapter-specific invocation shape (HTTP: `{method, path}`; handler: `{module, export}`).
+  **Closed command space**: every command used in `when:` or `execute` must exist in
+  `response.commands` — unknown command is a parse-time error listing the configured commands.
+  The three closed reference spaces: service keys (config), schema names (`contract:`),
+  command names (`response.commands`).
 - `consistency`: `acid` (capture immediately) · `strong` (after replication) · `eventual`
   (after `convergenceTimeout`, polled).
 - Adapter values are module specifiers — npm package or local path — whose module exports

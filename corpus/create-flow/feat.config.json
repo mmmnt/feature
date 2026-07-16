@@ -1,0 +1,18 @@
+{
+  "featVersion": "1.0",
+  "schemas": { "adapter": "@mmmnt/feat-schema-json" },
+  "response": {
+    "adapter": "@mmmnt/feat-adapter-http",
+    "invoke": { "baseUrl": "http://localhost:3000" },
+    "commands": {
+      "CreateFlow": { "method": "POST", "path": "/flows" }
+    }
+  },
+  "services": {
+    "eventStore": { "adapter": "@mmmnt/feat-adapter-kurrent", "consistency": "eventual", "convergenceTimeout": 5000 },
+    "projectionStore": { "adapter": "@mmmnt/feat-adapter-dynamodb", "consistency": "eventual", "convergenceTimeout": 5000 },
+    "eventBroker": { "adapter": "@mmmnt/feat-adapter-kafka", "consistency": "eventual", "convergenceTimeout": 3000 }
+  },
+  "specs": { "dir": ".", "pattern": "*.feat", "contractPattern": "*.contract.json", "outputPattern": "{name}.test.ts" },
+  "report": { "format": ["console"] }
+}

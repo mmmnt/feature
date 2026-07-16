@@ -22,14 +22,20 @@
     },
     "response": {
       "type": "object",
-      "required": ["adapter"],
+      "required": ["adapter", "commands"],
       "additionalProperties": false,
       "properties": {
         "adapter": { "$ref": "#/definitions/moduleSpecifier" },
         "invoke": {
           "type": "object",
-          "description": "Adapter-specific invocation config (baseUrl/headers, host/protoPath, entrypoint/method).",
+          "description": "Adapter-wide invocation config (baseUrl/headers, host/protoPath).",
           "additionalProperties": true
+        },
+        "commands": {
+          "type": "object",
+          "description": "Command routing (ADR-0009): CommandName -> adapter-specific invocation shape (HTTP: {method, path}; handler: {module, export}). Closed command space: every command used in when:/execute must exist here — validated at parse time.",
+          "minProperties": 1,
+          "additionalProperties": { "type": "object", "additionalProperties": true }
         }
       }
     },
