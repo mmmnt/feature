@@ -190,6 +190,12 @@ scenario "rejects duplicate flow name":
     projectionStore has []
 ```
 
+**Anchors (ADR-0010):** scenario names are unique within a spec (lint ERROR) and serve as
+failure anchors — every ValidationReport assertion result carries
+`<specId> › "<scenario name>" › <surface>` (`response`, `<service>[index]`,
+`given › execute[i]`, `given › seed[i]`), so failures map to exact spec coordinates. The parser
+additionally stamps optional `loc` (line/column) on IR nodes for editor jump-to-line.
+
 ### 5.1 `given:` — the hybrid zone
 
 Three line kinds, freely mixed:

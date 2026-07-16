@@ -101,11 +101,23 @@
       "type": "object",
       "required": ["name", "when", "prediction"],
       "additionalProperties": false,
+      "description": "Scenario names are unique within a spec (parser-enforced, ADR-0010) and serve as failure anchors.",
       "properties": {
         "name": { "type": "string" },
         "given": { "$ref": "#/definitions/given" },
         "when": { "$ref": "#/definitions/invocation" },
-        "prediction": { "$ref": "#/definitions/prediction" }
+        "prediction": { "$ref": "#/definitions/prediction" },
+        "loc": { "$ref": "#/definitions/loc" }
+      }
+    },
+    "loc": {
+      "type": "object",
+      "description": "Optional source location stamped by the parser (ADR-0010). Omitted in hand-authored fixtures; stripped before INV-1 determinism comparison.",
+      "required": ["line"],
+      "additionalProperties": false,
+      "properties": {
+        "line": { "type": "integer", "minimum": 1 },
+        "column": { "type": "integer", "minimum": 1 }
       }
     },
     "given": {
