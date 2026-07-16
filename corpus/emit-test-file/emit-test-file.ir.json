@@ -5,10 +5,12 @@
     "name": "Emit test file from topology",
     "context": "Toolchain",
     "aggregate": "Emitter",
-    "type": "infrastructure"
+    "type": "infrastructure",
+    "status": "agreed"
   },
   "construct": [
     { "kind": "handler", "path": "packages/feat-emit-ts/src/emit.ts" },
+    { "kind": "touches", "glob": "packages/feat-emit-ts/**" },
     { "kind": "import", "symbol": "TestTopology", "path": "@mmmnt/feat-types" },
     { "kind": "custom", "text": "The emitter is a pure function of (topology, resolvedSchemas, emitterVersion)." },
     { "kind": "custom", "text": "Output must satisfy the deterministic header contract (ADR-0006): no timestamps." }
@@ -17,7 +19,8 @@
     { "kind": "constraint", "text": "render one describe block per test case in topology order" },
     { "kind": "constraint", "text": "inline resolved schemas as constants" },
     { "kind": "constraint", "text": "generated imports reference @mmmnt/feat-runtime only" },
-    { "kind": "constraint", "text": "identical inputs must produce byte-identical output" }
+    { "kind": "constraint", "text": "identical inputs must produce byte-identical output" },
+    { "kind": "rejects", "rejectionId": "UNRESOLVED_SCHEMA", "text": "the topology references a schema absent from the resolved set" }
   ],
   "contract": [
     { "kind": "input", "schemaName": "EmitInput" },

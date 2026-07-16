@@ -9,9 +9,12 @@ spec SPEC-AUT-001 "CreateFlow Command Handler"
 context Automation
 aggregate Flow
 type command
+status agreed
 
 construct:
   handler at features/create-flow/handler.ts
+  touches features/create-flow/**
+  touches resolvers/mutations.ts
   imports FlowAggregate from core/domain/flow-aggregate
   imports FlowRepository from core/domain/flow-repository
   imports CreateFlowInput from core/contracts/commands
@@ -25,6 +28,7 @@ enforce:
   apply CreateFlow through FlowAggregate.create factory method
   on success emit FlowCreated to event stream
   on rejection return error per contract error format
+  rejects UNIQUE_NAME when a flow with this name already exists for the tenant
   Lambda cannot write directly to Kurrent.
   Handler is a pure function: input -> Result<FlowCreated, FlowError>.
 

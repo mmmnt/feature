@@ -5,15 +5,17 @@
     "name": "CreateFlow at tenant limit",
     "context": "Automation",
     "aggregate": "Flow",
-    "type": "command"
+    "type": "command",
+    "status": "agreed"
   },
   "construct": [
     { "kind": "handler", "path": "features/create-flow/handler.ts" },
+    { "kind": "touches", "glob": "features/create-flow/**" },
     { "kind": "import", "symbol": "FlowAggregate", "path": "core/domain/flow-aggregate" }
   ],
   "enforce": [
     { "kind": "load", "text": "load FlowAggregate from FlowRepository by tenantId" },
-    { "kind": "constraint", "text": "reject when the tenant's flow count has reached the plan limit" },
+    { "kind": "rejects", "rejectionId": "FLOW_LIMIT", "text": "the tenant's flow count has reached the plan limit" },
     { "kind": "constraint", "text": "The flow limit for the \"starter\" plan is 5." }
   ],
   "contract": [

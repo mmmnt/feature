@@ -10,14 +10,15 @@
     "featVersion": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+$" },
     "identity": {
       "type": "object",
-      "required": ["id", "name", "context", "aggregate", "type"],
+      "required": ["id", "name", "context", "aggregate", "type", "status"],
       "additionalProperties": false,
       "properties": {
         "id": { "type": "string", "pattern": "^SPEC-[A-Z0-9]+-[0-9]+$" },
         "name": { "type": "string" },
         "context": { "type": "string" },
         "aggregate": { "type": "string" },
-        "type": { "enum": ["command", "query", "policy", "projection", "saga", "infrastructure", "integration", "scaffold"] }
+        "type": { "enum": ["command", "query", "policy", "projection", "saga", "infrastructure", "integration", "scaffold"] },
+        "status": { "enum": ["draft", "agreed", "built", "verified"] }
       }
     },
     "construct": {
@@ -63,6 +64,10 @@
           "required": ["kind", "streamPattern"], "additionalProperties": false
         },
         {
+          "properties": { "kind": { "const": "touches" }, "glob": { "type": "string" } },
+          "required": ["kind", "glob"], "additionalProperties": false
+        },
+        {
           "properties": { "kind": { "const": "custom" }, "text": { "type": "string" } },
           "required": ["kind", "text"], "additionalProperties": false
         }
@@ -73,8 +78,9 @@
       "required": ["kind", "text"],
       "additionalProperties": false,
       "properties": {
-        "kind": { "enum": ["validate", "load", "apply", "onSuccess", "onRejection", "constraint"] },
-        "text": { "type": "string", "description": "The directive line, verbatim." }
+        "kind": { "enum": ["validate", "load", "apply", "onSuccess", "onRejection", "constraint", "rejects"] },
+        "rejectionId": { "type": "string", "description": "Present iff kind is 'rejects' (ADR-0008); validated two-way against scenario rejection IDs." },
+        "text": { "type": "string", "description": "The directive line (for 'rejects': the freeform reason)." }
       }
     },
     "contractReference": {

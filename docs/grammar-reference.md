@@ -21,8 +21,9 @@ spec <ID> "<name>"              ← header (required)
 context <Name>
 aggregate <Name>
 type <spec-type>
+status <lifecycle>              ← draft | agreed | built | verified (ADR-0008)
 
-construct:                      ← agent zone (required, ≥1 directive)
+construct:                      ← agent zone (required, ≥1 directive + ≥1 touches)
   ...
 
 enforce:                        ← agent zone (required, ≥1 directive)
@@ -87,6 +88,7 @@ KEYWORD-qualifier (`uuid`); `flowId: any zebra` is a parse error, not a comment.
 | `context` | `context Automation` | Bounded context |
 | `aggregate` | `aggregate Flow` | Aggregate / entity |
 | `type` | `type command` | One of: `command`, `query`, `policy`, `projection`, `saga`, `infrastructure`, `integration`, `scaffold` |
+| `status` | `status agreed` | Lifecycle (ADR-0008): `draft` → `agreed` → `built` → `verified`. The agent refuses to build a spec that is not `agreed`; the agent may *propose* the draft→agreed flip, the human can revert; tooling flips `built`/`verified`. |
 
 ---
 
@@ -102,6 +104,7 @@ Recognized line keywords (produce typed IR nodes):
 | `imports <X> from <path>` | `imports FlowAggregate from core/domain/flow-aggregate` |
 | `register <kind> <name> in <path>` | `register mutation createFlow in resolvers/mutations.ts` |
 | `emit to <stream-pattern>` | `emit to automation-flow-{flowId}` |
+| `touches <glob>` | `touches features/create-flow/**` — **change boundary** (ADR-0008): the build may create/modify ONLY paths matching a `touches` glob; the `handler at` path must fall inside one. Repeatable. **Always required**, even in drafts — the build-time mirror of prediction inversion. |
 
 Any other line is a **freeform directive**, captured verbatim:
 
@@ -114,9 +117,19 @@ construct:
 
 ### 3.2 `enforce:` — behavioral instructions
 
-Entirely freeform. Conventional shapes (`validate input against X`, `on success emit Y`) are
-recognized for IR categorization but carry no compiler semantics; unrecognized lines are
-constraints, captured verbatim.
+Freeform, with **one structured keyword** (ADR-0008):
+
+| Keyword | Form | Purpose |
+| --- | --- | --- |
+| `rejects` | `rejects UNIQUE_NAME when a flow with this name exists for the tenant` | Justifies a business-rule rejection. `<ID>` is typed (KEYWORD position, validated two-way against scenario rejection IDs); the reason is FREEFORM. |
+
+**Two-way lint**: every `predict rejection <ID>` must have a matching `rejects <ID>` line, and
+every `rejects <ID>` must be predicted by at least one scenario. Predictions and build
+instructions corroborate mechanically. (`predict error <CODE>` is exempt — system failures,
+not business rules.)
+
+Conventional shapes (`validate input against X`, `on success emit Y`) are recognized for IR
+categorization but carry no compiler semantics; all other lines are constraints, captured verbatim.
 
 ---
 
@@ -311,12 +324,25 @@ Generated tests import only `@mmmnt/feat-runtime` and run standalone under `npx 
 
 ---
 
-## 8. Reserved keyword summary
+## 8. The agent contract (ADR-0008)
 
-**Block openers:** `spec` `context` `aggregate` `type` `construct:` `enforce:` `contract:`
+- **Buildability** (ERROR-level lint): B1 `handler at` present for code-producing types;
+  B2 two-way rejection traceability (`rejects` ↔ `predict rejection`); B3 `touches` present.
+- **Lifecycle**: the agent builds only `status agreed` specs; it may propose draft→agreed
+  (human can revert); `built`/`verified` are flipped by tooling, never by hand.
+- **Ambiguity protocol**: on an ambiguous directive the agent halts that spec and asks —
+  never guesses. The ambiguity is recorded to flmnt; the spec file is not annotated or demoted.
+  Resolution is a spec edit after the human answers. Ambiguity count per spec is the standing
+  language-quality metric.
+
+## 9. Reserved keyword summary
+
+**Block openers:** `spec` `context` `aggregate` `type` `status` `construct:` `enforce:` `contract:`
 `scenario` `given:` `when:` `predict`
+**Status values:** `draft` `agreed` `built` `verified`
 **Contract:** `input` `response` `event` `record` `error` `stream` `from`
-**Construct:** `handler at` `imports … from` `register … in` `emit to`
+**Construct:** `handler at` `imports … from` `register … in` `emit to` `touches`
+**Enforce:** `rejects … when`
 **Given:** `execute` `seed` `from` `with`
 **Predict:** `success` `rejection` `error` `response` `has` `ordered` `unordered` `with`
 **Value blocks:** `any` (`uuid` `timestamp` `string` `number` `boolean`) `matching` `absent`
@@ -325,7 +351,7 @@ Generated tests import only `@mmmnt/feat-runtime` and run standalone under `npx 
 
 ---
 
-## 9. Minimal complete example
+## 10. Minimal complete example
 
 ```
 feat 1.0
@@ -334,14 +360,16 @@ spec SPEC-USR-001 "CreateUser"
 context Users
 aggregate User
 type command
+status agreed
 
 construct:
   handler at handlers/create-user.ts
+  touches handlers/**
   Uses Prisma ORM for database access.
 
 enforce:
   validate input against CreateUserInput
-  check email uniqueness before insert
+  rejects DUPLICATE_EMAIL when a user with this email already exists
 
 contract:
   input CreateUserInput

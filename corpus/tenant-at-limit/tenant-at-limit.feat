@@ -8,14 +8,16 @@ spec SPEC-AUT-002 "CreateFlow at tenant limit"
 context Automation
 aggregate Flow
 type command
+status agreed
 
 construct:
   handler at features/create-flow/handler.ts
+  touches features/create-flow/**
   imports FlowAggregate from core/domain/flow-aggregate
 
 enforce:
   load FlowAggregate from FlowRepository by tenantId
-  reject when the tenant's flow count has reached the plan limit
+  rejects FLOW_LIMIT when the tenant's flow count has reached the plan limit
   The flow limit for the "starter" plan is 5.
 
 contract:

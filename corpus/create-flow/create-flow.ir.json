@@ -5,10 +5,13 @@
     "name": "CreateFlow Command Handler",
     "context": "Automation",
     "aggregate": "Flow",
-    "type": "command"
+    "type": "command",
+    "status": "agreed"
   },
   "construct": [
     { "kind": "handler", "path": "features/create-flow/handler.ts" },
+    { "kind": "touches", "glob": "features/create-flow/**" },
+    { "kind": "touches", "glob": "resolvers/mutations.ts" },
     { "kind": "import", "symbol": "FlowAggregate", "path": "core/domain/flow-aggregate" },
     { "kind": "import", "symbol": "FlowRepository", "path": "core/domain/flow-repository" },
     { "kind": "import", "symbol": "CreateFlowInput", "path": "core/contracts/commands" },
@@ -22,6 +25,7 @@
     { "kind": "apply", "text": "apply CreateFlow through FlowAggregate.create factory method" },
     { "kind": "onSuccess", "text": "on success emit FlowCreated to event stream" },
     { "kind": "onRejection", "text": "on rejection return error per contract error format" },
+    { "kind": "rejects", "rejectionId": "UNIQUE_NAME", "text": "a flow with this name already exists for the tenant" },
     { "kind": "constraint", "text": "Lambda cannot write directly to Kurrent." },
     { "kind": "constraint", "text": "Handler is a pure function: input -> Result<FlowCreated, FlowError>." }
   ],

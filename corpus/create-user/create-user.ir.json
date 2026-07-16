@@ -5,16 +5,19 @@
     "name": "CreateUser",
     "context": "Users",
     "aggregate": "User",
-    "type": "command"
+    "type": "command",
+    "status": "agreed"
   },
   "construct": [
     { "kind": "handler", "path": "handlers/create-user.ts" },
+    { "kind": "touches", "glob": "handlers/**" },
     { "kind": "import", "symbol": "UserRepository", "path": "repositories/user-repository" },
     { "kind": "custom", "text": "Uses Prisma ORM for database access." }
   ],
   "enforce": [
     { "kind": "validate", "text": "validate input against CreateUserInput" },
     { "kind": "constraint", "text": "check email uniqueness via UserRepository.findByEmail" },
+    { "kind": "rejects", "rejectionId": "DUPLICATE_EMAIL", "text": "a user with this email already exists" },
     { "kind": "constraint", "text": "insert new user record" },
     { "kind": "constraint", "text": "return created user" }
   ],

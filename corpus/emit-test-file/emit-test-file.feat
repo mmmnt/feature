@@ -8,9 +8,11 @@ spec SPEC-FEAT-001 "Emit test file from topology"
 context Toolchain
 aggregate Emitter
 type infrastructure
+status agreed
 
 construct:
   handler at packages/feat-emit-ts/src/emit.ts
+  touches packages/feat-emit-ts/**
   imports TestTopology from @mmmnt/feat-types
   The emitter is a pure function of (topology, resolvedSchemas, emitterVersion).
   Output must satisfy the deterministic header contract (ADR-0006): no timestamps.
@@ -20,6 +22,7 @@ enforce:
   inline resolved schemas as constants
   generated imports reference @mmmnt/feat-runtime only
   identical inputs must produce byte-identical output
+  rejects UNRESOLVED_SCHEMA when the topology references a schema absent from the resolved set
 
 contract:
   input EmitInput

@@ -9,9 +9,11 @@ spec SPEC-ORD-001 "PublishOrder Saga Step"
 context Fulfillment
 aggregate Order
 type saga
+status agreed
 
 construct:
   handler at sagas/publish-order/handler.ts
+  touches sagas/publish-order/**
   imports OrderAggregate from core/domain/order-aggregate
   emit to fulfillment-order-{orderId}
 

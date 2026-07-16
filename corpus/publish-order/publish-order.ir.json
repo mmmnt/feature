@@ -5,10 +5,12 @@
     "name": "PublishOrder Saga Step",
     "context": "Fulfillment",
     "aggregate": "Order",
-    "type": "saga"
+    "type": "saga",
+    "status": "agreed"
   },
   "construct": [
     { "kind": "handler", "path": "sagas/publish-order/handler.ts" },
+    { "kind": "touches", "glob": "sagas/publish-order/**" },
     { "kind": "import", "symbol": "OrderAggregate", "path": "core/domain/order-aggregate" },
     { "kind": "emitsTo", "streamPattern": "fulfillment-order-{orderId}" }
   ],

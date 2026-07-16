@@ -7,15 +7,18 @@ spec SPEC-USR-001 "CreateUser"
 context Users
 aggregate User
 type command
+status agreed
 
 construct:
   handler at handlers/create-user.ts
+  touches handlers/**
   imports UserRepository from repositories/user-repository
   Uses Prisma ORM for database access.
 
 enforce:
   validate input against CreateUserInput
   check email uniqueness via UserRepository.findByEmail
+  rejects DUPLICATE_EMAIL when a user with this email already exists
   insert new user record
   return created user
 
