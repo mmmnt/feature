@@ -20,8 +20,10 @@
     { "kind": "constraint", "text": "identical inputs must produce byte-identical output" }
   ],
   "contract": [
-    { "kind": "input", "schemaName": "EmitInput", "from": "schemas/emit-input" },
-    { "kind": "error", "schemaName": "EmitError", "from": "schemas/emit-error" }
+    { "kind": "input", "schemaName": "EmitInput" },
+    { "kind": "response", "schemaName": "EmitResult" },
+    { "kind": "record", "schemaName": "EmittedFile" },
+    { "kind": "error", "schemaName": "EmitError" }
   ],
   "scenarios": [
     {

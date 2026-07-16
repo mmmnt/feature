@@ -20,8 +20,10 @@ enforce:
   return created user
 
 contract:
-  input CreateUserInput from "schemas/user-input"
-  error ErrorResponse from "schemas/error"
+  input CreateUserInput
+  response UserResponse
+  record UserRow
+  error ErrorResponse
 
 scenario "successful user creation":
   given:

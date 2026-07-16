@@ -17,7 +17,9 @@
     { "kind": "constraint", "text": "The flow limit for the \"starter\" plan is 5." }
   ],
   "contract": [
-    { "kind": "input", "schemaName": "CreateFlowInput", "from": "core/contracts/commands" },
+    { "kind": "input", "schemaName": "CreateFlowInput" },
+    { "kind": "record", "schemaName": "TenantSchema" },
+    { "kind": "event", "schemaName": "FlowCreatedEvent" },
     { "kind": "error", "schemaName": "RFC7807", "from": "contracts/adrs/error-format" }
   ],
   "scenarios": [

@@ -29,8 +29,9 @@ enforce:
   Handler is a pure function: input -> Result<FlowCreated, FlowError>.
 
 contract:
-  input CreateFlowInput from "core/contracts/commands"
-  event FlowCreatedEvent from "core/contracts/events"
+  input CreateFlowInput
+  response FlowCreatedResponse
+  event FlowCreatedEvent
   error RFC7807 from "contracts/adrs/error-format"
   stream "automation-flow-{flowId}"
 

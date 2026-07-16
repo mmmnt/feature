@@ -22,9 +22,10 @@ enforce:
   on payment-provider outage return PROVIDER_UNAVAILABLE and write nothing
 
 contract:
-  input PublishOrderInput from "core/contracts/commands"
-  event OrderPublishedEvent from "core/contracts/events"
-  event OrderPricedEvent from "core/contracts/events"
+  input PublishOrderInput
+  response OrderPublishedResponse
+  event OrderPublishedEvent
+  event OrderPricedEvent
   error RFC7807 from "contracts/adrs/error-format"
 
 scenario "publishes and prices in order":

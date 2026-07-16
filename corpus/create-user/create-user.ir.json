@@ -19,8 +19,10 @@
     { "kind": "constraint", "text": "return created user" }
   ],
   "contract": [
-    { "kind": "input", "schemaName": "CreateUserInput", "from": "schemas/user-input" },
-    { "kind": "error", "schemaName": "ErrorResponse", "from": "schemas/error" }
+    { "kind": "input", "schemaName": "CreateUserInput" },
+    { "kind": "response", "schemaName": "UserResponse" },
+    { "kind": "record", "schemaName": "UserRow" },
+    { "kind": "error", "schemaName": "ErrorResponse" }
   ],
   "scenarios": [
     {

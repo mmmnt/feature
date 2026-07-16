@@ -19,7 +19,9 @@ enforce:
   The flow limit for the "starter" plan is 5.
 
 contract:
-  input CreateFlowInput from "core/contracts/commands"
+  input CreateFlowInput
+  record TenantSchema
+  event FlowCreatedEvent
   error RFC7807 from "contracts/adrs/error-format"
 
 scenario "tenant at flow limit":

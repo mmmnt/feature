@@ -22,8 +22,10 @@ enforce:
   identical inputs must produce byte-identical output
 
 contract:
-  input EmitInput from "schemas/emit-input"
-  error EmitError from "schemas/emit-error"
+  input EmitInput
+  response EmitResult
+  record EmittedFile
+  error EmitError
 
 scenario "emits a complete test file":
   when: Emit { specId: "SPEC-USR-001", outputPath: "create-user.test.ts" }

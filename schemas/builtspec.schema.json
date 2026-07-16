@@ -82,8 +82,8 @@
       "required": ["kind"],
       "oneOf": [
         {
-          "properties": { "kind": { "enum": ["input", "event", "error"] }, "schemaName": { "type": "string" }, "from": { "type": "string" } },
-          "required": ["kind", "schemaName", "from"], "additionalProperties": false
+          "properties": { "kind": { "enum": ["input", "response", "event", "record", "error"] }, "schemaName": { "type": "string" }, "from": { "type": "string" } },
+          "required": ["kind", "schemaName"], "additionalProperties": false
         },
         {
           "properties": { "kind": { "const": "stream" }, "pattern": { "type": "string" } },

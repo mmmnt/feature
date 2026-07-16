@@ -19,9 +19,10 @@
     { "kind": "constraint", "text": "on payment-provider outage return PROVIDER_UNAVAILABLE and write nothing" }
   ],
   "contract": [
-    { "kind": "input", "schemaName": "PublishOrderInput", "from": "core/contracts/commands" },
-    { "kind": "event", "schemaName": "OrderPublishedEvent", "from": "core/contracts/events" },
-    { "kind": "event", "schemaName": "OrderPricedEvent", "from": "core/contracts/events" },
+    { "kind": "input", "schemaName": "PublishOrderInput" },
+    { "kind": "response", "schemaName": "OrderPublishedResponse" },
+    { "kind": "event", "schemaName": "OrderPublishedEvent" },
+    { "kind": "event", "schemaName": "OrderPricedEvent" },
     { "kind": "error", "schemaName": "RFC7807", "from": "contracts/adrs/error-format" }
   ],
   "scenarios": [

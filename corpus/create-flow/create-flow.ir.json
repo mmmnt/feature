@@ -26,8 +26,9 @@
     { "kind": "constraint", "text": "Handler is a pure function: input -> Result<FlowCreated, FlowError>." }
   ],
   "contract": [
-    { "kind": "input", "schemaName": "CreateFlowInput", "from": "core/contracts/commands" },
-    { "kind": "event", "schemaName": "FlowCreatedEvent", "from": "core/contracts/events" },
+    { "kind": "input", "schemaName": "CreateFlowInput" },
+    { "kind": "response", "schemaName": "FlowCreatedResponse" },
+    { "kind": "event", "schemaName": "FlowCreatedEvent" },
     { "kind": "error", "schemaName": "RFC7807", "from": "contracts/adrs/error-format" },
     { "kind": "stream", "pattern": "automation-flow-{flowId}" }
   ],

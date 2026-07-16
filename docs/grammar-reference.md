@@ -1,7 +1,7 @@
-# The `.feat` Language — Grammar Reference v1.0
+# The `.feat` Language — Grammar Reference v1.1
 
-> Language version: `feat 1.0` · Status: M0 draft, pre-implementation
-> Decisions: Confluence FEAT → Architecture Decision Records (ADR-0001…0006);
+> Language version: `feat 1.0` · Status: M0.5 draft, pre-implementation
+> Decisions: Confluence FEAT → Architecture Decision Records (ADR-0001…0007);
 > causal history in flmnt workspace `d52ee565-…::domain`.
 > The `corpus/` directory holds canonical exemplars paired with expected-IR fixtures —
 > when this document and the corpus disagree, that is a bug in one of them; fix the spec first.
@@ -60,6 +60,23 @@ feat 1.x". Minor versions are strictly additive; majors may break.
 | **Agent** | `construct:`, `enforce:` | Freeform natural language. Keyword-matching lines produce typed IR nodes; every other line is captured verbatim as an opaque directive. A parse error here is impossible. |
 | **Compiler** | `contract:`, `scenario`, `predict` | Strict typed grammar. Malformation is a parse error, never a silent failure. |
 
+### 1.4 Token classes (ADR-0007 — normative)
+
+Consumers are not expected to study this language before using it; every example and table in
+this reference marks what is grammar and what is prose, and editor highlighting (M6) realizes
+the same distinction in files. Four token classes:
+
+| Class | Meaning | In this document |
+| --- | --- | --- |
+| **KEYWORD** | Reserved word with fixed grammar (`predict`, `has`, `any`, `matching`, `seed`) | **bold** in prose; first column of grammar tables |
+| **IDENT** | User-defined name validated against a **stated closed space** (service keys → `feat.config.json`; schema names → the `contract:` block; spec types → the fixed list) | *italic*, with its validating space named |
+| **LITERAL** | JSON literal position (strings, numbers, booleans, null, inline payloads) | plain monospace |
+| **FREEFORM** | Opaque natural language (agent zones; `given:` context lines) | zones explicitly labeled FREEFORM |
+
+Rule of thumb: **inside compiler-zone blocks, every bare word is a KEYWORD or a validated
+IDENT — nothing is prose.** `flowId: any uuid` is three tokens: IDENT (field), KEYWORD (`any`),
+KEYWORD-qualifier (`uuid`); `flowId: any zebra` is a parse error, not a comment.
+
 ---
 
 ## 2. Header
@@ -103,17 +120,31 @@ constraints, captured verbatim.
 
 ---
 
-## 4. `contract:` — schema references
+## 4. `contract:` — the spec's declared interface (ADR-0007)
+
+**Closed reference space — type safety in the spec.** Every schema name referenced anywhere in
+this file's scenarios (response schemas, `with` on predicted records, `with` on seeds, and schema
+names inside referenced fixtures) MUST be declared here. An undeclared name is a parse-time error
+listing the declared names — exactly like unknown service keys (INV-7). A declared-but-unused
+schema is a `feat lint` warning.
+
+Micro-grammar: `KEYWORD IDENT:schemaName [ "from" STRING:path ]` — `from` is **optional**:
+absent means the name resolves in the paired `.contract.json` registry; present names an external
+file the registry `$ref`s.
 
 | Keyword | Form | Purpose |
 | --- | --- | --- |
-| `input` | `input CreateFlowInput from "core/contracts/commands"` | Input schema |
-| `event` | `event FlowCreatedEvent from "core/contracts/events"` | Event schema |
+| `input` | `input CreateFlowInput` | Input schema |
+| `response` | `response FlowCreatedResponse` | Response body shape |
+| `event` | `event FlowCreatedEvent from "core/contracts/events"` | Emitted event schema |
+| `record` | `record UserRow` | Service-record shape that is not an event (DB rows, seeded shapes) |
 | `error` | `error RFC7807 from "contracts/adrs/error-format"` | Error format |
 | `stream` | `stream "automation-flow-{flowId}"` | Stream name pattern |
 
-References resolve **at compile time** through the configured schema adapter, against the
-spec's paired `.contract.json` (same basename). `.contract.json` is a schema registry:
+Roles are declared only when used (a spec that emits nothing declares no `event`); the minimum
+remains ≥1 contract entry. References resolve **at compile time** through the configured schema
+adapter, against the spec's paired `.contract.json` (same basename). `.contract.json` is a schema
+registry:
 
 ```json
 {
@@ -205,6 +236,15 @@ A record is `<Type> with <Schema>` plus an optional **value block**. Three asser
 type match → schema validation → value-block matchers. Value blocks are **partial**: they
 assert listed fields only; shape completeness is the schema's job.
 
+Micro-grammar (every bare word below is KEYWORD or validated IDENT — never prose):
+
+```
+record      := IDENT:type "with" IDENT:schemaName [ valueBlock ]     # schemaName ∈ contract: block
+valueBlock  := "{" { IDENT:field ":" matcher } "}"
+matcher     := LITERAL | "@when." PATH | "any" [ "uuid"|"timestamp"|"string"|"number"|"boolean" ]
+             | "matching" STRING | "absent" | valueBlock
+```
+
 **Matcher vocabulary:**
 
 | Matcher | Meaning |
@@ -275,7 +315,7 @@ Generated tests import only `@mmmnt/feat-runtime` and run standalone under `npx 
 
 **Block openers:** `spec` `context` `aggregate` `type` `construct:` `enforce:` `contract:`
 `scenario` `given:` `when:` `predict`
-**Contract:** `input` `event` `error` `stream` `from`
+**Contract:** `input` `response` `event` `record` `error` `stream` `from`
 **Construct:** `handler at` `imports … from` `register … in` `emit to`
 **Given:** `execute` `seed` `from` `with`
 **Predict:** `success` `rejection` `error` `response` `has` `ordered` `unordered` `with`
@@ -304,8 +344,10 @@ enforce:
   check email uniqueness before insert
 
 contract:
-  input CreateUserInput from "schemas/user-input"
-  error ErrorResponse from "schemas/error"
+  input CreateUserInput
+  response UserResponse
+  record UserRow
+  error ErrorResponse
 
 scenario "successful user creation":
   when: CreateUser { email: "alice@example.com", name: "Alice" }
