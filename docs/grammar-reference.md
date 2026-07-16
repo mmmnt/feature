@@ -105,6 +105,7 @@ Recognized line keywords (produce typed IR nodes):
 | `register <kind> <name> in <path>` | `register mutation createFlow in resolvers/mutations.ts` |
 | `emit to <stream-pattern>` | `emit to automation-flow-{flowId}` |
 | `touches <glob>` | `touches features/create-flow/**` — **change boundary** (ADR-0008): the build may create/modify ONLY paths matching a `touches` glob; the `handler at` path must fall inside one. Repeatable. **Always required**, even in drafts — the build-time mirror of prediction inversion. |
+| `needs <SPEC-ID>` | `needs SPEC-USR-001` — **cross-spec dependency** (ADR-0012): explicit build-order DAG; `feat audit` detects cycles; the agent builds in topological order. Repeatable. |
 
 Any other line is a **freeform directive**, captured verbatim:
 
@@ -203,8 +204,9 @@ Three line kinds, freely mixed:
 | Kind | Form | Semantics |
 | --- | --- | --- |
 | Freeform | any unmatched line | Human/agent context; opaque |
-| `execute` | `execute <Command> { <json> }` | Runs the command through the **response adapter** before the capture window opens (INV-9) |
+| `execute` | `execute [(as <actor>)] <Command> { <json> }` | Runs the command through the **response adapter** before the capture window opens (INV-9) |
 | `seed` (ADR-0003) | `seed <service> [ <records> ]` or `seed <service> from "<path.json>"` | Injects state directly through the service adapter's `seed()`; fixture form for bulk state |
+| `clock at` (ADR-0012) | `clock at "2026-07-16T00:00:00Z"` | Freezes scenario time. v1: honored by the **handler adapter only** (it injects the clock); remote protocols need their own test-time hooks. |
 
 Seed records take **full literal values only** — no matchers, no `@when` (seeds are writes, and
 `given` precedes `when`). Optional `with <Schema>` validates seed data at generate time.
@@ -216,7 +218,7 @@ The spec `type` declares its trigger discipline (parse error on mismatch):
 
 | Spec types | Trigger | Form |
 | --- | --- | --- |
-| `command`, `query` | `when:` | `when: <Command> { <json> }` — exactly one; command name ∈ `response.commands` |
+| `command`, `query` | `when:` | `when [(as <actor>)]: <Command> { <json> }` — exactly one; command ∈ `response.commands`; actor ∈ `response.actors` or reserved `anonymous`, omitted = `actors.default` (ADR-0012) |
 | `projection`, `policy`, `saga` | `deliver` | `deliver <EventType> { <json> }` `to <service>` — one or more, in order; saga sequences chain multiple lines |
 
 Delivered stimuli are **excluded from capture** — they are the input, not the output — so
@@ -299,6 +301,25 @@ compiler-zone blocks only** — agent zones remain fully freeform.
 Default by consistency model: `acid`/`strong` → **ordered**; `eventual` → **unordered**
 (multiset). Override per prediction with `ordered`/`unordered` before the list.
 
+### 5.6 Scenario outlines (ADR-0012)
+
+```
+scenario outline "unknown users are rejected":
+  when (as admin): SuspendUser { email: <email> }
+  predict rejection UNKNOWN_USER:
+    response 404 ErrorResponse { code: <code> }
+    database has []
+  examples:
+    | email                 | code           |
+    | "missing@example.com" | "UNKNOWN_USER" |
+```
+
+`<placeholder>` tokens are valid in `when:`/`execute` payloads and in value blocks; the
+`examples:` pipe table supplies one row per derived test case (column headers = placeholder
+names; cells are JSON literals). Anchors extend with `› row[i]`. Shared schemas across specs
+need no outline-style syntax — the documented convention is a workspace `contracts/` directory
+that per-spec `.contract.json` registries `$ref` into.
+
 ---
 
 ## 6. Configuration (`feat.config.json`)
@@ -324,10 +345,12 @@ Default by consistency model: `acid`/`strong` → **ordered**; `eventual` → **
 - Service keys defined here are the only valid prediction targets (INV-7).
 - **Command routing (ADR-0009)**: `response.commands` maps every command name to an
   adapter-specific invocation shape (HTTP: `{method, path}`; handler: `{module, export}`).
-  **Closed command space**: every command used in `when:` or `execute` must exist in
-  `response.commands` — unknown command is a parse-time error listing the configured commands.
-  The three closed reference spaces: service keys (config), schema names (`contract:`),
-  command names (`response.commands`).
+- **Actors (ADR-0012)**: `response.actors` registers named actors with adapter-specific auth
+  material (HTTP: headers/token; handler: context object); `default` names the implicit actor;
+  `anonymous` is reserved and never declared.
+- **The four closed reference spaces**: service keys (config `services`), schema names
+  (`contract:`), command names (`response.commands`), actor names (`response.actors`).
+  Unknown names in any of them are parse-time errors listing the valid names.
 - `consistency`: `acid` (capture immediately) · `strong` (after replication) · `eventual`
   (after `convergenceTimeout`, polled).
 - Adapter values are module specifiers — npm package or local path — whose module exports
@@ -367,8 +390,9 @@ Generated tests import only `@mmmnt/feat-runtime` and run standalone under `npx 
 ## 9. Reserved keyword summary
 
 **Block openers:** `spec` `context` `aggregate` `type` `status` `construct:` `enforce:` `contract:`
-`scenario` `given:` `when:` `predict`
+`scenario` `scenario outline` `given:` `when:` `predict` `examples:`
 **Status values:** `draft` `agreed` `built` `verified`
+**Trigger/actor:** `deliver … to` `as` `anonymous` · **Given:** `clock at`
 **Contract:** `input` `response` `event` `record` `error` `stream` `from`
 **Construct:** `handler at` `imports … from` `register … in` `emit to` `touches`
 **Enforce:** `rejects … when`

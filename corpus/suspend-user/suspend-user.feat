@@ -1,0 +1,56 @@
+feat 1.0
+
+# Corpus exemplar #8 — ADR-0012: actor context (as-clause + anonymous), clock
+# freeze, scenario outline with examples table, and needs cross-spec dependency.
+
+spec SPEC-USR-002 "SuspendUser"
+context Users
+aggregate User
+type command
+status agreed
+
+construct:
+  handler at handlers/suspend-user.ts
+  touches handlers/**
+  needs SPEC-USR-001
+
+enforce:
+  only admins may suspend users
+  rejects UNAUTHORIZED when the caller is not an admin
+  rejects UNKNOWN_USER when no user exists with the given email
+  record the suspension time from the injected clock
+
+contract:
+  input SuspendUserInput
+  response SuspendResult
+  record UserRow
+  error ErrorResponse
+
+scenario "admin suspends a user":
+  given:
+    clock at "2026-07-16T00:00:00Z"
+    execute CreateUser { email: "alice@example.com", name: "Alice" }
+  when (as admin): SuspendUser { email: "alice@example.com" }
+  predict success:
+    response 200 SuspendResult { status: "suspended" }
+    database has [ UPDATE with UserRow {
+      email: @when.email
+      status: "suspended"
+      suspendedAt: "2026-07-16T00:00:00Z"
+    } ]
+
+scenario "anonymous caller is rejected":
+  when (as anonymous): SuspendUser { email: "alice@example.com" }
+  predict rejection UNAUTHORIZED:
+    response 401 ErrorResponse { code: "UNAUTHORIZED" }
+    database has []
+
+scenario outline "unknown users are rejected regardless of email shape":
+  when (as admin): SuspendUser { email: <email> }
+  predict rejection UNKNOWN_USER:
+    response 404 ErrorResponse { code: <code> }
+    database has []
+  examples:
+    | email                       | code           |
+    | "missing@example.com"       | "UNKNOWN_USER" |
+    | "also.missing@example.com"  | "UNKNOWN_USER" |

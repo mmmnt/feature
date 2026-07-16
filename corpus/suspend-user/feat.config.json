@@ -1,0 +1,20 @@
+{
+  "featVersion": "1.0",
+  "schemas": { "adapter": "@mmmnt/feat-schema-json" },
+  "response": {
+    "adapter": "@mmmnt/feat-adapter-handler",
+    "commands": {
+      "SuspendUser": { "module": "handlers/suspend-user.ts", "export": "handle" },
+      "CreateUser": { "module": "handlers/create-user.ts", "export": "handle" }
+    },
+    "actors": {
+      "default": "admin",
+      "admin": { "context": { "role": "admin", "sub": "test-admin" } }
+    }
+  },
+  "services": {
+    "database": { "adapter": "feat-adapter-postgres", "consistency": "acid" }
+  },
+  "specs": { "dir": ".", "pattern": "*.feat", "contractPattern": "*.contract.json", "outputPattern": "{name}.test.ts" },
+  "report": { "format": ["console"] }
+}

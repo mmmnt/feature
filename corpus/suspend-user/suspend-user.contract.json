@@ -1,0 +1,38 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-USR-002",
+  "schemas": {
+    "SuspendUserInput": {
+      "type": "object",
+      "required": ["email"],
+      "additionalProperties": false,
+      "properties": {
+        "email": { "type": "string", "format": "email" }
+      }
+    },
+    "SuspendResult": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": { "enum": ["suspended"] }
+      }
+    },
+    "UserRow": {
+      "type": "object",
+      "required": ["email", "status"],
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "status": { "enum": ["active", "suspended"] },
+        "suspendedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "ErrorResponse": {
+      "type": "object",
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "type": "string" },
+        "message": { "type": "string" }
+      }
+    }
+  }
+}

@@ -37,6 +37,14 @@
           "description": "Command routing (ADR-0009): CommandName -> adapter-specific invocation shape (HTTP: {method, path}; handler: {module, export}). Closed command space: every command used in when:/execute must exist here — validated at parse time.",
           "minProperties": 1,
           "additionalProperties": { "type": "object", "additionalProperties": true }
+        },
+        "actors": {
+          "type": "object",
+          "description": "Actor registry (ADR-0012): named actors with adapter-specific auth material (HTTP: headers/token; handler: context object). 'default' names the actor used when a trigger has no as-clause; 'anonymous' is reserved (unauthenticated) and never declared. Closed actor space — validated at parse time.",
+          "properties": {
+            "default": { "type": "string" }
+          },
+          "additionalProperties": { "type": "object", "additionalProperties": true }
         }
       }
     },

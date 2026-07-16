@@ -68,6 +68,10 @@
           "required": ["kind", "glob"], "additionalProperties": false
         },
         {
+          "properties": { "kind": { "const": "needs" }, "specId": { "type": "string", "pattern": "^SPEC-[A-Z0-9]+-[0-9]+$" } },
+          "required": ["kind", "specId"], "additionalProperties": false
+        },
+        {
           "properties": { "kind": { "const": "custom" }, "text": { "type": "string" } },
           "required": ["kind", "text"], "additionalProperties": false
         }
@@ -114,6 +118,12 @@
           "items": { "$ref": "#/definitions/delivery" }
         },
         "prediction": { "$ref": "#/definitions/prediction" },
+        "examples": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Scenario-outline rows (ADR-0012): one derived test case per row; keys are placeholder names.",
+          "items": { "type": "object", "minProperties": 1 }
+        },
         "loc": { "$ref": "#/definitions/loc" }
       }
     },
@@ -141,6 +151,10 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "clock": {
+          "type": "string",
+          "description": "ISO-8601 timestamp freezing scenario time (ADR-0012); v1 honored by the handler adapter only."
+        },
         "context": {
           "type": "array",
           "items": { "type": "string" },
@@ -162,7 +176,8 @@
       "additionalProperties": false,
       "properties": {
         "command": { "type": "string" },
-        "payload": { "type": "object" }
+        "actor": { "type": "string", "description": "Actor name from response.actors, or reserved 'anonymous' (ADR-0012). Omitted = actors.default." },
+        "payload": { "type": "object", "description": "Inline JSON; outline placeholders appear as {\"$placeholder\": \"<name>\"} (ADR-0012)." }
       }
     },
     "seed": {
@@ -303,6 +318,15 @@
           "required": ["matcher"],
           "additionalProperties": false,
           "properties": { "matcher": { "const": "absent" } }
+        },
+        {
+          "type": "object",
+          "required": ["matcher", "name"],
+          "additionalProperties": false,
+          "properties": {
+            "matcher": { "const": "placeholder" },
+            "name": { "type": "string", "description": "Outline placeholder name; resolved per examples row (ADR-0012)." }
+          }
         },
         {
           "type": "object",

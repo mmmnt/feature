@@ -1,0 +1,117 @@
+{
+  "featVersion": "1.0",
+  "identity": {
+    "id": "SPEC-USR-002",
+    "name": "SuspendUser",
+    "context": "Users",
+    "aggregate": "User",
+    "type": "command",
+    "status": "agreed"
+  },
+  "construct": [
+    { "kind": "handler", "path": "handlers/suspend-user.ts" },
+    { "kind": "touches", "glob": "handlers/**" },
+    { "kind": "needs", "specId": "SPEC-USR-001" }
+  ],
+  "enforce": [
+    { "kind": "constraint", "text": "only admins may suspend users" },
+    { "kind": "rejects", "rejectionId": "UNAUTHORIZED", "text": "the caller is not an admin" },
+    { "kind": "rejects", "rejectionId": "UNKNOWN_USER", "text": "no user exists with the given email" },
+    { "kind": "constraint", "text": "record the suspension time from the injected clock" }
+  ],
+  "contract": [
+    { "kind": "input", "schemaName": "SuspendUserInput" },
+    { "kind": "response", "schemaName": "SuspendResult" },
+    { "kind": "record", "schemaName": "UserRow" },
+    { "kind": "error", "schemaName": "ErrorResponse" }
+  ],
+  "scenarios": [
+    {
+      "name": "admin suspends a user",
+      "given": {
+        "clock": "2026-07-16T00:00:00Z",
+        "executes": [
+          { "command": "CreateUser", "payload": { "email": "alice@example.com", "name": "Alice" } }
+        ]
+      },
+      "when": {
+        "command": "SuspendUser",
+        "actor": "admin",
+        "payload": { "email": "alice@example.com" }
+      },
+      "prediction": {
+        "type": "success",
+        "response": {
+          "status": 200,
+          "schemaName": "SuspendResult",
+          "valueBlock": {
+            "status": { "matcher": "literal", "value": "suspended" }
+          }
+        },
+        "services": {
+          "database": {
+            "records": [
+              {
+                "type": "UPDATE",
+                "schemaName": "UserRow",
+                "valueBlock": {
+                  "email": { "matcher": "whenRef", "path": "email" },
+                  "status": { "matcher": "literal", "value": "suspended" },
+                  "suspendedAt": { "matcher": "literal", "value": "2026-07-16T00:00:00Z" }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "anonymous caller is rejected",
+      "when": {
+        "command": "SuspendUser",
+        "actor": "anonymous",
+        "payload": { "email": "alice@example.com" }
+      },
+      "prediction": {
+        "type": "rejection",
+        "rejectionId": "UNAUTHORIZED",
+        "response": {
+          "status": 401,
+          "schemaName": "ErrorResponse",
+          "valueBlock": {
+            "code": { "matcher": "literal", "value": "UNAUTHORIZED" }
+          }
+        },
+        "services": {
+          "database": { "records": [] }
+        }
+      }
+    },
+    {
+      "name": "unknown users are rejected regardless of email shape",
+      "when": {
+        "command": "SuspendUser",
+        "actor": "admin",
+        "payload": { "email": { "$placeholder": "email" } }
+      },
+      "examples": [
+        { "email": "missing@example.com", "code": "UNKNOWN_USER" },
+        { "email": "also.missing@example.com", "code": "UNKNOWN_USER" }
+      ],
+      "prediction": {
+        "type": "rejection",
+        "rejectionId": "UNKNOWN_USER",
+        "response": {
+          "status": 404,
+          "schemaName": "ErrorResponse",
+          "valueBlock": {
+            "code": { "matcher": "placeholder", "name": "code" }
+          }
+        },
+        "services": {
+          "database": { "records": [] }
+        }
+      }
+    }
+  ]
+}
