@@ -2,7 +2,7 @@
   "name": "feat-vscode",
   "displayName": "Feat — execution specifications",
   "description": "Syntax highlighting and live spec-anchored test feedback for .feat files",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "mmmnt",
   "license": "MIT",
   "repository": {
@@ -25,8 +25,13 @@
     "languages": [
       {
         "id": "feat",
-        "aliases": ["Feat", "feat"],
-        "extensions": [".feat"],
+        "aliases": [
+          "Feat",
+          "feat"
+        ],
+        "extensions": [
+          ".feat"
+        ],
         "configuration": "./language-configuration.json"
       }
     ],
@@ -38,8 +43,14 @@
       }
     ],
     "commands": [
-      { "command": "feat.watch.start", "title": "Feat: Start watch" },
-      { "command": "feat.watch.stop", "title": "Feat: Stop watch" }
+      {
+        "command": "feat.watch.start",
+        "title": "Feat: Start watch"
+      },
+      {
+        "command": "feat.watch.stop",
+        "title": "Feat: Stop watch"
+      }
     ],
     "configuration": {
       "title": "Feat",

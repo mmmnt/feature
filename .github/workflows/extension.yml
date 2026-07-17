@@ -46,10 +46,22 @@ jobs:
         if: env.OVSX_PAT != ''
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
-        run: npx --yes ovsx publish *.vsix -p "$OVSX_PAT"
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if curl -sf "https://open-vsx.org/api/mmmnt/feat-vscode/$VERSION" > /dev/null; then
+            echo "skip: mmmnt.feat-vscode $VERSION already on Open VSX"
+          else
+            npx --yes ovsx publish *.vsix -p "$OVSX_PAT"
+          fi
 
       - name: Publish to VS Code Marketplace
         if: env.VSCE_PAT != ''
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
-        run: npx --yes @vscode/vsce publish --packagePath *.vsix -p "$VSCE_PAT"
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if npx --yes @vscode/vsce show mmmnt.feat-vscode --json 2>/dev/null | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{const v=JSON.parse(d).versions?.map(x=>x.version)??[];process.exit(v.includes('$VERSION')?0:1)})"; then
+            echo "skip: mmmnt.feat-vscode $VERSION already on the VS Code Marketplace"
+          else
+            npx --yes @vscode/vsce publish --packagePath *.vsix -p "$VSCE_PAT"
+          fi
