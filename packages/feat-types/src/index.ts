@@ -196,6 +196,12 @@ export interface FeatServiceAdapter {
   stopCapture(): Promise<CapturedRecord[]>;
   read(query: Record<string, unknown>): Promise<unknown | null>;
   seed?(records: SeedRecord[]): Promise<void>;
+  /**
+   * Deliver an event as a scenario stimulus (projection/policy/saga triggers,
+   * ADR-0011). Delivered stimuli are excluded from capture; only effects the
+   * system produces in response are captured. Event-capable adapters only.
+   */
+  deliver?(event: string, payload: Record<string, unknown>): Promise<void>;
 }
 
 export interface FeatSchemaAdapter {

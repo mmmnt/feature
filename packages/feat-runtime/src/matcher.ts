@@ -197,7 +197,7 @@ export function diffRecords(
       const p = predicted[i];
       if (c && p && !recordMatches(c, p, ctx))
         out.push(`${anchor}[${i}]: captured ${c.type} does not match predicted ${p.type} (${p.schemaName})`);
-      else if (c && !p) out.push(`${anchor}[${i}]: UNPREDICTED record ${c.type}`);
+      else if (c && !p) out.push(`${anchor}[${i}]: UNPREDICTED record ${c.type}${c.key ? ` (${c.key})` : ""}`);
       else if (!c && p) out.push(`${anchor}[${i}]: MISSING predicted record ${p.type} (${p.schemaName})`);
     }
     return;
@@ -209,5 +209,25 @@ export function diffRecords(
     if (idx === -1) out.push(`${anchor}: MISSING predicted record ${p.type} (${p.schemaName})`);
     else remaining.splice(idx, 1);
   }
-  for (const c of remaining) out.push(`${anchor}: UNPREDICTED record ${c.type}`);
+  for (const c of remaining) out.push(`${anchor}: UNPREDICTED record ${c.type}${c.key ? ` (${c.key})` : ""}`);
+}
+
+/**
+ * `contains` (ADR-0011): subset assertion against resulting state from adapter
+ * read(). Every predicted record must match a distinct state record (multiset);
+ * extra state is NOT a violation — exclusivity claims belong to `has`.
+ */
+export function diffContains(
+  state: CapturedRecord[],
+  predicted: PredictedRecord[],
+  ctx: MatchContext,
+  anchor: string,
+  out: string[],
+) {
+  const remaining = [...state];
+  for (const p of predicted) {
+    const idx = remaining.findIndex((c) => recordMatches(c, p, ctx));
+    if (idx === -1) out.push(`${anchor}: state does not contain predicted record ${p.type} (${p.schemaName})`);
+    else remaining.splice(idx, 1);
+  }
 }

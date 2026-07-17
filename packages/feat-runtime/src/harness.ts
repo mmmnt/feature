@@ -9,7 +9,7 @@ import type {
   CapturedRecord, CapturedResponse, FeatConfig, FeatResponseAdapter, FeatServiceAdapter,
 } from "@mmmnt/feat-types";
 import { loadConfig } from "./load-config.js";
-import { diffRecords, diffResponse, type InlineData, type MatchContext } from "./matcher.js";
+import { diffContains, diffRecords, diffResponse, type InlineData, type MatchContext } from "./matcher.js";
 
 export interface HarnessCase {
   anchor: string;
@@ -107,8 +107,15 @@ export async function createHarness(opts: { configPath: string }): Promise<Harne
       if (!response) throw new Error(`${c.anchor}: when: requires a response adapter`);
       captured = await response.invoke(c.when.command, c.when.payload, c.when.actor);
     }
-    if (c.delivers && c.delivers.length > 0)
-      throw new Error(`${c.anchor}: deliver-triggered execution lands with the event-service adapters (M5)`);
+    // deliver-triggered stimulus (ADR-0011): events delivered in order, inside the
+    // window; the delivered stimuli themselves are excluded from capture by the adapter.
+    for (const d of c.delivers ?? []) {
+      const adapter = services.get(d.service);
+      if (!adapter) throw new Error(`${c.anchor}: deliver targets unknown service '${d.service}'`);
+      if (!adapter.deliver)
+        throw new Error(`${c.anchor}: adapter for '${d.service}' does not support deliver() — configuration error.`);
+      await adapter.deliver(d.event, d.payload);
+    }
 
     // ADR-0014: single shared wait for the scenario's eventual services.
     let wait = 0;
@@ -135,8 +142,17 @@ export async function createHarness(opts: { configPath: string }): Promise<Harne
         diffRecords(capturedRecords.get(key) ?? [], assertion.records as never, assertion.ordering, ctx, `${c.anchor} › ${key}`, violations);
       if (assertion.contains !== undefined) {
         const adapter = services.get(key);
-        if (!adapter) violations.push(`${c.anchor} › ${key}: unknown service for contains assertion`);
-        else violations.push(`${c.anchor} › ${key}: contains assertions require adapter read() wiring (M5)`);
+        if (!adapter) {
+          violations.push(`${c.anchor} › ${key}: unknown service for contains assertion`);
+        } else {
+          // contains (ADR-0011): resulting state via adapter read(); the shared
+          // convergence wait has already elapsed for eventual services.
+          const state = await adapter.read({});
+          const records = Array.isArray(state) ? (state as CapturedRecord[]) : [];
+          if (!Array.isArray(state))
+            violations.push(`${c.anchor} › ${key}: adapter read() did not return a record array — configuration error.`);
+          else diffContains(records, assertion.contains as never, ctx, `${c.anchor} › ${key}`, violations);
+        }
       }
     }
     if (violations.length > 0) throw new PredictionViolation(violations);
