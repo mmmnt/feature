@@ -1,0 +1,71 @@
+feat 1.0
+
+# SPEC-RT-001 — the first Feature component spec, written in the language it
+# helps implement. loadConfig lives in feat-runtime per ADR-0001 (generated
+# tests need config without dragging the parser into the test process).
+# status agreed proposed by the agent per ADR-0008 — human may revert.
+
+spec SPEC-RT-001 "Load and validate feat.config.json"
+context Toolchain
+aggregate Config
+type infrastructure
+status agreed
+
+construct:
+  handler at packages/feat-runtime/src/load-config.ts
+  touches packages/feat-runtime/**
+  Validate with Ajv (draft-07) against schemas/feat.config.schema.json.
+  Return a typed FeatConfig object; never a partially-valid one.
+  The config is loaded once per invocation chain and treated as immutable (INV-8).
+  Error messages must name the failing JSON path and list valid alternatives where applicable.
+
+enforce:
+  read the file at the given path
+  rejects CONFIG_NOT_FOUND when no file exists at the given path
+  validate the parsed document against the config JSON Schema
+  rejects INVALID_CONFIG when schema validation fails
+  rejects MISSING_CONVERGENCE_TIMEOUT when a service declares eventual consistency without a convergenceTimeout
+  return the validated config
+
+contract:
+  input LoadConfigInput
+  response FeatConfigResult
+  error ConfigError
+
+scenario "loads a valid config":
+  given:
+    A well-formed config exists at the fixture path.
+  when: LoadConfig { path: "fixtures/valid.config.json" }
+  predict success:
+    response OK FeatConfigResult {
+      featVersion: "1.0"
+      services: { filesystem: { consistency: "acid" } }
+    }
+    filesystem has []
+
+scenario "missing file":
+  when: LoadConfig { path: "fixtures/does-not-exist.config.json" }
+  predict rejection CONFIG_NOT_FOUND:
+    response ERR ConfigError { code: "CONFIG_NOT_FOUND", path: @when.path }
+    filesystem has []
+
+scenario "eventual service without convergence timeout":
+  when: LoadConfig { path: "fixtures/missing-timeout.config.json" }
+  predict rejection MISSING_CONVERGENCE_TIMEOUT:
+    response ERR ConfigError {
+      code: "MISSING_CONVERGENCE_TIMEOUT"
+      detail: matching "eventStore"
+    }
+    filesystem has []
+
+scenario outline "schema-invalid configs are rejected":
+  when: LoadConfig { path: <path> }
+  predict rejection INVALID_CONFIG:
+    response ERR ConfigError { code: "INVALID_CONFIG", detail: matching <detail> }
+    filesystem has []
+  examples:
+    | path                                  | detail          |
+    | "fixtures/no-services.config.json"    | "services"      |
+    | "fixtures/bad-consistency.config.json"| "consistency"   |
+    | "fixtures/empty-commands.config.json" | "commands"      |
+    | "fixtures/not-json.config.json"       | "JSON"          |

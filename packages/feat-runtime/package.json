@@ -16,5 +16,8 @@
     "@mmmnt/feat-types": "workspace:*",
     "ajv": "^8.17.0",
     "ajv-formats": "^3.0.0"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.0"
   }
 }

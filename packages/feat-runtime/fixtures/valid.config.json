@@ -1,0 +1,15 @@
+{
+  "featVersion": "1.0",
+  "schemas": { "adapter": "@mmmnt/feat-schema-json" },
+  "response": {
+    "adapter": "@mmmnt/feat-adapter-handler",
+    "commands": {
+      "Ping": { "module": "src/ping.ts", "export": "ping" }
+    }
+  },
+  "services": {
+    "filesystem": { "adapter": "@mmmnt/feat-adapter-fs", "consistency": "acid" }
+  },
+  "specs": { "dir": ".", "pattern": "**/*.feat", "contractPattern": "**/*.contract.json", "outputPattern": "{name}.test.ts" },
+  "report": { "format": ["console"] }
+}
