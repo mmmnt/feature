@@ -33,10 +33,45 @@ class ParseFailure extends Error {
   }
 }
 
-interface ConfigContext {
+export interface ConfigContext {
   serviceKeys: string[];
   commands: string[];
   actors: string[];
+}
+
+/**
+ * Derive the closed-reference-space context from a feat.config.json document —
+ * identical to what `parse()` computes from the config file.
+ */
+export function contextFromConfig(configDoc: {
+  services?: Record<string, unknown>;
+  response?: { commands?: Record<string, unknown>; actors?: Record<string, unknown> };
+}): ConfigContext {
+  return {
+    serviceKeys: Object.keys(configDoc.services ?? {}),
+    commands: Object.keys(configDoc.response?.commands ?? {}),
+    actors: Object.keys(configDoc.response?.actors ?? {}).filter((a) => a !== "default"),
+  };
+}
+
+/**
+ * Text-based parse: spec source + closed-space context → the same
+ * { status, body } surface as `parse()`, with no filesystem involvement.
+ * Embedders (services, editors) use this; `parse()` remains the file-path CLI path.
+ */
+export function parseSource(source: string, ctx: ConfigContext): CapturedResponse {
+  try {
+    const ir = parseFeat(source, ctx);
+    return { status: "OK", body: ir };
+  } catch (e) {
+    if (e instanceof ParseFailure) {
+      const body: Record<string, unknown> = { code: e.code, message: e.message };
+      if (e.line !== undefined) body.line = e.line;
+      if (e.hint !== undefined) body.hint = e.hint;
+      return { status: "ERR", body };
+    }
+    throw e;
+  }
 }
 
 // ── Statement scanner: comments, logical lines (bracket-balanced), pragma ────
@@ -641,22 +676,5 @@ export async function parse(input: ParseInput): Promise<CapturedResponse> {
     services?: Record<string, unknown>;
     response?: { commands?: Record<string, unknown>; actors?: Record<string, unknown> };
   };
-  const ctx: ConfigContext = {
-    serviceKeys: Object.keys(configDoc.services ?? {}),
-    commands: Object.keys(configDoc.response?.commands ?? {}),
-    actors: Object.keys(configDoc.response?.actors ?? {}).filter((a) => a !== "default"),
-  };
-
-  try {
-    const ir = parseFeat(source, ctx);
-    return { status: "OK", body: ir };
-  } catch (e) {
-    if (e instanceof ParseFailure) {
-      const body: Record<string, unknown> = { code: e.code, message: e.message };
-      if (e.line !== undefined) body.line = e.line;
-      if (e.hint !== undefined) body.hint = e.hint;
-      return { status: "ERR", body };
-    }
-    throw e;
-  }
+  return parseSource(source, contextFromConfig(configDoc));
 }

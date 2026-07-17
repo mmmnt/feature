@@ -1,29 +1,12 @@
-// `feat fmt` — conservative canonical formatting: trailing-whitespace strip,
-// collapse >1 blank line, ensure trailing newline, tabs-in-indentation error
-// (the parser rejects them anyway; fmt reports instead of rewriting).
-// Content-preserving and idempotent; full canonical reprint arrives with the
-// LSP surface. --check reports without writing.
+// `feat fmt` — thin caller over @mmmnt/feat-analyze formatSource (conservative,
+// content-preserving, idempotent). --check reports without writing.
 
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { Command, Flags } from "@oclif/core";
 import type { FeatConfig } from "@mmmnt/feat-types";
+import { formatSource } from "@mmmnt/feat-analyze";
 import { discoverSpecs } from "../pipeline.js";
-
-function format(source: string): string {
-  const lines = source.split(/\r?\n/).map((l) => l.replace(/[ \t]+$/, ""));
-  const out: string[] = [];
-  let blanks = 0;
-  for (const line of lines) {
-    if (line === "") {
-      blanks++;
-      if (blanks > 1) continue;
-    } else blanks = 0;
-    out.push(line);
-  }
-  while (out.length > 0 && out[out.length - 1] === "") out.pop();
-  return out.join("\n") + "\n";
-}
 
 export default class Fmt extends Command {
   static override description = "Format .feat files (conservative, content-preserving, idempotent)";
@@ -44,17 +27,17 @@ export default class Fmt extends Command {
     for (const specAbs of specs) {
       const rel = path.relative(root, specAbs);
       const source = readFileSync(specAbs, "utf8");
-      if (/^\t/m.test(source)) {
+      const result = formatSource(source);
+      if (result.hasLeadingTab) {
         this.logToStderr(`✗ ${rel}: tab in leading whitespace (parse error) — fix manually`);
         tabbed++;
         continue;
       }
-      const formatted = format(source);
-      if (formatted !== source) {
+      if (result.changed) {
         changed++;
         if (flags.check) this.log(`would format ${rel}`);
         else {
-          writeFileSync(specAbs, formatted);
+          writeFileSync(specAbs, result.formatted);
           this.log(`formatted ${rel}`);
         }
       }
