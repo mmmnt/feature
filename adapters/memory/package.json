@@ -19,7 +19,8 @@
   "devDependencies": {
     "@mmmnt/feat-runtime": "workspace:^",
     "typescript": "^5.8.0",
-    "vitest": "^3.2.0"
+    "vitest": "^3.2.0",
+    "@mmmnt/feat-adapter-kit": "workspace:^"
   },
   "engines": {
     "node": ">=20"

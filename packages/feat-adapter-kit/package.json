@@ -1,17 +1,10 @@
 {
-  "name": "@mmmnt/feat-adapter-fs",
-  "version": "0.1.4",
-  "description": "Feat service adapter: filesystem capture (files written during the capture window). Dogfood-critical.",
-  "license": "MIT",
+  "name": "@mmmnt/feat-adapter-kit",
+  "version": "0.1.6",
+  "description": "Conformance suites for Feat adapter authors: prove your adapter honors the capture-window and invoke contracts",
   "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
-    }
-  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "files": [
     "dist"
   ],
@@ -23,10 +16,21 @@
   "dependencies": {
     "@mmmnt/feat-types": "workspace:^"
   },
+  "peerDependencies": {
+    "vitest": ">=1.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.0",
+    "vitest": "^3.2.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/mmmnt/feature.git",
-    "directory": "adapters/fs"
+    "directory": "packages/feat-adapter-kit"
   },
   "homepage": "https://github.com/mmmnt/feature#readme",
   "bugs": {
@@ -34,9 +38,5 @@
   },
   "publishConfig": {
     "access": "public"
-  },
-  "devDependencies": {
-    "@mmmnt/feat-adapter-kit": "workspace:^",
-    "vitest": "^3.2.0"
   }
 }

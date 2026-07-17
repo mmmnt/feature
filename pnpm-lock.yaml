@@ -41,12 +41,26 @@ importers:
       '@mmmnt/feat-types':
         specifier: workspace:^
         version: link:../../packages/feat-types
+    devDependencies:
+      '@mmmnt/feat-adapter-kit':
+        specifier: workspace:^
+        version: link:../../packages/feat-adapter-kit
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.7(@types/node@24.13.3)
 
   adapters/handler:
     dependencies:
       '@mmmnt/feat-types':
         specifier: workspace:^
         version: link:../../packages/feat-types
+    devDependencies:
+      '@mmmnt/feat-adapter-kit':
+        specifier: workspace:^
+        version: link:../../packages/feat-adapter-kit
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.7(@types/node@24.13.3)
 
   adapters/http:
     dependencies:
@@ -64,6 +78,9 @@ importers:
         specifier: workspace:^
         version: link:../../packages/feat-types
     devDependencies:
+      '@mmmnt/feat-adapter-kit':
+        specifier: workspace:^
+        version: link:../../packages/feat-adapter-kit
       '@mmmnt/feat-runtime':
         specifier: workspace:^
         version: link:../../packages/feat-runtime
@@ -110,6 +127,19 @@ importers:
       '@mmmnt/feat-types':
         specifier: workspace:^
         version: link:../../packages/feat-types
+    devDependencies:
+      typescript:
+        specifier: ^5.8.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.7(@types/node@24.13.3)
+
+  packages/feat-adapter-kit:
+    dependencies:
+      '@mmmnt/feat-types':
+        specifier: workspace:^
+        version: link:../feat-types
     devDependencies:
       typescript:
         specifier: ^5.8.0
