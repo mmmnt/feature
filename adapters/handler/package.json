@@ -1,6 +1,6 @@
 {
   "name": "@mmmnt/feat-adapter-handler",
-  "version": "0.1.4",
+  "version": "0.1.7",
   "description": "Feat response adapter: direct function invocation (module/export routes from response.commands).",
   "license": "MIT",
   "type": "module",
@@ -10,7 +10,8 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
-    }
+    },
+    "./package.json": "./package.json"
   },
   "files": [
     "dist"

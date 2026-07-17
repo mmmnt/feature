@@ -1,6 +1,6 @@
 {
   "name": "@mmmnt/feat-emit-ts",
-  "version": "0.1.4",
+  "version": "0.1.7",
   "description": "Feat emit: TestTopology + resolved schemas/goldens -> complete deterministic Vitest test file (ADR-0006 header, ADR-0001 inlining). Owns no runtime code.",
   "license": "MIT",
   "type": "module",
@@ -10,7 +10,8 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
-    }
+    },
+    "./package.json": "./package.json"
   },
   "files": [
     "dist"

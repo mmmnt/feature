@@ -1,6 +1,6 @@
 {
   "name": "@mmmnt/feat-schema-json",
-  "version": "0.1.4",
+  "version": "0.1.7",
   "description": "Feat schema adapter: JSON Schema resolution and validation (compile-time only; generated tests carry schemas inlined).",
   "license": "MIT",
   "type": "module",
@@ -10,7 +10,8 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
-    }
+    },
+    "./package.json": "./package.json"
   },
   "files": [
     "dist"
