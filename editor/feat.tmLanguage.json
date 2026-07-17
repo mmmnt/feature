@@ -1,0 +1,115 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Feat",
+  "scopeName": "source.feat",
+  "fileTypes": ["feat"],
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#pragma" },
+    { "include": "#header" },
+    { "include": "#sections" },
+    { "include": "#scenario" },
+    { "include": "#construct-keywords" },
+    { "include": "#enforce-rejects" },
+    { "include": "#contract" },
+    { "include": "#trigger" },
+    { "include": "#predict" },
+    { "include": "#matchers" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#placeholders" },
+    { "include": "#refs" }
+  ],
+  "repository": {
+    "comment": {
+      "match": "#.*$",
+      "name": "comment.line.number-sign.feat"
+    },
+    "pragma": {
+      "match": "^(feat)\\s+(\\d+\\.\\d+)\\s*$",
+      "captures": {
+        "1": { "name": "keyword.control.pragma.feat" },
+        "2": { "name": "constant.numeric.version.feat" }
+      }
+    },
+    "header": {
+      "match": "^(spec|context|aggregate|type|status)\\b\\s*(command|query|policy|projection|saga|infrastructure|integration|scaffold|draft|agreed|built|verified)?",
+      "captures": {
+        "1": { "name": "keyword.control.header.feat" },
+        "2": { "name": "constant.language.enum.feat" }
+      }
+    },
+    "sections": {
+      "match": "^\\s*(construct|enforce|contract|given|examples)(:)",
+      "captures": {
+        "1": { "name": "keyword.control.section.feat" },
+        "2": { "name": "punctuation.separator.feat" }
+      }
+    },
+    "scenario": {
+      "match": "^\\s*(scenario)(\\s+outline)?\\s+(\"[^\"]*\")(:)",
+      "captures": {
+        "1": { "name": "keyword.control.scenario.feat" },
+        "2": { "name": "keyword.control.scenario.outline.feat" },
+        "3": { "name": "string.quoted.double.scenario-name.feat" },
+        "4": { "name": "punctuation.separator.feat" }
+      }
+    },
+    "construct-keywords": {
+      "match": "^\\s*(handler at|imports|register|emit to|touches|needs)\\b",
+      "name": "keyword.other.construct.feat"
+    },
+    "enforce-rejects": {
+      "match": "^\\s*(rejects)\\s+([A-Z0-9_]+)\\s+(when)\\b",
+      "captures": {
+        "1": { "name": "keyword.other.rejects.feat" },
+        "2": { "name": "entity.name.constant.rejection-id.feat" },
+        "3": { "name": "keyword.other.rejects.feat" }
+      }
+    },
+    "contract": {
+      "match": "^\\s*(input|response|event|record|error|stream)\\s+([A-Za-z_][A-Za-z0-9_]*)?(?:\\s+(from))?",
+      "captures": {
+        "1": { "name": "keyword.other.contract-role.feat" },
+        "2": { "name": "entity.name.type.schema.feat" },
+        "3": { "name": "keyword.other.from.feat" }
+      }
+    },
+    "trigger": {
+      "match": "^\\s*(when|deliver|execute|seed|clock at)\\b(?:\\s*\\((as)\\s+([A-Za-z0-9_-]+)\\))?",
+      "captures": {
+        "1": { "name": "keyword.control.trigger.feat" },
+        "2": { "name": "keyword.other.as.feat" },
+        "3": { "name": "entity.name.constant.actor.feat" }
+      }
+    },
+    "predict": {
+      "match": "^\\s*(predict)\\s+(success|rejection|error)\\b(?:\\s+([A-Z0-9_]+|<[A-Za-z_][A-Za-z0-9_-]*>))?",
+      "captures": {
+        "1": { "name": "keyword.control.predict.feat" },
+        "2": { "name": "constant.language.prediction-type.feat" },
+        "3": { "name": "entity.name.constant.rejection-id.feat" }
+      }
+    },
+    "matchers": {
+      "match": "\\b(has|contains|ordered|unordered|with|equals fixture|any(?:\\s+(?:uuid|timestamp|string|number|boolean))?|matching|absent|to|from)\\b",
+      "name": "keyword.operator.matcher.feat"
+    },
+    "strings": {
+      "match": "\"(?:[^\"\\\\]|\\\\.)*\"",
+      "name": "string.quoted.double.feat"
+    },
+    "numbers": {
+      "match": "\\b-?\\d+(?:\\.\\d+)?\\b",
+      "name": "constant.numeric.feat"
+    },
+    "placeholders": {
+      "match": "<[A-Za-z_][A-Za-z0-9_-]*>",
+      "name": "variable.parameter.placeholder.feat"
+    },
+    "refs": {
+      "match": "@(?:when|deliver(?:\\[\\d+\\])?)\\.[A-Za-z0-9_.\\-]+",
+      "name": "variable.other.reference.feat"
+    }
+  }
+}
