@@ -1,0 +1,46 @@
+name: Release
+
+# Publishes all public packages to npm on a version tag (v*).
+# Requires the NPM_TOKEN repository secret (automation token with publish rights
+# to the @mmmnt scope). The release gate is the same chain CI runs.
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # npm provenance
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Gate — corpus, tests, verify, run
+        run: |
+          pnpm corpus:validate
+          npx turbo run test
+          node packages/feature/bin/run.js verify
+          node packages/feature/bin/run.js run
+
+      - name: Publish
+        run: pnpm -r publish --access public --no-git-checks --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

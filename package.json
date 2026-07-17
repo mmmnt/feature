@@ -29,6 +29,7 @@
     "@mmmnt/feat-adapter-fs": "workspace:*",
     "@mmmnt/feat-adapter-handler": "workspace:*",
     "@types/node": "^24.0.0",
+    "@vitest/coverage-v8": "^3.2.7",
     "ajv-cli": "^5.0.0",
     "turbo": "^2.5.0",
     "typescript": "^5.8.0",

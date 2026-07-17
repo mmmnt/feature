@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Corpus validation
+        run: pnpm corpus:validate
+
+      - name: Workspace tests
+        run: npx turbo run test
+
+      - name: feat verify (spec ↔ test integrity)
+        run: node packages/feature/bin/run.js verify
+
+      - name: feat audit (buildability gates)
+        run: node packages/feature/bin/run.js audit
+
+      - name: feat lint
+        run: node packages/feature/bin/run.js lint
+
+      - name: feat run (generated suites, coverage reported)
+        run: node packages/feature/bin/run.js run --coverage
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: feat-reports
+          path: |
+            reports/feat-junit.xml
+            reports/coverage/lcov.info
+          if-no-files-found: ignore
