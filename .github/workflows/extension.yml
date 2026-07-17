@@ -16,6 +16,8 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # Registry tokens live as environment secrets on `production`, not at repo/org level.
+    environment: production
     defaults:
       run:
         working-directory: editors/vscode
