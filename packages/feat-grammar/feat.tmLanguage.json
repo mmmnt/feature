@@ -1,0 +1,202 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Feat",
+  "scopeName": "source.feat",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#pragma" },
+    { "include": "#identity" },
+    { "include": "#sections" },
+    { "include": "#scenario" },
+    { "include": "#trigger" },
+    { "include": "#prediction" },
+    { "include": "#matchers" },
+    { "include": "#refs" },
+    { "include": "#placeholders" },
+    { "include": "#strings" },
+    { "include": "#numbers" }
+  ],
+  "repository": {
+    "comment": {
+      "match": "#.*$",
+      "name": "comment.line.number-sign.feat"
+    },
+    "pragma": {
+      "match": "^(feat)\\s+(\\d+\\.\\d+)\\s*$",
+      "captures": {
+        "1": { "name": "keyword.control.pragma.feat" },
+        "2": { "name": "constant.numeric.version.feat" }
+      }
+    },
+    "identity": {
+      "patterns": [
+        {
+          "match": "^(spec)\\s+([A-Z0-9-]+)\\s+(\".*\")",
+          "captures": {
+            "1": { "name": "keyword.declaration.spec.feat" },
+            "2": { "name": "entity.name.type.spec-id.feat" },
+            "3": { "name": "string.quoted.double.feat" }
+          }
+        },
+        {
+          "match": "^(context|aggregate)\\s+(\\S+)",
+          "captures": {
+            "1": { "name": "keyword.declaration.feat" },
+            "2": { "name": "entity.name.namespace.feat" }
+          }
+        },
+        {
+          "match": "^(type)\\s+(command|query|infrastructure|integration|scaffold|projection|policy|saga)\\b",
+          "captures": {
+            "1": { "name": "keyword.declaration.feat" },
+            "2": { "name": "constant.language.spec-type.feat" }
+          }
+        },
+        {
+          "match": "^(status)\\s+(draft|agreed|built|verified)\\b",
+          "captures": {
+            "1": { "name": "keyword.declaration.feat" },
+            "2": { "name": "constant.language.status.feat" }
+          }
+        }
+      ]
+    },
+    "sections": {
+      "patterns": [
+        {
+          "match": "^(construct|enforce|contract|given)\\s*:",
+          "captures": { "1": { "name": "keyword.control.section.feat" } }
+        },
+        {
+          "match": "^\\s+(handler at|touches|imports|input|response|record|event|error|rejects|clock at|execute)\\b",
+          "captures": { "1": { "name": "keyword.other.directive.feat" } }
+        }
+      ]
+    },
+    "scenario": {
+      "patterns": [
+        {
+          "match": "^(scenario)(\\s+outline)?\\s+(\".*\")\\s*:",
+          "captures": {
+            "1": { "name": "keyword.control.scenario.feat" },
+            "2": { "name": "keyword.control.scenario.feat" },
+            "3": { "name": "string.quoted.double.scenario-name.feat" }
+          }
+        },
+        {
+          "match": "^\\s+(examples)\\s*:",
+          "captures": { "1": { "name": "keyword.control.section.feat" } }
+        }
+      ]
+    },
+    "trigger": {
+      "patterns": [
+        {
+          "match": "^\\s+(when)\\s*:\\s*([A-Z][A-Za-z0-9]*)",
+          "captures": {
+            "1": { "name": "keyword.control.trigger.feat" },
+            "2": { "name": "entity.name.function.command.feat" }
+          }
+        },
+        {
+          "match": "^\\s+(deliver)\\s+([A-Z][A-Za-z0-9]*)\\s.*\\b(to)\\s+(\\w+)",
+          "captures": {
+            "1": { "name": "keyword.control.trigger.feat" },
+            "2": { "name": "entity.name.function.event.feat" },
+            "3": { "name": "keyword.control.trigger.feat" },
+            "4": { "name": "variable.other.service.feat" }
+          }
+        },
+        {
+          "match": "\\b(as)\\s+(\\w+)",
+          "captures": {
+            "1": { "name": "keyword.other.actor.feat" },
+            "2": { "name": "variable.other.actor.feat" }
+          }
+        }
+      ]
+    },
+    "prediction": {
+      "patterns": [
+        {
+          "match": "^\\s+(predict)\\s+(success|error)\\b(\\s+[A-Z0-9_]+)?",
+          "captures": {
+            "1": { "name": "keyword.control.predict.feat" },
+            "2": { "name": "constant.language.prediction-type.feat" },
+            "3": { "name": "constant.other.error-code.feat" }
+          }
+        },
+        {
+          "match": "^\\s+(predict)\\s+(rejection)\\s+(<?[A-Za-z0-9_-]+>?)",
+          "captures": {
+            "1": { "name": "keyword.control.predict.feat" },
+            "2": { "name": "constant.language.prediction-type.feat" },
+            "3": { "name": "constant.other.rejection-id.feat" }
+          }
+        },
+        {
+          "match": "^\\s+(response)\\s+(\\w+)\\s+([A-Z][A-Za-z0-9]*)",
+          "captures": {
+            "1": { "name": "keyword.other.response.feat" },
+            "2": { "name": "constant.numeric.status.feat" },
+            "3": { "name": "entity.name.type.schema.feat" }
+          }
+        },
+        {
+          "match": "^\\s+(\\w+)\\s+(has|contains)\\s+(ordered|unordered)?",
+          "captures": {
+            "1": { "name": "variable.other.service.feat" },
+            "2": { "name": "keyword.other.assertion.feat" },
+            "3": { "name": "keyword.other.ordering.feat" }
+          }
+        },
+        {
+          "match": "\\b([A-Z][A-Za-z0-9_]*)\\s+(with)\\s+([A-Z][A-Za-z0-9]*)",
+          "captures": {
+            "1": { "name": "entity.name.type.record.feat" },
+            "2": { "name": "keyword.other.with.feat" },
+            "3": { "name": "entity.name.type.schema.feat" }
+          }
+        }
+      ]
+    },
+    "matchers": {
+      "patterns": [
+        {
+          "match": "\\b(any)\\s+(uuid|timestamp|string|number|boolean)\\b",
+          "captures": {
+            "1": { "name": "support.function.matcher.feat" },
+            "2": { "name": "support.type.matcher.feat" }
+          }
+        },
+        { "match": "\\b(matching|absent)\\b", "name": "support.function.matcher.feat" },
+        {
+          "match": "\\b(equals fixture)\\b",
+          "name": "support.function.matcher.feat"
+        }
+      ]
+    },
+    "refs": {
+      "patterns": [
+        {
+          "match": "@(when|deliver)(\\[\\d+\\])?(\\.[A-Za-z0-9_.]+)?",
+          "name": "variable.language.stimulus-ref.feat"
+        }
+      ]
+    },
+    "placeholders": {
+      "patterns": [
+        { "match": "\\{\\$[A-Za-z_][A-Za-z0-9_]*\\}", "name": "variable.parameter.placeholder.feat" },
+        { "match": "<[A-Za-z_][A-Za-z0-9_-]*>", "name": "variable.parameter.placeholder.feat" }
+      ]
+    },
+    "strings": {
+      "match": "\"[^\"]*\"",
+      "name": "string.quoted.double.feat"
+    },
+    "numbers": {
+      "match": "\\b\\d+(\\.\\d+)?\\b",
+      "name": "constant.numeric.feat"
+    }
+  }
+}

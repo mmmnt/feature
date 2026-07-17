@@ -1,0 +1,39 @@
+{
+  "name": "@mmmnt/feat-grammar",
+  "version": "0.1.6",
+  "description": "TextMate grammar for the .feat execution specification language — powers editor extensions, Shiki, and any TextMate-compatible highlighter",
+  "type": "module",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "feat.tmLanguage.json"
+  ],
+  "scripts": {
+    "build": "true",
+    "typecheck": "true",
+    "test": "vitest run --passWithNoTests"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.0",
+    "vscode-oniguruma": "^2.0.1",
+    "vscode-textmate": "^9.2.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mmmnt/feature.git",
+    "directory": "packages/feat-grammar"
+  },
+  "homepage": "https://github.com/mmmnt/feature#readme",
+  "bugs": {
+    "url": "https://github.com/mmmnt/feature/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
