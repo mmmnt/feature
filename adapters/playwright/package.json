@@ -22,7 +22,8 @@
   "devDependencies": {
     "typescript": "^5.8.0",
     "vitest": "^3.2.0",
-    "@mmmnt/feat-runtime": "workspace:^"
+    "@mmmnt/feat-runtime": "workspace:^",
+    "playwright": "^1.61.1"
   },
   "engines": {
     "node": ">=20"

@@ -45,7 +45,7 @@ jobs:
         run: pnpm build
       - name: Install chromium (real-browser adapter e2e; other nodes auto-skip)
         if: matrix.node == 24
-        run: node node_modules/playwright/cli.js install --with-deps chromium
+        run: pnpm --filter @mmmnt/feat-adapter-playwright exec playwright install --with-deps chromium
       - name: Workspace tests
         run: npx turbo run test
 

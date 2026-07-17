@@ -96,13 +96,13 @@ importers:
       '@mmmnt/feat-types':
         specifier: workspace:^
         version: link:../../packages/feat-types
-      playwright:
-        specifier: '>=1.40.0'
-        version: 1.61.1
     devDependencies:
       '@mmmnt/feat-runtime':
         specifier: workspace:^
         version: link:../../packages/feat-runtime
+      playwright:
+        specifier: ^1.61.1
+        version: 1.61.1
       typescript:
         specifier: ^5.8.0
         version: 5.9.3
