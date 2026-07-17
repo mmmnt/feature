@@ -1,0 +1,34 @@
+{
+  "name": "feature-monorepo",
+  "private": true,
+  "version": "0.0.1",
+  "description": "Feature — the quality spine of AI-native delivery. Monorepo for the .feat language toolchain (@mmmnt/feature + @mmmnt/feat-*).",
+  "homepage": "https://github.com/mmmnt/feature#readme",
+  "bugs": {
+    "url": "https://github.com/mmmnt/feature/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mmmnt/feature.git"
+  },
+  "license": "BSD-3-Clause",
+  "author": "listenrightmeow",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "corpus:validate": "ajv validate --spec=draft7 -s schemas/builtspec.schema.json -d 'corpus/*/*.ir.json' && ajv validate --spec=draft7 -s schemas/contract.schema.json -d 'corpus/*/*.contract.json' && ajv validate --spec=draft7 -s schemas/feat.config.schema.json -d 'corpus/*/feat.config.json'",
+    "claude:session": "npx @dotenvx/dotenvx run -f .env.local -- npx -y @anthropic-ai/claude-code"
+  },
+  "devDependencies": {
+    "@dotenvx/dotenvx": "^2.11.0",
+    "ajv-cli": "^5.0.0",
+    "turbo": "^2.5.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.2.0"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "@mmmnt/feat-core",
+  "version": "0.1.0",
+  "description": "Feat language core: Langium grammar, parser, AST->BuiltSpec IR, closed-reference-space validation.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@mmmnt/feat-types": "workspace:*",
+    "@mmmnt/feat-runtime": "workspace:*"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "@mmmnt/feat-runtime",
+  "version": "0.1.0",
+  "description": "What generated tests import: loadConfig, config-driven adapter loading (createAdapter contract), lifecycle/capture orchestration, precondition executor, toMatchPrediction. Deps: feat-types + Ajv only (ADR-0001).",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@mmmnt/feat-types": "workspace:*",
+    "ajv": "^8.17.0",
+    "ajv-formats": "^3.0.0"
+  }
+}

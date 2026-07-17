@@ -1,0 +1,15 @@
+{
+  "name": "@mmmnt/feat-types",
+  "version": "0.1.0",
+  "description": "Feat contracts: TypeScript types derived from the JSON Schema IR/config/report definitions. Zero dependencies, zero runtime code (DP-8).",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  }
+}
