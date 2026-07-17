@@ -1,10 +1,11 @@
 // `feat report` — summarize the last run from the JUnit output (per-scenario,
 // anchors included in test names). --junit prints the raw XML path.
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { Command, Flags } from "@oclif/core";
 import type { FeatConfig } from "@mmmnt/feat-types";
+import { produceEvidence } from "../evidence.js";
 
 export default class Report extends Command {
   static override description = "Summarize the last feat run from its JUnit output";
@@ -12,11 +13,24 @@ export default class Report extends Command {
   static override flags = {
     config: Flags.string({ char: "c", description: "Path to feat.config.json", default: "feat.config.json" }),
     junit: Flags.boolean({ description: "Print the JUnit XML path for CI/Xray import" }),
+    evidence: Flags.string({
+      description: "Write a feat-evidence/1 bundle (docs/evidence-bundle.md) to this path and exit",
+    }),
   };
 
   public async run(): Promise<void> {
     const { flags } = await this.parse(Report);
     const root = process.cwd();
+
+    if (flags.evidence) {
+      const bundle = await produceEvidence(root, flags.config);
+      writeFileSync(path.resolve(root, flags.evidence), JSON.stringify(bundle, null, 2) + "\n");
+      const v = (bundle.verify as { status: string }).status;
+      const r = bundle.run ? (bundle.run as { status: string }).status : "absent";
+      this.log(`evidence: ${flags.evidence} (specs: ${(bundle.specs as unknown[]).length}, verify: ${v}, run: ${r})`);
+      return;
+    }
+
     const config = JSON.parse(readFileSync(path.resolve(root, flags.config), "utf8")) as FeatConfig;
     const junitPath = config.report?.junitOutput;
     if (!junitPath || !existsSync(path.resolve(root, junitPath))) {
