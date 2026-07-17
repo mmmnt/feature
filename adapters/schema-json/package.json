@@ -1,0 +1,29 @@
+{
+  "name": "@mmmnt/feat-schema-json",
+  "version": "0.1.0",
+  "description": "Feat schema adapter: JSON Schema resolution and validation (compile-time only; generated tests carry schemas inlined).",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@mmmnt/feat-types": "workspace:*",
+    "ajv": "^8.17.0",
+    "ajv-formats": "^3.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mmmnt/feature.git",
+    "directory": "adapters/schema-json"
+  },
+  "homepage": "https://github.com/mmmnt/feature#readme",
+  "bugs": { "url": "https://github.com/mmmnt/feature/issues" },
+  "publishConfig": { "access": "public" }
+}

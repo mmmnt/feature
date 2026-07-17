@@ -58,6 +58,18 @@ importers:
         specifier: ^3.2.0
         version: 3.2.7(@types/node@24.13.3)
 
+  adapters/schema-json:
+    dependencies:
+      '@mmmnt/feat-types':
+        specifier: workspace:*
+        version: link:../../packages/feat-types
+      ajv:
+        specifier: ^8.17.0
+        version: 8.20.0
+      ajv-formats:
+        specifier: ^3.0.0
+        version: 3.0.1(ajv@8.20.0)
+
   packages/feat-core:
     dependencies:
       '@mmmnt/feat-runtime':
