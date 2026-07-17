@@ -1,8 +1,5 @@
 # Status and Roadmap
 
-Scope of record: [`FEATURES.md`](https://github.com/mmmnt/feature/blob/main/FEATURES.md) in the
-repository — every capability is a status-tracked row.
-
 ## Built and self-hosting (today)
 
 - **The language, v1** — dual zones, four closed reference spaces, matchers (references, typed

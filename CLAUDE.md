@@ -11,8 +11,7 @@ it compiles deterministically to complete test suites with zero human-authored t
 
 **This project is built spec-driven on itself.** No issue tracker decomposition:
 
-- **`FEATURES.md`** (repo root) is the source of truth for scope — every row status-tracked; update
-  it **in the same commit** as the work that moves a row. Nothing gets built without a row.
+- Scope is tracked in a local working ledger (untracked, maintained alongside each change).
 - **`.feat` specs are the unit of work.** The agent builds only `status agreed` specs, only within
   their `touches` globs. Ambiguity = halt and ask — never guess, never annotate the file.
 - Design changes require an ADR (see the decision-record index referenced from FEATURES.md), and a

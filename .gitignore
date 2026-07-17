@@ -24,3 +24,6 @@ reports/
 # Local MCP wiring (internal infra endpoints)
 .mcp.json
 .quorum.json
+
+# Private working file (kept local)
+FEATURES.md
