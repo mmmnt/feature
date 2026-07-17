@@ -38,5 +38,5 @@ jobs:
           node packages/feature/bin/run.js verify
           node packages/feature/bin/run.js run
 
-      - name: Publish (OIDC trusted publishing)
-        run: pnpm -r publish --access public --no-git-checks
+      - name: Publish changed packages (OIDC trusted publishing)
+        run: node scripts/publish-changed.mjs

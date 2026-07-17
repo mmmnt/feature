@@ -1,6 +1,6 @@
 {
   "name": "@mmmnt/feat-runtime",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "What generated tests import: loadConfig, config-driven adapter loading (createAdapter contract), lifecycle/capture orchestration, precondition executor, toMatchPrediction. Deps: feat-types + Ajv only (ADR-0001).",
   "license": "MIT",
   "type": "module",

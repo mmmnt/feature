@@ -1,6 +1,6 @@
 {
   "name": "@mmmnt/feat-runner",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Feat runner: thin vitest subprocess orchestrator (GAP-D09). Spec filtering, exit-code passthrough, JUnit collection.",
   "license": "MIT",
   "type": "module",
