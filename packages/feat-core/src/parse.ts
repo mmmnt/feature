@@ -271,7 +271,11 @@ function parseRecordList(src: string, mode: "predict" | "seed"): (PredictedRecor
   while (c.peek() !== "]") {
     if (c.peek() === "") c.fail("record list (unterminated)");
     const head = /^([A-Za-z_][A-Za-z0-9_]*)[ \t\n]+with[ \t\n]+([A-Za-z_][A-Za-z0-9_]*)/.exec(c.src.slice(c.pos));
-    if (!head) c.fail("record (expected '<Type> with <Schema>')");
+    if (head === null)
+      throw new ParseFailure(
+        "MALFORMED_SYNTAX",
+        `Malformed record near '${c.src.slice(c.pos, c.pos + 24)}' (expected '<Type> with <Schema>').`,
+      );
     c.pos += head[0].length;
     c.skipWs();
     if (mode === "seed") {

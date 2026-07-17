@@ -5,8 +5,13 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import Ajv, { type ErrorObject } from "ajv";
-import addFormats from "ajv-formats";
+import { createRequire } from "node:module";
+import type { ErrorObject } from "ajv";
+
+// CJS interop under NodeNext: ajv/ajv-formats ship CJS with default-shaped exports.
+const require = createRequire(import.meta.url);
+const Ajv: typeof import("ajv").default = require("ajv");
+const addFormats: typeof import("ajv-formats").default = require("ajv-formats");
 
 const PKG_DIR = path.dirname(fileURLToPath(import.meta.url));
 const CONFIG_SCHEMA = JSON.parse(
