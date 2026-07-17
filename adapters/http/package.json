@@ -1,6 +1,6 @@
 {
   "name": "@mmmnt/feat-adapter-http",
-  "version": "0.1.2",
+  "version": "0.1.4",
   "description": "Feat response adapter: HTTP invocation (method/path routes from response.commands, baseUrl/headers from invoke, actor headers from the actor registry).",
   "license": "MIT",
   "type": "module",
@@ -21,7 +21,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@mmmnt/feat-types": "workspace:*"
+    "@mmmnt/feat-types": "workspace:^"
   },
   "devDependencies": {
     "vitest": "^3.2.0"

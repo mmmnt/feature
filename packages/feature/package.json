@@ -1,6 +1,6 @@
 {
   "name": "@mmmnt/feature",
-  "version": "0.1.2",
+  "version": "0.1.4",
   "description": "The feat CLI — Feature, the quality spine of AI-native delivery.",
   "license": "MIT",
   "type": "module",
@@ -24,13 +24,13 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@mmmnt/feat-core": "workspace:*",
-    "@mmmnt/feat-derive": "workspace:*",
-    "@mmmnt/feat-emit-ts": "workspace:*",
-    "@mmmnt/feat-runtime": "workspace:*",
+    "@mmmnt/feat-core": "workspace:^",
+    "@mmmnt/feat-derive": "workspace:^",
+    "@mmmnt/feat-emit-ts": "workspace:^",
+    "@mmmnt/feat-runtime": "workspace:^",
     "@oclif/core": "^4.3.0",
-    "@mmmnt/feat-types": "workspace:*",
-    "@mmmnt/feat-runner": "workspace:*"
+    "@mmmnt/feat-types": "workspace:^",
+    "@mmmnt/feat-runner": "workspace:^"
   },
   "devDependencies": {
     "vitest": "^3.2.0"

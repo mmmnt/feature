@@ -1,6 +1,6 @@
 {
   "name": "@mmmnt/feat-schema-json",
-  "version": "0.1.2",
+  "version": "0.1.4",
   "description": "Feat schema adapter: JSON Schema resolution and validation (compile-time only; generated tests carry schemas inlined).",
   "license": "MIT",
   "type": "module",
@@ -21,7 +21,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@mmmnt/feat-types": "workspace:*",
+    "@mmmnt/feat-types": "workspace:^",
     "ajv": "^8.17.0",
     "ajv-formats": "^3.0.0"
   },

@@ -39,19 +39,19 @@ importers:
   adapters/fs:
     dependencies:
       '@mmmnt/feat-types':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../../packages/feat-types
 
   adapters/handler:
     dependencies:
       '@mmmnt/feat-types':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../../packages/feat-types
 
   adapters/http:
     dependencies:
       '@mmmnt/feat-types':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../../packages/feat-types
     devDependencies:
       vitest:
@@ -61,7 +61,7 @@ importers:
   adapters/schema-json:
     dependencies:
       '@mmmnt/feat-types':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../../packages/feat-types
       ajv:
         specifier: ^8.17.0
@@ -73,10 +73,10 @@ importers:
   packages/feat-core:
     dependencies:
       '@mmmnt/feat-runtime':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../feat-runtime
       '@mmmnt/feat-types':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../feat-types
     devDependencies:
       ajv:
@@ -92,11 +92,11 @@ importers:
   packages/feat-derive:
     dependencies:
       '@mmmnt/feat-types':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../feat-types
     devDependencies:
       '@mmmnt/feat-core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../feat-core
       vitest:
         specifier: ^3.2.0
@@ -105,10 +105,10 @@ importers:
   packages/feat-emit-ts:
     dependencies:
       '@mmmnt/feat-derive':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../feat-derive
       '@mmmnt/feat-types':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../feat-types
     devDependencies:
       vitest:
@@ -118,13 +118,13 @@ importers:
   packages/feat-runner:
     dependencies:
       '@mmmnt/feat-types':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../feat-types
 
   packages/feat-runtime:
     dependencies:
       '@mmmnt/feat-types':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../feat-types
       ajv:
         specifier: ^8.17.0
@@ -142,22 +142,22 @@ importers:
   packages/feature:
     dependencies:
       '@mmmnt/feat-core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../feat-core
       '@mmmnt/feat-derive':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../feat-derive
       '@mmmnt/feat-emit-ts':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../feat-emit-ts
       '@mmmnt/feat-runner':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../feat-runner
       '@mmmnt/feat-runtime':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../feat-runtime
       '@mmmnt/feat-types':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../feat-types
       '@oclif/core':
         specifier: ^4.3.0

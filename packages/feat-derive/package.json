@@ -1,6 +1,6 @@
 {
   "name": "@mmmnt/feat-derive",
-  "version": "0.1.2",
+  "version": "0.1.4",
   "description": "Feat derive: BuiltSpec IR + FeatConfig -> TestTopology. Pure and deterministic (INV-2); outline expansion, ordering resolution, query implicit-zero synthesis.",
   "license": "MIT",
   "type": "module",
@@ -21,10 +21,10 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@mmmnt/feat-types": "workspace:*"
+    "@mmmnt/feat-types": "workspace:^"
   },
   "devDependencies": {
-    "@mmmnt/feat-core": "workspace:*",
+    "@mmmnt/feat-core": "workspace:^",
     "vitest": "^3.2.0"
   },
   "repository": {

@@ -1,6 +1,6 @@
 {
   "name": "@mmmnt/feat-runner",
-  "version": "0.1.2",
+  "version": "0.1.4",
   "description": "Feat runner: thin vitest subprocess orchestrator (GAP-D09). Spec filtering, exit-code passthrough, JUnit collection.",
   "license": "MIT",
   "type": "module",
@@ -21,7 +21,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@mmmnt/feat-types": "workspace:*"
+    "@mmmnt/feat-types": "workspace:^"
   },
   "repository": {
     "type": "git",

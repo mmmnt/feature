@@ -1,6 +1,6 @@
 {
   "name": "@mmmnt/feat-runtime",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "What generated tests import: loadConfig, config-driven adapter loading (createAdapter contract), lifecycle/capture orchestration, precondition executor, toMatchPrediction. Deps: feat-types + Ajv only (ADR-0001).",
   "license": "MIT",
   "type": "module",
@@ -22,7 +22,7 @@
     "test": "vitest run --exclude '**/load-config.test.ts' --passWithNoTests"
   },
   "dependencies": {
-    "@mmmnt/feat-types": "workspace:*",
+    "@mmmnt/feat-types": "workspace:^",
     "ajv": "^8.17.0",
     "ajv-formats": "^3.0.0"
   },
