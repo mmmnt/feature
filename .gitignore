@@ -20,3 +20,7 @@ reports/
 # Editor/OS noise
 .DS_Store
 *.log
+
+# Local MCP wiring (internal infra endpoints)
+.mcp.json
+.quorum.json

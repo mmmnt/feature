@@ -1,8 +1,7 @@
 # The `.feat` Language — Grammar Reference v1.1
 
-> Language version: `feat 1.0` · Status: M0.5 draft, pre-implementation
-> Decisions: Confluence FEAT → Architecture Decision Records (ADR-0001…0007);
-> causal history in flmnt workspace `d52ee565-…::domain`.
+> Language version: `feat 1.0`
+> Design decisions are recorded as ADRs (ADR-0001…0014) in the project decision log.
 > The `corpus/` directory holds canonical exemplars paired with expected-IR fixtures —
 > when this document and the corpus disagree, that is a bug in one of them; fix the spec first.
 
