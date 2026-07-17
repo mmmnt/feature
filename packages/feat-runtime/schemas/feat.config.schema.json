@@ -1,0 +1,111 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://feat.dev/schemas/feat.config.json",
+  "title": "FeatConfig",
+  "description": "feat.config.json — service, adapter, and pipeline configuration. Loaded once per run (INV-8); validated by @mmmnt/feat-runtime loadConfig (ADR-0001).",
+  "type": "object",
+  "required": ["schemas", "services", "specs"],
+  "additionalProperties": false,
+  "properties": {
+    "featVersion": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+$",
+      "description": "Language version this project targets (ADR-0005)."
+    },
+    "schemas": {
+      "type": "object",
+      "required": ["adapter"],
+      "additionalProperties": false,
+      "properties": {
+        "adapter": { "$ref": "#/definitions/moduleSpecifier" }
+      }
+    },
+    "response": {
+      "type": "object",
+      "description": "Required only when specs use when:/execute (deliver-only projects omit it); enforced cross-file at parse time (ADR-0009/0011).",
+      "required": ["adapter", "commands"],
+      "additionalProperties": false,
+      "properties": {
+        "adapter": { "$ref": "#/definitions/moduleSpecifier" },
+        "invoke": {
+          "type": "object",
+          "description": "Adapter-wide invocation config (baseUrl/headers, host/protoPath).",
+          "additionalProperties": true
+        },
+        "commands": {
+          "type": "object",
+          "description": "Command routing (ADR-0009): CommandName -> adapter-specific invocation shape (HTTP: {method, path}; handler: {module, export}). Closed command space: every command used in when:/execute must exist here — validated at parse time.",
+          "minProperties": 1,
+          "additionalProperties": { "type": "object", "additionalProperties": true }
+        },
+        "actors": {
+          "type": "object",
+          "description": "Actor registry (ADR-0012): named actors with adapter-specific auth material (HTTP: headers/token; handler: context object). 'default' names the actor used when a trigger has no as-clause; 'anonymous' is reserved (unauthenticated) and never declared. Closed actor space — validated at parse time.",
+          "properties": {
+            "default": { "type": "string" }
+          },
+          "additionalProperties": { "type": "object", "additionalProperties": true }
+        }
+      }
+    },
+    "services": {
+      "type": "object",
+      "description": "User-defined service keys — the only valid prediction targets (INV-7).",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "required": ["adapter", "consistency"],
+        "additionalProperties": false,
+        "properties": {
+          "adapter": { "$ref": "#/definitions/moduleSpecifier" },
+          "consistency": { "enum": ["acid", "strong", "eventual"] },
+          "convergenceTimeout": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Milliseconds to wait before capturing eventual services. Required when consistency is 'eventual'."
+          },
+          "absenceTimeout": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Optional shorter wait for absence proofs on eventual services (ADR-0014 tuning knob)."
+          },
+          "options": {
+            "type": "object",
+            "description": "Adapter-specific options (e.g. fs adapter scope).",
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    "specs": {
+      "type": "object",
+      "required": ["dir", "pattern", "contractPattern", "outputPattern"],
+      "additionalProperties": false,
+      "properties": {
+        "dir": { "type": "string" },
+        "pattern": { "type": "string" },
+        "contractPattern": { "type": "string" },
+        "outputPattern": { "type": "string" }
+      }
+    },
+    "report": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "format": {
+          "type": "array",
+          "items": { "enum": ["console", "junit"] },
+          "minItems": 1
+        },
+        "junitOutput": { "type": "string" }
+      }
+    }
+  },
+  "definitions": {
+    "moduleSpecifier": {
+      "type": "string",
+      "minLength": 1,
+      "description": "npm package name or local path; the module must export createAdapter(config) (INV-10, ADR-0001)."
+    }
+  }
+}

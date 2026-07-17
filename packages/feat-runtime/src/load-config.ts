@@ -13,9 +13,12 @@ const require = createRequire(import.meta.url);
 const Ajv: typeof import("ajv").default = require("ajv");
 const addFormats: typeof import("ajv-formats").default = require("ajv-formats");
 
+// The schema ships inside this package (schemas/ is copied from the repo root
+// at build; see schema-sync.test.ts) so resolution works from node_modules,
+// where the monorepo's root schemas/ directory does not exist.
 const PKG_DIR = path.dirname(fileURLToPath(import.meta.url));
 const CONFIG_SCHEMA = JSON.parse(
-  readFileSync(path.resolve(PKG_DIR, "../../../schemas/feat.config.schema.json"), "utf8"),
+  readFileSync(path.resolve(PKG_DIR, "../schemas/feat.config.schema.json"), "utf8"),
 ) as object;
 
 const ajv = new Ajv({ strict: false, allErrors: true });
