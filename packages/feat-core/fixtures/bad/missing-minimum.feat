@@ -1,0 +1,11 @@
+feat 1.0
+
+spec SPEC-BAD-012 "Missing minimum sections"
+context Bad
+aggregate Thing
+type command
+status draft
+
+construct:
+  handler at src/do-thing.ts
+  touches src/**

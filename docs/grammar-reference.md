@@ -315,9 +315,11 @@ scenario outline "unknown users are rejected":
     | "missing@example.com" | "UNKNOWN_USER" |
 ```
 
-`<placeholder>` tokens are valid in `when:`/`execute` payloads and in value blocks; the
-`examples:` pipe table supplies one row per derived test case (column headers = placeholder
-names; cells are JSON literals). Anchors extend with `› row[i]`. Shared schemas across specs
+`<placeholder>` tokens are valid in `when:`/`execute` payloads, in value blocks, and in the
+**rejection-ID position** (`predict rejection <code>:` — every value the column supplies must be
+a declared `rejects` ID; the two-way lint evaluates per expanded row). The `examples:` pipe table
+supplies one row per derived test case (column headers = placeholder names; cells are JSON
+literals). Anchors extend with `› row[i]`. Shared schemas across specs
 need no outline-style syntax — the documented convention is a workspace `contracts/` directory
 that per-spec `.contract.json` registries `$ref` into.
 

@@ -1,0 +1,24 @@
+feat 9.9
+
+spec SPEC-BAD-002 "Unsupported version"
+context Bad
+aggregate Thing
+type command
+status draft
+
+construct:
+  handler at src/do-thing.ts
+  touches src/**
+
+enforce:
+  do the thing
+
+contract:
+  input ThingInput
+  response ThingResult
+
+scenario "does the thing":
+  when: DoThing { value: 1 }
+  predict success:
+    response OK ThingResult
+    eventStore has []

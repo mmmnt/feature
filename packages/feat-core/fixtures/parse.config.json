@@ -1,0 +1,18 @@
+{
+  "featVersion": "1.0",
+  "schemas": { "adapter": "@mmmnt/feat-schema-json" },
+  "response": {
+    "adapter": "@mmmnt/feat-adapter-handler",
+    "commands": {
+      "DoThing": { "module": "src/do-thing.ts", "export": "doThing" }
+    },
+    "actors": {
+      "default": "admin",
+      "admin": { "context": { "role": "admin" } }
+    }
+  },
+  "services": {
+    "eventStore": { "adapter": "@mmmnt/feat-adapter-fs", "consistency": "acid" }
+  },
+  "specs": { "dir": ".", "pattern": "**/*.feat", "contractPattern": "**/*.contract.json", "outputPattern": "{name}.test.ts" }
+}

@@ -1,0 +1,112 @@
+feat 1.0
+
+# SPEC-CORE-001 — the parser's own contract, written in the language it parses.
+# The corpus is the executable ground truth: one golden scenario per exemplar
+# (equals fixture, ADR-0013). Rejection families cover the pragma, the four
+# closed reference spaces, trigger discipline, the query guarantee, and the
+# no-escape-hatch minimums. status agreed proposed per ADR-0008.
+
+spec SPEC-CORE-001 "Parse a .feat file to BuiltSpec IR"
+context Toolchain
+aggregate Language
+type infrastructure
+status agreed
+
+construct:
+  handler at packages/feat-core/src/parse.ts
+  touches packages/feat-core/**
+  imports BuiltSpec from @mmmnt/feat-types
+  needs SPEC-RT-001
+  Implement with Langium: .langium grammar, generated AST, AST-to-IR transformer.
+  The corpus at corpus/ is ground truth: every exemplar parses to its .ir.json exactly.
+  Agent zones are opaque: parse errors inside construct:/enforce: freeform text are impossible.
+  The response body is the IR WITHOUT loc (ADR-0013 companion ruling); loc serves LSP surfaces only.
+  Parse errors carry line numbers and a hint naming valid alternatives where a closed space is violated.
+
+enforce:
+  read the version pragma before anything else
+  rejects MISSING_PRAGMA when the first non-comment line is not a feat version pragma
+  rejects UNSUPPORTED_VERSION when the pragma names a version this toolchain does not support
+  rejects MALFORMED_SYNTAX when a compiler-zone block violates the grammar
+  rejects UNKNOWN_SERVICE_KEY when a prediction targets a service absent from the config services
+  rejects UNKNOWN_COMMAND when a when or execute names a command absent from response.commands
+  rejects UNDECLARED_SCHEMA when a scenario references a schema absent from the contract block
+  rejects UNKNOWN_ACTOR when an as-clause names an actor absent from response.actors
+  rejects DUPLICATE_SCENARIO_NAME when two scenarios in one spec share a name
+  rejects TRIGGER_MISMATCH when the trigger form does not match the spec type discipline
+  rejects QUERY_SIDE_EFFECT when a query spec predicts any service write
+  rejects INCOMPLETE_PREDICTION when a non-query prediction omits a configured service
+  rejects MISSING_MINIMUM when a spec lacks the required minimum sections
+
+contract:
+  input ParseInput
+  response BuiltSpec
+  error ParseError
+
+scenario "parses the founding exemplar (create-flow)":
+  when: Parse { spec: "../../corpus/create-flow/create-flow.feat", config: "../../corpus/create-flow/feat.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "../../corpus/create-flow/create-flow.ir.json"
+    filesystem has []
+
+scenario "parses the CRUD exemplar (create-user)":
+  when: Parse { spec: "../../corpus/create-user/create-user.feat", config: "../../corpus/create-user/feat.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "../../corpus/create-user/create-user.ir.json"
+    filesystem has []
+
+scenario "parses the seeds exemplar (tenant-at-limit)":
+  when: Parse { spec: "../../corpus/tenant-at-limit/tenant-at-limit.feat", config: "../../corpus/tenant-at-limit/feat.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "../../corpus/tenant-at-limit/tenant-at-limit.ir.json"
+    filesystem has []
+
+scenario "parses the ordering exemplar (publish-order)":
+  when: Parse { spec: "../../corpus/publish-order/publish-order.feat", config: "../../corpus/publish-order/feat.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "../../corpus/publish-order/publish-order.ir.json"
+    filesystem has []
+
+scenario "parses the compiler-shaped exemplar (emit-test-file)":
+  when: Parse { spec: "../../corpus/emit-test-file/emit-test-file.feat", config: "../../corpus/emit-test-file/feat.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "../../corpus/emit-test-file/emit-test-file.ir.json"
+    filesystem has []
+
+scenario "parses the projection exemplar (flow-view)":
+  when: Parse { spec: "../../corpus/flow-view/flow-view.feat", config: "../../corpus/flow-view/feat.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "../../corpus/flow-view/flow-view.ir.json"
+    filesystem has []
+
+scenario "parses the query exemplar (get-flow)":
+  when: Parse { spec: "../../corpus/get-flow/get-flow.feat", config: "../../corpus/get-flow/feat.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "../../corpus/get-flow/get-flow.ir.json"
+    filesystem has []
+
+scenario "parses the expressiveness exemplar (suspend-user)":
+  when: Parse { spec: "../../corpus/suspend-user/suspend-user.feat", config: "../../corpus/suspend-user/feat.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "../../corpus/suspend-user/suspend-user.ir.json"
+    filesystem has []
+
+scenario outline "rejects invalid specs with the precise code":
+  when: Parse { spec: <spec>, config: "fixtures/parse.config.json" }
+  predict rejection <code>:
+    response ERR ParseError { code: <code> }
+    filesystem has []
+  examples:
+    | spec                                    | code                      |
+    | "fixtures/bad/missing-pragma.feat"      | "MISSING_PRAGMA"          |
+    | "fixtures/bad/unsupported-version.feat" | "UNSUPPORTED_VERSION"     |
+    | "fixtures/bad/malformed-syntax.feat"    | "MALFORMED_SYNTAX"        |
+    | "fixtures/bad/unknown-service.feat"     | "UNKNOWN_SERVICE_KEY"     |
+    | "fixtures/bad/unknown-command.feat"     | "UNKNOWN_COMMAND"         |
+    | "fixtures/bad/undeclared-schema.feat"   | "UNDECLARED_SCHEMA"       |
+    | "fixtures/bad/unknown-actor.feat"       | "UNKNOWN_ACTOR"           |
+    | "fixtures/bad/duplicate-scenario.feat"  | "DUPLICATE_SCENARIO_NAME" |
+    | "fixtures/bad/trigger-mismatch.feat"    | "TRIGGER_MISMATCH"        |
+    | "fixtures/bad/query-side-effect.feat"   | "QUERY_SIDE_EFFECT"       |
+    | "fixtures/bad/incomplete-prediction.feat" | "INCOMPLETE_PREDICTION" |
+    | "fixtures/bad/missing-minimum.feat"     | "MISSING_MINIMUM"         |

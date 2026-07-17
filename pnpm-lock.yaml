@@ -32,6 +32,16 @@ importers:
       '@mmmnt/feat-types':
         specifier: workspace:*
         version: link:../feat-types
+    devDependencies:
+      ajv:
+        specifier: ^8.17.0
+        version: 8.20.0
+      ajv-formats:
+        specifier: ^3.0.0
+        version: 3.0.1(ajv@8.20.0)
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.7
 
   packages/feat-runtime:
     dependencies:

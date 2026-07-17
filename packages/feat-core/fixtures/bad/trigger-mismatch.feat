@@ -1,0 +1,23 @@
+feat 1.0
+
+spec SPEC-BAD-009 "Trigger mismatch"
+context Bad
+aggregate Thing
+type command
+status draft
+
+construct:
+  handler at src/do-thing.ts
+  touches src/**
+
+enforce:
+  do the thing
+
+contract:
+  event ThingEvent
+  record ThingRow
+
+scenario "command spec using deliver":
+  deliver ThingEvent { value: 1 } to eventStore
+  predict success:
+    eventStore has []

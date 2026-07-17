@@ -1,0 +1,23 @@
+feat 1.0
+
+spec SPEC-BAD-011 "Incomplete prediction"
+context Bad
+aggregate Thing
+type command
+status draft
+
+construct:
+  handler at src/do-thing.ts
+  touches src/**
+
+enforce:
+  do the thing
+
+contract:
+  input ThingInput
+  response ThingResult
+
+scenario "omits the configured eventStore service":
+  when: DoThing { value: 1 }
+  predict success:
+    response OK ThingResult
