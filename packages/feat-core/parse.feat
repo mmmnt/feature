@@ -17,7 +17,8 @@ construct:
   touches packages/feat-core/**
   imports BuiltSpec from @mmmnt/feat-types
   needs SPEC-RT-001
-  Implement with Langium: .langium grammar, generated AST, AST-to-IR transformer.
+  Implement as a hand-rolled deterministic recursive-descent parser (amendment 2026-07-16:
+  Langium's role narrowed to the M6 LSP surface; the corpus keeps both grammars in sync).
   The corpus at corpus/ is ground truth: every exemplar parses to its .ir.json exactly.
   Agent zones are opaque: parse errors inside construct:/enforce: freeform text are impossible.
   The response body is the IR WITHOUT loc (ADR-0013 companion ruling); loc serves LSP surfaces only.

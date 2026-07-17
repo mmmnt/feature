@@ -5,7 +5,7 @@
     "name": "PublishOrder Saga Step",
     "context": "Fulfillment",
     "aggregate": "Order",
-    "type": "saga",
+    "type": "command",
     "status": "agreed"
   },
   "construct": [

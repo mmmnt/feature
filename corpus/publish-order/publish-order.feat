@@ -4,11 +4,13 @@ feat 1.0
 # type. Multi-record predictions: the acid outbox asserts ordered by default
 # and the eventual broker unordered by default; both defaults are overridden
 # once to exercise the override grammar. Includes predict error <CODE>.
+# (Retyped saga→command 2026-07-16: ADR-0011 trigger discipline — caught by
+# the parser rejecting its own corpus. A true saga exemplar arrives with M5.)
 
 spec SPEC-ORD-001 "PublishOrder Saga Step"
 context Fulfillment
 aggregate Order
-type saga
+type command
 status agreed
 
 construct:
