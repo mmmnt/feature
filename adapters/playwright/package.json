@@ -21,7 +21,8 @@
   },
   "devDependencies": {
     "typescript": "^5.8.0",
-    "vitest": "^3.2.0"
+    "vitest": "^3.2.0",
+    "@mmmnt/feat-runtime": "workspace:^"
   },
   "engines": {
     "node": ">=20"

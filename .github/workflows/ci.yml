@@ -43,6 +43,9 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Build
         run: pnpm build
+      - name: Install chromium (real-browser adapter e2e; other nodes auto-skip)
+        if: matrix.node == 24
+        run: node node_modules/playwright/cli.js install --with-deps chromium
       - name: Workspace tests
         run: npx turbo run test
 

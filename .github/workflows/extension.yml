@@ -1,0 +1,53 @@
+name: extension
+
+# Publishes the VS Code extension on ext-v* tags:
+#  - Open VSX (open-vsx.org) — the registry Windsurf, Cursor, Gitpod, and other
+#    VS Code forks install from (the MS marketplace only serves official VS Code)
+#  - VS Code Marketplace — official VS Code
+# Each registry publishes only if its token secret is configured, so the lane
+# degrades gracefully while accounts are being set up. The .vsix is always
+# built and attached as an artifact.
+
+on:
+  push:
+    tags:
+      - "ext-v*"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: editors/vscode
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Build
+        run: |
+          npm ci
+          npm run build
+
+      - name: Package .vsix
+        run: npx --yes @vscode/vsce package --allow-missing-repository
+
+      - name: Upload .vsix artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: feat-vscode-vsix
+          path: editors/vscode/*.vsix
+
+      - name: Publish to Open VSX (Windsurf, Cursor, forks)
+        if: env.OVSX_PAT != ''
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: npx --yes ovsx publish *.vsix -p "$OVSX_PAT"
+
+      - name: Publish to VS Code Marketplace
+        if: env.VSCE_PAT != ''
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: npx --yes @vscode/vsce publish --packagePath *.vsix -p "$VSCE_PAT"
