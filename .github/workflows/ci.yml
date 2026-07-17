@@ -6,47 +6,74 @@ on:
   pull_request:
 
 jobs:
-  ci:
+  check:
+    name: Typecheck & corpus
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: pnpm/action-setup@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: pnpm
-
       - name: Install
         run: pnpm install --frozen-lockfile
-
       - name: Build
         run: pnpm build
-
       - name: Typecheck
         run: pnpm typecheck
-
       - name: Corpus validation
         run: pnpm corpus:validate
 
+  test:
+    name: Workspace tests (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Build
+        run: pnpm build
       - name: Workspace tests
         run: npx turbo run test
 
+  spec:
+    name: Spec chain (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Build
+        run: pnpm build
       - name: feat verify (spec ↔ test integrity)
         run: node packages/feature/bin/run.js verify
-
       - name: feat audit (buildability gates)
         run: node packages/feature/bin/run.js audit
-
       - name: feat lint
         run: node packages/feature/bin/run.js lint
-
       - name: feat run (generated suites, coverage reported)
         run: node packages/feature/bin/run.js run --coverage
-
       - name: Upload reports
-        if: always()
+        if: always() && matrix.node == 24
         uses: actions/upload-artifact@v4
         with:
           name: feat-reports
