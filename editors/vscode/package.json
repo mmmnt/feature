@@ -1,0 +1,64 @@
+{
+  "name": "feat-vscode",
+  "displayName": "Feat — execution specifications",
+  "description": "Syntax highlighting and live spec-anchored test feedback for .feat files",
+  "version": "0.1.0",
+  "publisher": "mmmnt",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mmmnt/feature.git",
+    "directory": "editors/vscode"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Testing"
+  ],
+  "activationEvents": [
+    "workspaceContains:**/feat.config.json"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "feat",
+        "aliases": ["Feat", "feat"],
+        "extensions": [".feat"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "feat",
+        "scopeName": "source.feat",
+        "path": "./syntaxes/feat.tmLanguage.json"
+      }
+    ],
+    "commands": [
+      { "command": "feat.watch.start", "title": "Feat: Start watch" },
+      { "command": "feat.watch.stop", "title": "Feat: Stop watch" }
+    ],
+    "configuration": {
+      "title": "Feat",
+      "properties": {
+        "feat.watch.autoStart": {
+          "type": "boolean",
+          "default": true,
+          "description": "Start `feat watch --json` automatically when a feat.config.json is present."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.8.0"
+  }
+}
