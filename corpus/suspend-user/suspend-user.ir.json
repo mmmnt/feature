@@ -95,17 +95,18 @@
         "payload": { "email": { "$placeholder": "email" } }
       },
       "examples": [
-        { "email": "missing@example.com", "code": "UNKNOWN_USER" },
-        { "email": "also.missing@example.com", "code": "UNKNOWN_USER" }
+        { "email": "missing@example.com", "code": "UNKNOWN_USER", "msg": "missing" },
+        { "email": "also.missing@example.com", "code": "UNKNOWN_USER", "msg": "missing" }
       ],
       "prediction": {
         "type": "rejection",
-        "rejectionId": "UNKNOWN_USER",
+        "rejectionId": "<code>",
         "response": {
           "status": 404,
           "schemaName": "ErrorResponse",
           "valueBlock": {
-            "code": { "matcher": "placeholder", "name": "code" }
+            "code": { "matcher": "placeholder", "name": "code" },
+            "message": { "matcher": "regex", "pattern": { "$placeholder": "msg" } }
           }
         },
         "services": {

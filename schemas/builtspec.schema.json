@@ -314,7 +314,18 @@
           "additionalProperties": false,
           "properties": {
             "matcher": { "const": "regex" },
-            "pattern": { "type": "string" }
+            "pattern": {
+              "oneOf": [
+                { "type": "string" },
+                {
+                  "type": "object",
+                  "required": ["$placeholder"],
+                  "additionalProperties": false,
+                  "properties": { "$placeholder": { "type": "string" } },
+                  "description": "Outline placeholder in the matching-argument position (ADR-0012 addendum); derive substitutes the row value."
+                }
+              ]
+            }
           }
         },
         {

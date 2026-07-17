@@ -216,6 +216,10 @@ function parseMatcher(c: ValueCursor): Matcher {
   }
   if ((m = /^matching[ \t]+/.exec(rest()))) {
     c.pos += m[0].length;
+    if (c.peek() === "<") {
+      const p = parseLiteralValue(c) as { $placeholder: string };
+      return { matcher: "regex", pattern: { $placeholder: p.$placeholder } };
+    }
     return { matcher: "regex", pattern: parseString(c) };
   }
   if (/^absent\b/.test(rest())) {
@@ -437,7 +441,7 @@ function parseFeat(source: string, ctx: ConfigContext): Record<string, unknown> 
       }
 
       // predict …:
-      if ((m = /^predict[ \t]+(success|rejection|error)(?:[ \t]+([A-Z0-9_<>-]+))?:$/.exec(t))) {
+      if ((m = /^predict[ \t]+(success|rejection|error)(?:[ \t]+([A-Z0-9_]+|<[A-Za-z_][A-Za-z0-9_-]*>))?:$/.exec(t))) {
         const prediction: Record<string, unknown> = { type: m[1] };
         if (m[1] === "rejection" && m[2]) prediction.rejectionId = m[2];
         if (m[1] === "error" && m[2]) prediction.errorCode = m[2];

@@ -8,7 +8,10 @@
     "feat": "./bin/run.js"
   },
   "main": "./dist/index.js",
-  "files": ["bin", "dist"],
+  "files": [
+    "bin",
+    "dist"
+  ],
   "oclif": {
     "bin": "feat",
     "dirname": "feat",
@@ -22,8 +25,11 @@
   },
   "dependencies": {
     "@mmmnt/feat-core": "workspace:*",
+    "@mmmnt/feat-derive": "workspace:*",
+    "@mmmnt/feat-emit-ts": "workspace:*",
     "@mmmnt/feat-runtime": "workspace:*",
-    "@oclif/core": "^4.3.0"
+    "@oclif/core": "^4.3.0",
+    "@mmmnt/feat-types": "workspace:*"
   },
   "devDependencies": {
     "vitest": "^3.2.0"

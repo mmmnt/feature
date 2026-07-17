@@ -78,7 +78,7 @@ export type Matcher =
   | { matcher: "whenRef"; path: string }
   | { matcher: "deliverRef"; path: string; index?: number }
   | { matcher: "any"; ofType?: "uuid" | "timestamp" | "string" | "number" | "boolean" }
-  | { matcher: "regex"; pattern: string }
+  | { matcher: "regex"; pattern: string | { $placeholder: string } }
   | { matcher: "absent" }
   | { matcher: "placeholder"; name: string }
   | { matcher: "goldenFixture"; path: string }
@@ -143,6 +143,8 @@ export interface ServiceConfig {
   adapter: string;
   consistency: Consistency;
   convergenceTimeout?: number;
+  absenceTimeout?: number;
+  options?: Record<string, unknown>;
 }
 
 export interface ResponseConfig {

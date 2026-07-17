@@ -11,6 +11,12 @@ importers:
       '@dotenvx/dotenvx':
         specifier: ^2.11.0
         version: 2.11.0
+      '@mmmnt/feat-adapter-fs':
+        specifier: workspace:*
+        version: link:adapters/fs
+      '@mmmnt/feat-adapter-handler':
+        specifier: workspace:*
+        version: link:adapters/handler
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.3
@@ -27,6 +33,18 @@ importers:
         specifier: ^3.2.0
         version: 3.2.7(@types/node@24.13.3)
 
+  adapters/fs:
+    dependencies:
+      '@mmmnt/feat-types':
+        specifier: workspace:*
+        version: link:../../packages/feat-types
+
+  adapters/handler:
+    dependencies:
+      '@mmmnt/feat-types':
+        specifier: workspace:*
+        version: link:../../packages/feat-types
+
   packages/feat-core:
     dependencies:
       '@mmmnt/feat-runtime':
@@ -42,6 +60,32 @@ importers:
       ajv-formats:
         specifier: ^3.0.0
         version: 3.0.1(ajv@8.20.0)
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.7(@types/node@24.13.3)
+
+  packages/feat-derive:
+    dependencies:
+      '@mmmnt/feat-types':
+        specifier: workspace:*
+        version: link:../feat-types
+    devDependencies:
+      '@mmmnt/feat-core':
+        specifier: workspace:*
+        version: link:../feat-core
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.7(@types/node@24.13.3)
+
+  packages/feat-emit-ts:
+    dependencies:
+      '@mmmnt/feat-derive':
+        specifier: workspace:*
+        version: link:../feat-derive
+      '@mmmnt/feat-types':
+        specifier: workspace:*
+        version: link:../feat-types
+    devDependencies:
       vitest:
         specifier: ^3.2.0
         version: 3.2.7(@types/node@24.13.3)
@@ -69,9 +113,18 @@ importers:
       '@mmmnt/feat-core':
         specifier: workspace:*
         version: link:../feat-core
+      '@mmmnt/feat-derive':
+        specifier: workspace:*
+        version: link:../feat-derive
+      '@mmmnt/feat-emit-ts':
+        specifier: workspace:*
+        version: link:../feat-emit-ts
       '@mmmnt/feat-runtime':
         specifier: workspace:*
         version: link:../feat-runtime
+      '@mmmnt/feat-types':
+        specifier: workspace:*
+        version: link:../feat-types
       '@oclif/core':
         specifier: ^4.3.0
         version: 4.11.14

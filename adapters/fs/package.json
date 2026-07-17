@@ -1,7 +1,7 @@
 {
-  "name": "@mmmnt/feat-types",
+  "name": "@mmmnt/feat-adapter-fs",
   "version": "0.1.0",
-  "description": "Feat contracts: TypeScript types derived from the JSON Schema IR/config/report definitions. Zero dependencies, zero runtime code (DP-8).",
+  "description": "Feat service adapter: filesystem capture (files written during the capture window). Dogfood-critical.",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
@@ -11,6 +11,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@mmmnt/feat-types": "workspace:*"
   }
 }

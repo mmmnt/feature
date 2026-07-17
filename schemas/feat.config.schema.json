@@ -63,6 +63,16 @@
             "type": "integer",
             "minimum": 0,
             "description": "Milliseconds to wait before capturing eventual services. Required when consistency is 'eventual'."
+          },
+          "absenceTimeout": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Optional shorter wait for absence proofs on eventual services (ADR-0014 tuning knob)."
+          },
+          "options": {
+            "type": "object",
+            "description": "Adapter-specific options (e.g. fs adapter scope).",
+            "additionalProperties": true
           }
         }
       }

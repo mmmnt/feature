@@ -10,7 +10,7 @@ spec SPEC-CORE-001 "Parse a .feat file to BuiltSpec IR"
 context Toolchain
 aggregate Language
 type infrastructure
-status agreed
+status verified
 
 construct:
   handler at packages/feat-core/src/parse.ts

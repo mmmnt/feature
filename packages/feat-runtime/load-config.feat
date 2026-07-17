@@ -9,7 +9,7 @@ spec SPEC-RT-001 "Load and validate feat.config.json"
 context Toolchain
 aggregate Config
 type infrastructure
-status agreed
+status verified
 
 construct:
   handler at packages/feat-runtime/src/load-config.ts

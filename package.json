@@ -26,6 +26,8 @@
   },
   "devDependencies": {
     "@dotenvx/dotenvx": "^2.11.0",
+    "@mmmnt/feat-adapter-fs": "workspace:*",
+    "@mmmnt/feat-adapter-handler": "workspace:*",
     "@types/node": "^24.0.0",
     "ajv-cli": "^5.0.0",
     "turbo": "^2.5.0",

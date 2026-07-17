@@ -45,12 +45,14 @@ scenario "anonymous caller is rejected":
     response 401 ErrorResponse { code: "UNAUTHORIZED" }
     database has []
 
+# The rejection ID below is an outline placeholder (ADR-0012 addendum): every row
+# value must be a declared rejects ID; the two-way lint evaluates per expanded row.
 scenario outline "unknown users are rejected regardless of email shape":
   when (as admin): SuspendUser { email: <email> }
-  predict rejection UNKNOWN_USER:
-    response 404 ErrorResponse { code: <code> }
+  predict rejection <code>:
+    response 404 ErrorResponse { code: <code>, message: matching <msg> }
     database has []
   examples:
-    | email                       | code           |
-    | "missing@example.com"       | "UNKNOWN_USER" |
-    | "also.missing@example.com"  | "UNKNOWN_USER" |
+    | email                       | code           | msg          |
+    | "missing@example.com"       | "UNKNOWN_USER" | "missing"    |
+    | "also.missing@example.com"  | "UNKNOWN_USER" | "missing"    |

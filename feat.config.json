@@ -9,7 +9,11 @@
     }
   },
   "services": {
-    "filesystem": { "adapter": "@mmmnt/feat-adapter-fs", "consistency": "acid" }
+    "filesystem": {
+      "adapter": "@mmmnt/feat-adapter-fs",
+      "consistency": "acid",
+      "options": { "scope": "packages" }
+    }
   },
   "specs": {
     "dir": "packages",
