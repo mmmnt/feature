@@ -1,0 +1,61 @@
+{
+  "featVersion": "1.0",
+  "identity": {
+    "id": "SPEC-ORD-002",
+    "name": "ShipOrder Saga",
+    "context": "Fulfillment",
+    "aggregate": "Order",
+    "type": "saga",
+    "status": "agreed"
+  },
+  "construct": [
+    { "kind": "handler", "path": "sagas/ship-order/handler.ts" },
+    { "kind": "touches", "glob": "sagas/ship-order/**" },
+    { "kind": "import", "symbol": "OrderSaga", "path": "core/domain/order-saga" }
+  ],
+  "enforce": [
+    { "kind": "constraint", "text": "when OrderPublished and then OrderPriced have both arrived, request shipment" },
+    { "kind": "constraint", "text": "the shipment request carries the order id from the first event and the total from the second" },
+    { "kind": "constraint", "text": "never request shipment before both events have arrived" }
+  ],
+  "contract": [
+    { "kind": "event", "schemaName": "OrderPublishedEvent" },
+    { "kind": "event", "schemaName": "OrderPricedEvent" },
+    { "kind": "record", "schemaName": "ShipmentRequestedEvent" }
+  ],
+  "scenarios": [
+    {
+      "name": "requests shipment after the full sequence",
+      "delivers": [
+        {
+          "event": "OrderPublished",
+          "payload": { "orderId": "3c9d8e72-5f4a-4b6c-9d0e-1f2a3b4c5d6e", "publishedAt": "2026-07-01T10:00:00Z" },
+          "service": "eventBroker"
+        },
+        {
+          "event": "OrderPriced",
+          "payload": { "orderId": "3c9d8e72-5f4a-4b6c-9d0e-1f2a3b4c5d6e", "total": 129.5 },
+          "service": "eventBroker"
+        }
+      ],
+      "prediction": {
+        "type": "success",
+        "services": {
+          "outbox": {
+            "records": [
+              {
+                "type": "ShipmentRequested",
+                "schemaName": "ShipmentRequestedEvent",
+                "valueBlock": {
+                  "orderId": { "matcher": "deliverRef", "path": "orderId", "index": 0 },
+                  "total": { "matcher": "deliverRef", "path": "total", "index": 1 }
+                }
+              }
+            ]
+          },
+          "eventBroker": { "records": [] }
+        }
+      }
+    }
+  ]
+}

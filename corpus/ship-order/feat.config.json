@@ -1,0 +1,10 @@
+{
+  "featVersion": "1.0",
+  "schemas": { "adapter": "@mmmnt/feat-schema-json" },
+  "services": {
+    "outbox": { "adapter": "feat-adapter-postgres", "consistency": "acid" },
+    "eventBroker": { "adapter": "@mmmnt/feat-adapter-kafka", "consistency": "eventual", "convergenceTimeout": 3000 }
+  },
+  "specs": { "dir": ".", "pattern": "*.feat", "contractPattern": "*.contract.json", "outputPattern": "{name}.test.ts" },
+  "report": { "format": ["console"] }
+}

@@ -35,7 +35,7 @@ contract:
 scenario "loads a valid config":
   given:
     A well-formed config exists at the fixture path.
-  when: LoadConfig { path: "fixtures/valid.config.json" }
+  when: LoadConfig { path: "packages/feat-runtime/fixtures/valid.config.json" }
   predict success:
     response OK FeatConfigResult {
       featVersion: "1.0"
@@ -44,13 +44,13 @@ scenario "loads a valid config":
     filesystem has []
 
 scenario "missing file":
-  when: LoadConfig { path: "fixtures/does-not-exist.config.json" }
+  when: LoadConfig { path: "packages/feat-runtime/fixtures/does-not-exist.config.json" }
   predict rejection CONFIG_NOT_FOUND:
     response ERR ConfigError { code: "CONFIG_NOT_FOUND", path: @when.path }
     filesystem has []
 
 scenario "eventual service without convergence timeout":
-  when: LoadConfig { path: "fixtures/missing-timeout.config.json" }
+  when: LoadConfig { path: "packages/feat-runtime/fixtures/missing-timeout.config.json" }
   predict rejection MISSING_CONVERGENCE_TIMEOUT:
     response ERR ConfigError {
       code: "MISSING_CONVERGENCE_TIMEOUT"
@@ -65,7 +65,7 @@ scenario outline "schema-invalid configs are rejected":
     filesystem has []
   examples:
     | path                                  | detail          |
-    | "fixtures/no-services.config.json"    | "services"      |
-    | "fixtures/bad-consistency.config.json"| "consistency"   |
-    | "fixtures/empty-commands.config.json" | "commands"      |
-    | "fixtures/not-json.config.json"       | "JSON"          |
+    | "packages/feat-runtime/fixtures/no-services.config.json"    | "services"      |
+    | "packages/feat-runtime/fixtures/bad-consistency.config.json"| "consistency"   |
+    | "packages/feat-runtime/fixtures/empty-commands.config.json" | "commands"      |
+    | "packages/feat-runtime/fixtures/not-json.config.json"       | "JSON"          |

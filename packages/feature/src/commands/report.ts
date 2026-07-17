@@ -1,0 +1,43 @@
+// `feat report` — summarize the last run from the JUnit output (per-scenario,
+// anchors included in test names). --junit prints the raw XML path.
+
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
+import { Command, Flags } from "@oclif/core";
+import type { FeatConfig } from "@mmmnt/feat-types";
+
+export default class Report extends Command {
+  static override description = "Summarize the last feat run from its JUnit output";
+
+  static override flags = {
+    config: Flags.string({ char: "c", description: "Path to feat.config.json", default: "feat.config.json" }),
+    junit: Flags.boolean({ description: "Print the JUnit XML path for CI/Xray import" }),
+  };
+
+  public async run(): Promise<void> {
+    const { flags } = await this.parse(Report);
+    const root = process.cwd();
+    const config = JSON.parse(readFileSync(path.resolve(root, flags.config), "utf8")) as FeatConfig;
+    const junitPath = config.report?.junitOutput;
+    if (!junitPath || !existsSync(path.resolve(root, junitPath))) {
+      this.logToStderr('ERROR [NO_REPORT] No JUnit output found — run "feat run" first (report.format must include "junit").');
+      this.exit(2);
+    }
+    const abs = path.resolve(root, junitPath!);
+    if (flags.junit) {
+      this.log(abs);
+      return;
+    }
+    const xml = readFileSync(abs, "utf8");
+    const suites = [...xml.matchAll(/<testsuite\b[^>]*name="([^"]*)"[^>]*tests="(\d+)"[^>]*failures="(\d+)"[^>]*errors="(\d+)"/g)];
+    let total = 0, failures = 0, errors = 0;
+    for (const s of suites) {
+      total += Number(s[2]);
+      failures += Number(s[3]);
+      errors += Number(s[4]);
+      this.log(`${Number(s[3]) + Number(s[4]) > 0 ? "✗" : "✓"} ${s[1]} — ${s[2]} test(s), ${s[3]} failure(s), ${s[4]} error(s)`);
+    }
+    this.log(`\n${total} test(s): ${total - failures - errors} passed, ${failures} failed, ${errors} errored.`);
+    if (failures + errors > 0) this.exit(1);
+  }
+}

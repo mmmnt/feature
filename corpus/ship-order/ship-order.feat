@@ -1,0 +1,37 @@
+feat 1.0
+
+# Corpus exemplar #9 — a TRUE saga (owed since the publish-order retype): an
+# ordered multi-deliver event sequence as the stimulus, @deliver[i] indexed
+# references, no response surface. Closes the saga-exemplar gap from the
+# 2026-07-16 corpus-audit lesson.
+
+spec SPEC-ORD-002 "ShipOrder Saga"
+context Fulfillment
+aggregate Order
+type saga
+status agreed
+
+construct:
+  handler at sagas/ship-order/handler.ts
+  touches sagas/ship-order/**
+  imports OrderSaga from core/domain/order-saga
+
+enforce:
+  when OrderPublished and then OrderPriced have both arrived, request shipment
+  the shipment request carries the order id from the first event and the total from the second
+  never request shipment before both events have arrived
+
+contract:
+  event OrderPublishedEvent
+  event OrderPricedEvent
+  record ShipmentRequestedEvent
+
+scenario "requests shipment after the full sequence":
+  deliver OrderPublished { orderId: "3c9d8e72-5f4a-4b6c-9d0e-1f2a3b4c5d6e", publishedAt: "2026-07-01T10:00:00Z" } to eventBroker
+  deliver OrderPriced { orderId: "3c9d8e72-5f4a-4b6c-9d0e-1f2a3b4c5d6e", total: 129.5 } to eventBroker
+  predict success:
+    outbox has [ ShipmentRequested with ShipmentRequestedEvent {
+      orderId: @deliver[0].orderId
+      total: @deliver[1].total
+    } ]
+    eventBroker has []

@@ -84,6 +84,21 @@ export async function generateAll(root: string, configPath: string): Promise<Gen
 
     const topology = derive(spec, config);
     const specDir = path.dirname(specAbs);
+
+    // Seed fixtures inline at generate time (ADR-0003 fixture form; keeps derive pure
+    // and generated tests self-contained per ADR-0001).
+    for (const c of topology.cases) {
+      if (!c.given?.seeds) continue;
+      c.given.seeds = c.given.seeds.map((seed) => {
+        if ("fixture" in seed) {
+          const records = JSON.parse(
+            readFileSync(path.resolve(specDir, seed.fixture), "utf8"),
+          ) as { type: string; schemaName?: string; values: Record<string, unknown> }[];
+          return { service: seed.service, records };
+        }
+        return seed;
+      });
+    }
     const baseName = path.basename(specAbs, ".feat");
     const contractPath = path.join(specDir, `${baseName}.contract.json`);
     const { registry, text: contractText } = resolveContract(contractPath);

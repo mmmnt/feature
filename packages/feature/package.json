@@ -29,7 +29,8 @@
     "@mmmnt/feat-emit-ts": "workspace:*",
     "@mmmnt/feat-runtime": "workspace:*",
     "@oclif/core": "^4.3.0",
-    "@mmmnt/feat-types": "workspace:*"
+    "@mmmnt/feat-types": "workspace:*",
+    "@mmmnt/feat-runner": "workspace:*"
   },
   "devDependencies": {
     "vitest": "^3.2.0"

@@ -45,6 +45,16 @@ importers:
         specifier: workspace:*
         version: link:../../packages/feat-types
 
+  adapters/http:
+    dependencies:
+      '@mmmnt/feat-types':
+        specifier: workspace:*
+        version: link:../../packages/feat-types
+    devDependencies:
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.7(@types/node@24.13.3)
+
   packages/feat-core:
     dependencies:
       '@mmmnt/feat-runtime':
@@ -90,6 +100,12 @@ importers:
         specifier: ^3.2.0
         version: 3.2.7(@types/node@24.13.3)
 
+  packages/feat-runner:
+    dependencies:
+      '@mmmnt/feat-types':
+        specifier: workspace:*
+        version: link:../feat-types
+
   packages/feat-runtime:
     dependencies:
       '@mmmnt/feat-types':
@@ -119,6 +135,9 @@ importers:
       '@mmmnt/feat-emit-ts':
         specifier: workspace:*
         version: link:../feat-emit-ts
+      '@mmmnt/feat-runner':
+        specifier: workspace:*
+        version: link:../feat-runner
       '@mmmnt/feat-runtime':
         specifier: workspace:*
         version: link:../feat-runtime

@@ -1,0 +1,30 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-ORD-002",
+  "schemas": {
+    "OrderPublishedEvent": {
+      "type": "object",
+      "required": ["orderId", "publishedAt"],
+      "properties": {
+        "orderId": { "type": "string", "format": "uuid" },
+        "publishedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "OrderPricedEvent": {
+      "type": "object",
+      "required": ["orderId", "total"],
+      "properties": {
+        "orderId": { "type": "string", "format": "uuid" },
+        "total": { "type": "number" }
+      }
+    },
+    "ShipmentRequestedEvent": {
+      "type": "object",
+      "required": ["orderId", "total"],
+      "properties": {
+        "orderId": { "type": "string", "format": "uuid" },
+        "total": { "type": "number" }
+      }
+    }
+  }
+}
