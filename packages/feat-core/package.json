@@ -1,6 +1,6 @@
 {
   "name": "@mmmnt/feat-core",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Feat language core: Langium grammar, parser, AST->BuiltSpec IR, closed-reference-space validation.",
   "license": "MIT",
   "type": "module",
