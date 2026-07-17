@@ -16,6 +16,7 @@ const dirs = groups.flatMap((g) =>
 
 let published = 0;
 let skipped = 0;
+const failed = [];
 
 for (const dir of dirs) {
   const manifest = JSON.parse(readFileSync(path.join(ROOT, dir, "package.json"), "utf8"));
@@ -37,11 +38,23 @@ for (const dir of dirs) {
   }
 
   console.log(`publish  ${spec}`);
-  execSync("pnpm publish --access public --no-git-checks", {
-    cwd: path.join(ROOT, dir),
-    stdio: "inherit",
-  });
-  published++;
+  try {
+    execSync("pnpm publish --access public --no-git-checks", {
+      cwd: path.join(ROOT, dir),
+      stdio: "inherit",
+    });
+    published++;
+  } catch {
+    // Keep publishing the rest; report all failures at the end. A brand-new
+    // package fails here until its trusted publisher is configured on npm
+    // (first publish is a manual bootstrap, as with v0.1.0).
+    console.error(`FAILED   ${spec}`);
+    failed.push(spec);
+  }
 }
 
-console.log(`\npublish-changed: ${published} published, ${skipped} skipped.`);
+console.log(`\npublish-changed: ${published} published, ${skipped} skipped, ${failed.length} failed.`);
+if (failed.length > 0) {
+  console.error(`failed: ${failed.join(", ")}`);
+  process.exit(1);
+}
