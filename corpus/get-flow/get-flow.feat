@@ -37,6 +37,17 @@ scenario "returns the flow view":
   predict success:
     response 200 FlowViewResponse { flowId: @when.flowId, name: "Welcome" }
 
+scenario "returns the flow view (golden)":
+  given:
+    seed projectionStore [ FlowView with FlowViewSchema {
+      flowId: "5e2a7c90-1b3d-4e5f-8a6b-9c0d1e2f3a4b"
+      name: "Welcome"
+      tenantId: "7f0e8a52-4b1c-4d2e-9f3a-1b2c3d4e5f60"
+    } ]
+  when: GetFlow { flowId: "5e2a7c90-1b3d-4e5f-8a6b-9c0d1e2f3a4b" }
+  predict success:
+    response 200 FlowViewResponse equals fixture "fixtures/flow-view-response.golden.json"
+
 scenario "unknown flow":
   when: GetFlow { flowId: "00000000-0000-4000-8000-000000000000" }
   predict rejection NOT_FOUND:

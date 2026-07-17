@@ -291,6 +291,7 @@ matcher     := LITERAL | "@when." PATH | "any" [ "uuid"|"timestamp"|"string"|"nu
 | `any uuid` · `any timestamp` · `any string` · `any number` · `any boolean` | Present + format/type check |
 | `matching "<regex>"` | String matches pattern |
 | `absent` | Field must not exist |
+| `equals fixture "<path>"` | **Golden fixture** (ADR-0013): deep structural equality against a JSON fixture (key-order insensitive, array-order sensitive). Also valid directly on `response` and on records (`<Type> with <Schema> equals fixture "<path>"`, incl. `contains`) — there it is mutually exclusive with a value block. Fixture resolves relative to the spec, inlines at compile time, and must validate against the position's schema (type-safe goldens). No escape clause — dynamic fields belong in value blocks. |
 | `{ ... }` | Nested value block |
 
 Reserved words (`any`, `matching`, `absent`, `ordered`, `unordered`) are reserved **inside
@@ -398,7 +399,7 @@ Generated tests import only `@mmmnt/feat-runtime` and run standalone under `npx 
 **Enforce:** `rejects … when`
 **Given:** `execute` `seed` `from` `with`
 **Trigger:** `when:` `deliver … to`
-**Predict:** `success` `rejection` `error` `response` `has` `contains` `ordered` `unordered` `with`
+**Predict:** `success` `rejection` `error` `response` `has` `contains` `ordered` `unordered` `with` `equals fixture`
 **Value blocks:** `any` (`uuid` `timestamp` `string` `number` `boolean`) `matching` `absent`
 `@when.<path>`
 **Pragma:** `feat <major>.<minor>`

@@ -37,3 +37,10 @@ scenario "projects a created flow into the read model":
       tenantId: @deliver.tenantId
     } ]
     eventStore has []
+
+scenario "projected state matches the golden fixture":
+  deliver FlowCreated { flowId: "5e2a7c90-1b3d-4e5f-8a6b-9c0d1e2f3a4b", name: "Welcome", tenantId: "7f0e8a52-4b1c-4d2e-9f3a-1b2c3d4e5f60", createdAt: "2026-07-01T09:00:00Z" } to eventStore
+  predict success:
+    projectionStore has [ UPSERT with FlowViewSchema ]
+    projectionStore contains [ FlowView with FlowViewSchema equals fixture "fixtures/flow-view-state.golden.json" ]
+    eventStore has []

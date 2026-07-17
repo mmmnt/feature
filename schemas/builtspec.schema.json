@@ -216,10 +216,12 @@
           "type": "object",
           "required": ["status", "schemaName"],
           "additionalProperties": false,
+          "not": { "required": ["valueBlock", "golden"] },
           "properties": {
             "status": { "type": ["integer", "string"] },
             "schemaName": { "type": "string" },
-            "valueBlock": { "$ref": "#/definitions/valueBlock" }
+            "valueBlock": { "$ref": "#/definitions/valueBlock" },
+            "golden": { "type": "string", "description": "Golden-fixture path (ADR-0013); deep structural equality; exclusive with valueBlock." }
           }
         },
         "services": {
@@ -254,10 +256,12 @@
       "type": "object",
       "required": ["type", "schemaName"],
       "additionalProperties": false,
+      "not": { "required": ["valueBlock", "golden"] },
       "properties": {
         "type": { "type": "string" },
         "schemaName": { "type": "string" },
-        "valueBlock": { "$ref": "#/definitions/valueBlock" }
+        "valueBlock": { "$ref": "#/definitions/valueBlock" },
+        "golden": { "type": "string", "description": "Golden-fixture path (ADR-0013); deep structural equality; exclusive with valueBlock." }
       }
     },
     "valueBlock": {
@@ -326,6 +330,15 @@
           "properties": {
             "matcher": { "const": "placeholder" },
             "name": { "type": "string", "description": "Outline placeholder name; resolved per examples row (ADR-0012)." }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["matcher", "path"],
+          "additionalProperties": false,
+          "properties": {
+            "matcher": { "const": "goldenFixture" },
+            "path": { "type": "string", "description": "Golden fixture path relative to the spec (ADR-0013); deep structural equality." }
           }
         },
         {

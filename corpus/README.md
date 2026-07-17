@@ -12,8 +12,8 @@ is tested against. The corpus grows with every language change, forever.
 | 3 | `tenant-at-limit/` | SPEC-AUT-002 | Seed mechanism (ADR-0003): inline record seed + JSON fixture bulk seed |
 | 4 | `publish-order/` | SPEC-ORD-001 | Ordering semantics (ADR-0004): multi-record predictions, `ordered`/`unordered` overrides, `predict error <CODE>`, saga type |
 | 5 | `emit-test-file/` | SPEC-FEAT-001 | Compiler-shaped dogfood pattern: handler response adapter, filesystem service, `matching` regex, nested value blocks, string statuses (`OK`/`ERR`), infrastructure type |
-| 6 | `flow-view/` | SPEC-AUT-003 | Projection (ADR-0011): `deliver` trigger, `contains` state assertions, `@deliver` refs, stimulus excluded from capture, no response surface, deliver-only config (no `response` block) |
-| 7 | `get-flow/` | SPEC-AUT-004 | Query (ADR-0011): the query guarantee — no service predictions writable, response-only success + NOT_FOUND rejection, seed-backed read |
+| 6 | `flow-view/` | SPEC-AUT-003 | Projection (ADR-0011): `deliver` trigger, `contains` state assertions, `@deliver` refs, stimulus excluded from capture, no response surface, deliver-only config (no `response` block); record-position golden fixture (ADR-0013) |
+| 7 | `get-flow/` | SPEC-AUT-004 | Query (ADR-0011): the query guarantee — no service predictions writable, response-only success + NOT_FOUND rejection, seed-backed read; response-position golden fixture (ADR-0013) |
 | 8 | `suspend-user/` | SPEC-USR-002 | ADR-0012 set: `when (as <actor>)` + `anonymous` rejection, `clock at` freeze, scenario outline + examples table, `needs` cross-spec dependency, config actors registry |
 
 Validation (until `feat parse` exists in M2):
