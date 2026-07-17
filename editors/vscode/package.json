@@ -2,7 +2,7 @@
   "name": "feat-vscode",
   "displayName": "Feat — execution specifications",
   "description": "Syntax highlighting and live spec-anchored test feedback for .feat files",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publisher": "mmmnt",
   "license": "MIT",
   "repository": {
@@ -71,5 +71,20 @@
     "@types/node": "^22.0.0",
     "@types/vscode": "^1.85.0",
     "typescript": "^5.8.0"
-  }
+  },
+  "icon": "icon.png",
+  "galleryBanner": {
+    "color": "#4FC7B0",
+    "theme": "dark"
+  },
+  "keywords": [
+    "feat",
+    "specification",
+    "spec-driven",
+    "testing",
+    "tdd",
+    "e2e",
+    "dsl",
+    "prediction"
+  ]
 }
