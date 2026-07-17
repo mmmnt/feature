@@ -1,5 +1,7 @@
 # Feature
 
+[![CI](https://github.com/mmmnt/feature/actions/workflows/ci.yml/badge.svg)](https://github.com/mmmnt/feature/actions/workflows/ci.yml)
+
 Feature is the **`.feat` execution specification language** and its toolchain. A `.feat` file
 does three things at once:
 
