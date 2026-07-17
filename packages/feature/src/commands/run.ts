@@ -14,6 +14,7 @@ export default class Run extends Command {
   static override flags = {
     config: Flags.string({ char: "c", description: "Path to feat.config.json", default: "feat.config.json" }),
     spec: Flags.string({ description: "Run only the spec with this ID (e.g. SPEC-RT-001)" }),
+    coverage: Flags.boolean({ description: "Collect coverage via the runner's coverage provider" }),
   };
 
   public async run(): Promise<void> {
@@ -48,6 +49,7 @@ export default class Run extends Command {
       root,
     };
     if (junit !== undefined) runOpts.junitOutput = junit;
+    if (flags.coverage) runOpts.coverage = true;
     const result = runTests(runOpts);
     if (result.junitPath) this.log(`junit: ${path.relative(root, result.junitPath)}`);
     if (result.exitCode !== 0) this.exit(1);

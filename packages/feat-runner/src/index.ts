@@ -13,6 +13,8 @@ export interface RunOptions {
   root: string;
   /** Write a JUnit XML report to this path (root-relative), if set. */
   junitOutput?: string;
+  /** Collect coverage via the test runner's coverage provider. */
+  coverage?: boolean;
 }
 
 export interface RunResult {
@@ -22,6 +24,7 @@ export interface RunResult {
 
 export function runTests(opts: RunOptions): RunResult {
   const args = ["vitest", "run", ...opts.files, "--reporter=default"];
+  if (opts.coverage) args.push("--coverage");
   let junitPath: string | undefined;
   if (opts.junitOutput) {
     junitPath = path.resolve(opts.root, opts.junitOutput);

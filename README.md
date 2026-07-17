@@ -50,14 +50,39 @@ scenario "rejects duplicate email":
 The same spec compiles to the same tests, byte for byte, every time — which is what makes the
 CI gate possible.
 
+## Getting started
+
+```sh
+npm install --save-dev @mmmnt/feature @mmmnt/feat-runtime \
+  @mmmnt/feat-adapter-handler @mmmnt/feat-adapter-fs @mmmnt/feat-schema-json
+
+npx feat init        # scaffolds feat.config.json + a first spec in specs/
+npx feat generate    # compiles specs into test files
+npx feat run         # executes them (red until you implement the handler)
+```
+
+Where things live:
+
+| | |
+| --- | --- |
+| Your specs | `specs/*.feat` + `specs/*.contract.json` (configurable) |
+| Generated tests | next to each spec — `specs/greet.feat` → `specs/greet.test.ts`, committed |
+| Test runner | Vitest — generated files are standard Vitest suites and also run directly |
+| Reports | JUnit XML via `feat run` (path in `feat.config.json`); summary via `feat report` |
+| Coverage | `feat run --coverage` (Vitest coverage provider; your thresholds apply) |
+
+Full walkthrough and integration guide: see **Getting Started** and **Testing Mechanics** in the
+wiki.
+
 ## The CLI
 
 | Command | What it does |
 | --- | --- |
+| `feat init` | Scaffold `feat.config.json` and a first spec. |
 | `feat parse <file>` | Validate a spec and print its intermediate representation. Catches syntax errors and every closed-reference violation (unknown service, command, schema, or actor) at parse time. |
 | `feat generate` | Compile every spec into its test file (committed next to the spec). |
 | `feat verify` | CI integrity gate: regenerate and byte-compare against the committed test files. Any drift fails the build. |
-| `feat run [--spec ID]` | Execute the generated suites with the full adapter lifecycle; writes JUnit XML when configured. |
+| `feat run [--spec ID] [--coverage]` | Execute the generated suites with the full adapter lifecycle; writes JUnit XML when configured; `--coverage` passes through to the runner's coverage provider. |
 | `feat report [--junit]` | Summarize the last run per suite; `--junit` prints the XML path for CI import. |
 | `feat audit` | Buildability gate: every spec has a handler, declared change boundaries (`touches`), and two-way traceability between predicted rejections and `rejects` directives. |
 | `feat lint` | Language-quality warnings: unused schema declarations, duplicates, lifecycle surfacing. |
