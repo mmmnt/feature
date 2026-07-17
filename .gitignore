@@ -25,5 +25,5 @@ reports/
 .mcp.json
 .quorum.json
 
-# Private working file (kept local)
-FEATURES.md
+# Local working files
+FEATURES*.md

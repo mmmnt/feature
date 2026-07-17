@@ -14,7 +14,7 @@ it compiles deterministically to complete test suites with zero human-authored t
 - Scope is tracked in a local working ledger (untracked, maintained alongside each change).
 - **`.feat` specs are the unit of work.** The agent builds only `status agreed` specs, only within
   their `touches` globs. Ambiguity = halt and ask — never guess, never annotate the file.
-- Design changes require an ADR (see the decision-record index referenced from FEATURES.md), and a
+- Design changes require an ADR — see the project decision log. A
   language change is incomplete until all four layers close in the same change: grammar reference
   updated, corpus exemplar added, parser/IR implemented, full corpus re-validated.
 
