@@ -1,9 +1,13 @@
 // `feat init` — scaffold a project: feat.config.json, a first spec + contract,
-// and next steps. Refuses to overwrite existing files.
+// AND the dependency setup — after scaffolding it installs what a working
+// project needs (runtime, starter adapters, vitest) with the detected package
+// manager, so `npm i -D @mmmnt/feature && npx feat init` is a complete start.
+// Refuses to overwrite existing files. --no-install prints the command instead.
 
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { Command } from "@oclif/core";
+import { Command, Flags } from "@oclif/core";
 
 const CONFIG = `{
   "featVersion": "1.0",
@@ -89,10 +93,45 @@ const CONTRACT = `{
 }
 `;
 
+/** What a working project needs beyond the CLI itself. Installed at latest —
+ *  the registry resolves compatible versions; the manifest gets caret ranges. */
+const STARTER_DEPS = [
+  "@mmmnt/feat-runtime",
+  "@mmmnt/feat-adapter-handler",
+  "@mmmnt/feat-adapter-fs",
+  "@mmmnt/feat-schema-json",
+  "vitest",
+];
+
+type Pm = "pnpm" | "yarn" | "npm";
+
+function detectPm(root: string): Pm {
+  if (existsSync(path.join(root, "pnpm-lock.yaml"))) return "pnpm";
+  if (existsSync(path.join(root, "yarn.lock"))) return "yarn";
+  if (existsSync(path.join(root, "package-lock.json"))) return "npm";
+  const ua = process.env.npm_config_user_agent ?? "";
+  if (ua.startsWith("pnpm")) return "pnpm";
+  if (ua.startsWith("yarn")) return "yarn";
+  return "npm";
+}
+
+function installCommand(pm: Pm, deps: string[]): string[] {
+  if (pm === "npm") return ["npm", "install", "-D", ...deps];
+  return [pm, "add", "-D", ...deps];
+}
+
 export default class Init extends Command {
-  static override description = "Scaffold feat.config.json and a first spec";
+  static override description = "Scaffold feat.config.json, a first spec, and install the starter dependencies";
+
+  static override flags = {
+    "no-install": Flags.boolean({
+      description: "Skip dependency installation; print the install command instead",
+      default: false,
+    }),
+  };
 
   public async run(): Promise<void> {
+    const { flags } = await this.parse(Init);
     const root = process.cwd();
     const configPath = path.join(root, "feat.config.json");
     if (existsSync(configPath)) {
@@ -107,6 +146,44 @@ export default class Init extends Command {
     this.log("created feat.config.json");
     this.log("created specs/greet.feat");
     this.log("created specs/greet.contract.json");
+
+    // ── Dependency completion ──
+    const pkgPath = path.join(root, "package.json");
+    if (!existsSync(pkgPath)) {
+      writeFileSync(
+        pkgPath,
+        JSON.stringify({ name: path.basename(root), version: "0.0.0", private: true }, null, 2) + "\n",
+      );
+      this.log("created package.json");
+    }
+    const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as {
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+    };
+    const declared = new Set([...Object.keys(pkg.dependencies ?? {}), ...Object.keys(pkg.devDependencies ?? {})]);
+    const missing = STARTER_DEPS.filter((d) => !declared.has(d));
+
+    if (missing.length === 0) {
+      this.log("dependencies: all present");
+    } else {
+      const pm = detectPm(root);
+      const cmd = installCommand(pm, missing);
+      if (flags["no-install"]) {
+        this.log("");
+        this.log("Install the remaining dependencies:");
+        this.log(`  ${cmd.join(" ")}`);
+      } else {
+        this.log("");
+        this.log(`installing with ${pm}: ${missing.join(", ")}`);
+        const result = spawnSync(cmd[0]!, cmd.slice(1), { cwd: root, stdio: "inherit", env: process.env });
+        if (result.status !== 0) {
+          this.logToStderr("");
+          this.logToStderr(`WARN install did not complete — run it yourself:`);
+          this.logToStderr(`  ${cmd.join(" ")}`);
+        }
+      }
+    }
+
     this.log("");
     this.log("Next steps:");
     this.log("  1. feat parse specs/greet.feat      # validate the spec");

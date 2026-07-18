@@ -55,13 +55,16 @@ CI gate possible.
 ## Getting started
 
 ```sh
-npm install --save-dev @mmmnt/feature @mmmnt/feat-runtime \
-  @mmmnt/feat-adapter-handler @mmmnt/feat-adapter-fs @mmmnt/feat-schema-json
+npm install --save-dev @mmmnt/feature
+npx feat init        # scaffolds config + first spec, installs everything else
 
-npx feat init        # scaffolds feat.config.json + a first spec in specs/
 npx feat generate    # compiles specs into test files
 npx feat run         # executes them (red until you implement the handler)
 ```
+
+`feat init` detects your package manager (npm/pnpm/yarn), adds the runtime,
+starter adapters, and test runner to your project, and creates a `package.json`
+if you don't have one. `--no-install` prints the command instead of running it.
 
 Where things live:
 
