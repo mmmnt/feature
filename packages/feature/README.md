@@ -5,13 +5,16 @@ instructs how a feature is built, predicts every observable effect it will produ
 deterministically into complete test suites. Anything unpredicted is a failure.
 
 ```sh
-npm install --save-dev @mmmnt/feature @mmmnt/feat-runtime \
-  @mmmnt/feat-adapter-handler @mmmnt/feat-adapter-fs @mmmnt/feat-schema-json
+npm install --save-dev @mmmnt/feature
+npx feat init        # scaffolds config + a first spec, installs everything else
 
-npx feat init        # scaffold feat.config.json + a first spec
 npx feat generate    # compile specs into test files
 npx feat run         # execute them with the adapter lifecycle
 ```
+
+`feat init` detects your package manager (npm/pnpm/yarn) and installs the
+runtime, starter adapters, and test runner; `--no-install` prints the command
+instead.
 
 ## Commands
 
