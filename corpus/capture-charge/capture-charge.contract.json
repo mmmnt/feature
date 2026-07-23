@@ -1,0 +1,50 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-PAY-001",
+  "schemas": {
+    "CaptureChargeInput": {
+      "type": "object",
+      "required": ["amountCents", "currency"],
+      "additionalProperties": false,
+      "properties": {
+        "amountCents": { "type": "integer" },
+        "currency": { "type": "string", "minLength": 3, "maxLength": 3 }
+      }
+    },
+    "CaptureReceipt": {
+      "type": "object",
+      "required": ["chargeId", "amountCents"],
+      "properties": {
+        "chargeId": { "type": "string" },
+        "amountCents": { "type": "integer" }
+      }
+    },
+    "Charge": {
+      "type": "object",
+      "required": ["amount", "currency"],
+      "properties": {
+        "amount": { "type": "integer" },
+        "currency": { "type": "string" },
+        "livemode": { "type": "boolean" }
+      }
+    },
+    "ReceiptRow": {
+      "type": "object",
+      "required": ["amountCents", "currency", "chargeRef"],
+      "properties": {
+        "id": { "type": "string" },
+        "amountCents": { "type": "integer" },
+        "currency": { "type": "string" },
+        "chargeRef": { "type": "string" }
+      }
+    },
+    "ErrorResponse": {
+      "type": "object",
+      "required": ["code"],
+      "properties": {
+        "code": { "type": "string" },
+        "message": { "type": "string" }
+      }
+    }
+  }
+}

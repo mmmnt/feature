@@ -270,10 +270,17 @@ A record is `<Type> with <Schema>` plus an optional **value block**. Three asser
 type match → schema validation → value-block matchers. Value blocks are **partial**: they
 assert listed fields only; shape completeness is the schema's job.
 
+The record **type** accepts dotted identifiers (ADR-0015): adapters own the type vocabulary
+of what they capture, and event instruments name types with dots — `charge.succeeded with
+Charge`, `checkout.session.completed with CheckoutSession`. Applies wherever a record head
+appears (`has` / `contains` lists and `seed` records); the schema-name position stays a plain
+IDENT validated against the `contract:` block.
+
 Micro-grammar (every bare word below is KEYWORD or validated IDENT — never prose):
 
 ```
-record      := IDENT:type "with" IDENT:schemaName [ valueBlock ]     # schemaName ∈ contract: block
+record      := DOTTED-IDENT:type "with" IDENT:schemaName [ valueBlock ]  # schemaName ∈ contract: block
+DOTTED-IDENT := IDENT { "." IDENT }                                  # ADR-0015: adapters own the type vocabulary
 valueBlock  := "{" { IDENT:field ":" matcher } "}"
 matcher     := LITERAL | "@when." PATH | "any" [ "uuid"|"timestamp"|"string"|"number"|"boolean" ]
              | "matching" STRING | "absent" | valueBlock

@@ -1,0 +1,16 @@
+{
+  "featVersion": "1.0",
+  "schemas": { "adapter": "@mmmnt/feat-schema-json" },
+  "response": {
+    "adapter": "@mmmnt/feat-adapter-handler",
+    "commands": {
+      "CaptureCharge": { "module": "handlers/capture-charge.ts", "export": "captureCharge" }
+    }
+  },
+  "services": {
+    "payments": { "adapter": "@mmmnt/feat-adapter-stripe", "consistency": "eventual", "convergenceTimeout": 5000 },
+    "database": { "adapter": "feat-adapter-postgres", "consistency": "acid" }
+  },
+  "specs": { "dir": ".", "pattern": "*.feat", "contractPattern": "*.contract.json", "outputPattern": "{name}.test.ts" },
+  "report": { "format": ["console"] }
+}

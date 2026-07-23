@@ -104,6 +104,53 @@ describe("playwright adapter journeys", () => {
     await a.teardown();
   });
 
+  it("resolves browsers from a CJS default-only playwright build", async () => {
+    // Real playwright ships CJS; under the adapter's raw dynamic import the
+    // browser types can land solely on the default export (observed on 1.61:
+    // named-export detection fails, `ns.chromium` is undefined). The fake
+    // below hides `chromium` behind a computed key so the lexer cannot
+    // surface it as a named export — only `default` carries it.
+    const cjsFix = path.join(PKG, "fixtures", "journey-cjs");
+    rmSync(cjsFix, { recursive: true, force: true });
+    mkdirSync(path.join(cjsFix, "node_modules", "playwright"), { recursive: true });
+    writeFileSync(path.join(cjsFix, "package.json"), JSON.stringify({ name: "fixture-cjs", type: "module" }));
+    writeFileSync(
+      path.join(cjsFix, "node_modules", "playwright", "package.json"),
+      JSON.stringify({ name: "playwright", version: "1.99.0", main: "index.js" }),
+    );
+    writeFileSync(
+      path.join(cjsFix, "node_modules", "playwright", "index.js"),
+      `const impl = {
+        async launch() {
+          return {
+            async newContext() {
+              return {
+                async newPage() { return { goto: async () => {} }; },
+                async close() {},
+              };
+            },
+            async close() {},
+          };
+        },
+      };
+      module.exports["chrom" + "ium"] = impl;`,
+    );
+    writeFileSync(
+      path.join(cjsFix, "journeys.mjs"),
+      `export async function ping(page, payload, ctx) { return { status: 200, body: { ok: true } }; }`,
+    );
+    const a = createAdapter({
+      commands: { Ping: { module: "journeys.mjs", export: "ping" } },
+      invoke: { headless: true },
+      projectRoot: cjsFix,
+    });
+    await a.setup();
+    const r = await a.invoke("Ping", {});
+    expect(r).toEqual({ status: 200, body: { ok: true } });
+    await a.teardown();
+    rmSync(cjsFix, { recursive: true, force: true });
+  });
+
   it("errors clearly on an unrouted command", async () => {
     // NOTE: the missing-peer error path (setup() without playwright resolvable)
     // is deliberately untested — NODE_PATH-style environment hoists make it

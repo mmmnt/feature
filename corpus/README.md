@@ -16,6 +16,7 @@ is tested against. The corpus grows with every language change, forever.
 | 7 | `get-flow/` | SPEC-AUT-004 | Query (ADR-0011): the query guarantee — no service predictions writable, response-only success + NOT_FOUND rejection, seed-backed read; response-position golden fixture (ADR-0013) |
 | 8 | `suspend-user/` | SPEC-USR-002 | ADR-0012 set: `when (as <actor>)` + `anonymous` rejection, `clock at` freeze, scenario outline + examples table (incl. placeholder rejection-ID and matching-argument positions), `needs` cross-spec dependency, config actors registry |
 | 9 | `ship-order/` | SPEC-ORD-002 | True saga (owed from the publish-order retype): ordered multi-deliver sequence, `@deliver[i]` indexed references, no response surface, deliver-only + mixed acid/eventual services |
+| 10 | `capture-charge/` | SPEC-PAY-001 | Dotted record types (ADR-0015): `charge.succeeded with Charge` in a `has` prediction, plain-IDENT types alongside, seed + mixed eventual/acid services, `unordered` override on an event-feed service |
 
 Validation (until `feat parse` exists in M2):
 

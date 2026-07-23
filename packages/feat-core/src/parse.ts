@@ -300,6 +300,12 @@ interface SeedRecord {
   values: Record<string, unknown>;
 }
 
+const IDENT_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const isIdent = (t: string): boolean => IDENT_RE.test(t);
+// Record types accept dotted identifiers (ADR-0015): every dot-separated
+// segment must itself be an ident — checked literally, not in the tokenizer.
+const isDottedIdent = (t: string): boolean => t.split(".").every(isIdent);
+
 function parseRecordList(src: string, mode: "predict" | "seed"): (PredictedRecord | SeedRecord)[] {
   const c = new ValueCursor(src.trim());
   c.skipWs();
@@ -309,8 +315,12 @@ function parseRecordList(src: string, mode: "predict" | "seed"): (PredictedRecor
   c.skipWs();
   while (c.peek() !== "]") {
     if (c.peek() === "") c.fail("record list (unterminated)");
-    const head = /^([A-Za-z_][A-Za-z0-9_]*)[ \t\n]+with[ \t\n]+([A-Za-z_][A-Za-z0-9_]*)/.exec(c.src.slice(c.pos));
-    if (head === null)
+    // Record head: `<Type> with <Schema>`. Tokenize on word chars + literal
+    // dots with `with` as its own group; validity of the tokens (incl. dot
+    // boundaries, ADR-0015 — `charge.succeeded with Charge`) is checked by
+    // the ident predicates, not packed into the tokenizer.
+    const head = /^([\w.]+)[ \t\n]+(with)[ \t\n]+(\w+)/.exec(c.src.slice(c.pos));
+    if (head === null || !isDottedIdent(head[1]!) || !isIdent(head[3]!))
       throw new ParseFailure(
         "MALFORMED_SYNTAX",
         `Malformed record near '${c.src.slice(c.pos, c.pos + 24)}' (expected '<Type> with <Schema>').`,
@@ -319,9 +329,9 @@ function parseRecordList(src: string, mode: "predict" | "seed"): (PredictedRecor
     c.skipWs();
     if (mode === "seed") {
       const values = parseLiteralObject(c);
-      out.push({ type: head[1]!, schemaName: head[2]!, values });
+      out.push({ type: head[1]!, schemaName: head[3]!, values });
     } else {
-      const rec: PredictedRecord = { type: head[1]!, schemaName: head[2]! };
+      const rec: PredictedRecord = { type: head[1]!, schemaName: head[3]! };
       const g = /^equals[ \t]+fixture[ \t]+/.exec(c.src.slice(c.pos));
       if (g) {
         c.pos += g[0].length;

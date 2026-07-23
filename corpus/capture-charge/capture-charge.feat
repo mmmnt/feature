@@ -1,0 +1,54 @@
+feat 1.0
+
+# Corpus exemplar #10 — dotted record types (ADR-0015): adapters own the type
+# vocabulary of what they capture; event instruments (Stripe, CloudEvents,
+# brokers) name types with dots. Exercises dotted types in a `has` prediction
+# and in a `seed` record, alongside plain-IDENT types in the same file.
+
+spec SPEC-PAY-001 "CaptureCharge"
+context Payments
+aggregate Charge
+type command
+status agreed
+
+construct:
+  handler at handlers/capture-charge.ts
+  touches handlers/**
+  The payment instrument is observed through its event feed; the handler
+  never writes to it directly.
+
+enforce:
+  validate input against CaptureChargeInput
+  rejects AMOUNT_INVALID when the amount is zero or negative
+  create the charge on the payment instrument and persist a local receipt
+
+contract:
+  input CaptureChargeInput
+  response CaptureReceipt
+  record Charge
+  record ReceiptRow
+  error ErrorResponse
+
+scenario "successful charge capture":
+  given:
+    seed database [ ReceiptRow with ReceiptRow { id: "seed-1", amountCents: 100, currency: "usd", chargeRef: "ch_seed" } ]
+  when: CaptureCharge { amountCents: 4900, currency: "usd" }
+  predict success:
+    response 201 CaptureReceipt { chargeId: any string, amountCents: @when.amountCents }
+    payments has unordered [ charge.succeeded with Charge {
+      amount: @when.amountCents
+      currency: "usd"
+      livemode: false
+    } ]
+    database has [ INSERT with ReceiptRow {
+      amountCents: @when.amountCents
+      currency: @when.currency
+      chargeRef: any string
+    } ]
+
+scenario "rejects a non-positive amount":
+  when: CaptureCharge { amountCents: 0, currency: "usd" }
+  predict rejection AMOUNT_INVALID:
+    response 422 ErrorResponse { code: "AMOUNT_INVALID" }
+    payments has []
+    database has []

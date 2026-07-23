@@ -98,6 +98,12 @@ scenario "parses the saga exemplar (ship-order)":
     response OK BuiltSpec equals fixture "../../corpus/ship-order/ship-order.ir.json"
     filesystem has []
 
+scenario "parses the dotted-record-types exemplar (capture-charge)":
+  when: Parse { spec: "corpus/capture-charge/capture-charge.feat", config: "corpus/capture-charge/feat.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "../../corpus/capture-charge/capture-charge.ir.json"
+    filesystem has []
+
 scenario outline "rejects invalid specs with the precise code":
   when: Parse { spec: <spec>, config: "packages/feat-core/fixtures/parse.config.json" }
   predict rejection <code>:

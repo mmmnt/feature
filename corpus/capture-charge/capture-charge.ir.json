@@ -1,0 +1,193 @@
+{
+  "featVersion": "1.0",
+  "identity": {
+    "id": "SPEC-PAY-001",
+    "name": "CaptureCharge",
+    "context": "Payments",
+    "aggregate": "Charge",
+    "type": "command",
+    "status": "agreed"
+  },
+  "construct": [
+    {
+      "kind": "handler",
+      "path": "handlers/capture-charge.ts"
+    },
+    {
+      "kind": "touches",
+      "glob": "handlers/**"
+    },
+    {
+      "kind": "custom",
+      "text": "The payment instrument is observed through its event feed; the handler"
+    },
+    {
+      "kind": "custom",
+      "text": "never writes to it directly."
+    }
+  ],
+  "enforce": [
+    {
+      "kind": "validate",
+      "text": "validate input against CaptureChargeInput"
+    },
+    {
+      "kind": "rejects",
+      "rejectionId": "AMOUNT_INVALID",
+      "text": "the amount is zero or negative"
+    },
+    {
+      "kind": "constraint",
+      "text": "create the charge on the payment instrument and persist a local receipt"
+    }
+  ],
+  "contract": [
+    {
+      "kind": "input",
+      "schemaName": "CaptureChargeInput"
+    },
+    {
+      "kind": "response",
+      "schemaName": "CaptureReceipt"
+    },
+    {
+      "kind": "record",
+      "schemaName": "Charge"
+    },
+    {
+      "kind": "record",
+      "schemaName": "ReceiptRow"
+    },
+    {
+      "kind": "error",
+      "schemaName": "ErrorResponse"
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "successful charge capture",
+      "given": {
+        "seeds": [
+          {
+            "service": "database",
+            "records": [
+              {
+                "type": "ReceiptRow",
+                "schemaName": "ReceiptRow",
+                "values": {
+                  "id": "seed-1",
+                  "amountCents": 100,
+                  "currency": "usd",
+                  "chargeRef": "ch_seed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "when": {
+        "command": "CaptureCharge",
+        "payload": {
+          "amountCents": 4900,
+          "currency": "usd"
+        }
+      },
+      "prediction": {
+        "type": "success",
+        "response": {
+          "status": 201,
+          "schemaName": "CaptureReceipt",
+          "valueBlock": {
+            "chargeId": {
+              "matcher": "any",
+              "ofType": "string"
+            },
+            "amountCents": {
+              "matcher": "whenRef",
+              "path": "amountCents"
+            }
+          }
+        },
+        "services": {
+          "payments": {
+            "ordering": "unordered",
+            "records": [
+              {
+                "type": "charge.succeeded",
+                "schemaName": "Charge",
+                "valueBlock": {
+                  "amount": {
+                    "matcher": "whenRef",
+                    "path": "amountCents"
+                  },
+                  "currency": {
+                    "matcher": "literal",
+                    "value": "usd"
+                  },
+                  "livemode": {
+                    "matcher": "literal",
+                    "value": false
+                  }
+                }
+              }
+            ]
+          },
+          "database": {
+            "records": [
+              {
+                "type": "INSERT",
+                "schemaName": "ReceiptRow",
+                "valueBlock": {
+                  "amountCents": {
+                    "matcher": "whenRef",
+                    "path": "amountCents"
+                  },
+                  "currency": {
+                    "matcher": "whenRef",
+                    "path": "currency"
+                  },
+                  "chargeRef": {
+                    "matcher": "any",
+                    "ofType": "string"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "rejects a non-positive amount",
+      "when": {
+        "command": "CaptureCharge",
+        "payload": {
+          "amountCents": 0,
+          "currency": "usd"
+        }
+      },
+      "prediction": {
+        "type": "rejection",
+        "rejectionId": "AMOUNT_INVALID",
+        "response": {
+          "status": 422,
+          "schemaName": "ErrorResponse",
+          "valueBlock": {
+            "code": {
+              "matcher": "literal",
+              "value": "AMOUNT_INVALID"
+            }
+          }
+        },
+        "services": {
+          "payments": {
+            "records": []
+          },
+          "database": {
+            "records": []
+          }
+        }
+      }
+    }
+  ]
+}

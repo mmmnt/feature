@@ -75,7 +75,10 @@ class PlaywrightAdapter implements FeatResponseAdapter {
       );
     }
     const kind = this.config.invoke?.browser ?? "chromium";
-    const browserType = pw[kind];
+    // CJS builds of playwright may surface browser types only on the default
+    // export under raw dynamic import (named-export detection is best-effort).
+    const ns = pw as Record<string, PWBrowserType> & { default?: Record<string, PWBrowserType> };
+    const browserType = ns[kind] ?? ns.default?.[kind];
     if (!browserType) throw new Error(`Unknown browser '${kind}' — configuration error.`);
     this.browser = await browserType.launch({ headless: this.config.invoke?.headless ?? true });
   }
