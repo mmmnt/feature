@@ -114,13 +114,21 @@ export async function generateAll(root: string, configPath: string): Promise<Gen
         configSlice: {
           featVersion: config.featVersion,
           response: config.response
-            ? { adapter: config.response.adapter, commands: config.response.commands, actors: config.response.actors }
+            ? {
+                adapter: config.response.adapter,
+                commands: config.response.commands,
+                actors: config.response.actors,
+                // invoke feeds the emitted timing envelope, so it is derivation-relevant.
+                invoke: config.response.invoke,
+              }
             : undefined,
           services: config.services,
         } as object,
       },
       specPath: specRel,
       configPath: path.relative(specDir, configAbs),
+      invokeTimeoutMs:
+        typeof config.response?.invoke?.timeout === "number" ? config.response.invoke.timeout : undefined,
       emitterVersion: EMITTER_VERSION,
       featVersion: spec.featVersion,
     });
