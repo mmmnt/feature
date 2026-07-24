@@ -206,8 +206,21 @@ describe.runIf(available)("dynamodb adapter against real DynamoDB (Local)", () =
 
   // ── Ephemeral mode: the adapter scaffolds its own instrument ───────────────
   it("ephemeral mode scaffolds a private instrument end to end (zero credentials, zero IaC)", async () => {
-    const a = createAdapter({ options: { ephemeral: { table: "feat-eph", sortKey: "SK" } } });
+    const a = createAdapter({
+      options: {
+        ephemeral: {
+          table: "feat-eph",
+          sortKey: "SK",
+          exposeEnv: { tableEnv: "FEAT_EPH_TABLE", endpointEnv: "FEAT_EPH_ENDPOINT" },
+        },
+      },
+    });
+    expect(process.env.FEAT_EPH_TABLE).toBeUndefined();
     await a.setup(); // spins its own DynamoDB Local container + table + stream
+    // exposeEnv: in-process handlers read the instrument's coordinates from
+    // the environment, exactly as deployed code will.
+    expect(process.env.FEAT_EPH_TABLE).toBe("feat-eph");
+    expect(process.env.FEAT_EPH_ENDPOINT).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
     await a.seed!([{ type: "Row", values: { PK: "SEED", SK: "ROW#1", planted: true } }]);
     await a.startCapture();
     await a.seed!([{ type: "Row", values: { PK: "LIVE", SK: "ROW#2", planted: false } }]);
@@ -218,6 +231,9 @@ describe.runIf(available)("dynamodb adapter against real DynamoDB (Local)", () =
     expect(records.map((r) => r.type)).toEqual(["INSERT"]);
     expect(records[0]!.payload).toEqual({ PK: "LIVE", SK: "ROW#2", planted: false });
     expect(state.map((s) => s.payload.PK).sort()).toEqual(["LIVE", "SEED"]);
+    // exposeEnv restored on teardown — no environment residue across suites.
+    expect(process.env.FEAT_EPH_TABLE).toBeUndefined();
+    expect(process.env.FEAT_EPH_ENDPOINT).toBeUndefined();
   }, 180_000);
 
   // ── End to end through the REAL harness: handler writes, stream captures ──

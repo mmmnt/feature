@@ -67,6 +67,12 @@ export interface EphemeralOptions {
   sortKey?: string | null;
   /** Container image override (default amazon/dynamodb-local). */
   image?: string;
+  /**
+   * Env-var NAMES to publish the scaffolded instrument's coordinates under,
+   * so in-process handlers read table/endpoint from the environment exactly
+   * as the deployed code will (12-factor parity). Restored on teardown.
+   */
+  exposeEnv?: { tableEnv?: string; endpointEnv?: string };
 }
 
 interface DynamoAdapterConfig {
@@ -187,6 +193,7 @@ class DynamoAdapter implements FeatServiceAdapter {
   private streamArn: string | null = null;
   private iterators: string[] | null = null;
   private container: string | null = null;
+  private exposedEnv: { name: string; prior: string | undefined }[] = [];
 
   constructor(config: DynamoAdapterConfig) {
     this.opts = config.options ?? {};
@@ -248,6 +255,18 @@ class DynamoAdapter implements FeatServiceAdapter {
         if (Date.now() > deadline)
           throw new Error(`@mmmnt/feat-adapter-dynamodb: ephemeral instrument never became ready (${(e as Error).message})`);
         await new Promise((r) => setTimeout(r, 500));
+      }
+    }
+    const expose = eph.exposeEnv;
+    if (expose) {
+      const endpoint = `http://127.0.0.1:${port}`;
+      for (const [name, value] of [
+        [expose.tableEnv, this.table],
+        [expose.endpointEnv, endpoint],
+      ] as const) {
+        if (!name) continue;
+        this.exposedEnv.push({ name, prior: process.env[name] });
+        process.env[name] = value;
       }
     }
     const pk = eph.partitionKey ?? "PK";
@@ -320,6 +339,11 @@ class DynamoAdapter implements FeatServiceAdapter {
       }
       this.container = null;
     }
+    for (const { name, prior } of this.exposedEnv) {
+      if (prior === undefined) delete process.env[name];
+      else process.env[name] = prior;
+    }
+    this.exposedEnv = [];
   }
 
   async reset(): Promise<void> {

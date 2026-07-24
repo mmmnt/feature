@@ -1,6 +1,6 @@
 {
   "name": "@mmmnt/feat-adapter-dynamodb",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "DynamoDB service adapter for Feat: table writes become a capture window via DynamoDB Streams — an unpredicted INSERT/MODIFY/REMOVE fails the suite",
   "type": "module",
   "main": "dist/index.js",
