@@ -10,6 +10,7 @@
 // consumer's own toolchain performs.
 import { execFile as execFileCb } from "node:child_process";
 import { mkdtempSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -33,7 +34,12 @@ export interface SynthStackConfig {
   assemblyDir?: string;
   /** Extra environment for the synth subprocess (e.g. ENVIRONMENT). */
   env?: Record<string, string>;
-  /** Binary that runs cdk (default "npx"); the appCommand is passed via --app. */
+  /**
+   * Binary that runs cdk. By default the consumer's own `aws-cdk` install is
+   * resolved and run with the current Node executable — cross-platform, no
+   * shell. Setting this forces the shim path instead (spawned through a
+   * shell on Windows, where npx is a .cmd file execFile cannot run).
+   */
   cdkBin?: string;
   /**
    * Semantic projection: extra assertable fields merged OVER the canonical
@@ -54,6 +60,24 @@ interface SynthStackPayload {
   stack?: unknown;
 }
 
+/**
+ * The consumer's own aws-cdk CLI entry, resolved from `cwd` — running it via
+ * process.execPath is the cross-platform path (no .cmd shim involved).
+ * Null when aws-cdk is not installed there (the npx fallback applies).
+ */
+export function resolveCdkEntry(cwd: string): string | null {
+  try {
+    return createRequire(path.join(cwd, "__feat-cdk-resolve__.js")).resolve("aws-cdk/bin/cdk");
+  } catch {
+    return null;
+  }
+}
+
+// cmd.exe quoting for the shell:true fallback (temp paths may carry spaces).
+function quoteForShell(arg: string): string {
+  return /[\s"]/.test(arg) ? `"${arg.replace(/"/g, '""')}"` : arg;
+}
+
 export function createSynthStackHandler(config: SynthStackConfig = {}) {
   return async function synthStack(payload: SynthStackPayload) {
     const stackId = typeof payload.stack === "string" ? payload.stack : "";
@@ -65,13 +89,21 @@ export function createSynthStackHandler(config: SynthStackConfig = {}) {
     if (!assemblyDir) {
       const cwd = config.cwd ?? process.cwd();
       assemblyDir = mkdtempSync(path.join(tmpdir(), "feat-cdk-"));
-      const cdkBin = config.cdkBin ?? "npx";
       // Synthesize the WHOLE app: the assembly is the contract, and stack
       // membership is ruled on by the analysis (an unknown stack must answer
       // 404 with the available stacks, not die inside the cdk CLI).
-      const args = ["cdk", "synth", "--all", "--output", assemblyDir, "--quiet"];
-      if (config.appCommand) args.push("--app", config.appCommand);
-      await execFile(cdkBin, args, { cwd, env: { ...process.env, ...config.env } });
+      const synthArgs = ["synth", "--all", "--output", assemblyDir, "--quiet"];
+      if (config.appCommand) synthArgs.push("--app", config.appCommand);
+      const env = { ...process.env, ...config.env };
+      const entry = config.cdkBin ? null : resolveCdkEntry(cwd);
+      if (entry) {
+        await execFile(process.execPath, [entry, ...synthArgs], { cwd, env });
+      } else {
+        const win = process.platform === "win32";
+        const bin = config.cdkBin ?? (win ? "npx.cmd" : "npx");
+        const args = ["cdk", ...synthArgs];
+        await execFile(bin, win ? args.map(quoteForShell) : args, { cwd, env, shell: win });
+      }
     }
 
     const assembly = analyzeAssembly(assemblyDir);

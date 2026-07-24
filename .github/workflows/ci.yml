@@ -49,6 +49,23 @@ jobs:
       - name: Workspace tests
         run: npx turbo run test
 
+  windows:
+    name: feat-cdk on Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Build
+        run: pnpm --filter @mmmnt/feat-cdk build
+      - name: Test (assembly analysis + resolver + handler over fixtures)
+        run: pnpm --filter @mmmnt/feat-cdk test
+
   spec:
     name: Spec chain (Node ${{ matrix.node }})
     runs-on: ubuntu-latest

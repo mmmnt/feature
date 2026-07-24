@@ -13,7 +13,7 @@ import {
   listStacks,
 } from "./src/assembly.js";
 import { stackSurface, countOfType } from "./src/surface.js";
-import { createSynthStackHandler } from "./src/synth-stack.js";
+import { createSynthStackHandler, resolveCdkEntry } from "./src/synth-stack.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REAL = path.join(HERE, "fixtures", "single-stack");
@@ -109,6 +109,19 @@ describe("resolveStackClosure error cases", () => {
     const a = analyzeAssembly(MULTI);
     a.byArtifact["Net"]!.dependsOn = ["Data"]; // Net→Data→Net
     expect(() => resolveStackClosure(a, ["Data"])).toThrowError(/Cyclic stack dependency/);
+  });
+});
+
+describe("resolveCdkEntry (the cross-platform synth path)", () => {
+  it("resolves the consumer's own aws-cdk CLI entry from its directory", () => {
+    const consumer = path.join(HERE, "fixtures", "fake-consumer");
+    const entry = resolveCdkEntry(consumer);
+    expect(entry).not.toBeNull();
+    expect(entry!.endsWith(path.join("aws-cdk", "bin", "cdk"))).toBe(true);
+  });
+
+  it("is null when aws-cdk is not installed there (the npx fallback applies)", () => {
+    expect(resolveCdkEntry(path.join(HERE, "fixtures", "single-stack"))).toBeNull();
   });
 });
 

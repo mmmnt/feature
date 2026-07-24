@@ -196,10 +196,6 @@ importers:
         version: 3.2.7(@types/node@24.13.3)
 
   packages/feat-cdk:
-    dependencies:
-      '@mmmnt/feat-types':
-        specifier: workspace:^
-        version: link:../feat-types
     devDependencies:
       typescript:
         specifier: ^5.8.0

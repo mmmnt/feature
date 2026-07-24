@@ -1,6 +1,6 @@
 {
   "name": "@mmmnt/feat-cdk",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Point Feature at your CDK app: derive the deployment (resources, SSM contract, dependency closure) from the cloud assembly — SynthStack as a command, zero convention files",
   "type": "module",
   "main": "dist/index.js",
