@@ -4,10 +4,14 @@
 // consumer's whole obligation is their own CDK app plus specs that predict
 // the canonical surface.
 //
-// The handler runs `cdk synth` (via the consumer's configured app command),
-// analyzes the resulting assembly, and returns the requested stack's
-// canonical surface. Deterministic and side-effect-free beyond the synth the
-// consumer's own toolchain performs.
+// The handler runs `cdk synth` (via the consumer's own aws-cdk install or a
+// configured shim), analyzes the resulting assembly, and returns the
+// requested stack's canonical surface. With a stage configured, the "<env>"
+// token is a two-way contract: it resolves to the stage in the requested
+// stack id, and the stage normalizes back to "<env>" in the response — one
+// spec text, every environment. Payload `select` queries run the generic
+// resource selection (path / type / partial match / regex) for relational
+// and absence predictions.
 import { execFile as execFileCb } from "node:child_process";
 import { mkdtempSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -15,6 +19,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { analyzeAssembly, resolveStackClosure, type Assembly, type StackAnalysis } from "./assembly.js";
+import { normalizeStage, type SelectQuery } from "./resources.js";
 import { stackSurface, type StackSurface } from "./surface.js";
 
 const execFile = promisify(execFileCb);
@@ -42,10 +47,16 @@ export interface SynthStackConfig {
    */
   cdkBin?: string;
   /**
+   * Active stage (e.g. "local", "staging"). Enables the two-way "<env>"
+   * token: resolved to this value in the requested stack id, normalized back
+   * to "<env>" in every response string.
+   */
+  stage?: string;
+  /**
    * Semantic projection: extra assertable fields merged OVER the canonical
-   * surface (e.g. regulatory posture predicates derived from the template).
-   * Pure — receives the analyzed assembly, the stack, its closure, and the
-   * canonical surface; returns the fields to add.
+   * surface. Pure — receives the analyzed assembly, the stack, its closure,
+   * and the canonical surface; returns the fields to add. Rarely needed now
+   * that `select` queries cover relational claims; kept as an escape hatch.
    */
   project?: (ctx: {
     assembly: Assembly;
@@ -56,8 +67,10 @@ export interface SynthStackConfig {
 }
 
 interface SynthStackPayload {
-  /** Stack artifact id to describe. */
+  /** Stack to describe: artifact id or stack name; "<env>" resolves to the stage. */
   stack?: unknown;
+  /** Named select queries over the stack's normalized resources. */
+  select?: unknown;
 }
 
 /**
@@ -80,10 +93,11 @@ function quoteForShell(arg: string): string {
 
 export function createSynthStackHandler(config: SynthStackConfig = {}) {
   return async function synthStack(payload: SynthStackPayload) {
-    const stackId = typeof payload.stack === "string" ? payload.stack : "";
-    if (!stackId) {
-      return { status: 400, body: { code: "MISSING_STACK", message: "payload.stack is required (the stack artifact id)." } };
+    const requested = typeof payload.stack === "string" ? payload.stack : "";
+    if (!requested) {
+      return { status: 400, body: { code: "MISSING_STACK", message: "payload.stack is required (stack name or artifact id; <env> resolves to the configured stage)." } };
     }
+    const stackId = config.stage !== undefined ? requested.replaceAll("<env>", config.stage) : requested;
 
     let assemblyDir = config.assemblyDir;
     if (!assemblyDir) {
@@ -107,18 +121,26 @@ export function createSynthStackHandler(config: SynthStackConfig = {}) {
     }
 
     const assembly = analyzeAssembly(assemblyDir);
-    const stack = assembly.byArtifact[stackId];
+    const stack = assembly.byArtifact[stackId] ?? assembly.byStackName[stackId];
     if (!stack) {
+      const available = normalizeStage(assembly.stacks.map((s) => s.stackName), config.stage).join(", ");
       return {
         status: 404,
         body: {
           code: "UNKNOWN_STACK",
-          message: `Stack '${stackId}' is not in the assembly — available: ${assembly.stacks.map((s) => s.artifactId).join(", ")}.`,
+          message: `Stack '${requested}' is not in the assembly — available: ${available}.`,
         },
       };
     }
-    const closure = resolveStackClosure(assembly, [stackId]);
-    const surface = stackSurface(assembly, stack, closure);
+    const closure = resolveStackClosure(assembly, [stack.artifactId]);
+    const select =
+      payload.select !== null && typeof payload.select === "object" && !Array.isArray(payload.select)
+        ? (payload.select as Record<string, SelectQuery>)
+        : undefined;
+    const options: Parameters<typeof stackSurface>[3] = {};
+    if (config.stage !== undefined) options.stage = config.stage;
+    if (select !== undefined) options.select = select;
+    const surface = stackSurface(assembly, stack, closure, options);
     const body = config.project
       ? { ...surface, ...config.project({ assembly, stack, closure, surface }) }
       : surface;

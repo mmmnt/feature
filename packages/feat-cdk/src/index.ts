@@ -22,5 +22,17 @@ export {
   type SsmPublish,
   type CfnResource,
 } from "./assembly.js";
-export { stackSurface, countOfType, firstOfType, type StackSurface } from "./surface.js";
-export { createSynthStackHandler, type SynthStackConfig } from "./synth-stack.js";
+export { stackSurface, countOfType, firstOfType, type StackSurface, type SurfaceOptions } from "./surface.js";
+export { createSynthStackHandler, resolveCdkEntry, type SynthStackConfig } from "./synth-stack.js";
+export {
+  constructPath,
+  normalizeTokens,
+  normalizeStage,
+  normalizedResources,
+  deepMatch,
+  selectResources,
+  runSelects,
+  type NormalizedResource,
+  type SelectQuery,
+  type Selection,
+} from "./resources.js";

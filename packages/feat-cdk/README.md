@@ -12,16 +12,18 @@ the assembly.
 
 From a synthesized assembly (`cdk synth --output cdk.out`):
 
-- **Resources** — each stack's template, counted and inspectable.
+- **Resources** — every stack's template, addressed by **construct path**
+  (the names you authored, via `aws:cdk:path`), with `Ref`/`Fn::GetAtt`
+  wiring rewritten to path references. CloudFormation is the universal
+  schema: specs assert any service's properties directly — there is no
+  per-service code here or anywhere.
 - **SSM publishes** — `AWS::SSM::Parameter` resources. Names are literal at
-  synth; values are literal (known now) or deploy-time tokens (`Fn::GetAtt`,
-  `Ref`, `Fn::Join` — resolved from the deployed stack afterward).
+  synth; values are literal (known now) or deploy-time tokens (resolved from
+  the deployed stack afterward).
 - **Dependency closure** — both edge classes CloudFormation splits:
-  - injected stack→stack deps from `manifest.json` (`addDependency` +
-    automatic cross-stack `Export`/`ImportValue`);
-  - cross-stack SSM reads it *can't* see — CFN parameters of type
-    `AWS::SSM::Parameter::Value<String>` and `{{resolve:ssm:/path}}` dynamic
-    references — matched to their publishers across stacks.
+  injected stack→stack deps from `manifest.json`, plus the cross-stack SSM
+  reads it *can't* see (`AWS::SSM::Parameter::Value<String>` parameters and
+  `{{resolve:ssm:/path}}` references) matched to their publishers.
 
 The CDK bootstrap parameter is never mistaken for a dependency.
 
@@ -31,52 +33,60 @@ The CDK bootstrap parameter is never mistaken for a dependency.
 response command, shipped in-package — a consumer authors **zero** handler
 code:
 
-```jsonc
-// feat.config.json
-"response": {
-  "adapter": "@mmmnt/feat-adapter-handler",
-  "commands": { "SynthStack": { "module": "feat-cdk-handler.ts", "export": "synthStack" } }
-}
-```
-
 ```ts
 // feat-cdk-handler.ts — the consumer's only wiring
 import { createSynthStackHandler } from "@mmmnt/feat-cdk";
-export const synthStack = createSynthStackHandler({ appCommand: "node bin/app.ts" });
+export const synthStack = createSynthStackHandler({
+  appCommand: "node bin/app.ts",
+  stage: process.env.ENVIRONMENT ?? "local",
+});
 ```
 
+## One spec text, every environment
+
+With a `stage` configured, `<env>` is a two-way token: it resolves to the
+stage in the requested stack id, and the stage normalizes back to `<env>` in
+every response string. The same spec runs against local, staging, and prod
+synthesis unchanged; each run's evidence bundle carries its real environment.
+
+## Predictions: properties directly, relations by query
+
+Property claims assert raw CloudFormation through named `select` queries
+(by `path`, `type`, partial `where` match, or serialized-content `matching`
+regex). Relational and **absence** claims are counts:
+
 ```
-# an infra spec predicts the canonical surface — prediction inversion
-# verifies it against the REAL synthesized template
-scenario "the data stack ships the expected footprint":
-  when: SynthStack { stack: "MyDataStack" }
+scenario "the table is production-grade and pinned to the endpoint":
+  when: SynthStack {
+    stack: "my-app-<env>-data",
+    select: {
+      table: { path: "WorkspaceTable/Table/Resource" },
+      pinned: { type: "AWS::DynamoDB::Table", matching: "aws:sourceVpce" }
+    }
+  }
   predict success:
     response 200 StackSurface {
-      resourceCounts: { "AWS::DynamoDB::Table": 1 }
-      publishes: [ "/app/prod/table-name" ]
-      closure: [ "MyNetworkStack", "MyDataStack" ]
+      closure: ["my-app-<env>-network", "my-app-<env>-data"]
+      selected: {
+        table: { count: 1, first: { properties: { BillingMode: "PAY_PER_REQUEST" } } }
+        pinned: { count: 1 }
+      }
     }
 ```
 
-Semantic surfaces — regulatory posture predicates, reachability matrices,
-whatever your specs should pin — are a pure `project` function merged over the
-canonical surface:
-
-```ts
-export const synthStack = createSynthStackHandler({
-  appCommand: "node bin/app.ts",
-  project: ({ stack }) => ({ tableCount: countOfType(stack, "AWS::DynamoDB::Table") }),
-});
-```
+`count: 0` is how "public must never reach intra" and "intra has no internet
+route" become verified predictions — no projection code, any AWS service,
+including ones that don't exist yet.
 
 ## API
 
 - `analyzeAssembly(cdkOutDir)` → `{ stacks, byArtifact, byStackName }`
 - `resolveStackClosure(assembly, roots)` → dependency-first artifact ids
-- `stackSurface(assembly, stack, closure)` → the canonical `StackSurface`
+- `stackSurface(assembly, stack, closure, { stage, select })` → the canonical `StackSurface`
 - `createSynthStackHandler(config)` → the Feature response command
-- `consumedSsmNames` / `publishedSsm` / `listStacks` / `readTemplate` — the
-  primitives, for custom projections and semantic surfaces.
+- `normalizedResources` / `selectResources` / `deepMatch` / `normalizeStage` /
+  `consumedSsmNames` / `publishedSsm` / `listStacks` / `readTemplate` — the
+  primitives, for consumer unit tests and tooling.
 
 The [LocalStack adapter](https://www.npmjs.com/package/@mmmnt/feat-adapter-localstack)
 consumes the same analysis to deploy exactly the closure a run needs and

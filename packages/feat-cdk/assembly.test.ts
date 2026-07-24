@@ -14,6 +14,7 @@ import {
 } from "./src/assembly.js";
 import { stackSurface, countOfType } from "./src/surface.js";
 import { createSynthStackHandler, resolveCdkEntry } from "./src/synth-stack.js";
+import { normalizedResources, normalizeStage, deepMatch, selectResources } from "./src/resources.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REAL = path.join(HERE, "fixtures", "single-stack");
@@ -44,7 +45,7 @@ describe("analyzeAssembly on a real captured cdk.out (feature-dashboard)", () =>
 
   it("projects a canonical surface: footprint counts + a single-stack closure", () => {
     const surf = stackSurface(a, s, resolveStackClosure(a, [s.artifactId]));
-    expect(surf.closure).toEqual(["FeatureDashboardLocalData"]);
+    expect(surf.closure).toEqual(["feature-dashboard-local-data"]);
     expect(surf.resourceCounts["AWS::SSM::Parameter"]).toBe(10);
     expect(surf.resourceCounts["AWS::DynamoDB::Table"]).toBe(1);
     expect(surf.resourceCounts["AWS::EC2::VPCEndpoint"]).toBe(1);
@@ -109,6 +110,70 @@ describe("resolveStackClosure error cases", () => {
     const a = analyzeAssembly(MULTI);
     a.byArtifact["Net"]!.dependsOn = ["Data"]; // Net→Data→Net
     expect(() => resolveStackClosure(a, ["Data"])).toThrowError(/Cyclic stack dependency/);
+  });
+});
+
+describe("the global resource surface (real captured template)", () => {
+  const a = analyzeAssembly(REAL);
+  const resources = normalizedResources(a.stacks[0]!);
+
+  it("addresses resources by construct path with the stack root stripped", () => {
+    const table = resources.find((r) => r.type === "AWS::DynamoDB::Table")!;
+    expect(table.path).toBe("WorkspaceTable/Table/Resource");
+  });
+
+  it("rewrites Ref/GetAtt wiring to construct-path references", () => {
+    const json = JSON.stringify(resources);
+    expect(json).not.toContain('"Fn::GetAtt"');
+    const ingress = resources.filter((r) => r.type === "AWS::EC2::SecurityGroupIngress");
+    expect(ingress.length).toBeGreaterThan(0);
+    expect(ingress[0]!.properties.GroupId).toHaveProperty("ref");
+    expect(ingress[0]!.properties.GroupId).toHaveProperty("att", "GroupId");
+  });
+
+  it("select by type + partial where + regex; absence is count 0", () => {
+    expect(selectResources(resources, { type: "AWS::EC2::VPC" })).toHaveLength(1);
+    expect(
+      selectResources(resources, {
+        type: "AWS::EC2::Route",
+        where: { DestinationCidrBlock: "0.0.0.0/0" },
+      }).length,
+    ).toBeGreaterThan(0);
+    expect(selectResources(resources, { matching: "feature-workspace" }).length).toBeGreaterThan(0);
+    expect(selectResources(resources, { type: "AWS::S3::Bucket" })).toHaveLength(0);
+  });
+
+  it("deepMatch arrays use containment (Tags-style)", () => {
+    expect(deepMatch({ Tags: [{ Key: "a", Value: "1" }, { Key: "b", Value: "2" }] }, { Tags: [{ Key: "b" }] })).toBe(true);
+    expect(deepMatch({ Tags: [{ Key: "a" }] }, { Tags: [{ Key: "z" }] })).toBe(false);
+  });
+
+  it("normalizeStage replaces segment-bounded stage occurrences only", () => {
+    expect(normalizeStage("/feature/dashboard/local/vpc-id", "local")).toBe("/feature/dashboard/<env>/vpc-id");
+    expect(normalizeStage("feature-dashboard-local-data", "local")).toBe("feature-dashboard-<env>-data");
+    expect(normalizeStage("localhost-locale", "local")).toBe("localhost-locale");
+  });
+});
+
+describe("the two-way <env> token through the handler", () => {
+  const handler = createSynthStackHandler({ assemblyDir: REAL, stage: "local" });
+
+  it("resolves <env> in the requested stack and normalizes the response", async () => {
+    const r = (await handler({
+      stack: "feature-dashboard-<env>-data",
+      select: { table: { type: "AWS::DynamoDB::Table" } },
+    })) as any;
+    expect(r.status).toBe(200);
+    expect(r.body.stackName).toBe("feature-dashboard-<env>-data");
+    expect(r.body.publishes).toContain("/feature/dashboard/<env>/ddb-endpoint-id");
+    expect(r.body.selected.table.count).toBe(1);
+    expect(r.body.selected.table.first.properties.TableName).toBe("feature-workspace-<env>");
+  });
+
+  it("404s with stage-normalized available names", async () => {
+    const r = (await handler({ stack: "mystery-stack" })) as any;
+    expect(r.status).toBe(404);
+    expect(r.body.message).toContain("feature-dashboard-<env>-data");
   });
 });
 

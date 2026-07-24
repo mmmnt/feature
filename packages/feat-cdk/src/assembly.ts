@@ -44,6 +44,8 @@ export interface CfnResource {
   Type: string;
   Properties?: Record<string, any>;
   DeletionPolicy?: string;
+  /** CDK metadata — carries the construct path ("aws:cdk:path"). */
+  Metadata?: Record<string, any>;
 }
 
 export interface Assembly {
