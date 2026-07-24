@@ -13,8 +13,31 @@ interface HttpRoute {
 
 interface HttpAdapterConfig {
   commands: Record<string, HttpRoute>;
-  invoke?: { baseUrl?: string; headers?: Record<string, string> };
+  invoke?: { baseUrl?: string; baseUrlEnv?: string; headers?: Record<string, string> };
   actors?: { default?: string } & Record<string, unknown>;
+}
+
+/**
+ * Resolve the base URL: literal `baseUrl`, or the value of the env var named
+ * by `baseUrlEnv` — API origins belong to the ENVIRONMENT (a deployed stage
+ * URL, an emulator's gateway), so per-tier configs reference them. Both set =
+ * configuration error; named var unset = configuration error. Exported for
+ * unit testing.
+ */
+export function resolveBaseUrl(invoke: { baseUrl?: string; baseUrlEnv?: string } | undefined): string {
+  if (invoke?.baseUrl !== undefined && invoke?.baseUrlEnv !== undefined)
+    throw new Error(
+      "@mmmnt/feat-adapter-http: invoke.baseUrl and invoke.baseUrlEnv are mutually exclusive — configuration error.",
+    );
+  if (invoke?.baseUrlEnv !== undefined) {
+    const value = process.env[invoke.baseUrlEnv];
+    if (!value)
+      throw new Error(
+        `@mmmnt/feat-adapter-http: environment variable ${invoke.baseUrlEnv} is not set (invoke.baseUrlEnv) — configuration error.`,
+      );
+    return value;
+  }
+  return invoke?.baseUrl ?? "";
 }
 
 class HttpAdapter implements FeatResponseAdapter {
@@ -26,7 +49,7 @@ class HttpAdapter implements FeatResponseAdapter {
   async invoke(command: string, input: Record<string, unknown>, actor?: string): Promise<CapturedResponse> {
     const route = this.config.commands[command];
     if (!route) throw new Error(`Command '${command}' is not routed in response.commands — configuration error.`);
-    const baseUrl = this.config.invoke?.baseUrl ?? "";
+    const baseUrl = resolveBaseUrl(this.config.invoke);
 
     const body: Record<string, unknown> = { ...input };
     const pathResolved = route.path.replace(/\{([A-Za-z0-9_]+)\}/g, (_, name: string) => {

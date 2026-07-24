@@ -1,8 +1,8 @@
 // Unit test for the http adapter against a local Node server (no external network).
 
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
 import { createServer, type Server } from "node:http";
-import { createAdapter } from "./src/index.ts";
+import { createAdapter, resolveBaseUrl } from "./src/index.ts";
 
 let server: Server;
 let baseUrl: string;
@@ -66,5 +66,30 @@ describe("@mmmnt/feat-adapter-http", () => {
     expect(anon.status).toBe(401);
 
     await adapter.teardown();
+  });
+});
+
+describe("base URL resolution (API origins belong to the environment)", () => {
+  afterEach(() => {
+    delete process.env.FEAT_TEST_BASE_URL;
+  });
+
+  it("literal passes through; absent means empty (relative fetch)", () => {
+    
+    expect(resolveBaseUrl({ baseUrl: "http://x" })).toBe("http://x");
+    expect(resolveBaseUrl(undefined)).toBe("");
+  });
+
+  it("baseUrlEnv reads the named variable; unset is a loud configuration error", () => {
+    
+    process.env.FEAT_TEST_BASE_URL = "http://localhost:4566/restapis/abc/local/_user_request_";
+    expect(resolveBaseUrl({ baseUrlEnv: "FEAT_TEST_BASE_URL" })).toContain("_user_request_");
+    delete process.env.FEAT_TEST_BASE_URL;
+    expect(() => resolveBaseUrl({ baseUrlEnv: "FEAT_TEST_BASE_URL" })).toThrowError(/FEAT_TEST_BASE_URL is not set/);
+  });
+
+  it("both forms at once is a configuration error", () => {
+    
+    expect(() => resolveBaseUrl({ baseUrl: "http://x", baseUrlEnv: "Y" })).toThrowError(/mutually exclusive/);
   });
 });
