@@ -61,9 +61,9 @@ jobs:
           cache: pnpm
       - name: Install
         run: pnpm install --frozen-lockfile
-      - name: Build
-        run: pnpm --filter @mmmnt/feat-cdk build
-      - name: Test (assembly analysis + resolver + handler over fixtures)
+      - name: Build (with workspace dependencies)
+        run: pnpm --filter @mmmnt/feat-cdk... build
+      - name: Test (assembly analysis + resolver + adapter over fixtures)
         run: pnpm --filter @mmmnt/feat-cdk test
 
   spec:
