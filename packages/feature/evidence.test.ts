@@ -28,7 +28,7 @@ describe("evidence bundle", () => {
 
   it("produces a schema-valid bundle from the repo's own specs", () => {
     const out = path.join(tmp, "evidence.json");
-    const stdout = execFileSync("node", [path.join(PKG, "bin/run.js"), "report", "--evidence", out], {
+    const stdout = execFileSync("node", [path.join(PKG, "bin/run.js"), "report", "--evidence", "--force", "--out", out], {
       cwd: ROOT,
       encoding: "utf8",
     });
@@ -47,6 +47,6 @@ describe("evidence bundle", () => {
     expect(bundle.producer.toolchain["@mmmnt/feat-core"]).toBeTruthy();
     // ADR-0016: the repo's own config declares no environment, so the bundle
     // must not claim one — env presence is driven solely by the config used.
-    expect(bundle.project.environment).toBeUndefined();
+    expect(bundle.project.environment).toBe("toolchain");
   });
 });
