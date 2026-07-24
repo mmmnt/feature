@@ -104,6 +104,12 @@ scenario "parses the dotted-record-types exemplar (capture-charge)":
     response OK BuiltSpec equals fixture "../../corpus/capture-charge/capture-charge.ir.json"
     filesystem has []
 
+scenario "parses the spec-variables exemplar (waitlist-variables, ADR-0017)":
+  when: Parse { spec: "corpus/waitlist-variables/waitlist-variables.feat", config: "corpus/waitlist-variables/feat.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "../../corpus/waitlist-variables/waitlist-variables.ir.json"
+    filesystem has []
+
 scenario outline "rejects invalid specs with the precise code":
   when: Parse { spec: <spec>, config: "packages/feat-core/fixtures/parse.config.json" }
   predict rejection <code>:

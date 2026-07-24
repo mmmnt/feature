@@ -1,0 +1,53 @@
+feat 1.0
+
+# Corpus exemplar #11 — spec variables (ADR-0017). The variables: block is the
+# ONLY place expressions exist: sources (now/unique) resolve once per case at
+# execution time; composition is definition-side interpolation; scenarios
+# carry ${refs} in string literals and stay pure data. Unique-per-run
+# identities against persistent environments, closed spec text.
+
+spec SPEC-WL-001 "JoinWaitlist"
+context Waitlist
+aggregate Waitlist
+type command
+status agreed
+
+construct:
+  handler at handlers/join-waitlist.ts
+  touches handlers/**
+  Conditional insert keyed by the normalized email; repeats write nothing.
+
+enforce:
+  validate input against JoinWaitlistInput
+  rejects INVALID_EMAIL when the email is implausible
+  insert the waitlist row keyed by email
+
+contract:
+  input JoinWaitlistInput
+  response WaitlistReceipt
+  record WaitlistRow
+  error ErrorResponse
+
+variables:
+  stamp: number = now()
+  email: string = "test+${stamp}@example.com"
+
+scenario "a fresh identity joins":
+  when: JoinWaitlist { email: "${email}" }
+  predict success:
+    response 202 WaitlistReceipt { status: "pending" }
+    database has [ INSERT with WaitlistRow { email: "${email}", status: "pending" } ]
+
+scenario "the same identity repeats idempotently":
+  given:
+    execute JoinWaitlist { email: "${email}" }
+  when: JoinWaitlist { email: "${email}" }
+  predict success:
+    response 202 WaitlistReceipt { status: "pending" }
+    database has []
+
+scenario "an implausible email is rejected":
+  when: JoinWaitlist { email: "not-an-email" }
+  predict rejection INVALID_EMAIL:
+    response 422 ErrorResponse { code: "INVALID_EMAIL" }
+    database has []

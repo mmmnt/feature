@@ -20,7 +20,8 @@ type ErrorCode =
   | "MISSING_PRAGMA" | "UNSUPPORTED_VERSION" | "MALFORMED_SYNTAX"
   | "UNKNOWN_SERVICE_KEY" | "UNKNOWN_COMMAND" | "UNDECLARED_SCHEMA"
   | "UNKNOWN_ACTOR" | "DUPLICATE_SCENARIO_NAME" | "TRIGGER_MISMATCH"
-  | "QUERY_SIDE_EFFECT" | "INCOMPLETE_PREDICTION" | "MISSING_MINIMUM";
+  | "QUERY_SIDE_EFFECT" | "INCOMPLETE_PREDICTION" | "MISSING_MINIMUM"
+  | "UNKNOWN_VARIABLE";
 
 class ParseFailure extends Error {
   constructor(
@@ -351,6 +352,46 @@ function parseRecordList(src: string, mode: "predict" | "seed"): (PredictedRecor
 const SPEC_TYPES = ["command", "query", "policy", "projection", "saga", "infrastructure", "integration", "scaffold"];
 const STATUSES = ["draft", "agreed", "built", "verified"];
 const CONTRACT_KINDS = ["input", "response", "event", "record", "error"];
+// ADR-0017: the reserved source library — the ONLY nondeterminism entry, and
+// it grows by ADR only. name → produced type.
+const SOURCE_FUNCTIONS: Record<string, string> = { now: "number", unique: "string" };
+const VARIABLE_TYPES = ["string", "number"];
+const VAR_REF = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
+
+/** Parse one variable definition: source call | number literal | string template. */
+function parseVariableDefinition(src: string, line: number): Record<string, unknown> {
+  let m: RegExpExecArray | null;
+  if ((m = /^([A-Za-z_][A-Za-z0-9_]*)\(\)$/.exec(src))) {
+    const fn = m[1]!;
+    if (!(fn in SOURCE_FUNCTIONS))
+      throw new ParseFailure("MALFORMED_SYNTAX", `Unknown function '${fn}()'.`, line, `Reserved functions: ${Object.keys(SOURCE_FUNCTIONS).map((f) => f + "()").join(", ")} — the library grows by ADR only.`);
+    return { kind: "call", fn };
+  }
+  if (/^-?\d+(\.\d+)?$/.test(src)) return { kind: "number", value: Number(src) };
+  if ((m = /^"((?:[^"\\]|\\.)*)"$/.exec(src))) {
+    const raw = m[1]!;
+    const parts: (string | { ref: string })[] = [];
+    let last = 0;
+    for (const r of raw.matchAll(VAR_REF)) {
+      if (r.index! > last) parts.push(raw.slice(last, r.index));
+      parts.push({ ref: r[1]! });
+      last = r.index! + r[0].length;
+    }
+    if (last < raw.length) parts.push(raw.slice(last));
+    return { kind: "template", parts };
+  }
+  throw new ParseFailure("MALFORMED_SYNTAX", `Unrecognized variable definition '${src}'.`, line, "Form: now() | unique() | <number> | \"template with ${refs}\"");
+}
+
+/** Collect every ${ref} inside the string literals of a value tree. */
+function collectVarRefs(value: unknown, into: Set<string>): void {
+  if (typeof value === "string") {
+    for (const r of value.matchAll(VAR_REF)) into.add(r[1]!);
+    return;
+  }
+  if (Array.isArray(value)) { for (const v of value) collectVarRefs(v, into); return; }
+  if (value !== null && typeof value === "object") for (const v of Object.values(value)) collectVarRefs(v, into);
+}
 const DELIVER_TYPES = new Set(["projection", "policy", "saga"]);
 
 function parseFeat(source: string, ctx: ConfigContext): Record<string, unknown> {
@@ -372,7 +413,8 @@ function parseFeat(source: string, ctx: ConfigContext): Record<string, unknown> 
   const declaredSchemas = new Set<string>();
   const scenarios: Record<string, unknown>[] = [];
 
-  type Section = "none" | "construct" | "enforce" | "contract" | "scenario";
+  type Section = "none" | "construct" | "enforce" | "contract" | "variables" | "scenario";
+  const variables: Record<string, unknown>[] = [];
   let section: Section = "none";
   let scenario: Record<string, unknown> | null = null;
   let scenarioPhase: "given" | "predict" | "examples" | "none" = "none";
@@ -415,6 +457,7 @@ function parseFeat(source: string, ctx: ConfigContext): Record<string, unknown> 
     if (t === "construct:") { finishScenario(); section = "construct"; continue; }
     if (t === "enforce:") { finishScenario(); section = "enforce"; continue; }
     if (t === "contract:") { finishScenario(); section = "contract"; continue; }
+    if (t === "variables:") { finishScenario(); section = "variables"; continue; }
     if ((m = /^scenario([ \t]+outline)?[ \t]+"((?:[^"\\]|\\.)*)":$/.exec(t))) {
       finishScenario();
       section = "scenario";
@@ -460,6 +503,24 @@ function parseFeat(source: string, ctx: ConfigContext): Record<string, unknown> 
         continue;
       }
       throw new ParseFailure("MALFORMED_SYNTAX", `Unrecognized contract line: '${t}'.`, s.line, `Contract roles: ${CONTRACT_KINDS.join(", ")}, stream`);
+    }
+
+    // ── variables: (ADR-0017) — the ONLY place expressions exist. Sources
+    // (now/unique) enter nondeterminism once per case; composition is
+    // definition-side template interpolation; scenarios get ${name} only.
+    if (section === "variables") {
+      if ((m = /^([A-Za-z_][A-Za-z0-9_]*)[ \t]*:[ \t]*(\S+)[ \t]*=[ \t]*(.+)$/.exec(t))) {
+        const [, name, type, defSrc] = m as unknown as [string, string, string, string];
+        if (!VARIABLE_TYPES.includes(type))
+          throw new ParseFailure("MALFORMED_SYNTAX", `Unknown variable type '${type}'.`, s.line, `Variable types: ${VARIABLE_TYPES.join(", ")}`);
+        const definition = parseVariableDefinition(defSrc.trim(), s.line);
+        const producedType = definition.kind === "call" ? SOURCE_FUNCTIONS[definition.fn as string] : definition.kind === "number" ? "number" : "string";
+        if (producedType !== type)
+          throw new ParseFailure("MALFORMED_SYNTAX", `Variable '${name}' is declared ${type} but its definition produces ${producedType}.`, s.line);
+        variables.push({ name, type, definition });
+        continue;
+      }
+      throw new ParseFailure("MALFORMED_SYNTAX", `Unrecognized variables line: '${t}'.`, s.line, "Form: name: string|number = now() | unique() | <number> | \"template with ${refs}\"");
     }
 
     if (section === "scenario" && scenario) {
@@ -668,6 +729,44 @@ function parseFeat(source: string, ctx: ConfigContext): Record<string, unknown> 
       }
     }
   }
+
+  // ── ADR-0017: variables — closed both ways, acyclic, resolvable (the scan
+  // runs even with zero declarations: a stray ${ref} must fail loudly) ──
+  {
+    const declared = new Set<string>();
+    for (const v of variables) {
+      if (declared.has(v.name as string))
+        throw new ParseFailure("MALFORMED_SYNTAX", `Variable '${v.name}' is declared twice.`);
+      declared.add(v.name as string);
+    }
+    // template refs: declared + acyclic (DFS over the definition graph)
+    const defOf = new Map(variables.map((v) => [v.name as string, v.definition as Record<string, unknown>]));
+    const state = new Map<string, "visiting" | "done">();
+    const visit = (name: string, trail: string[]) => {
+      if (state.get(name) === "done") return;
+      if (state.get(name) === "visiting")
+        throw new ParseFailure("MALFORMED_SYNTAX", `Variable definition cycle: ${[...trail, name].join(" → ")}.`);
+      state.set(name, "visiting");
+      const def = defOf.get(name)!;
+      if (def.kind === "template")
+        for (const p of def.parts as (string | { ref: string })[]) {
+          if (typeof p === "object") {
+            if (!declared.has(p.ref))
+              throw new ParseFailure("UNKNOWN_VARIABLE", `Variable '${name}' references undeclared '\${${p.ref}}'.`, undefined, `Declared variables: ${[...declared].join(", ") || "(none)"}`);
+            visit(p.ref, [...trail, name]);
+          }
+        }
+      state.set(name, "done");
+    };
+    for (const v of variables) visit(v.name as string, []);
+    // scenario literals may reference declared variables only
+    const used = new Set<string>();
+    collectVarRefs(scenarios, used);
+    for (const ref of used)
+      if (!declared.has(ref))
+        throw new ParseFailure("UNKNOWN_VARIABLE", `Scenario references undeclared variable '\${${ref}}'.`, undefined, `Declared variables: ${[...declared].join(", ") || "(none)"} — declare it in the variables: block.`);
+  }
+  if (variables.length > 0) ir.variables = variables;
 
   ir.identity = identity;
   ir.construct = construct;

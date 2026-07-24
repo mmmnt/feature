@@ -1,0 +1,191 @@
+{
+  "featVersion": "1.0",
+  "variables": [
+    {
+      "name": "stamp",
+      "type": "number",
+      "definition": {
+        "kind": "call",
+        "fn": "now"
+      }
+    },
+    {
+      "name": "email",
+      "type": "string",
+      "definition": {
+        "kind": "template",
+        "parts": [
+          "test+",
+          {
+            "ref": "stamp"
+          },
+          "@example.com"
+        ]
+      }
+    }
+  ],
+  "identity": {
+    "id": "SPEC-WL-001",
+    "name": "JoinWaitlist",
+    "context": "Waitlist",
+    "aggregate": "Waitlist",
+    "type": "command",
+    "status": "agreed"
+  },
+  "construct": [
+    {
+      "kind": "handler",
+      "path": "handlers/join-waitlist.ts"
+    },
+    {
+      "kind": "touches",
+      "glob": "handlers/**"
+    },
+    {
+      "kind": "custom",
+      "text": "Conditional insert keyed by the normalized email; repeats write nothing."
+    }
+  ],
+  "enforce": [
+    {
+      "kind": "validate",
+      "text": "validate input against JoinWaitlistInput"
+    },
+    {
+      "kind": "rejects",
+      "rejectionId": "INVALID_EMAIL",
+      "text": "the email is implausible"
+    },
+    {
+      "kind": "constraint",
+      "text": "insert the waitlist row keyed by email"
+    }
+  ],
+  "contract": [
+    {
+      "kind": "input",
+      "schemaName": "JoinWaitlistInput"
+    },
+    {
+      "kind": "response",
+      "schemaName": "WaitlistReceipt"
+    },
+    {
+      "kind": "record",
+      "schemaName": "WaitlistRow"
+    },
+    {
+      "kind": "error",
+      "schemaName": "ErrorResponse"
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "a fresh identity joins",
+      "when": {
+        "command": "JoinWaitlist",
+        "payload": {
+          "email": "${email}"
+        }
+      },
+      "prediction": {
+        "type": "success",
+        "response": {
+          "status": 202,
+          "schemaName": "WaitlistReceipt",
+          "valueBlock": {
+            "status": {
+              "matcher": "literal",
+              "value": "pending"
+            }
+          }
+        },
+        "services": {
+          "database": {
+            "records": [
+              {
+                "type": "INSERT",
+                "schemaName": "WaitlistRow",
+                "valueBlock": {
+                  "email": {
+                    "matcher": "literal",
+                    "value": "${email}"
+                  },
+                  "status": {
+                    "matcher": "literal",
+                    "value": "pending"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "the same identity repeats idempotently",
+      "given": {
+        "executes": [
+          {
+            "command": "JoinWaitlist",
+            "payload": {
+              "email": "${email}"
+            }
+          }
+        ]
+      },
+      "when": {
+        "command": "JoinWaitlist",
+        "payload": {
+          "email": "${email}"
+        }
+      },
+      "prediction": {
+        "type": "success",
+        "response": {
+          "status": 202,
+          "schemaName": "WaitlistReceipt",
+          "valueBlock": {
+            "status": {
+              "matcher": "literal",
+              "value": "pending"
+            }
+          }
+        },
+        "services": {
+          "database": {
+            "records": []
+          }
+        }
+      }
+    },
+    {
+      "name": "an implausible email is rejected",
+      "when": {
+        "command": "JoinWaitlist",
+        "payload": {
+          "email": "not-an-email"
+        }
+      },
+      "prediction": {
+        "type": "rejection",
+        "rejectionId": "INVALID_EMAIL",
+        "response": {
+          "status": 422,
+          "schemaName": "ErrorResponse",
+          "valueBlock": {
+            "code": {
+              "matcher": "literal",
+              "value": "INVALID_EMAIL"
+            }
+          }
+        },
+        "services": {
+          "database": {
+            "records": []
+          }
+        }
+      }
+    }
+  ]
+}

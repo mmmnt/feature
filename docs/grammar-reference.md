@@ -211,6 +211,32 @@ Seed records take **full literal values only** — no matchers, no `@when` (seed
 `given` precedes `when`). Optional `with <Schema>` validates seed data at generate time.
 Fixture JSON is data, not glue code — DP-3 stands; imperative seed scripts are forbidden.
 
+### 5.1b Spec variables — `variables:` (ADR-0017)
+
+The **only expressions in the language**, confined to one block; scenario
+literals get `${name}` interpolation and nothing else, so scenarios stay pure
+data (DP-3).
+
+```
+variables:
+  stamp: number = now()
+  email: string = "test+${stamp}@example.com"
+```
+
+| Element | Rule |
+|---|---|
+| Entry | `NAME: TYPE = DEFINITION` — types: `string`, `number` |
+| Definition | a **source call**, a number literal, or a string **template** interpolating declared variables (`${ref}`) |
+| Sources | `now(): number` — epoch milliseconds **of the scenario clock** (honors `clock at`, ADR-0012); `unique(): string` — collision-resistant token. Sources are the sole nondeterminism entry. **The library grows by ADR only.** |
+| Resolution | **once per case, at execution start** — every reference in that case's `given`/`when`/predictions shares the value; a different case resolves fresh (case independence) |
+| Closed spaces | unknown function → parse error listing the reserved library; undeclared `${ref}` (definitions or scenarios) → `UNKNOWN_VARIABLE` listing declared; definition cycles → parse error; declared type must match the definition's produced type |
+| Evidence | spec text (with expressions) stays byte-locked and hashed; matching is exact **post-resolution** |
+
+Deliberately excluded: user-defined functions, `env()` in specs (environment
+references are config's law — `tableEnv`/`endpointEnv`/`baseUrlEnv`),
+cross-case shared variables, transform functions (composition is
+definition-side interpolation). Corpus exemplar: `corpus/waitlist-variables/`.
+
 ### 5.2 The trigger — `when:` or `deliver` (ADR-0011)
 
 The spec `type` declares its trigger discipline (parse error on mismatch):

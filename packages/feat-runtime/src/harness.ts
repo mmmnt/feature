@@ -3,6 +3,7 @@
 // precondition execution before the window opens (INV-9), prediction diff via the matcher.
 
 import path from "node:path";
+import { randomBytes } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 import type {
@@ -11,9 +12,71 @@ import type {
 import { loadConfig } from "./load-config.js";
 import { diffContains, diffRecords, diffResponse, type InlineData, type MatchContext } from "./matcher.js";
 
+// ── Spec variables (ADR-0017) ────────────────────────────────────────────────
+// Sources resolve ONCE PER CASE at execution start; every ${name} reference in
+// the case's string literals (inputs, seeds, predictions) shares the value by
+// construction. now() honors a frozen scenario clock (ADR-0012) — one time
+// concept in the language.
+export interface CaseVariable {
+  name: string;
+  type: "string" | "number";
+  definition:
+    | { kind: "call"; fn: "now" | "unique" }
+    | { kind: "number"; value: number }
+    | { kind: "template"; parts: (string | { ref: string })[] };
+}
+
+let uniqueCounter = 0;
+
+/** Resolve a case's variable table. Exported for unit testing. */
+export function resolveVariables(vars: CaseVariable[], frozenClock?: string): Record<string, string | number> {
+  const byName = new Map(vars.map((v) => [v.name, v]));
+  const out: Record<string, string | number> = {};
+  const resolve = (name: string): string | number => {
+    if (name in out) return out[name]!;
+    const v = byName.get(name);
+    if (!v) throw new Error(`Variable '\${${name}}' is not declared — configuration error.`);
+    let value: string | number;
+    if (v.definition.kind === "call") {
+      value =
+        v.definition.fn === "now"
+          ? frozenClock !== undefined
+            ? Date.parse(frozenClock)
+            : Date.now()
+          : `${Date.now().toString(36)}${(uniqueCounter++).toString(36)}${randomBytes(3).toString("hex")}`;
+    } else if (v.definition.kind === "number") {
+      value = v.definition.value;
+    } else {
+      value = v.definition.parts.map((p) => (typeof p === "string" ? p : String(resolve(p.ref)))).join("");
+    }
+    out[name] = value;
+    return value;
+  };
+  for (const v of vars) resolve(v.name);
+  return out;
+}
+
+/** Substitute ${name} references (declared names only) through a value tree. */
+export function substituteVariables<T>(value: T, resolved: Record<string, string | number>): T {
+  if (typeof value === "string") {
+    return value.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (whole, name: string) =>
+      name in resolved ? String(resolved[name]) : whole,
+    ) as T;
+  }
+  if (Array.isArray(value)) return value.map((v) => substituteVariables(v, resolved)) as unknown as T;
+  if (value !== null && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) out[k] = substituteVariables(v, resolved);
+    return out as T;
+  }
+  return value;
+}
+
 export interface HarnessCase {
   anchor: string;
   name: string;
+  /** ADR-0017: the spec's variable table, resolved once per case. */
+  variables?: CaseVariable[];
   given?: {
     clock?: string;
     context?: string[];
@@ -82,7 +145,15 @@ export async function createHarness(opts: { configPath: string }): Promise<Harne
     services.set(key, adapter);
   }
 
-  async function runCase(c: HarnessCase, inline: InlineData): Promise<void> {
+  async function runCase(rawCase: HarnessCase, inline: InlineData): Promise<void> {
+    // ADR-0017: resolve the variable table once, substitute throughout — the
+    // case's given/when/predictions share every value by construction.
+    let c = rawCase;
+    if (rawCase.variables && rawCase.variables.length > 0) {
+      const resolved = resolveVariables(rawCase.variables, rawCase.given?.clock);
+      const { variables: _table, ...rest } = rawCase;
+      c = { ...substituteVariables(rest as HarnessCase, resolved) };
+    }
     const violations: string[] = [];
     for (const adapter of services.values()) await adapter.reset();
 

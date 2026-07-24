@@ -5,7 +5,7 @@
 
 import type {
   BuiltSpec, FeatConfig, Given, Invocation, Delivery, Matcher, Prediction,
-  PredictedRecord, Scenario, ServicePrediction, ValueBlock,
+  PredictedRecord, Scenario, ServicePrediction, SpecVariable, ValueBlock,
 } from "@mmmnt/feat-types";
 
 export interface ResolvedServiceAssertion {
@@ -29,6 +29,8 @@ export interface TestCase {
   when?: Invocation;
   delivers?: Delivery[];
   prediction: ResolvedPrediction;
+  /** ADR-0017: the spec's variable table — the harness resolves it once per case. */
+  variables?: SpecVariable[];
 }
 
 export interface TestTopology {
@@ -167,6 +169,7 @@ export function derive(spec: BuiltSpec, config: FeatConfig): TestTopology {
         name,
         prediction: resolvePrediction(scenario, config, spec.identity.type, row),
       };
+      if (spec.variables && spec.variables.length > 0) testCase.variables = spec.variables;
       const given = substituteGiven(scenario.given, row);
       if (given) testCase.given = given;
       if (scenario.when) {

@@ -8,6 +8,58 @@
   "additionalProperties": false,
   "properties": {
     "featVersion": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+$" },
+    "variables": {
+      "description": "Spec variables (ADR-0017): the only expressions in the language, confined to the variables: block. Sources (now/unique) resolve once per case at execution time; templates compose over declared variables (DAG).",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "type", "definition"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+          "type": { "enum": ["string", "number"] },
+          "definition": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": { "kind": { "const": "call" }, "fn": { "enum": ["now", "unique"] } },
+                "required": ["kind", "fn"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": { "kind": { "const": "number" }, "value": { "type": "number" } },
+                "required": ["kind", "value"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": { "const": "template" },
+                  "parts": {
+                    "type": "array",
+                    "items": {
+                      "oneOf": [
+                        { "type": "string" },
+                        {
+                          "type": "object",
+                          "properties": { "ref": { "type": "string" } },
+                          "required": ["ref"],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  }
+                },
+                "required": ["kind", "parts"],
+                "additionalProperties": false
+              }
+            ]
+          }
+        }
+      }
+    },
     "identity": {
       "type": "object",
       "required": ["id", "name", "context", "aggregate", "type", "status"],

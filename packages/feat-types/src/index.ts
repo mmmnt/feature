@@ -126,12 +126,28 @@ export interface Scenario {
   loc?: SourceLoc;
 }
 
+// ── Spec variables (ADR-0017) ────────────────────────────────────────────────
+// The only expressions in the language, confined to the variables: block.
+// Sources are the sole nondeterminism entry, resolved ONCE PER CASE at
+// execution start; composition is definition-side template interpolation.
+export type VariableType = "string" | "number";
+export type VariableDefinition =
+  | { kind: "call"; fn: "now" | "unique" }
+  | { kind: "number"; value: number }
+  | { kind: "template"; parts: (string | { ref: string })[] };
+export interface SpecVariable {
+  name: string;
+  type: VariableType;
+  definition: VariableDefinition;
+}
+
 export interface BuiltSpec {
   featVersion: string;
   identity: SpecIdentity;
   construct: ConstructInstruction[];
   enforce: EnforceStep[];
   contract: ContractReference[];
+  variables?: SpecVariable[];
   scenarios: Scenario[];
 }
 

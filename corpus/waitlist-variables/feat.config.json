@@ -1,0 +1,16 @@
+{
+  "featVersion": "1.0",
+  "schemas": { "adapter": "@mmmnt/feat-schema-json" },
+  "response": {
+    "adapter": "@mmmnt/feat-adapter-http",
+    "invoke": { "baseUrl": "http://localhost:8080" },
+    "commands": {
+      "JoinWaitlist": { "method": "POST", "path": "/waitlist" }
+    }
+  },
+  "services": {
+    "database": { "adapter": "feat-adapter-postgres", "consistency": "acid" }
+  },
+  "specs": { "dir": ".", "pattern": "*.feat", "contractPattern": "*.contract.json", "outputPattern": "{name}.test.ts" },
+  "report": { "format": ["console"] }
+}
