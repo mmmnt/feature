@@ -37,7 +37,7 @@ export interface SelectQuery {
   /** Partial deep match over normalized properties (arrays: containment). */
   where?: Record<string, any>;
   /** Regex tested against the JSON-serialized normalized properties. */
-  matching?: string;
+  regex?: string;
 }
 
 export interface Selection {
@@ -129,7 +129,7 @@ export function deepMatch(actual: any, expected: any): boolean {
 
 /** Apply one select query to a normalized resource set. */
 export function selectResources(resources: NormalizedResource[], q: SelectQuery): NormalizedResource[] {
-  const pattern = q.matching !== undefined ? new RegExp(q.matching) : null;
+  const pattern = q.regex !== undefined ? new RegExp(q.regex) : null;
   return resources.filter(
     (r) =>
       (q.path === undefined || r.path === q.path) &&

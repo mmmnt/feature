@@ -139,7 +139,7 @@ describe("the global resource surface (real captured template)", () => {
         where: { DestinationCidrBlock: "0.0.0.0/0" },
       }).length,
     ).toBeGreaterThan(0);
-    expect(selectResources(resources, { matching: "feature-workspace" }).length).toBeGreaterThan(0);
+    expect(selectResources(resources, { regex: "feature-workspace" }).length).toBeGreaterThan(0);
     expect(selectResources(resources, { type: "AWS::S3::Bucket" })).toHaveLength(0);
   });
 

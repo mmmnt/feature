@@ -52,8 +52,9 @@ synthesis unchanged; each run's evidence bundle carries its real environment.
 ## Predictions: properties directly, relations by query
 
 Property claims assert raw CloudFormation through named `select` queries
-(by `path`, `type`, partial `where` match, or serialized-content `matching`
-regex). Relational and **absence** claims are counts:
+(by `path`, `type`, partial `where` match, or serialized-content `regex` —
+named to stay clear of `.feat`'s reserved `matching` keyword). Relational and
+**absence** claims are counts:
 
 ```
 scenario "the table is production-grade and pinned to the endpoint":
@@ -61,7 +62,7 @@ scenario "the table is production-grade and pinned to the endpoint":
     stack: "my-app-<env>-data",
     select: {
       table: { path: "WorkspaceTable/Table/Resource" },
-      pinned: { type: "AWS::DynamoDB::Table", matching: "aws:sourceVpce" }
+      pinned: { type: "AWS::DynamoDB::Table", regex: "aws:sourceVpce" }
     }
   }
   predict success:
