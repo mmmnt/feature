@@ -1,0 +1,789 @@
+{
+  "/FeatureDashboardLocalData": [
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/bin/app.ts:22 (:)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/BootstrapVersion": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "BootstrapVersion"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "....pnpm...",
+        "(no user code in 10 frames, use --stack-trace-limit to capture more)"
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/CheckBootstrapVersion": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CheckBootstrapVersion"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "....pnpm...",
+        "(no user code in 10 frames, use --stack-trace-limit to capture more)"
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/WorkspaceTable/Table": [
+    {
+      "type": "aws:cdk:hasPhysicalName",
+      "data": {
+        "Ref": "WorkspaceTable95A77A40"
+      }
+    }
+  ],
+  "/FeatureDashboardLocalData/CDKMetadata/Default": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CDKMetadata"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "....pnpm, node internals...",
+        "(no user code in 10 frames, use --stack-trace-limit to capture more)"
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/CDKMetadata/Condition": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CDKMetadataAvailable"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "....pnpm, node internals...",
+        "(no user code in 10 frames, use --stack-trace-limit to capture more)"
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/NetworkTopology/Vpc/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "NetworkTopologyVpc107A5D12"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Vpc2 in .pnpm...",
+        "new NetworkTopology (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/network/network.ts:27:16)",
+        "Object.create (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:50:29)",
+        "createClosure (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:120:59)",
+        "new DataStack (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/bin/app.ts:18:5)",
+        "file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/bin/app.ts:22 (:)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/NetworkTopology/Vpc/IGW": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "NetworkTopologyVpcIGW63BE857E"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Vpc2 in .pnpm...",
+        "new NetworkTopology (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/network/network.ts:27:16)",
+        "Object.create (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:50:29)",
+        "createClosure (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:120:59)",
+        "new DataStack (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/bin/app.ts:18:5)",
+        "file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/bin/app.ts:22 (:)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/NetworkTopology/Vpc/VPCGW": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "NetworkTopologyVpcVPCGW3740C493"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Vpc2 in .pnpm...",
+        "new NetworkTopology (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/network/network.ts:27:16)",
+        "Object.create (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:50:29)",
+        "createClosure (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:120:59)",
+        "new DataStack (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/bin/app.ts:18:5)",
+        "file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/bin/app.ts:22 (:)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/NetworkTopology/SgPublic/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "NetworkTopologySgPublic0A6F78F4"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new SecurityGroup2 in .pnpm...",
+        "new NetworkTopology (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/network/network.ts:44:22)",
+        "Object.create (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:50:29)",
+        "createClosure (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:120:59)",
+        "new DataStack (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/bin/app.ts:18:5)",
+        "file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/bin/app.ts:22 (:)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/NetworkTopology/SgPrivate/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "NetworkTopologySgPrivate118612BD"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new SecurityGroup2 in .pnpm...",
+        "new NetworkTopology (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/network/network.ts:49:23)",
+        "Object.create (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:50:29)",
+        "createClosure (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:120:59)",
+        "new DataStack (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/bin/app.ts:18:5)",
+        "file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/bin/app.ts:22 (:)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/NetworkTopology/SgPrivate/from FeatureDashboardLocalDataNetworkTopologySgPublicA12B7D08:ALL PORTS": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "NetworkTopologySgPrivatefromFeatureDashboardLocalDataNetworkTopologySgPublicA12B7D08ALLPORTS7FC5DD16"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...WrappedClass.<anonymous> in .pnpm...",
+        "new NetworkTopology (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/network/network.ts:60:15)",
+        "Object.create (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:50:29)",
+        "createClosure (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:120:59)",
+        "new DataStack (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/bin/app.ts:18:5)",
+        "file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/bin/app.ts:22 (:)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/NetworkTopology/SgIntra/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "NetworkTopologySgIntra5C4F6BF6"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new SecurityGroup2 in .pnpm...",
+        "new NetworkTopology (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/network/network.ts:54:21)",
+        "Object.create (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:50:29)",
+        "createClosure (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:120:59)",
+        "new DataStack (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/bin/app.ts:18:5)",
+        "file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/bin/app.ts:22 (:)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/NetworkTopology/SgIntra/from FeatureDashboardLocalDataNetworkTopologySgPrivate4E46A6D1:ALL PORTS": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "NetworkTopologySgIntrafromFeatureDashboardLocalDataNetworkTopologySgPrivate4E46A6D1ALLPORTS7AB0DAE8"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...WrappedClass.<anonymous> in .pnpm...",
+        "new NetworkTopology (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/network/network.ts:62:13)",
+        "Object.create (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:50:29)",
+        "createClosure (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:120:59)",
+        "new DataStack (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/bin/app.ts:18:5)",
+        "file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/bin/app.ts:22 (:)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/NetworkTopology/Param-vpc-id/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "NetworkTopologyParamvpcid31F03E31"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new StringParameter2 in .pnpm...",
+        "publish (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/network/network.ts:87:7)",
+        "new NetworkTopology (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/network/network.ts:91:5)",
+        "Object.create (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:50:29)",
+        "createClosure (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:120:59)",
+        "new DataStack (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/bin/app.ts:18:5)",
+        "file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/bin/app.ts:22 (:)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/NetworkTopology/Param-subnet-ids-public/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "NetworkTopologyParamsubnetidspublic71FC8076"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new StringParameter2 in .pnpm...",
+        "publish (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/network/network.ts:87:7)",
+        "new NetworkTopology (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/network/network.ts:92:5)",
+        "Object.create (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:50:29)",
+        "createClosure (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:120:59)",
+        "new DataStack (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/bin/app.ts:18:5)",
+        "file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/bin/app.ts:22 (:)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/NetworkTopology/Param-subnet-ids-private/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "NetworkTopologyParamsubnetidsprivate021F885F"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new StringParameter2 in .pnpm...",
+        "publish (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/network/network.ts:87:7)",
+        "new NetworkTopology (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/network/network.ts:93:5)",
+        "Object.create (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:50:29)",
+        "createClosure (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:120:59)",
+        "new DataStack (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/bin/app.ts:18:5)",
+        "file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/bin/app.ts:22 (:)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/NetworkTopology/Param-subnet-ids-intra/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "NetworkTopologyParamsubnetidsintraDE1B07DA"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new StringParameter2 in .pnpm...",
+        "publish (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/network/network.ts:87:7)",
+        "new NetworkTopology (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/network/network.ts:97:5)",
+        "Object.create (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:50:29)",
+        "createClosure (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:120:59)",
+        "new DataStack (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/bin/app.ts:18:5)",
+        "file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/bin/app.ts:22 (:)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/NetworkTopology/Param-sg-public-id/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "NetworkTopologyParamsgpublicid7188CDD7"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new StringParameter2 in .pnpm...",
+        "publish (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/network/network.ts:87:7)",
+        "new NetworkTopology (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/network/network.ts:98:5)",
+        "Object.create (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:50:29)",
+        "createClosure (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:120:59)",
+        "new DataStack (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/bin/app.ts:18:5)",
+        "file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/bin/app.ts:22 (:)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/NetworkTopology/Param-sg-private-id/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "NetworkTopologyParamsgprivateidC92F2018"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new StringParameter2 in .pnpm...",
+        "publish (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/network/network.ts:87:7)",
+        "new NetworkTopology (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/network/network.ts:99:5)",
+        "Object.create (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:50:29)",
+        "createClosure (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:120:59)",
+        "new DataStack (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/bin/app.ts:18:5)",
+        "file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/bin/app.ts:22 (:)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/NetworkTopology/Param-sg-intra-id/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "NetworkTopologyParamsgintraidE743E9F4"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new StringParameter2 in .pnpm...",
+        "publish (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/network/network.ts:87:7)",
+        "new NetworkTopology (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/network/network.ts:100:5)",
+        "Object.create (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:50:29)",
+        "createClosure (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:120:59)",
+        "new DataStack (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/bin/app.ts:18:5)",
+        "file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/bin/app.ts:22 (:)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/NetworkTopology/Param-ddb-endpoint-id/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "NetworkTopologyParamddbendpointid1F6E1FB4"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new StringParameter2 in .pnpm...",
+        "publish (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/network/network.ts:87:7)",
+        "new NetworkTopology (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/network/network.ts:101:5)",
+        "Object.create (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:50:29)",
+        "createClosure (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:120:59)",
+        "new DataStack (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/bin/app.ts:18:5)",
+        "file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/bin/app.ts:22 (:)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/WorkspaceTable/Table/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "WorkspaceTable95A77A40"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Table2 in .pnpm...",
+        "new WorkspaceTable (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/workspace-table/workspace-table.ts:45:18)",
+        "Object.create (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:40:29)",
+        "createClosure (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:120:59)",
+        "new DataStack (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/bin/app.ts:18:5)",
+        "file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/bin/app.ts:22 (:)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/WorkspaceTable/TableNameParam/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "WorkspaceTableTableNameParamDF55CD65"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new StringParameter2 in .pnpm...",
+        "new WorkspaceTable (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/workspace-table/workspace-table.ts:57:5)",
+        "Object.create (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:40:29)",
+        "createClosure (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:120:59)",
+        "new DataStack (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/bin/app.ts:18:5)",
+        "file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/bin/app.ts:22 (:)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/WorkspaceTable/StreamArnParam/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "WorkspaceTableStreamArnParamDFE75BD9"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new StringParameter2 in .pnpm...",
+        "new WorkspaceTable (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/workspace-table/workspace-table.ts:61:5)",
+        "Object.create (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:40:29)",
+        "createClosure (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:120:59)",
+        "new DataStack (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/bin/app.ts:18:5)",
+        "file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/bin/app.ts:22 (:)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/NetworkTopology/Vpc/publicSubnet1/Subnet": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "NetworkTopologyVpcpublicSubnet1Subnet64388AC4"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../Volumes/Storage/development/projects/complai/feature-dashboard/node_modules/.pnpm/aws-cdk-lib@2.262.0_constructs@10.7.1/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:268 in .pnpm...",
+        "Array.forEach (:)",
+        "....pnpm..."
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/NetworkTopology/Vpc/publicSubnet1/RouteTable": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "NetworkTopologyVpcpublicSubnet1RouteTable4C4BF796"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../Volumes/Storage/development/projects/complai/feature-dashboard/node_modules/.pnpm/aws-cdk-lib@2.262.0_constructs@10.7.1/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:268 in .pnpm...",
+        "Array.forEach (:)",
+        "....pnpm..."
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/NetworkTopology/Vpc/publicSubnet1/RouteTableAssociation": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "NetworkTopologyVpcpublicSubnet1RouteTableAssociation6F4EB841"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../Volumes/Storage/development/projects/complai/feature-dashboard/node_modules/.pnpm/aws-cdk-lib@2.262.0_constructs@10.7.1/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:268 in .pnpm...",
+        "Array.forEach (:)",
+        "....pnpm..."
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/NetworkTopology/Vpc/publicSubnet1/DefaultRoute": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "NetworkTopologyVpcpublicSubnet1DefaultRoute757FC578"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../Volumes/Storage/development/projects/complai/feature-dashboard/node_modules/.pnpm/aws-cdk-lib@2.262.0_constructs@10.7.1/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:208 in .pnpm...",
+        "Array.forEach (:)",
+        "...new Vpc2 in .pnpm...",
+        "new NetworkTopology (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/network/network.ts:27:16)",
+        "Object.create (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:50:29)",
+        "createClosure (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:120:59)",
+        "new DataStack (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/bin/app.ts:18:5)"
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/NetworkTopology/Vpc/publicSubnet1/EIP": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "NetworkTopologyVpcpublicSubnet1EIPB0A4D7AE"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Vpc2 in .pnpm...",
+        "new NetworkTopology (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/network/network.ts:27:16)",
+        "Object.create (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:50:29)",
+        "createClosure (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:120:59)",
+        "new DataStack (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/bin/app.ts:18:5)"
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/NetworkTopology/Vpc/publicSubnet1/NATGateway": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "NetworkTopologyVpcpublicSubnet1NATGateway7BF29680"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Vpc2 in .pnpm...",
+        "new NetworkTopology (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/network/network.ts:27:16)",
+        "Object.create (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:50:29)",
+        "createClosure (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:120:59)",
+        "new DataStack (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/bin/app.ts:18:5)"
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/NetworkTopology/Vpc/publicSubnet2/Subnet": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "NetworkTopologyVpcpublicSubnet2SubnetD16D8124"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../Volumes/Storage/development/projects/complai/feature-dashboard/node_modules/.pnpm/aws-cdk-lib@2.262.0_constructs@10.7.1/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:268 in .pnpm...",
+        "Array.forEach (:)",
+        "....pnpm..."
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/NetworkTopology/Vpc/publicSubnet2/RouteTable": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "NetworkTopologyVpcpublicSubnet2RouteTable94DFBA2E"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../Volumes/Storage/development/projects/complai/feature-dashboard/node_modules/.pnpm/aws-cdk-lib@2.262.0_constructs@10.7.1/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:268 in .pnpm...",
+        "Array.forEach (:)",
+        "....pnpm..."
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/NetworkTopology/Vpc/publicSubnet2/RouteTableAssociation": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "NetworkTopologyVpcpublicSubnet2RouteTableAssociation7615AF47"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../Volumes/Storage/development/projects/complai/feature-dashboard/node_modules/.pnpm/aws-cdk-lib@2.262.0_constructs@10.7.1/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:268 in .pnpm...",
+        "Array.forEach (:)",
+        "....pnpm..."
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/NetworkTopology/Vpc/publicSubnet2/DefaultRoute": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "NetworkTopologyVpcpublicSubnet2DefaultRouteD093D65B"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../Volumes/Storage/development/projects/complai/feature-dashboard/node_modules/.pnpm/aws-cdk-lib@2.262.0_constructs@10.7.1/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:208 in .pnpm...",
+        "Array.forEach (:)",
+        "...new Vpc2 in .pnpm...",
+        "new NetworkTopology (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/network/network.ts:27:16)",
+        "Object.create (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:50:29)",
+        "createClosure (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:120:59)",
+        "new DataStack (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/bin/app.ts:18:5)"
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/NetworkTopology/Vpc/privateSubnet1/Subnet": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "NetworkTopologyVpcprivateSubnet1Subnet60027F12"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../Volumes/Storage/development/projects/complai/feature-dashboard/node_modules/.pnpm/aws-cdk-lib@2.262.0_constructs@10.7.1/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:270 in .pnpm...",
+        "Array.forEach (:)",
+        "....pnpm..."
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/NetworkTopology/Vpc/privateSubnet1/RouteTable": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "NetworkTopologyVpcprivateSubnet1RouteTable9AF22927"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../Volumes/Storage/development/projects/complai/feature-dashboard/node_modules/.pnpm/aws-cdk-lib@2.262.0_constructs@10.7.1/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:270 in .pnpm...",
+        "Array.forEach (:)",
+        "....pnpm..."
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/NetworkTopology/Vpc/privateSubnet1/RouteTableAssociation": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "NetworkTopologyVpcprivateSubnet1RouteTableAssociation8FBB958C"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../Volumes/Storage/development/projects/complai/feature-dashboard/node_modules/.pnpm/aws-cdk-lib@2.262.0_constructs@10.7.1/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:270 in .pnpm...",
+        "Array.forEach (:)",
+        "....pnpm..."
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/NetworkTopology/Vpc/privateSubnet1/DefaultRoute": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "NetworkTopologyVpcprivateSubnet1DefaultRouteEE61288C"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Vpc2 in .pnpm...",
+        "new NetworkTopology (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/network/network.ts:27:16)",
+        "Object.create (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:50:29)",
+        "createClosure (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:120:59)"
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/NetworkTopology/Vpc/privateSubnet2/Subnet": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "NetworkTopologyVpcprivateSubnet2SubnetE6A613F0"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../Volumes/Storage/development/projects/complai/feature-dashboard/node_modules/.pnpm/aws-cdk-lib@2.262.0_constructs@10.7.1/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:270 in .pnpm...",
+        "Array.forEach (:)",
+        "....pnpm..."
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/NetworkTopology/Vpc/privateSubnet2/RouteTable": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "NetworkTopologyVpcprivateSubnet2RouteTable45C9EA0F"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../Volumes/Storage/development/projects/complai/feature-dashboard/node_modules/.pnpm/aws-cdk-lib@2.262.0_constructs@10.7.1/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:270 in .pnpm...",
+        "Array.forEach (:)",
+        "....pnpm..."
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/NetworkTopology/Vpc/privateSubnet2/RouteTableAssociation": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "NetworkTopologyVpcprivateSubnet2RouteTableAssociationDF452D76"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../Volumes/Storage/development/projects/complai/feature-dashboard/node_modules/.pnpm/aws-cdk-lib@2.262.0_constructs@10.7.1/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:270 in .pnpm...",
+        "Array.forEach (:)",
+        "....pnpm..."
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/NetworkTopology/Vpc/privateSubnet2/DefaultRoute": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "NetworkTopologyVpcprivateSubnet2DefaultRouteBC964BC3"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Vpc2 in .pnpm...",
+        "new NetworkTopology (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/network/network.ts:27:16)",
+        "Object.create (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:50:29)",
+        "createClosure (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:120:59)"
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/NetworkTopology/Vpc/intraSubnet1/Subnet": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "NetworkTopologyVpcintraSubnet1SubnetE8A60498"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../Volumes/Storage/development/projects/complai/feature-dashboard/node_modules/.pnpm/aws-cdk-lib@2.262.0_constructs@10.7.1/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:272 in .pnpm...",
+        "Array.forEach (:)",
+        "....pnpm..."
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/NetworkTopology/Vpc/intraSubnet1/RouteTable": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "NetworkTopologyVpcintraSubnet1RouteTableD38F2DC5"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../Volumes/Storage/development/projects/complai/feature-dashboard/node_modules/.pnpm/aws-cdk-lib@2.262.0_constructs@10.7.1/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:272 in .pnpm...",
+        "Array.forEach (:)",
+        "....pnpm..."
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/NetworkTopology/Vpc/intraSubnet1/RouteTableAssociation": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "NetworkTopologyVpcintraSubnet1RouteTableAssociation9D6A690E"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../Volumes/Storage/development/projects/complai/feature-dashboard/node_modules/.pnpm/aws-cdk-lib@2.262.0_constructs@10.7.1/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:272 in .pnpm...",
+        "Array.forEach (:)",
+        "....pnpm..."
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/NetworkTopology/Vpc/intraSubnet2/Subnet": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "NetworkTopologyVpcintraSubnet2Subnet49A7434C"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../Volumes/Storage/development/projects/complai/feature-dashboard/node_modules/.pnpm/aws-cdk-lib@2.262.0_constructs@10.7.1/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:272 in .pnpm...",
+        "Array.forEach (:)",
+        "....pnpm..."
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/NetworkTopology/Vpc/intraSubnet2/RouteTable": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "NetworkTopologyVpcintraSubnet2RouteTableCC35F791"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../Volumes/Storage/development/projects/complai/feature-dashboard/node_modules/.pnpm/aws-cdk-lib@2.262.0_constructs@10.7.1/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:272 in .pnpm...",
+        "Array.forEach (:)",
+        "....pnpm..."
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/NetworkTopology/Vpc/intraSubnet2/RouteTableAssociation": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "NetworkTopologyVpcintraSubnet2RouteTableAssociation6514F9B2"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../Volumes/Storage/development/projects/complai/feature-dashboard/node_modules/.pnpm/aws-cdk-lib@2.262.0_constructs@10.7.1/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:272 in .pnpm...",
+        "Array.forEach (:)",
+        "....pnpm..."
+      ]
+    }
+  ],
+  "/FeatureDashboardLocalData/NetworkTopology/Vpc/DynamoDbEndpoint/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "NetworkTopologyVpcDynamoDbEndpointE24794EB"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...WrappedClass.addGatewayEndpoint in .pnpm...",
+        "new NetworkTopology (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/network/network.ts:67:34)",
+        "Object.create (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:50:29)",
+        "createClosure (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/lib/units/registry.ts:120:59)",
+        "new DataStack (file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/bin/app.ts:18:5)",
+        "file:///Volumes/Storage/development/projects/complai/feature-dashboard/cdk/bin/app.ts:22 (:)",
+        "...node internals..."
+      ]
+    }
+  ]
+}

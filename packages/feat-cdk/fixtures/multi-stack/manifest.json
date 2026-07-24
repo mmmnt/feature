@@ -1,0 +1,36 @@
+{
+  "version": "38.0.0",
+  "artifacts": {
+    "Net.assets": {
+      "type": "cdk:asset-manifest"
+    },
+    "Net": {
+      "type": "aws:cloudformation:stack",
+      "properties": {
+        "templateFile": "Net.template.json",
+        "stackName": "net"
+      },
+      "dependencies": [
+        "Net.assets"
+      ]
+    },
+    "Data": {
+      "type": "aws:cloudformation:stack",
+      "properties": {
+        "templateFile": "Data.template.json",
+        "stackName": "data"
+      },
+      "dependencies": [
+        "Net"
+      ]
+    },
+    "Api": {
+      "type": "aws:cloudformation:stack",
+      "properties": {
+        "templateFile": "Api.template.json",
+        "stackName": "api"
+      },
+      "dependencies": []
+    }
+  }
+}

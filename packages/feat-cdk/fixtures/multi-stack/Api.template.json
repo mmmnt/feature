@@ -1,0 +1,24 @@
+{
+  "Parameters": {
+    "BootstrapVersion": {
+      "Type": "AWS::SSM::Parameter::Value<String>",
+      "Default": "/cdk-bootstrap/hnb659fds/version"
+    },
+    "VpcRef": {
+      "Type": "AWS::SSM::Parameter::Value<String>",
+      "Default": "/app/vpc-id"
+    }
+  },
+  "Resources": {
+    "Fn": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Environment": {
+          "Variables": {
+            "TABLE": "{{resolve:ssm:/app/table-name}}"
+          }
+        }
+      }
+    }
+  }
+}

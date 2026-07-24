@@ -1,0 +1,19 @@
+{
+  "Resources": {
+    "Vpc": {
+      "Type": "AWS::EC2::VPC",
+      "Properties": {
+        "CidrBlock": "172.16.0.0/16"
+      }
+    },
+    "VpcIdParam": {
+      "Type": "AWS::SSM::Parameter",
+      "Properties": {
+        "Name": "/app/vpc-id",
+        "Value": {
+          "Ref": "Vpc"
+        }
+      }
+    }
+  }
+}

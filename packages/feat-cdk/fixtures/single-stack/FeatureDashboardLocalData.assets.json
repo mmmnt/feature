@@ -1,0 +1,20 @@
+{
+  "version": "54.0.0",
+  "files": {
+    "c7fe0271711344d90c823474ffe8e3c004d33eb8a40b2fa9b338379f157e64a8": {
+      "displayName": "feature-dashboard-local-data Template",
+      "source": {
+        "path": "FeatureDashboardLocalData.template.json",
+        "packaging": "file"
+      },
+      "destinations": {
+        "current_account-current_region-7cd23fa0": {
+          "bucketName": "cdk-hnb659fds-assets-${AWS::AccountId}-${AWS::Region}",
+          "objectKey": "c7fe0271711344d90c823474ffe8e3c004d33eb8a40b2fa9b338379f157e64a8.json",
+          "assumeRoleArn": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/cdk-hnb659fds-file-publishing-role-${AWS::AccountId}-${AWS::Region}"
+        }
+      }
+    }
+  },
+  "dockerImages": {}
+}

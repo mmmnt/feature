@@ -1,0 +1,17 @@
+{
+  "Resources": {
+    "Table": {
+      "Type": "AWS::DynamoDB::Table",
+      "Properties": {
+        "TableName": "app-table"
+      }
+    },
+    "TableNameParam": {
+      "Type": "AWS::SSM::Parameter",
+      "Properties": {
+        "Name": "/app/table-name",
+        "Value": "app-table"
+      }
+    }
+  }
+}
