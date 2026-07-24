@@ -42,6 +42,12 @@ export interface CdkInvokeConfig {
   env?: Record<string, string>;
   /** Active stage: a literal, or an environment reference with a default. */
   stage?: string | StageConfig;
+  /**
+   * SSM names published outside this app's assembly (another plane/repo);
+   * "<env>" resolves to the stage. Declared cross-plane edges — reviewed
+   * like imports; undeclared dangling consumes remain loud failures.
+   */
+  externalPublications?: string[];
 }
 
 export interface CdkCommandConfig {
@@ -87,6 +93,7 @@ class CdkAdapter implements FeatResponseAdapter {
       const synth: SynthStackConfig = {};
       if (inv.appCommand !== undefined) synth.appCommand = inv.appCommand;
       if (inv.cdkBin !== undefined) synth.cdkBin = inv.cdkBin;
+      if (inv.externalPublications !== undefined) synth.externalPublications = inv.externalPublications;
       const cwd = inv.cwd ?? this.config.projectRoot;
       if (cwd !== undefined) synth.cwd = cwd;
       const assemblyDir = cmd.assemblyDir ?? inv.assemblyDir;

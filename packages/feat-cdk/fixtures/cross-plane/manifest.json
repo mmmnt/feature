@@ -1,0 +1,13 @@
+{
+  "version": "38.0.0",
+  "artifacts": {
+    "App": {
+      "type": "aws:cloudformation:stack",
+      "properties": {
+        "templateFile": "App.template.json",
+        "stackName": "app-local-data"
+      },
+      "dependencies": []
+    }
+  }
+}

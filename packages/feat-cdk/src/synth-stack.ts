@@ -53,6 +53,14 @@ export interface SynthStackConfig {
    */
   stage?: string;
   /**
+   * SSM names published OUTSIDE this app's assembly (another plane/repo).
+   * Exact names; "<env>" resolves to the stage. A consumed name in this list
+   * with no in-assembly publisher is a declared cross-plane edge — accepted,
+   * surfaced in `consumes`, never a closure member. Undeclared dangling
+   * consumes still throw.
+   */
+  externalPublications?: string[];
+  /**
    * Semantic projection: extra assertable fields merged OVER the canonical
    * surface. Pure — receives the analyzed assembly, the stack, its closure,
    * and the canonical surface; returns the fields to add. Rarely needed now
@@ -132,7 +140,12 @@ export function createSynthStackHandler(config: SynthStackConfig = {}) {
         },
       };
     }
-    const closure = resolveStackClosure(assembly, [stack.artifactId]);
+    const external = new Set(
+      (config.externalPublications ?? []).map((name) =>
+        config.stage !== undefined ? name.replaceAll("<env>", config.stage) : name,
+      ),
+    );
+    const closure = resolveStackClosure(assembly, [stack.artifactId], external);
     const select =
       payload.select !== null && typeof payload.select === "object" && !Array.isArray(payload.select)
         ? (payload.select as Record<string, SelectQuery>)

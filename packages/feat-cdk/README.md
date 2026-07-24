@@ -53,6 +53,27 @@ flags, anything else your app reads) and answers with the canonical surface.
 The resolved stage is exported to the synth subprocess as `ENVIRONMENT`.
 (`createSynthStackHandler` remains exported for custom setups.)
 
+## Plane-split apps: declared cross-plane consumption
+
+A consumed SSM name with no publisher in the assembly is a loud analysis
+failure — it would fail at deploy. When your composition is deliberately
+split into planes (e.g. a stable environment-level app deployed by humans
+and an ephemeral app owned by CI), declare the names the other plane
+publishes:
+
+```jsonc
+"invoke": {
+  "appCommand": "node bin/app.ts",
+  "externalPublications": ["/feature/dashboard/<env>/ddb-endpoint-id"]
+}
+```
+
+Entries are exact names (`<env>` resolves to the stage) and read like
+imports between planes: a listed name is accepted as a cross-plane edge —
+surfaced in `consumes`, never a closure member, its publisher a deploy
+prerequisite. Undeclared dangling consumes still throw, so a typo'd SSM
+read remains caught at analysis, not at deploy.
+
 ## One spec text, every environment
 
 With a `stage` configured, `<env>` is a two-way token: it resolves to the
@@ -93,7 +114,7 @@ including ones that don't exist yet.
 ## API
 
 - `analyzeAssembly(cdkOutDir)` → `{ stacks, byArtifact, byStackName }`
-- `resolveStackClosure(assembly, roots)` → dependency-first artifact ids
+- `resolveStackClosure(assembly, roots, externalPublications?)` → dependency-first artifact ids
 - `stackSurface(assembly, stack, closure, { stage, select })` → the canonical `StackSurface`
 - `createSynthStackHandler(config)` → the Feature response command
 - `normalizedResources` / `selectResources` / `deepMatch` / `normalizeStage` /

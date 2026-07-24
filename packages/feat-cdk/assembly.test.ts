@@ -107,6 +107,20 @@ describe("resolveStackClosure error cases", () => {
     expect(() => resolveStackClosure(a, ["Api"])).toThrowError(/consumes SSM '\/app\/missing' but no stack.*publishes it/);
   });
 
+  it("a dangling consume DECLARED external is a cross-plane edge, not an error", () => {
+    const a = analyzeAssembly(MULTI);
+    a.byArtifact["Api"]!.consumes = ["/app/missing"];
+    expect(resolveStackClosure(a, ["Api"], new Set(["/app/missing"]))).toEqual(["Api"]);
+  });
+
+  it("an external declaration never silences an UNDECLARED dangling consume", () => {
+    const a = analyzeAssembly(MULTI);
+    a.byArtifact["Api"]!.consumes = ["/app/missing", "/app/also-missing"];
+    expect(() => resolveStackClosure(a, ["Api"], new Set(["/app/missing"]))).toThrowError(
+      /consumes SSM '\/app\/also-missing'.*externalPublications/,
+    );
+  });
+
   it("a dependency cycle is caught with the trail", () => {
     const a = analyzeAssembly(MULTI);
     a.byArtifact["Net"]!.dependsOn = ["Data"]; // Net→Data→Net
@@ -210,6 +224,29 @@ describe("the response adapter (zero consumer code — config only)", () => {
   it("setup/teardown are clean lifecycle no-ops", async () => {
     await expect(adapter.setup({})).resolves.toBeUndefined();
     await expect(adapter.teardown()).resolves.toBeUndefined();
+  });
+});
+
+describe("cross-plane consumption through the handler (plane-split apps)", () => {
+  const CROSS = path.join(HERE, "fixtures", "cross-plane");
+
+  it("an undeclared dangling consume fails loud at analysis, not at deploy", async () => {
+    const handler = createSynthStackHandler({ assemblyDir: CROSS, stage: "local" });
+    await expect(handler({ stack: "app-<env>-data" })).rejects.toThrow(
+      /consumes SSM '\/plane\/local\/endpoint-id'.*externalPublications/,
+    );
+  });
+
+  it("a declared external name (with <env> token) is accepted: single-app closure, consume surfaced", async () => {
+    const handler = createSynthStackHandler({
+      assemblyDir: CROSS,
+      stage: "local",
+      externalPublications: ["/plane/<env>/endpoint-id"],
+    });
+    const r = (await handler({ stack: "app-<env>-data" })) as any;
+    expect(r.status).toBe(200);
+    expect(r.body.closure).toEqual(["app-<env>-data"]);
+    expect(r.body.consumes).toEqual(["/plane/<env>/endpoint-id"]);
   });
 });
 

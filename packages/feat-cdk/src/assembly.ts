@@ -126,9 +126,16 @@ export function analyzeAssembly(cdkOutDir: string): Assembly {
  * Full deployment closure of the requested stacks: injected dependencies
  * (manifest) + cross-stack SSM consumes matched to publishers. Returned
  * dependency-first (safe deploy order). Dangling consumes throw — an SSM read
- * with no publisher in the assembly would fail at deploy.
+ * with no publisher in the assembly would fail at deploy — unless the name is
+ * declared in `externalPublications`: a cross-plane edge whose publisher
+ * lives in another app/assembly (a deploy prerequisite, never a closure
+ * member).
  */
-export function resolveStackClosure(assembly: Assembly, rootArtifactIds: string[]): string[] {
+export function resolveStackClosure(
+  assembly: Assembly,
+  rootArtifactIds: string[],
+  externalPublications: ReadonlySet<string> = new Set(),
+): string[] {
   const publisherOf = new Map<string, string>(); // ssm name → artifactId
   for (const s of assembly.stacks) for (const p of s.publishes) publisherOf.set(p.name, s.artifactId);
 
@@ -144,8 +151,10 @@ export function resolveStackClosure(assembly: Assembly, rootArtifactIds: string[
     for (const dep of stack.dependsOn) visit(dep, [...trail, artifactId]);
     for (const name of stack.consumes) {
       const publisher = publisherOf.get(name);
-      if (!publisher)
-        throw new Error(`Stack '${artifactId}' consumes SSM '${name}' but no stack in the assembly publishes it — configuration error.`);
+      if (!publisher) {
+        if (externalPublications.has(name)) continue; // declared cross-plane edge
+        throw new Error(`Stack '${artifactId}' consumes SSM '${name}' but no stack in the assembly publishes it — declare it in invoke.externalPublications if another plane publishes it; otherwise configuration error.`);
+      }
       if (publisher !== artifactId) visit(publisher, [...trail, artifactId]);
     }
     state.set(artifactId, "done");
