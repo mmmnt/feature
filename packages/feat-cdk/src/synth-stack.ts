@@ -66,7 +66,10 @@ export function createSynthStackHandler(config: SynthStackConfig = {}) {
       const cwd = config.cwd ?? process.cwd();
       assemblyDir = mkdtempSync(path.join(tmpdir(), "feat-cdk-"));
       const cdkBin = config.cdkBin ?? "npx";
-      const args = ["cdk", "synth", stackId, "--output", assemblyDir, "--quiet"];
+      // Synthesize the WHOLE app: the assembly is the contract, and stack
+      // membership is ruled on by the analysis (an unknown stack must answer
+      // 404 with the available stacks, not die inside the cdk CLI).
+      const args = ["cdk", "synth", "--all", "--output", assemblyDir, "--quiet"];
       if (config.appCommand) args.push("--app", config.appCommand);
       await execFile(cdkBin, args, { cwd, env: { ...process.env, ...config.env } });
     }
