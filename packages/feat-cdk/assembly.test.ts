@@ -12,7 +12,7 @@ import {
   publishedSsm,
   listStacks,
 } from "./src/assembly.js";
-import { stackSurface } from "./src/surface.js";
+import { stackSurface, countOfType } from "./src/surface.js";
 import { createSynthStackHandler } from "./src/synth-stack.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -120,6 +120,21 @@ describe("createSynthStackHandler over a pre-synthesized assembly (the CI/test p
     expect(r.status).toBe(200);
     expect(r.body.stackName).toBe("feature-dashboard-local-data");
     expect(r.body.resourceCounts["AWS::DynamoDB::Table"]).toBe(1);
+  });
+
+  it("merges a semantic projection OVER the canonical surface", async () => {
+    const projected = createSynthStackHandler({
+      assemblyDir: REAL,
+      project: ({ stack, surface }) => ({
+        tableCount: countOfType(stack, "AWS::DynamoDB::Table"),
+        closureDepth: surface.closure.length,
+      }),
+    });
+    const r = (await projected({ stack: "FeatureDashboardLocalData" })) as any;
+    expect(r.status).toBe(200);
+    expect(r.body.tableCount).toBe(1);
+    expect(r.body.closureDepth).toBe(1);
+    expect(r.body.publishes).toHaveLength(10); // canonical fields survive the merge
   });
 
   it("400s a missing stack id and 404s an unknown stack", async () => {

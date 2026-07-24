@@ -1,6 +1,6 @@
 {
   "name": "@mmmnt/feat-cdk",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Point Feature at your CDK app: derive the deployment (resources, SSM contract, dependency closure) from the cloud assembly — SynthStack as a command, zero convention files",
   "type": "module",
   "main": "dist/index.js",
@@ -12,9 +12,6 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
-  },
-  "dependencies": {
-    "@mmmnt/feat-types": "workspace:^"
   },
   "devDependencies": {
     "typescript": "^5.8.0",

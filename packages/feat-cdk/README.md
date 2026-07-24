@@ -58,6 +58,17 @@ scenario "the data stack ships the expected footprint":
     }
 ```
 
+Semantic surfaces — regulatory posture predicates, reachability matrices,
+whatever your specs should pin — are a pure `project` function merged over the
+canonical surface:
+
+```ts
+export const synthStack = createSynthStackHandler({
+  appCommand: "node bin/app.ts",
+  project: ({ stack }) => ({ tableCount: countOfType(stack, "AWS::DynamoDB::Table") }),
+});
+```
+
 ## API
 
 - `analyzeAssembly(cdkOutDir)` → `{ stacks, byArtifact, byStackName }`

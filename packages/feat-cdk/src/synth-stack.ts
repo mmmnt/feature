@@ -13,8 +13,8 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import { analyzeAssembly, resolveStackClosure } from "./assembly.js";
-import { stackSurface } from "./surface.js";
+import { analyzeAssembly, resolveStackClosure, type Assembly, type StackAnalysis } from "./assembly.js";
+import { stackSurface, type StackSurface } from "./surface.js";
 
 const execFile = promisify(execFileCb);
 
@@ -35,6 +35,18 @@ export interface SynthStackConfig {
   env?: Record<string, string>;
   /** Binary that runs cdk (default "npx"); the appCommand is passed via --app. */
   cdkBin?: string;
+  /**
+   * Semantic projection: extra assertable fields merged OVER the canonical
+   * surface (e.g. regulatory posture predicates derived from the template).
+   * Pure — receives the analyzed assembly, the stack, its closure, and the
+   * canonical surface; returns the fields to add.
+   */
+  project?: (ctx: {
+    assembly: Assembly;
+    stack: StackAnalysis;
+    closure: string[];
+    surface: StackSurface;
+  }) => Record<string, unknown>;
 }
 
 interface SynthStackPayload {
@@ -71,6 +83,10 @@ export function createSynthStackHandler(config: SynthStackConfig = {}) {
       };
     }
     const closure = resolveStackClosure(assembly, [stackId]);
-    return { status: 200, body: stackSurface(assembly, stack, closure) };
+    const surface = stackSurface(assembly, stack, closure);
+    const body = config.project
+      ? { ...surface, ...config.project({ assembly, stack, closure, surface }) }
+      : surface;
+    return { status: 200, body };
   };
 }
