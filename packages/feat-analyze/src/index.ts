@@ -37,6 +37,26 @@ export function lintSpec(spec: BuiltSpec): Finding[] {
       findings.push({ level: "warn", message: `warn: schema '${entry.schemaName}' is declared but never referenced by a scenario` });
   }
 
+  // ADR-0017: declared-but-unused variable = lint warning (same discipline
+  // as schema declarations; the parser already errors on undeclared refs).
+  if (spec.variables && spec.variables.length > 0) {
+    const referenced = new Set<string>();
+    const collect = (v: unknown): void => {
+      if (typeof v === "string") {
+        for (const m of v.matchAll(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g)) referenced.add(m[1]!);
+      } else if (Array.isArray(v)) v.forEach(collect);
+      else if (v !== null && typeof v === "object") Object.values(v).forEach(collect);
+    };
+    collect(spec.scenarios);
+    for (const variable of spec.variables) {
+      if (variable.definition.kind === "template")
+        for (const p of variable.definition.parts) if (typeof p === "object") referenced.add(p.ref);
+    }
+    for (const variable of spec.variables)
+      if (!referenced.has(variable.name))
+        findings.push({ level: "warn", message: `warn: variable '${variable.name}' is declared but never referenced` });
+  }
+
   // Style: duplicate contract declarations
   const seen = new Set<string>();
   for (const entry of spec.contract) {

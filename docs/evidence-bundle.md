@@ -44,3 +44,21 @@ Production never fails the build by itself: a project whose specs don't parse
 still gets an honest bundle (the inventory records `parse_error`; `verify`
 reports `fail`). Gate on `feat verify && feat run` as usual — the bundle is a
 record, not a gate.
+
+## Environment & output location (supersedes the static ADR-0016 field)
+
+The bundle's `project.environment` resolves: `config.environment` (explicit
+override) → `FEAT_ENVIRONMENT` → `ENVIRONMENT` — none is an immediate
+failure. `feat report --evidence` writes to
+`.feature/evidence/<environment>/<commit-sha>[-dirty].json` (the SHA is the
+bundle's identity; a dirty tree can never masquerade as a clean commit).
+The `local` environment records no evidence (skip with notice; `--force`
+for debugging) — compliance windows begin above local. `--out` overrides
+the path.
+
+## Per-case resolved variables (ADR-0017)
+
+When a spec declares `variables:`, the harness records each case's resolved
+values to `.feature/run/<config>-variables.jsonl` (cleared per run) and the
+bundle carries them as `variables` keyed by case anchor — the byte-locked
+spec text keeps its ${expressions}; the bundle replays the substitution.

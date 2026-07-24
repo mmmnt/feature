@@ -13,7 +13,7 @@ export default defineConfig({
         "adapters/*/src/**",
       ],
       reporter: ["text", "lcov"],
-      reportsDirectory: "reports/coverage",
+      reportsDirectory: ".feature/coverage",
     },
   },
 });

@@ -36,7 +36,7 @@
       "console",
       "junit"
     ],
-    "junitOutput": "reports/feat-junit.xml"
+    "junitOutput": ".feature/reports/feat-junit.xml"
   },
   "environment": "toolchain"
 }

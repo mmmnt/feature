@@ -24,3 +24,4 @@ Validation (until `feat parse` exists in M2):
 pnpm dlx ajv-cli@5 validate --spec=draft7 -s schemas/builtspec.schema.json -d "corpus/*/*.ir.json"
 pnpm dlx ajv-cli@5 validate --spec=draft7 -s schemas/contract.schema.json -d "corpus/*/*.contract.json"
 ```
+| 11 | `waitlist-variables/` | SPEC-WL-001 | Spec variables (ADR-0017): `variables:` block, source calls (`now()`), definition-side template composition, `${ref}` interpolation in when-payloads and predictions, idempotent-repeat via shared per-case resolution |

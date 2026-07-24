@@ -1,6 +1,6 @@
 {
   "name": "@mmmnt/feat-analyze",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Pure analysis for .feat specs: lint, audit (B1–B3 buildability), and conservative formatting — no filesystem, no CLI",
   "type": "module",
   "main": "dist/index.js",

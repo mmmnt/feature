@@ -98,6 +98,6 @@ jobs:
         with:
           name: feat-reports
           path: |
-            reports/feat-junit.xml
-            reports/coverage/lcov.info
+            .feature/reports/feat-junit.xml
+            .feature/coverage/lcov.info
           if-no-files-found: ignore

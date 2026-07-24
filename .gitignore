@@ -30,3 +30,6 @@ FEATURES*.md
 
 # Committed fixture: resolveCdkEntry resolution target (not a real install)
 !packages/feat-cdk/fixtures/fake-consumer/node_modules/
+
+# generated run artifacts (reports, evidence, sidecars)
+.feature/
