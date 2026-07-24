@@ -15,7 +15,10 @@ prediction inversion.
     "options": {
       "tableEnv": "FEAT_DDB_TABLE",          // or "table": "feature-workspace-local"
       "region": "us-east-2",
-      "endpoint": "http://127.0.0.1:8000"    // DynamoDB Local; omit for AWS
+      "endpointEnv": "FEAT_DDB_ENDPOINT"     // or "endpoint": literal; omit for AWS.
+      // Endpoints belong to the ENVIRONMENT (an emulator edge, DynamoDB
+      // Local, a VPC endpoint URL) — reference them like tableEnv, and the
+      // same tier config observes whatever the environment provides.
     }
   }
 }

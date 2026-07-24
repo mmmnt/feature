@@ -1,7 +1,7 @@
 // The credential-reference ladder, pure (no AWS calls; always runs): exactly
 // one auth form, env-var NAMES never values, clear configuration errors.
 import { afterEach, describe, expect, it } from "vitest";
-import { createAdapter, resolveAuth } from "./src/index.js";
+import { createAdapter, resolveAuth, resolveEndpoint } from "./src/index.js";
 
 describe("auth resolution ladder", () => {
   afterEach(() => {
@@ -54,5 +54,37 @@ describe("auth resolution ladder", () => {
     expect(() => createAdapter({ options: { table: "t", auth: { profile: "a", roleArn: "arn:aws:iam::1:role/b" } } })).toThrowError(
       /exactly ONE/,
     );
+  });
+});
+
+describe("endpoint resolution (endpoints belong to the environment)", () => {
+  afterEach(() => {
+    delete process.env.FEAT_TEST_EP;
+  });
+
+  it("absent = the real regional endpoint; literal passes through", () => {
+    expect(resolveEndpoint({})).toBeUndefined();
+    expect(resolveEndpoint({ endpoint: "http://127.0.0.1:8000" })).toBe("http://127.0.0.1:8000");
+  });
+
+  it("endpointEnv reads the named variable from the environment", () => {
+    process.env.FEAT_TEST_EP = "http://localhost:4566";
+    expect(resolveEndpoint({ endpointEnv: "FEAT_TEST_EP" })).toBe("http://localhost:4566");
+  });
+
+  it("an unset endpointEnv variable is a configuration error naming it", () => {
+    expect(() => resolveEndpoint({ endpointEnv: "FEAT_TEST_EP" })).toThrowError(/FEAT_TEST_EP is not set/);
+  });
+
+  it("endpoint and endpointEnv together are a configuration error", () => {
+    expect(() => resolveEndpoint({ endpoint: "http://a", endpointEnv: "FEAT_TEST_EP" })).toThrowError(
+      /mutually exclusive/,
+    );
+  });
+
+  it("ephemeral excludes endpointEnv like every external binding", () => {
+    expect(() =>
+      createAdapter({ options: { ephemeral: {}, endpointEnv: "FEAT_TEST_EP" } }),
+    ).toThrowError(/mutually exclusive/);
   });
 });

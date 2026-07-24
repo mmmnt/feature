@@ -83,11 +83,40 @@ interface DynamoAdapterConfig {
     tableEnv?: string;
     /** AWS region; defaults to the SDK chain (AWS_REGION). */
     region?: string;
-    /** API origin override — an existing DynamoDB Local (e.g. http://127.0.0.1:8000). */
+    /** API origin override, literally (e.g. http://127.0.0.1:8000). */
     endpoint?: string;
+    /**
+     * Env var holding the API origin — endpoints belong to the ENVIRONMENT
+     * (an emulator edge, a VPC endpoint URL, DynamoDB Local), so per-tier
+     * configs reference them like tableEnv references the table. Exactly one
+     * of `endpoint` / `endpointEnv`; absent = the real regional endpoint.
+     */
+    endpointEnv?: string;
     auth?: AuthOptions;
     ephemeral?: EphemeralOptions;
   };
+}
+
+/**
+ * Resolve the API origin: literal `endpoint`, or the value of the env var
+ * named by `endpointEnv` (both set = configuration error; named var unset =
+ * configuration error). Undefined = the SDK's real regional endpoint.
+ * Exported for unit testing — makes no AWS calls.
+ */
+export function resolveEndpoint(opts: { endpoint?: string; endpointEnv?: string }): string | undefined {
+  if (opts.endpoint !== undefined && opts.endpointEnv !== undefined)
+    throw new Error(
+      "@mmmnt/feat-adapter-dynamodb: options.endpoint and options.endpointEnv are mutually exclusive — configuration error.",
+    );
+  if (opts.endpointEnv !== undefined) {
+    const value = process.env[opts.endpointEnv];
+    if (!value)
+      throw new Error(
+        `@mmmnt/feat-adapter-dynamodb: environment variable ${opts.endpointEnv} is not set (options.endpointEnv) — configuration error.`,
+      );
+    return value;
+  }
+  return opts.endpoint;
 }
 
 /**
@@ -197,9 +226,9 @@ class DynamoAdapter implements FeatServiceAdapter {
 
   constructor(config: DynamoAdapterConfig) {
     this.opts = config.options ?? {};
-    const { table, tableEnv, endpoint, auth, ephemeral } = this.opts;
+    const { table, tableEnv, endpoint, endpointEnv, auth, ephemeral } = this.opts;
     if (ephemeral) {
-      if (table || tableEnv || endpoint || auth)
+      if (table || tableEnv || endpoint || endpointEnv || auth)
         throw new Error(
           "@mmmnt/feat-adapter-dynamodb: options.ephemeral is mutually exclusive with table/tableEnv/endpoint/auth " +
             "(the scaffolded instrument is private and credential-free) — configuration error.",
@@ -303,7 +332,8 @@ class DynamoAdapter implements FeatServiceAdapter {
       const resolved = resolveAuth(this.opts.auth);
       const clientOpts: Record<string, unknown> = {};
       if (this.opts.region) clientOpts.region = this.opts.region;
-      if (this.opts.endpoint) clientOpts.endpoint = this.opts.endpoint;
+      const endpoint = resolveEndpoint(this.opts);
+      if (endpoint) clientOpts.endpoint = endpoint;
       if (resolved.kind !== "default") clientOpts.credentials = resolved.credentials;
       this.ddb = new DynamoDBClient(clientOpts);
       this.streams = new DynamoDBStreamsClient(clientOpts);
