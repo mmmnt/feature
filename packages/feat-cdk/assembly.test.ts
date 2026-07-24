@@ -15,6 +15,7 @@ import {
 import { stackSurface, countOfType } from "./src/surface.js";
 import { createSynthStackHandler, resolveCdkEntry } from "./src/synth-stack.js";
 import { normalizedResources, normalizeStage, deepMatch, selectResources } from "./src/resources.js";
+import { createAdapter, resolveStage } from "./src/adapter.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REAL = path.join(HERE, "fixtures", "single-stack");
@@ -174,6 +175,41 @@ describe("the two-way <env> token through the handler", () => {
     const r = (await handler({ stack: "mystery-stack" })) as any;
     expect(r.status).toBe(404);
     expect(r.body.message).toContain("feature-dashboard-<env>-data");
+  });
+});
+
+describe("the response adapter (zero consumer code — config only)", () => {
+  const adapter = createAdapter({
+    invoke: { assemblyDir: REAL, stage: { fromEnv: "FEAT_CDK_TEST_STAGE", default: "local" } },
+    commands: { SynthStack: {}, SynthOther: { env: { FEAT_POSTURE: "harness" } } },
+  });
+
+  it("invokes a routed command and honors the <env> contract end to end", async () => {
+    const r = (await adapter.invoke("SynthStack", {
+      stack: "feature-dashboard-<env>-data",
+      select: { table: { type: "AWS::DynamoDB::Table" } },
+    })) as any;
+    expect(r.status).toBe(200);
+    expect(r.body.stackName).toBe("feature-dashboard-<env>-data");
+    expect(r.body.selected.table.count).toBe(1);
+  });
+
+  it("an unrouted command is a configuration error", async () => {
+    await expect(adapter.invoke("Ghost", {})).rejects.toThrow(/not routed in response.commands/);
+  });
+
+  it("resolveStage: literal, env reference, and default", () => {
+    expect(resolveStage("staging")).toBe("staging");
+    expect(resolveStage({ fromEnv: "FEAT_CDK_TEST_STAGE", default: "local" })).toBe("local");
+    process.env.FEAT_CDK_TEST_STAGE = "staging";
+    expect(resolveStage({ fromEnv: "FEAT_CDK_TEST_STAGE", default: "local" })).toBe("staging");
+    delete process.env.FEAT_CDK_TEST_STAGE;
+    expect(resolveStage(undefined)).toBeUndefined();
+  });
+
+  it("setup/teardown are clean lifecycle no-ops", async () => {
+    await expect(adapter.setup({})).resolves.toBeUndefined();
+    await expect(adapter.teardown()).resolves.toBeUndefined();
   });
 });
 

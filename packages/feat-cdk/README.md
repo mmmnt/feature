@@ -27,20 +27,31 @@ From a synthesized assembly (`cdk synth --output cdk.out`):
 
 The CDK bootstrap parameter is never mistaken for a dependency.
 
-## Synthesis as a Feature command
+## A first-class adapter — zero consumer code
 
-`createSynthStackHandler` turns "synthesize this stack and describe it" into a
-response command, shipped in-package — a consumer authors **zero** handler
-code:
+Feature's execution layer lives in published adapters, and this package IS
+one. The consumer's total authored surface is their CDK app, their `.feat`
+specs, and the config they already have — no handler files, no wiring code:
 
-```ts
-// feat-cdk-handler.ts — the consumer's only wiring
-import { createSynthStackHandler } from "@mmmnt/feat-cdk";
-export const synthStack = createSynthStackHandler({
-  appCommand: "node bin/app.ts",
-  stage: process.env.ENVIRONMENT ?? "local",
-});
+```jsonc
+// feat.config.json
+"response": {
+  "adapter": "@mmmnt/feat-cdk",
+  "invoke": {
+    "appCommand": "node bin/app.ts",
+    "stage": { "fromEnv": "ENVIRONMENT", "default": "local" }
+  },
+  "commands": {
+    "SynthDeployed": { "env": { "FEAT_POSTURE": "deployed" } },
+    "SynthHarness":  { "env": { "FEAT_POSTURE": "harness" } }
+  }
+}
 ```
+
+Each command synthesizes the app with its configured environment (posture
+flags, anything else your app reads) and answers with the canonical surface.
+The resolved stage is exported to the synth subprocess as `ENVIRONMENT`.
+(`createSynthStackHandler` remains exported for custom setups.)
 
 ## One spec text, every environment
 
