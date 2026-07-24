@@ -156,6 +156,12 @@ export interface ResponseConfig {
 
 export interface FeatConfig {
   featVersion?: string;
+  /**
+   * The environment this config verifies (ADR-0016) — stamped into evidence
+   * bundles; deliberately outside the derivation-relevant slice (generated
+   * suites are environment-agnostic).
+   */
+  environment?: string;
   schemas: { adapter: string };
   response?: ResponseConfig;
   services: Record<string, ServiceConfig>;

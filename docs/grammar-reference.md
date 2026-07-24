@@ -336,6 +336,7 @@ that per-spec `.contract.json` registries `$ref` into.
 ```json
 {
   "featVersion": "1.0",
+  "environment": "staging",
   "schemas":  { "adapter": "@mmmnt/feat-schema-json" },
   "response": { "adapter": "@mmmnt/feat-adapter-handler",
                 "commands": {
@@ -352,6 +353,12 @@ that per-spec `.contract.json` registries `$ref` into.
 ```
 
 - Service keys defined here are the only valid prediction targets (INV-7).
+- **Environment (ADR-0016)**: optional top-level `environment` names the environment this
+  config verifies (`^[a-z][a-z0-9-]*$`). Per-environment config files are the intended
+  pattern — adapters/baseUrls genuinely differ per environment, so the environment is a
+  property of the config a run actually used, and `feat report --evidence` stamps it into
+  the bundle. Deliberately **outside** the derivation-relevant slice: generated suites are
+  environment-agnostic (committed once, run everywhere).
 - **Command routing (ADR-0009)**: `response.commands` maps every command name to an
   adapter-specific invocation shape (HTTP: `{method, path}`; handler: `{module, export}`).
 - **Actors (ADR-0012)**: `response.actors` registers named actors with adapter-specific auth

@@ -73,7 +73,13 @@ export async function produceEvidence(root: string, configPath: string): Promise
       version: (require("../package.json") as { version: string }).version,
       toolchain: toolchainVersions(),
     },
-    project: { feat_version: config.featVersion, config_digest: sha256(configText) },
+    project: {
+      feat_version: config.featVersion,
+      config_digest: sha256(configText),
+      // ADR-0016: the bundle carries the environment of the config the run
+      // actually used — absent when the config declares none.
+      ...(config.environment ? { environment: config.environment } : {}),
+    },
     specs,
     verify,
     signature: null,

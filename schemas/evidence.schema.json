@@ -29,7 +29,12 @@
       "additionalProperties": false,
       "properties": {
         "feat_version": { "type": "string", "description": "The language version pragma from feat.config.json." },
-        "config_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+        "config_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "environment": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$",
+          "description": "The environment the run verified (ADR-0016), copied from the config's top-level `environment`. Absent when the config declares none — the bundle never claims an environment the adapters weren't pointed at."
+        }
       }
     },
     "specs": {

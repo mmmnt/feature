@@ -1,6 +1,6 @@
 {
   "name": "@mmmnt/feat-types",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Feat contracts: TypeScript types derived from the JSON Schema IR/config/report definitions. Zero dependencies, zero runtime code (DP-8).",
   "license": "MIT",
   "type": "module",

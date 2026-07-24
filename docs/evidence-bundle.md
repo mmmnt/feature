@@ -22,6 +22,12 @@ committed tests match them, and did they pass — under which toolchain?* Emit
 one per CI run and archive it as a build artifact and you have a longitudinal
 record of delivery conformance with no additional infrastructure.
 
+When the config declares a top-level `environment` (ADR-0016), the bundle's
+`project.environment` carries it — the environment is a property of the config
+the run *actually used* (per-environment config files are the intended
+pattern), so a bundle can never claim an environment the adapters weren't
+pointed at. Absent from the config, absent from the bundle.
+
 Producing bundles is free, local, and requires no account — like every
 capability in the toolchain. The `signature` field is null when produced
 locally; attestation (signing on ingestion, and the ledger of bundles over

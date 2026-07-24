@@ -34,11 +34,13 @@ contract:
 
 scenario "loads a valid config":
   given:
-    A well-formed config exists at the fixture path.
+    A well-formed config exists at the fixture path, declaring the
+    environment it verifies (ADR-0016).
   when: LoadConfig { path: "packages/feat-runtime/fixtures/valid.config.json" }
   predict success:
     response OK FeatConfigResult {
       featVersion: "1.0"
+      environment: "local"
       services: { filesystem: { consistency: "acid" } }
     }
     filesystem has []
@@ -69,3 +71,4 @@ scenario outline "schema-invalid configs are rejected":
     | "packages/feat-runtime/fixtures/bad-consistency.config.json"| "consistency"   |
     | "packages/feat-runtime/fixtures/empty-commands.config.json" | "commands"      |
     | "packages/feat-runtime/fixtures/not-json.config.json"       | "JSON"          |
+    | "packages/feat-runtime/fixtures/bad-environment.config.json"| "environment"   |

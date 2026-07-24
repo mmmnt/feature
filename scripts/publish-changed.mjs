@@ -39,17 +39,29 @@ for (const dir of dirs) {
 
   console.log(`publish  ${spec}`);
   try {
-    execSync("pnpm publish --access public --no-git-checks", {
+    const out = execSync("pnpm publish --access public --no-git-checks", {
       cwd: path.join(ROOT, dir),
-      stdio: "inherit",
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
     });
+    process.stdout.write(out);
     published++;
-  } catch {
-    // Keep publishing the rest; report all failures at the end. A brand-new
-    // package fails here until its trusted publisher is configured on npm
-    // (first publish is a manual bootstrap, as with v0.1.0).
-    console.error(`FAILED   ${spec}`);
-    failed.push(spec);
+  } catch (e) {
+    const text = `${e.stdout ?? ""}${e.stderr ?? ""}`;
+    process.stdout.write(text);
+    if (/cannot publish over/i.test(text)) {
+      // The registry already has this version but the npm-view existence check
+      // missed it (propagation lag after a just-completed publish). That is an
+      // already-published state, not a failure — idempotent skip.
+      console.log(`skip     ${spec} (registry already has this version — propagation lag)`);
+      skipped++;
+    } else {
+      // Keep publishing the rest; report all failures at the end. A brand-new
+      // package fails here until its trusted publisher is configured on npm
+      // (first publish is a manual bootstrap, as with v0.1.0).
+      console.error(`FAILED   ${spec}`);
+      failed.push(spec);
+    }
   }
 }
 

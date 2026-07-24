@@ -45,5 +45,8 @@ describe("evidence bundle", () => {
     expect(bundle.specs.every((s: { content_digest: string }) => s.content_digest.startsWith("sha256:"))).toBe(true);
     expect(bundle.signature).toBeNull();
     expect(bundle.producer.toolchain["@mmmnt/feat-core"]).toBeTruthy();
+    // ADR-0016: the repo's own config declares no environment, so the bundle
+    // must not claim one — env presence is driven solely by the config used.
+    expect(bundle.project.environment).toBeUndefined();
   });
 });

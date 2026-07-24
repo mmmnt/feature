@@ -1,0 +1,9 @@
+{
+  "featVersion": "1.0",
+  "environment": "Staging Env!",
+  "schemas": { "adapter": "@mmmnt/feat-schema-json" },
+  "services": {
+    "filesystem": { "adapter": "@mmmnt/feat-adapter-fs", "consistency": "acid" }
+  },
+  "specs": { "dir": ".", "pattern": "*.feat", "contractPattern": "*.contract.json", "outputPattern": "{name}.test.ts" }
+}

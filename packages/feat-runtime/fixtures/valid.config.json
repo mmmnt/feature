@@ -1,5 +1,6 @@
 {
   "featVersion": "1.0",
+  "environment": "local",
   "schemas": { "adapter": "@mmmnt/feat-schema-json" },
   "response": {
     "adapter": "@mmmnt/feat-adapter-handler",
