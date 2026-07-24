@@ -3,13 +3,14 @@
 // precondition execution before the window opens (INV-9), prediction diff via the matcher.
 
 import path from "node:path";
+import { appendFileSync, mkdirSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 import type {
   CapturedRecord, CapturedResponse, FeatConfig, FeatResponseAdapter, FeatServiceAdapter,
 } from "@mmmnt/feat-types";
-import { loadConfig } from "./load-config.js";
+import { loadConfig, variablesSidecarPath } from "./load-config.js";
 import { diffContains, diffRecords, diffResponse, type InlineData, type MatchContext } from "./matcher.js";
 
 // ── Spec variables (ADR-0017) ────────────────────────────────────────────────
@@ -153,6 +154,12 @@ export async function createHarness(opts: { configPath: string }): Promise<Harne
       const resolved = resolveVariables(rawCase.variables, rawCase.given?.clock);
       const { variables: _table, ...rest } = rawCase;
       c = { ...substituteVariables(rest as HarnessCase, resolved) };
+      // ADR-0017 evidence channel: the resolved values land in the sidecar
+      // (.feature/run/, cleared by feat run pre-spawn) so the bundle can
+      // replay the substitution per case — recorded whether the case passes.
+      const sidecar = variablesSidecarPath(projectRoot, opts.configPath);
+      mkdirSync(path.dirname(sidecar), { recursive: true });
+      appendFileSync(sidecar, JSON.stringify({ anchor: rawCase.anchor, variables: resolved }) + "\n");
     }
     const violations: string[] = [];
     for (const adapter of services.values()) await adapter.reset();

@@ -3,6 +3,7 @@
 // time. Free, local, account-less — the account lane signs bundles on
 // ingestion; locally `signature` is null.
 
+import { resolveEnvironment, variablesSidecarPath } from "@mmmnt/feat-runtime";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -76,13 +77,24 @@ export async function produceEvidence(root: string, configPath: string): Promise
     project: {
       feat_version: config.featVersion,
       config_digest: sha256(configText),
-      // ADR-0016: the bundle carries the environment of the config the run
-      // actually used — absent when the config declares none.
-      ...(config.environment ? { environment: config.environment } : {}),
+      // Environment: config override > FEAT_ENVIRONMENT > ENVIRONMENT (fail-fast).
+      environment: resolveEnvironment(config),
     },
     specs,
     verify,
     signature: null,
+  };
+
+  // ADR-0017: per-case resolved variable values from the run sidecar — the
+  // bundle replays the substitution (spec text keeps ${expressions}).
+  const sidecar = variablesSidecarPath(root, configPath);
+  if (existsSync(sidecar)) {
+    const vars: Record<string, unknown> = {};
+    for (const line of readFileSync(sidecar, "utf8").split("\n")) {
+      if (!line.trim()) continue;
+      try { const rec = JSON.parse(line) as { anchor: string; variables: unknown }; vars[rec.anchor] = rec.variables; } catch {}
+    }
+    if (Object.keys(vars).length > 0) bundle.variables = vars;
   };
 
   // Run block, when a JUnit artifact exists

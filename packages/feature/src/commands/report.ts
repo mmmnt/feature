@@ -1,7 +1,9 @@
 // `feat report` — summarize the last run from the JUnit output (per-scenario,
 // anchors included in test names). --junit prints the raw XML path.
 
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { execSync } from "node:child_process";
+import { resolveEnvironment } from "@mmmnt/feat-runtime";
 import path from "node:path";
 import { Command, Flags } from "@oclif/core";
 import type { FeatConfig } from "@mmmnt/feat-types";
@@ -13,9 +15,11 @@ export default class Report extends Command {
   static override flags = {
     config: Flags.string({ char: "c", description: "Path to feat.config.json", default: "feat.config.json" }),
     junit: Flags.boolean({ description: "Print the JUnit XML path for CI/Xray import" }),
-    evidence: Flags.string({
-      description: "Write a feat-evidence/1 bundle (docs/evidence-bundle.md) to this path and exit",
+    evidence: Flags.boolean({
+      description: "Write a feat-evidence/1 bundle to .feature/evidence/<environment>/<commit-sha>.json and exit",
     }),
+    out: Flags.string({ description: "Explicit evidence output path (overrides the .feature/ convention)" }),
+    force: Flags.boolean({ description: "Write evidence even for the local environment (debugging)" }),
   };
 
   public async run(): Promise<void> {
@@ -23,11 +27,25 @@ export default class Report extends Command {
     const root = process.cwd();
 
     if (flags.evidence) {
+      const cfg = JSON.parse(readFileSync(path.resolve(root, flags.config), "utf8")) as FeatConfig;
+      const environment = resolveEnvironment(cfg);
+      if (environment === "local" && !flags.force) {
+        this.log("evidence: skipped — the local environment records no compliance evidence (--force to override).");
+        return;
+      }
       const bundle = await produceEvidence(root, flags.config);
-      writeFileSync(path.resolve(root, flags.evidence), JSON.stringify(bundle, null, 2) + "\n");
+      let sha = "nosha"; let dirty = false;
+      try {
+        sha = execSync("git rev-parse HEAD", { cwd: root }).toString().trim();
+        dirty = execSync("git status --porcelain", { cwd: root }).toString().trim().length > 0;
+      } catch {}
+      const outPath = path.resolve(root, flags.out ?? path.join(".feature", "evidence", environment, sha + (dirty ? "-dirty" : "") + ".json"));
+      mkdirSync(path.dirname(outPath), { recursive: true });
+      writeFileSync(outPath, JSON.stringify(bundle, null, 2) + "\n");
+      this.log("evidence: " + path.relative(root, outPath));
       const v = (bundle.verify as { status: string }).status;
       const r = bundle.run ? (bundle.run as { status: string }).status : "absent";
-      this.log(`evidence: ${flags.evidence} (specs: ${(bundle.specs as unknown[]).length}, verify: ${v}, run: ${r})`);
+      this.log(`evidence: specs ${(bundle.specs as unknown[]).length}, verify ${v}, run ${r}, environment ${environment}`);
       return;
     }
 

@@ -6,6 +6,8 @@ import path from "node:path";
 import { Command, Flags } from "@oclif/core";
 import type { FeatConfig } from "@mmmnt/feat-types";
 import { runTests } from "@mmmnt/feat-runner";
+import { resolveEnvironment, variablesSidecarPath } from "@mmmnt/feat-runtime";
+import { rmSync } from "node:fs";
 import { generateAll } from "../pipeline.js";
 
 export default class Run extends Command {
@@ -21,6 +23,10 @@ export default class Run extends Command {
     const { flags } = await this.parse(Run);
     const root = process.cwd();
     const config = JSON.parse(readFileSync(path.resolve(root, flags.config), "utf8")) as FeatConfig;
+    // Environment must be resolvable BEFORE any work (fail fast + notify).
+    resolveEnvironment(config);
+    // ADR-0017: fresh sidecar per run — staleness structurally impossible.
+    rmSync(variablesSidecarPath(root, flags.config), { force: true });
 
     let files = (await generateAll(root, flags.config)).map((f) => ({
       specId: f.specPath,

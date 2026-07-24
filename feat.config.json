@@ -1,18 +1,28 @@
 {
   "featVersion": "1.0",
-  "schemas": { "adapter": "@mmmnt/feat-schema-json" },
+  "schemas": {
+    "adapter": "@mmmnt/feat-schema-json"
+  },
   "response": {
     "adapter": "@mmmnt/feat-adapter-handler",
     "commands": {
-      "Parse": { "module": "packages/feat-core/src/parse.ts", "export": "parse" },
-      "LoadConfig": { "module": "packages/feat-runtime/src/load-config.ts", "export": "loadConfig" }
+      "Parse": {
+        "module": "packages/feat-core/src/parse.ts",
+        "export": "parse"
+      },
+      "LoadConfig": {
+        "module": "packages/feat-runtime/src/load-config.ts",
+        "export": "loadConfig"
+      }
     }
   },
   "services": {
     "filesystem": {
       "adapter": "@mmmnt/feat-adapter-fs",
       "consistency": "acid",
-      "options": { "scope": "packages" }
+      "options": {
+        "scope": "packages"
+      }
     }
   },
   "specs": {
@@ -21,5 +31,12 @@
     "contractPattern": "**/*.contract.json",
     "outputPattern": "{name}.test.ts"
   },
-  "report": { "format": ["console", "junit"], "junitOutput": "reports/feat-junit.xml" }
+  "report": {
+    "format": [
+      "console",
+      "junit"
+    ],
+    "junitOutput": "reports/feat-junit.xml"
+  },
+  "environment": "toolchain"
 }

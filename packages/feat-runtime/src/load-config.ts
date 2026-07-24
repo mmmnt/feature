@@ -101,3 +101,24 @@ export async function loadConfig(input: LoadConfigInput): Promise<CapturedRespon
 
   return { status: "OK", body: doc as Record<string, unknown> };
 }
+
+/**
+ * Runtime environment resolution (supersedes ADR-0016's static-only field):
+ * config.environment is an explicit OVERRIDE (e.g. "synth" for
+ * environment-independent synthesis truth); otherwise the environment names
+ * itself via FEAT_ENVIRONMENT then ENVIRONMENT; none = immediate failure.
+ */
+export function resolveEnvironment(config: { environment?: string }): string {
+  const env = config.environment ?? process.env.FEAT_ENVIRONMENT ?? process.env.ENVIRONMENT;
+  if (!env)
+    throw new Error(
+      "No environment declared — set ENVIRONMENT or FEAT_ENVIRONMENT, or pin config.environment — configuration error.",
+    );
+  return env;
+}
+
+/** The .feature/ home for generated run artifacts (dot = generated, gitignored). */
+export function variablesSidecarPath(projectRoot: string, configPath: string): string {
+  const base = configPath.split(/[\\/]/).pop()!.replace(/\.json$/, "");
+  return `${projectRoot}/.feature/run/${base}-variables.jsonl`;
+}

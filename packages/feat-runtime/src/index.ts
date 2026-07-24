@@ -1,4 +1,4 @@
-export { loadConfig } from "./load-config.js";
+export { loadConfig, resolveEnvironment, variablesSidecarPath } from "./load-config.js";
 export type { CapturedResponse, LoadConfigInput } from "./load-config.js";
 export { createHarness, PredictionViolation, resolveVariables, substituteVariables } from "./harness.js";
 export type { Harness, HarnessCase, CaseVariable } from "./harness.js";

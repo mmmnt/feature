@@ -4,32 +4,63 @@
   "title": "Feat evidence bundle (feat-evidence/1)",
   "description": "A self-contained, digest-anchored record of a project's spec state and verification results at a point in time. Produced locally and freely by `feat report --evidence` (capability); accounts accrue attested bundles as a ledger (evidence).",
   "type": "object",
-  "required": ["contract", "produced_at", "producer", "project", "specs", "verify"],
+  "required": [
+    "contract",
+    "produced_at",
+    "producer",
+    "project",
+    "specs",
+    "verify"
+  ],
   "additionalProperties": false,
   "properties": {
-    "contract": { "const": "feat-evidence/1" },
-    "produced_at": { "type": "string", "format": "date-time" },
+    "contract": {
+      "const": "feat-evidence/1"
+    },
+    "produced_at": {
+      "type": "string",
+      "format": "date-time"
+    },
     "producer": {
       "type": "object",
-      "required": ["tool", "version", "toolchain"],
+      "required": [
+        "tool",
+        "version",
+        "toolchain"
+      ],
       "additionalProperties": false,
       "properties": {
-        "tool": { "const": "@mmmnt/feature" },
-        "version": { "type": "string" },
+        "tool": {
+          "const": "@mmmnt/feature"
+        },
+        "version": {
+          "type": "string"
+        },
         "toolchain": {
           "type": "object",
           "description": "Resolved @mmmnt package versions in effect when the bundle was produced.",
-          "additionalProperties": { "type": "string" }
+          "additionalProperties": {
+            "type": "string"
+          }
         }
       }
     },
     "project": {
       "type": "object",
-      "required": ["feat_version", "config_digest"],
+      "required": [
+        "feat_version",
+        "config_digest"
+      ],
       "additionalProperties": false,
       "properties": {
-        "feat_version": { "type": "string", "description": "The language version pragma from feat.config.json." },
-        "config_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "feat_version": {
+          "type": "string",
+          "description": "The language version pragma from feat.config.json."
+        },
+        "config_digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
         "environment": {
           "type": "string",
           "pattern": "^[a-z][a-z0-9-]*$",
@@ -42,13 +73,33 @@
       "description": "Inventory of every discovered spec at production time.",
       "items": {
         "type": "object",
-        "required": ["path", "spec_id", "status", "content_digest"],
+        "required": [
+          "path",
+          "spec_id",
+          "status",
+          "content_digest"
+        ],
         "additionalProperties": false,
         "properties": {
-          "path": { "type": "string", "description": "Project-root-relative spec path." },
-          "spec_id": { "type": "string" },
-          "status": { "enum": ["draft", "agreed", "built", "verified"] },
-          "content_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+          "path": {
+            "type": "string",
+            "description": "Project-root-relative spec path."
+          },
+          "spec_id": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "draft",
+              "agreed",
+              "built",
+              "verified"
+            ]
+          },
+          "content_digest": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
           "generated_digest": {
             "type": "string",
             "pattern": "^sha256:[0-9a-f]{64}$",
@@ -57,9 +108,19 @@
           "parse_error": {
             "type": "object",
             "description": "Present when the spec does not parse; such bundles still record the inventory honestly.",
-            "required": ["code", "message"],
+            "required": [
+              "code",
+              "message"
+            ],
             "additionalProperties": true,
-            "properties": { "code": { "type": "string" }, "message": { "type": "string" } }
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            }
           }
         }
       }
@@ -67,13 +128,22 @@
     "verify": {
       "type": "object",
       "description": "The spec↔test byte-lock result (`feat verify` semantics) at production time.",
-      "required": ["status"],
+      "required": [
+        "status"
+      ],
       "additionalProperties": false,
       "properties": {
-        "status": { "enum": ["pass", "fail"] },
+        "status": {
+          "enum": [
+            "pass",
+            "fail"
+          ]
+        },
         "mismatched": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "description": "Generated files that differ from their specs (fail only)."
         }
       }
@@ -81,25 +151,74 @@
     "run": {
       "type": "object",
       "description": "The most recent `feat run` result, from its JUnit output. Absent when no run artifact exists.",
-      "required": ["status", "tests", "failures", "errors", "junit_digest"],
+      "required": [
+        "status",
+        "tests",
+        "failures",
+        "errors",
+        "junit_digest"
+      ],
       "additionalProperties": false,
       "properties": {
-        "status": { "enum": ["pass", "fail"] },
-        "tests": { "type": "integer", "minimum": 0 },
-        "failures": { "type": "integer", "minimum": 0 },
-        "errors": { "type": "integer", "minimum": 0 },
-        "junit_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+        "status": {
+          "enum": [
+            "pass",
+            "fail"
+          ]
+        },
+        "tests": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failures": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "errors": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "junit_digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
       }
     },
     "signature": {
-      "type": ["object", "null"],
+      "type": [
+        "object",
+        "null"
+      ],
       "description": "Attestation envelope. Null for locally produced bundles; the account lane signs on ingestion (key infrastructure is account-side).",
-      "required": ["alg", "key_id", "value"],
+      "required": [
+        "alg",
+        "key_id",
+        "value"
+      ],
       "additionalProperties": false,
       "properties": {
-        "alg": { "type": "string" },
-        "key_id": { "type": "string" },
-        "value": { "type": "string" }
+        "alg": {
+          "type": "string"
+        },
+        "key_id": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      }
+    },
+    "variables": {
+      "description": "ADR-0017: per-case resolved variable values keyed by case anchor — replays the substitution against the byte-locked spec text.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {
+          "type": [
+            "string",
+            "number"
+          ]
+        }
       }
     }
   }
