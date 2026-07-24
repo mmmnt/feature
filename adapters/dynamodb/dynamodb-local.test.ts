@@ -181,6 +181,45 @@ describe.runIf(available)("dynamodb adapter against real DynamoDB (Local)", () =
     expect(() => createAdapter({ options: { endpoint } })).toThrowError(/no table name/);
   });
 
+  // ── The env-named-credentials rung of the auth ladder, against the real API ─
+  it("env-named static credentials authenticate a real capture window", async () => {
+    process.env.FEAT_DDB_AK = "local";
+    process.env.FEAT_DDB_SK = "local";
+    const a = createAdapter({
+      options: { ...options(), auth: { accessKeyIdEnv: "FEAT_DDB_AK", secretAccessKeyEnv: "FEAT_DDB_SK" } },
+    });
+    await a.setup();
+    await a.startCapture();
+    await client().send(
+      new PutItemCommand({
+        TableName: TABLE,
+        Item: { PK: { S: "AUTH" }, SK: { S: `ENV#${Date.now()}` }, via: { S: "static-env" } },
+      }),
+    );
+    await new Promise((r) => setTimeout(r, 1500));
+    const records = await a.stopCapture();
+    await a.teardown();
+    expect(records.some((r) => r.type === "INSERT" && r.payload.via === "static-env")).toBe(true);
+    delete process.env.FEAT_DDB_AK;
+    delete process.env.FEAT_DDB_SK;
+  }, 30_000);
+
+  // ── Ephemeral mode: the adapter scaffolds its own instrument ───────────────
+  it("ephemeral mode scaffolds a private instrument end to end (zero credentials, zero IaC)", async () => {
+    const a = createAdapter({ options: { ephemeral: { table: "feat-eph", sortKey: "SK" } } });
+    await a.setup(); // spins its own DynamoDB Local container + table + stream
+    await a.seed!([{ type: "Row", values: { PK: "SEED", SK: "ROW#1", planted: true } }]);
+    await a.startCapture();
+    await a.seed!([{ type: "Row", values: { PK: "LIVE", SK: "ROW#2", planted: false } }]);
+    await new Promise((r) => setTimeout(r, 1500));
+    const records = await a.stopCapture();
+    const state = (await a.read({})) as { payload: Record<string, unknown> }[];
+    await a.teardown(); // stops and removes the container
+    expect(records.map((r) => r.type)).toEqual(["INSERT"]);
+    expect(records[0]!.payload).toEqual({ PK: "LIVE", SK: "ROW#2", planted: false });
+    expect(state.map((s) => s.payload.PK).sort()).toEqual(["LIVE", "SEED"]);
+  }, 180_000);
+
   // ── End to end through the REAL harness: handler writes, stream captures ──
   describe("harness e2e: prediction inversion over real table writes", () => {
     let h: Harness;
