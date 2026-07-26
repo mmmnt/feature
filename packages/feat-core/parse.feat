@@ -98,6 +98,12 @@ scenario "parses the saga exemplar (ship-order)":
     response OK BuiltSpec equals fixture "../../corpus/ship-order/ship-order.ir.json"
     filesystem has []
 
+scenario "parses the quoted-payload-keys exemplar (userinfo-profile)":
+  when: Parse { spec: "corpus/userinfo-profile/userinfo-profile.feat", config: "corpus/userinfo-profile/feat.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "../../corpus/userinfo-profile/userinfo-profile.ir.json"
+    filesystem has []
+
 scenario "parses the dotted-record-types exemplar (capture-charge)":
   when: Parse { spec: "corpus/capture-charge/capture-charge.feat", config: "corpus/capture-charge/feat.config.json" }
   predict success:

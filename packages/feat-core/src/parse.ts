@@ -193,13 +193,24 @@ function parseString(c: ValueCursor): string {
 
 function parseKey(c: ValueCursor): string {
   c.skipWs();
-  const m = /^[A-Za-z_$][A-Za-z0-9_$-]*/.exec(c.src.slice(c.pos));
-  if (!m) c.fail("key");
-  c.pos += m[0].length;
+  // ADR-0019: a key is a bare IDENT or a QUOTED STRING. Adapter/IdP
+  // vocabularies are colon-namespaced (custom:displayName,
+  // cognito:username, OIDC claims) — the language honors its ecosystem's
+  // documented forms in payload and shape positions alike.
+  let key: string;
+  if (c.peek() === '"') {
+    key = parseString(c);
+    if (key === "") c.fail("key (empty quoted key)");
+  } else {
+    const m = /^[A-Za-z_$][A-Za-z0-9_$-]*/.exec(c.src.slice(c.pos));
+    if (!m) c.fail("key");
+    c.pos += m[0].length;
+    key = m[0];
+  }
   c.skipWs();
   if (c.peek() !== ":") c.fail("key (expected ':')");
   c.pos++;
-  return m[0];
+  return key;
 }
 
 function parseLiteralObject(c: ValueCursor): Record<string, unknown> {

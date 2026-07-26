@@ -1,0 +1,33 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-IDP-001",
+  "schemas": {
+    "UserinfoClaims": {
+      "type": "object",
+      "properties": {
+        "sub": { "type": "string" },
+        "cognito:username": { "type": "string" },
+        "custom:displayName": { "type": "string" },
+        "custom:timezone": { "type": "string" }
+      }
+    },
+    "Profile": {
+      "type": "object",
+      "required": ["username", "displayName", "timezone", "cognito:username"],
+      "properties": {
+        "username": { "type": "string" },
+        "displayName": { "type": "string" },
+        "timezone": { "type": "string" },
+        "cognito:username": { "type": "string" }
+      }
+    },
+    "ErrorResponse": {
+      "type": "object",
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "type": "string" },
+        "message": { "type": "string" }
+      }
+    }
+  }
+}

@@ -1,0 +1,127 @@
+{
+  "featVersion": "1.0",
+  "identity": {
+    "id": "SPEC-IDP-001",
+    "name": "MapUserinfo",
+    "context": "Identity",
+    "aggregate": "Profile",
+    "type": "command",
+    "status": "agreed"
+  },
+  "construct": [
+    {
+      "kind": "handler",
+      "path": "features/map-userinfo/handler.ts"
+    },
+    {
+      "kind": "touches",
+      "glob": "features/map-userinfo/**"
+    }
+  ],
+  "enforce": [
+    {
+      "kind": "constraint",
+      "text": "fold the identity provider's colon-namespaced claims into the profile"
+    },
+    {
+      "kind": "constraint",
+      "text": "echo the raw claim under its colonized name beside the fold"
+    },
+    {
+      "kind": "rejects",
+      "rejectionId": "NO_SUBJECT",
+      "text": "the claims carry no sub"
+    }
+  ],
+  "contract": [
+    {
+      "kind": "input",
+      "schemaName": "UserinfoClaims"
+    },
+    {
+      "kind": "response",
+      "schemaName": "Profile"
+    },
+    {
+      "kind": "error",
+      "schemaName": "ErrorResponse"
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "colon-namespaced claims fold into the profile",
+      "when": {
+        "command": "MapUserinfo",
+        "payload": {
+          "sub": "user-1",
+          "cognito:username": "devone",
+          "custom:displayName": "The Dev",
+          "custom:timezone": "America/Denver"
+        }
+      },
+      "prediction": {
+        "type": "success",
+        "response": {
+          "status": 200,
+          "schemaName": "Profile",
+          "valueBlock": {
+            "username": {
+              "matcher": "literal",
+              "value": "devone"
+            },
+            "displayName": {
+              "matcher": "literal",
+              "value": "The Dev"
+            },
+            "timezone": {
+              "matcher": "literal",
+              "value": "America/Denver"
+            },
+            "cognito:username": {
+              "matcher": "literal",
+              "value": "devone"
+            }
+          }
+        },
+        "services": {
+          "artifacts": {
+            "records": []
+          }
+        }
+      }
+    },
+    {
+      "name": "a claims set without a subject is rejected",
+      "when": {
+        "command": "MapUserinfo",
+        "payload": {
+          "cognito:username": "ghost",
+          "custom:displayName": "No Sub"
+        }
+      },
+      "prediction": {
+        "type": "rejection",
+        "rejectionId": "NO_SUBJECT",
+        "response": {
+          "status": 422,
+          "schemaName": "ErrorResponse",
+          "valueBlock": {
+            "code": {
+              "matcher": "literal",
+              "value": "NO_SUBJECT"
+            },
+            "message": {
+              "matcher": "regex",
+              "pattern": "sub"
+            }
+          }
+        },
+        "services": {
+          "artifacts": {
+            "records": []
+          }
+        }
+      }
+    }
+  ]
+}

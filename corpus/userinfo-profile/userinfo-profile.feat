@@ -1,0 +1,46 @@
+feat 1.0
+
+# Corpus exemplar #12 — quoted payload keys (ADR-0019). Identity-provider
+# vocabularies are colon-namespaced (OIDC claims, Cognito attributes:
+# cognito:username, custom:displayName), so a key in any object literal —
+# payload or prediction shape — is a bare IDENT or a QUOTED STRING. The
+# language honors its ecosystem's documented forms; dogfood-found by
+# feature-dashboard's SPEC-FD-010, which could not express the broker's
+# real /userinfo shape.
+
+spec SPEC-IDP-001 "MapUserinfo"
+context Identity
+aggregate Profile
+type command
+status agreed
+
+construct:
+  handler at features/map-userinfo/handler.ts
+  touches features/map-userinfo/**
+
+enforce:
+  fold the identity provider's colon-namespaced claims into the profile
+  echo the raw claim under its colonized name beside the fold
+  rejects NO_SUBJECT when the claims carry no sub
+
+contract:
+  input UserinfoClaims
+  response Profile
+  error ErrorResponse
+
+scenario "colon-namespaced claims fold into the profile":
+  when: MapUserinfo { sub: "user-1", "cognito:username": "devone", "custom:displayName": "The Dev", "custom:timezone": "America/Denver" }
+  predict success:
+    response 200 Profile {
+      username: "devone"
+      displayName: "The Dev"
+      timezone: "America/Denver"
+      "cognito:username": "devone"
+    }
+    artifacts has []
+
+scenario "a claims set without a subject is rejected":
+  when: MapUserinfo { "cognito:username": "ghost", "custom:displayName": "No Sub" }
+  predict rejection NO_SUBJECT:
+    response 422 ErrorResponse { code: "NO_SUBJECT", message: matching "sub" }
+    artifacts has []

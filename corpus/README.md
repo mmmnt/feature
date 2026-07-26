@@ -25,3 +25,4 @@ pnpm dlx ajv-cli@5 validate --spec=draft7 -s schemas/builtspec.schema.json -d "c
 pnpm dlx ajv-cli@5 validate --spec=draft7 -s schemas/contract.schema.json -d "corpus/*/*.contract.json"
 ```
 | 11 | `waitlist-variables/` | SPEC-WL-001 | Spec variables (ADR-0017): `variables:` block, source calls (`now()`), definition-side template composition, `${ref}` interpolation in when-payloads and predictions, idempotent-repeat via shared per-case resolution |
+| `userinfo-profile` | #12 — quoted payload keys (ADR-0019): colon-namespaced IdP claims in payloads and shapes | SPEC-IDP-001 |

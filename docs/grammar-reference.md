@@ -292,6 +292,12 @@ eventStore has [ FlowCreated with FlowCreatedEvent {
 } ]
 ```
 
+Object-literal **keys** — in `when:`/`execute` payloads, seed records, and value blocks alike
+— are a bare identifier (`[A-Za-z_$][A-Za-z0-9_$-]*`) **or a quoted string** (ADR-0019):
+adapter and identity-provider vocabularies are colon-namespaced (`"cognito:username"`,
+`"custom:displayName"`, OIDC claims), and the language honors its ecosystem's documented
+forms. `corpus/userinfo-profile` is the exemplar.
+
 A record is `<Type> with <Schema>` plus an optional **value block**. Three assertion layers:
 type match → schema validation → value-block matchers. Value blocks are **partial**: they
 assert listed fields only; shape completeness is the schema's job.
