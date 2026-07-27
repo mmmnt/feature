@@ -8,6 +8,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import { afterAll, describe, expect, it } from "vitest";
+import { parseJunitRuns } from "./src/evidence.js";
 
 const require = createRequire(import.meta.url);
 const Ajv: typeof import("ajv").default = require("ajv");
@@ -40,7 +41,10 @@ describe("evidence bundle", () => {
     const validate = ajv.compile(JSON.parse(readFileSync(path.join(ROOT, "schemas/evidence.schema.json"), "utf8")));
     expect(validate(bundle), JSON.stringify(validate.errors, null, 2)).toBe(true);
 
+    expect(bundle.contract).toBe("feat-evidence/2");
     expect(bundle.verify.status).toBe("pass");
+    // /2: runs ride with the run block — both present or both absent.
+    expect(Array.isArray(bundle.runs)).toBe(bundle.run !== undefined);
     expect(bundle.specs.length).toBeGreaterThanOrEqual(2);
     expect(bundle.specs.every((s: { content_digest: string }) => s.content_digest.startsWith("sha256:"))).toBe(true);
     expect(bundle.signature).toBeNull();
@@ -48,5 +52,42 @@ describe("evidence bundle", () => {
     // ADR-0016: the repo's own config declares no environment, so the bundle
     // must not claim one — env presence is driven solely by the config used.
     expect(bundle.project.environment).toBe("toolchain");
+  });
+
+  it("folds JUnit testcases into per-scenario runs with parsed violations (feat-evidence/2)", () => {
+    const xml = `<?xml version="1.0"?>
+<testsuites>
+  <testsuite name="api/ledger.test.ts" tests="2" failures="1" errors="0">
+    <testcase name="SPEC-FD-018: Evidence ingestion &gt; the first bundle opens the chain" time="2.51"/>
+    <testcase name="SPEC-FD-018: Evidence ingestion &gt; a viewer cannot ingest" time="1.02">
+      <failure message="Prediction violated">Error: Prediction violated:
+  SPEC-FD-018 › &quot;a viewer cannot ingest&quot; › response › status: expected 403, got 200
+  SPEC-FD-018 › &quot;a viewer cannot ingest&quot; › database › INSERT: expected [], got [1 record]
+      </failure>
+    </testcase>
+    <testcase name="loose harness case"/>
+  </testsuite>
+</testsuites>`;
+    const runs = parseJunitRuns(xml);
+    expect(runs).toEqual([
+      {
+        name: "SPEC-FD-018: Evidence ingestion > the first bundle opens the chain",
+        spec_id: "SPEC-FD-018",
+        status: "pass",
+        time: 2.51,
+        violations: [],
+      },
+      {
+        name: "SPEC-FD-018: Evidence ingestion > a viewer cannot ingest",
+        spec_id: "SPEC-FD-018",
+        status: "fail",
+        time: 1.02,
+        violations: [
+          { path: "response › status", expected: "403", got: "200" },
+          { path: "database › INSERT", expected: "[]", got: "[1 record]" },
+        ],
+      },
+      { name: "loose harness case", spec_id: null, status: "pass", violations: [] },
+    ]);
   });
 });

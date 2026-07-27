@@ -16,7 +16,7 @@ export default class Report extends Command {
     config: Flags.string({ char: "c", description: "Path to feat.config.json", default: "feat.config.json" }),
     junit: Flags.boolean({ description: "Print the JUnit XML path for CI/Xray import" }),
     evidence: Flags.boolean({
-      description: "Write a feat-evidence/1 bundle to .feature/evidence/<environment>/<commit-sha>.json and exit",
+      description: "Write a feat-evidence/2 bundle to .feature/evidence/<environment>/<commit-sha>.json and exit",
     }),
     out: Flags.string({ description: "Explicit evidence output path (overrides the .feature/ convention)" }),
     force: Flags.boolean({ description: "Write evidence even for the local environment (debugging)" }),

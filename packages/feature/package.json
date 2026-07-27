@@ -1,6 +1,6 @@
 {
   "name": "@mmmnt/feature",
-  "version": "0.1.15",
+  "version": "0.1.16",
   "description": "The feat CLI — Feature, the quality spine of AI-native delivery.",
   "license": "MIT",
   "type": "module",

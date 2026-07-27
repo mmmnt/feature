@@ -1,7 +1,12 @@
-// Evidence bundle production (feat-evidence/1, schemas/evidence.schema.json).
+// Evidence bundle production (feat-evidence/2, schemas/evidence.schema.json).
 // A digest-anchored record of spec state + verification results at a point in
 // time. Free, local, account-less — the account lane signs bundles on
 // ingestion; locally `signature` is null.
+//
+// feat-evidence/2 (ADR-0020) is a strict superset of /1: it adds `runs` —
+// per-scenario results with parsed prediction violations, derived from the
+// JUnit artifact (stage 1). Stage 2 replaces the JUnit parse with a
+// structured run sidecar written by the harness itself.
 
 import { resolveEnvironment, variablesSidecarPath } from "@mmmnt/feat-runtime";
 import { createHash } from "node:crypto";
@@ -26,6 +31,49 @@ function toolchainVersions(): Record<string, string> {
     versions[dep] = (require(`${dep}/package.json`) as { version: string }).version;
   }
   return versions;
+}
+
+const XML_ENTITIES: Record<string, string> = { "&lt;": "<", "&gt;": ">", "&quot;": '"', "&apos;": "'", "&#39;": "'", "&amp;": "&" };
+function decodeXml(text: string): string {
+  return text.replace(/&(?:lt|gt|quot|apos|amp|#39);/g, (m) => XML_ENTITIES[m] ?? m);
+}
+
+/**
+ * feat-evidence/2 stage 1: fold the JUnit artifact into per-scenario runs.
+ * Each testcase is one scenario; the harness's "Prediction violated" lines
+ * inside a failure parse into {path, expected, got} rows. Lenient by
+ * construction — an unparseable failure still records the failed scenario,
+ * it never drops it. Exported for unit testing.
+ */
+export function parseJunitRuns(xml: string): Array<Record<string, unknown>> {
+  const runs: Array<Record<string, unknown>> = [];
+  for (const tc of xml.matchAll(/<testcase\b([^>]*?)(?:\/>|>([\s\S]*?)<\/testcase>)/g)) {
+    const attrs = tc[1] ?? "";
+    const inner = tc[2] ?? "";
+    const attr = (name: string) => {
+      const m = new RegExp(`${name}="([^"]*)"`).exec(attrs);
+      return m ? decodeXml(m[1] ?? "") : null;
+    };
+    const name = attr("name") ?? "";
+    const specId = /SPEC-[A-Z0-9]+-[A-Z0-9]+/.exec(name)?.[0] ?? null;
+    const time = attr("time");
+    const failed = /<failure\b/.test(inner);
+    const violations: Array<Record<string, string>> = [];
+    if (failed) {
+      const text = decodeXml(inner);
+      for (const line of text.matchAll(/^\s*\S+ › "(?:.*?)" › (.+?): expected (.+?), got (.+?)\s*$/gm)) {
+        violations.push({ path: line[1] ?? "", expected: line[2] ?? "", got: line[3] ?? "" });
+      }
+    }
+    runs.push({
+      name,
+      spec_id: specId,
+      status: failed ? "fail" : "pass",
+      ...(time !== null ? { time: Number(time) } : {}),
+      violations,
+    });
+  }
+  return runs;
 }
 
 export async function produceEvidence(root: string, configPath: string): Promise<Record<string, unknown>> {
@@ -67,7 +115,7 @@ export async function produceEvidence(root: string, configPath: string): Promise
   }
 
   const bundle: Record<string, unknown> = {
-    contract: "feat-evidence/1",
+    contract: "feat-evidence/2",
     produced_at: new Date().toISOString(),
     producer: {
       tool: "@mmmnt/feature",
@@ -116,6 +164,9 @@ export async function produceEvidence(root: string, configPath: string): Promise
       errors,
       junit_digest: sha256(xml),
     };
+    // feat-evidence/2: the per-scenario detail the dashboard's violation
+    // view demands (its envelope: feature-dashboard SPEC-FD-037).
+    bundle.runs = parseJunitRuns(xml);
   }
 
   return bundle;

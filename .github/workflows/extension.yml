@@ -1,6 +1,13 @@
 name: extension
 
-# Publishes the VS Code extension on ext-v* tags:
+# Publishes the VS Code extension:
+#  - on every toolchain release (v* tags) — the extension version is stamped
+#    from the release tag so each release ships the grammar it syncs
+#    (founder directive 2026-07-27); registries skip idempotently if the
+#    version already exists
+#  - on ext-v* tags — out-of-band extension-only releases keeping the
+#    version in editors/vscode/package.json
+# Targets:
 #  - Open VSX (open-vsx.org) — the registry Windsurf, Cursor, Gitpod, and other
 #    VS Code forks install from (the MS marketplace only serves official VS Code)
 #  - VS Code Marketplace — official VS Code
@@ -12,6 +19,7 @@ on:
   push:
     tags:
       - "ext-v*"
+      - "v*"
 
 jobs:
   publish:
@@ -32,6 +40,13 @@ jobs:
         run: |
           npm ci
           npm run build
+
+      - name: Stamp version from the release tag
+        # Toolchain releases (v*) carry the extension along: its version tracks
+        # the release so the freshly synced grammar always ships. ext-v* tags
+        # keep the version editors/vscode/package.json declares.
+        if: startsWith(github.ref_name, 'v')
+        run: npm version --no-git-tag-version "${GITHUB_REF_NAME#v}"
 
       - name: Package .vsix
         run: npx --yes @vscode/vsce package --allow-missing-repository

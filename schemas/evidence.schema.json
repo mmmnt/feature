@@ -1,8 +1,8 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://feat.dev/schemas/evidence.json",
-  "title": "Feat evidence bundle (feat-evidence/1)",
-  "description": "A self-contained, digest-anchored record of a project's spec state and verification results at a point in time. Produced locally and freely by `feat report --evidence` (capability); accounts accrue attested bundles as a ledger (evidence).",
+  "title": "Feat evidence bundle (feat-evidence/2)",
+  "description": "A self-contained, digest-anchored record of a project's spec state and verification results at a point in time. feat-evidence/2 (ADR-0020) is a strict superset of /1 adding per-scenario `runs`. Produced locally and freely by `feat report --evidence` (capability); accounts accrue attested bundles as a ledger (evidence).",
   "type": "object",
   "required": [
     "contract",
@@ -15,7 +15,10 @@
   "additionalProperties": false,
   "properties": {
     "contract": {
-      "const": "feat-evidence/1"
+      "enum": [
+        "feat-evidence/1",
+        "feat-evidence/2"
+      ]
     },
     "produced_at": {
       "type": "string",
@@ -218,6 +221,67 @@
             "string",
             "number"
           ]
+        }
+      }
+    },
+    "runs": {
+      "description": "feat-evidence/2 (ADR-0020): per-scenario results — the run detail the dashboard violation view renders. Stage 1 derives these from the JUnit artifact; stage 2 moves them to a structured harness sidecar. Present only when a run artifact exists.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "spec_id",
+          "status",
+          "violations"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The full test name — describe > scenario."
+          },
+          "spec_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The spec id parsed from the name; null when the case is not spec-anchored."
+          },
+          "status": {
+            "enum": [
+              "pass",
+              "fail"
+            ]
+          },
+          "time": {
+            "type": "number"
+          },
+          "violations": {
+            "type": "array",
+            "description": "Parsed prediction-violation rows. An unparseable failure records the failed scenario with no rows — never dropped.",
+            "items": {
+              "type": "object",
+              "required": [
+                "path",
+                "expected",
+                "got"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "description": "The prediction coordinate, e.g. response › data › ledgerWorkspace › history."
+                },
+                "expected": {
+                  "type": "string"
+                },
+                "got": {
+                  "type": "string"
+                }
+              }
+            }
+          }
         }
       }
     }

@@ -1,4 +1,4 @@
-# The evidence bundle (`feat-evidence/1`)
+# The evidence bundle (`feat-evidence/2`)
 
 `feat report --evidence <path>` writes a self-contained, digest-anchored record
 of a project's spec state and verification results at a point in time:
@@ -62,3 +62,22 @@ When a spec declares `variables:`, the harness records each case's resolved
 values to `.feature/run/<config>-variables.jsonl` (cleared per run) and the
 bundle carries them as `variables` keyed by case anchor — the byte-locked
 spec text keeps its ${expressions}; the bundle replays the substitution.
+
+## Per-scenario runs (`feat-evidence/2`, ADR-0020)
+
+`/2` is a strict superset of `/1`: every `/1` field is unchanged, and when a
+run artifact exists the bundle additionally carries `runs` — one entry per
+scenario with its spec id, pass/fail status, duration, and the parsed
+prediction-violation rows (`{path, expected, got}` at spec coordinates). This
+is the exact envelope the dashboard's violation view renders (its demand
+contract: feature-dashboard `SPEC-FD-037`): what was predicted, what was
+captured, and where they diverged — provenance-grade, not prose.
+
+Stage 1 (this contract) derives `runs` from the JUnit artifact; the parse is
+lenient — an unparseable failure still records the failed scenario, never
+drops it. Stage 2 moves production to a structured run sidecar written by the
+harness itself (the ADR-0017 sidecar pattern), replacing text parsing with
+recorded fact; the bundle shape does not change.
+
+Consumers accepting `/1` accept `/2` by ignoring `runs`; the dashboard ledger
+accepts both contracts.
