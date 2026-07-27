@@ -20,6 +20,8 @@ interface PlaywrightAdapterConfig {
   commands: Record<string, JourneyRoute>;
   invoke?: {
     baseUrl?: string;
+    /** Name of the env var carrying the base URL — app origins belong to the ENVIRONMENT. */
+    baseUrlEnv?: string;
     /** chromium (default) | firefox | webkit */
     browser?: "chromium" | "firefox" | "webkit";
     headless?: boolean;
@@ -28,6 +30,30 @@ interface PlaywrightAdapterConfig {
   };
   actors?: { default?: string } & Record<string, unknown>;
   projectRoot?: string;
+}
+
+/**
+ * Resolve the base URL: literal `baseUrl`, or the value of the env var named
+ * by `baseUrlEnv` — app origins belong to the ENVIRONMENT (a deployed stage
+ * URL, a local dev server), so per-tier configs reference them. Both set =
+ * configuration error; named var unset = configuration error. The exact
+ * contract of @mmmnt/feat-adapter-http's resolveBaseUrl. Exported for unit
+ * testing.
+ */
+export function resolveBaseUrl(invoke: { baseUrl?: string; baseUrlEnv?: string } | undefined): string {
+  if (invoke?.baseUrl !== undefined && invoke?.baseUrlEnv !== undefined)
+    throw new Error(
+      "@mmmnt/feat-adapter-playwright: invoke.baseUrl and invoke.baseUrlEnv are mutually exclusive — configuration error.",
+    );
+  if (invoke?.baseUrlEnv !== undefined) {
+    const value = process.env[invoke.baseUrlEnv];
+    if (!value)
+      throw new Error(
+        `@mmmnt/feat-adapter-playwright: environment variable ${invoke.baseUrlEnv} is not set (invoke.baseUrlEnv) — configuration error.`,
+      );
+    return value;
+  }
+  return invoke?.baseUrl ?? "";
 }
 
 export interface JourneyContext {
@@ -59,12 +85,15 @@ class PlaywrightAdapter implements FeatResponseAdapter {
   private browser: PWBrowser | null = null;
   private journeys = new Map<string, Journey>();
   private readonly root: string;
+  private baseUrl = "";
 
   constructor(private config: PlaywrightAdapterConfig) {
     this.root = config.projectRoot ?? process.cwd();
   }
 
   async setup(): Promise<void> {
+    // Resolve once, loudly, before any browser spends time launching.
+    this.baseUrl = resolveBaseUrl(this.config.invoke);
     const req = createRequire(path.join(this.root, "package.json"));
     let pw: Record<string, PWBrowserType>;
     try {
@@ -108,7 +137,7 @@ class PlaywrightAdapter implements FeatResponseAdapter {
 
     const actorName = actor ?? this.config.actors?.default;
     const contextOptions: Record<string, unknown> = {};
-    if (this.config.invoke?.baseUrl) contextOptions.baseURL = this.config.invoke.baseUrl;
+    if (this.baseUrl) contextOptions.baseURL = this.baseUrl;
     if (actorName && actorName !== "anonymous") {
       const material = this.config.actors?.[actorName] as { storageState?: string } | undefined;
       if (material?.storageState) contextOptions.storageState = path.resolve(this.root, material.storageState);
@@ -119,7 +148,7 @@ class PlaywrightAdapter implements FeatResponseAdapter {
       const page = await context.newPage();
       const timeout = this.config.invoke?.timeout ?? 30_000;
       const outcome = await Promise.race([
-        journey(page, input, { baseUrl: this.config.invoke?.baseUrl ?? "", actor: actorName ?? null }),
+        journey(page, input, { baseUrl: this.baseUrl, actor: actorName ?? null }),
         new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error(`Journey '${command}' exceeded ${timeout}ms`)), timeout),
         ),

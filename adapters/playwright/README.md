@@ -10,7 +10,7 @@ the stimulus is an HTTP call or a full browser checkout.
 // feat.config.json
 "response": {
   "adapter": "@mmmnt/feat-adapter-playwright",
-  "invoke": { "baseUrl": "https://staging.example.com", "browser": "chromium", "headless": true },
+  "invoke": { "baseUrlEnv": "FEAT_E2E_BASE_URL", "browser": "chromium", "headless": true },
   "commands": {
     "CheckoutWithCard": { "module": "journeys/checkout.mjs", "export": "checkoutWithCard" }
   },
@@ -30,7 +30,10 @@ export async function checkoutWithCard(page, payload, ctx) {
 ```
 
 Journey contract: `(page, payload, ctx) => Promise<{ status, body }>` with
-`ctx = { baseUrl, actor }`. Actors map to Playwright `storageState` files
+`ctx = { baseUrl, actor }`. `invoke.baseUrl` is a literal; `invoke.baseUrlEnv` names the
+environment variable carrying it (mutually exclusive, unset = loud failure) —
+the same contract as feat-adapter-http, keeping configs per-tier while origins
+belong to the environment. Actors map to Playwright `storageState` files
 (pre-authenticated sessions); `anonymous` gets a fresh context. Each invoke
 runs in its own browser context; a configurable timeout (default 30s) fails
 hung journeys. `playwright` is a peer dependency — your project provides it.

@@ -1,6 +1,6 @@
 {
   "name": "@mmmnt/feat-adapter-playwright",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Playwright response adapter for Feat: a command is a real browser journey; the outcome is what predictions match",
   "type": "module",
   "main": "dist/index.js",
