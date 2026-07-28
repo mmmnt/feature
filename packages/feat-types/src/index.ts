@@ -224,6 +224,15 @@ export interface FeatServiceAdapter {
    * system produces in response are captured. Event-capable adapters only.
    */
   deliver?(event: string, payload: Record<string, unknown>): Promise<void>;
+  /**
+   * Non-destructively report the records captured so far (ADR-0020:
+   * convergence is a ceiling, not a sentence). Adapters that implement this
+   * let the harness exit the convergence window early once every predicted
+   * record has arrived and the capture has gone quiet; adapters without it
+   * keep the full window. Must be callable repeatedly between startCapture
+   * and stopCapture, and must not consume what stopCapture will return.
+   */
+  peekCapture?(): Promise<CapturedRecord[]>;
 }
 
 export interface FeatSchemaAdapter {

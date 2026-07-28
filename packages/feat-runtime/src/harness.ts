@@ -195,14 +195,57 @@ export async function createHarness(opts: { configPath: string }): Promise<Harne
       await adapter.deliver(d.event, d.payload);
     }
 
-    // ADR-0014: single shared wait for the scenario's eventual services.
+    // ADR-0020 (revising ADR-0014): convergence is a CEILING, not a
+    // sentence. When every eventual service in the prediction asserts a
+    // non-empty record list and its adapter can peek, poll and exit as soon
+    // as each target count has arrived AND the capture has gone quiet for
+    // one extra poll — prediction inversion demands that extra unpredicted
+    // records still get their chance to surface. Absence proofs (records
+    // []), contains assertions, and peek-less adapters keep the full window.
     let wait = 0;
     for (const key of Object.keys(c.prediction.services)) {
       const svc = config.services[key];
       if (svc?.consistency === "eventual")
         wait = Math.max(wait, svc.convergenceTimeout ?? 0);
     }
-    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    if (wait > 0) {
+      const goals: Array<{ peek: () => Promise<CapturedRecord[]>; min: number }> = [];
+      let earlyExitLegal = true;
+      for (const [key, assertion] of Object.entries(c.prediction.services)) {
+        const svc = config.services[key];
+        if (svc?.consistency !== "eventual") continue;
+        const records = (assertion as { records?: unknown[] }).records;
+        const hasContains = (assertion as { contains?: unknown[] }).contains !== undefined;
+        const adapter = services.get(key);
+        const peek = adapter?.peekCapture?.bind(adapter);
+        if (!hasContains && Array.isArray(records) && records.length > 0 && peek) {
+          goals.push({ peek, min: records.length });
+        } else {
+          earlyExitLegal = false;
+        }
+      }
+      if (earlyExitLegal && goals.length > 0) {
+        const deadline = Date.now() + wait;
+        const POLL_MS = 150;
+        let lastTotal = -1;
+        while (Date.now() < deadline) {
+          let total = 0;
+          let reached = true;
+          for (const g of goals) {
+            const count = (await g.peek()).length;
+            total += count;
+            if (count < g.min) reached = false;
+          }
+          // Exit only when every target is met AND nothing new arrived since
+          // the previous poll — the quiet grace that keeps inversion honest.
+          if (reached && total === lastTotal) break;
+          lastTotal = total;
+          await new Promise((r) => setTimeout(r, Math.min(POLL_MS, Math.max(1, deadline - Date.now()))));
+        }
+      } else {
+        await new Promise((r) => setTimeout(r, wait));
+      }
+    }
 
     const capturedRecords = new Map<string, CapturedRecord[]>();
     for (const [key, adapter] of services) capturedRecords.set(key, await adapter.stopCapture());

@@ -221,6 +221,7 @@ class DynamoAdapter implements FeatServiceAdapter {
   private streams: DynamoDBStreamsClient | null = null;
   private streamArn: string | null = null;
   private iterators: string[] | null = null;
+  private captured: CapturedRecord[] = [];
   private container: string | null = null;
   private exposedEnv: { name: string; prior: string | undefined }[] = [];
 
@@ -400,25 +401,43 @@ class DynamoAdapter implements FeatServiceAdapter {
       if (it.ShardIterator) iterators.push(it.ShardIterator);
     }
     this.iterators = iterators;
+    this.captured = []; // a fresh window never inherits a stale accumulation
+  }
+
+  /** One accumulating drain pass: records land in this.captured and the
+   * shard iterators advance in place, so repeated peeks and the final stop
+   * see each record exactly once (ADR-0020). */
+  private async drainOnce(): Promise<void> {
+    if (!this.iterators) return;
+    const { streams } = this.clients();
+    for (let s = 0; s < this.iterators.length; s++) {
+      let iterator: string | undefined = this.iterators[s];
+      let emptyBatches = 0;
+      for (let i = 0; i < 25 && emptyBatches < 2 && iterator; i++) {
+        const resp = await streams.send(new GetRecordsCommand({ ShardIterator: iterator, Limit: 1000 }));
+        const records = resp.Records ?? [];
+        for (const r of records) this.captured.push(mapStreamRecord(r as StreamImageRecord));
+        if (records.length === 0) emptyBatches++;
+        else emptyBatches = 0;
+        iterator = resp.NextShardIterator ?? undefined;
+      }
+      if (iterator) this.iterators[s] = iterator;
+    }
+  }
+
+  /** ADR-0020: the harness's early-exit window peeks without consuming. */
+  async peekCapture(): Promise<CapturedRecord[]> {
+    if (!this.iterators) return [...this.captured];
+    await this.drainOnce();
+    return [...this.captured];
   }
 
   async stopCapture(): Promise<CapturedRecord[]> {
     if (!this.iterators) return [];
-    const { streams } = this.clients();
-    const out: CapturedRecord[] = [];
-    for (let iterator of this.iterators) {
-      let emptyBatches = 0;
-      for (let i = 0; i < 25 && emptyBatches < 2; i++) {
-        const resp = await streams.send(new GetRecordsCommand({ ShardIterator: iterator, Limit: 1000 }));
-        const records = resp.Records ?? [];
-        for (const r of records) out.push(mapStreamRecord(r as StreamImageRecord));
-        if (records.length === 0) emptyBatches++;
-        else emptyBatches = 0;
-        if (!resp.NextShardIterator) break;
-        iterator = resp.NextShardIterator;
-      }
-    }
+    await this.drainOnce();
     this.iterators = null;
+    const out = [...this.captured];
+    this.captured = [];
     out.sort((a, b) => a.timestamp - b.timestamp);
     return out;
   }
