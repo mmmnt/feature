@@ -52,6 +52,21 @@ describe("evidence bundle", () => {
     // ADR-0016: the repo's own config declares no environment, so the bundle
     // must not claim one — env presence is driven solely by the config used.
     expect(bundle.project.environment).toBe("toolchain");
+
+    // The spec's face: identity, handler, and the zone-tagged excerpt ride
+    // every parseable inventory entry — deterministic, capped at 60 lines.
+    const faced = bundle.specs.find((s: Record<string, unknown>) => s.spec_id !== "UNPARSEABLE");
+    expect(faced.name).toBeTruthy();
+    expect(faced.type).toBeTruthy();
+    expect(Array.isArray(faced.excerpt)).toBe(true);
+    expect(faced.excerpt.length).toBeGreaterThan(0);
+    expect(faced.excerpt.length).toBeLessThanOrEqual(60);
+    expect(faced.excerpt[0]).toMatchObject({ n: 1, zone: "header" });
+    const zones = new Set(faced.excerpt.map((l: { zone: string }) => l.zone));
+    for (const z of zones) expect(["header", "agent", "compiler", "blank"]).toContain(z);
+    // At most one scenario in the excerpt — the face stops before the second.
+    const scenarioLines = faced.excerpt.filter((l: { text: string }) => /^scenario\b/.test(l.text.trim()));
+    expect(scenarioLines.length).toBeLessThanOrEqual(1);
   });
 
   it("folds JUnit testcases into per-scenario runs with parsed violations (feat-evidence/2)", () => {

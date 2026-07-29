@@ -124,6 +124,63 @@
                 "type": "string"
               }
             }
+          },
+          "name": {
+            "type": "string",
+            "description": "The spec's quoted display name from its identity line."
+          },
+          "context": {
+            "type": "string"
+          },
+          "aggregate": {
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "command",
+              "query",
+              "policy",
+              "projection",
+              "saga",
+              "infrastructure",
+              "integration",
+              "scaffold"
+            ]
+          },
+          "handler": {
+            "type": "string",
+            "description": "The construct's handler path — where the spec touches the codebase."
+          },
+          "excerpt": {
+            "type": "array",
+            "description": "The spec's face: zone-tagged source lines up to the second scenario, capped at 60. Deterministic — same source, same excerpt.",
+            "maxItems": 60,
+            "items": {
+              "type": "object",
+              "required": [
+                "n",
+                "zone",
+                "text"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "n": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "zone": {
+                  "enum": [
+                    "header",
+                    "agent",
+                    "compiler",
+                    "blank"
+                  ]
+                },
+                "text": {
+                  "type": "string"
+                }
+              }
+            }
           }
         }
       }

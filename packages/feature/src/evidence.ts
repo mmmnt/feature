@@ -76,6 +76,33 @@ export function parseJunitRuns(xml: string): Array<Record<string, unknown>> {
   return runs;
 }
 
+/**
+ * The spec's face (feat-evidence/2 additive, ADR follow-on to ADR-0020's
+ * runs[]): zone-tagged source lines up to the SECOND scenario, capped at 60
+ * — the dashboard's contract excerpt. Zones are structural: header until
+ * the first section, construct/enforce are the agent's, contract/variables
+ * and scenarios are the compiler's; blank lines stay blank. Deterministic
+ * by construction — same source, same excerpt, same digest.
+ */
+export function excerptLines(source: string): Array<{ n: number; zone: string; text: string }> {
+  const lines = source.split("\n");
+  const out: Array<{ n: number; zone: string; text: string }> = [];
+  let zone = "header";
+  let scenarios = 0;
+  for (let i = 0; i < lines.length && out.length < 60; i++) {
+    const text = lines[i]!;
+    const trimmed = text.trim();
+    if (/^scenario\b/.test(trimmed)) {
+      scenarios += 1;
+      if (scenarios > 1) break;
+      zone = "compiler";
+    } else if (/^(construct|enforce):/.test(trimmed)) zone = "agent";
+    else if (/^(contract|variables):/.test(trimmed)) zone = "compiler";
+    out.push({ n: i + 1, zone: trimmed === "" ? "blank" : zone, text });
+  }
+  return out;
+}
+
 export async function produceEvidence(root: string, configPath: string): Promise<Record<string, unknown>> {
   const configText = readFileSync(path.resolve(root, configPath), "utf8");
   const config = JSON.parse(configText) as FeatConfig;
@@ -91,6 +118,14 @@ export async function produceEvidence(root: string, configPath: string): Promise
       const spec = parsed.body as unknown as BuiltSpec;
       entry.spec_id = spec.identity.id;
       entry.status = spec.identity.status;
+      // The spec's face — what the dashboard's detail view renders.
+      entry.name = spec.identity.name;
+      entry.context = spec.identity.context;
+      entry.aggregate = spec.identity.aggregate;
+      entry.type = spec.identity.type;
+      const handler = spec.construct.find((c) => c.kind === "handler") as { path?: string } | undefined;
+      if (handler?.path) entry.handler = handler.path;
+      entry.excerpt = excerptLines(source);
     } else {
       entry.spec_id = "UNPARSEABLE";
       entry.status = "draft";

@@ -81,3 +81,13 @@ recorded fact; the bundle shape does not change.
 
 Consumers accepting `/1` accept `/2` by ignoring `runs`; the dashboard ledger
 accepts both contracts.
+
+## The spec's face (`feat-evidence/2` additive)
+
+Each `specs[]` entry carries, beyond its digests and status, the identity the
+spec declares — `name`, `context`, `aggregate`, `type`, the construct's
+`handler` path — and `excerpt`: zone-tagged source lines (`header` · `agent` ·
+`compiler` · `blank`) up to the second scenario, capped at 60. The excerpt is
+deterministic — same source, same excerpt — so the dashboard's spec-detail
+view renders the contract's face without a second fetch or a second truth.
+Unparseable specs carry none of these; the honest inventory row stands alone.
