@@ -16,7 +16,7 @@ export default class Report extends Command {
     config: Flags.string({ char: "c", description: "Path to feat.config.json", default: "feat.config.json" }),
     junit: Flags.boolean({ description: "Print the JUnit XML path for CI/Xray import" }),
     evidence: Flags.boolean({
-      description: "Write a feat-evidence/2 bundle to .feature/evidence/<environment>/<commit-sha>.json and exit",
+      description: "Write a feat-evidence/2 bundle to .feature/evidence/<environment>/<commit-sha>[-<config-slug>].json and exit (the slug disambiguates non-default configs)",
     }),
     out: Flags.string({ description: "Explicit evidence output path (overrides the .feature/ convention)" }),
     force: Flags.boolean({ description: "Write evidence even for the local environment (debugging)" }),
@@ -39,7 +39,16 @@ export default class Report extends Command {
         sha = execSync("git rev-parse HEAD", { cwd: root }).toString().trim();
         dirty = execSync("git status --porcelain", { cwd: root }).toString().trim().length > 0;
       } catch {}
-      const outPath = path.resolve(root, flags.out ?? path.join(".feature", "evidence", environment, sha + (dirty ? "-dirty" : "") + ".json"));
+      // Multi-config repos report once PER CONFIG (dogfood-found 2026-07-28:
+      // five planes overwrote one file and only the last survived). The
+      // default config keeps the bare <sha>.json path; every other config
+      // appends its slug so bundles never collide.
+      const configFlag = String(flags.config ?? "feat.config.json");
+      const configSlug =
+        configFlag === "feat.config.json"
+          ? ""
+          : "-" + path.basename(configFlag).replace(/^feat\./, "").replace(/\.?config\.json$/, "").replace(/[^A-Za-z0-9_-]/g, "-").replace(/^$/, "config");
+      const outPath = path.resolve(root, flags.out ?? path.join(".feature", "evidence", environment, sha + configSlug + (dirty ? "-dirty" : "") + ".json"));
       mkdirSync(path.dirname(outPath), { recursive: true });
       writeFileSync(outPath, JSON.stringify(bundle, null, 2) + "\n");
       this.log("evidence: " + path.relative(root, outPath));
