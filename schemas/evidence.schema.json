@@ -181,6 +181,34 @@
                 }
               }
             }
+          },
+          "scenarios": {
+            "type": "array",
+            "description": "The spec's scenario facet: one entry per scenario with a digest over its IR (source locations excluded). Two versions differ semantically iff a name or digest differs — the raw material of a server-side semantic diff.",
+            "items": {
+              "type": "object",
+              "required": [
+                "name",
+                "digest"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "digest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                }
+              }
+            }
+          },
+          "interface": {
+            "type": "array",
+            "description": "The spec's contract surface, one sorted line per reference (`<kind> <SchemaName>` or `stream <pattern>`) — `feat diff`'s interface shape, carried so the ledger can diff two stored versions.",
+            "items": {
+              "type": "string"
+            }
           }
         }
       }

@@ -67,6 +67,17 @@ describe("evidence bundle", () => {
     // At most one scenario in the excerpt — the face stops before the second.
     const scenarioLines = faced.excerpt.filter((l: { text: string }) => /^scenario\b/.test(l.text.trim()));
     expect(scenarioLines.length).toBeLessThanOrEqual(1);
+
+    // The IR facets: every scenario named and digested (loc-free — the digest
+    // is semantic), the contract surface as sorted `<kind> <Name>` lines.
+    expect(faced.scenarios.length).toBeGreaterThan(0);
+    for (const sc of faced.scenarios) {
+      expect(sc.name).toBeTruthy();
+      expect(sc.digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+    }
+    expect(faced.interface.length).toBeGreaterThan(0);
+    expect([...faced.interface].sort()).toEqual(faced.interface);
+    expect(faced.interface.every((l: string) => /^(input|response|event|record|error|stream) /.test(l))).toBe(true);
   });
 
   it("folds JUnit testcases into per-scenario runs with parsed violations (feat-evidence/2)", () => {

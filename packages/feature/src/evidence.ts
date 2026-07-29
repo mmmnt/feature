@@ -126,6 +126,20 @@ export async function produceEvidence(root: string, configPath: string): Promise
       const handler = spec.construct.find((c) => c.kind === "handler") as { path?: string } | undefined;
       if (handler?.path) entry.handler = handler.path;
       entry.excerpt = excerptLines(source);
+      // The spec's IR facets — what a server-side semantic diff between two
+      // ledger versions compares (the dashboard's diff screen). A scenario's
+      // digest changes iff its IR changes; the interface is the contract
+      // surface, one sorted line per reference (`feat diff`'s exact shape).
+      // Source locations are positional noise — a comment added above a
+      // scenario must not read as a semantic change.
+      const dropLoc = (key: string, value: unknown) => (key === "loc" ? undefined : value);
+      entry.scenarios = spec.scenarios.map((sc) => ({
+        name: sc.name,
+        digest: sha256(JSON.stringify(sc, dropLoc)),
+      }));
+      entry.interface = spec.contract
+        .map((c) => ("schemaName" in c ? `${c.kind} ${c.schemaName}` : `stream ${c.pattern}`))
+        .sort();
     } else {
       entry.spec_id = "UNPARSEABLE";
       entry.status = "draft";

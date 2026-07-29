@@ -91,3 +91,21 @@ spec declares — `name`, `context`, `aggregate`, `type`, the construct's
 deterministic — same source, same excerpt — so the dashboard's spec-detail
 view renders the contract's face without a second fetch or a second truth.
 Unparseable specs carry none of these; the honest inventory row stands alone.
+
+## The spec's IR facets (`feat-evidence/2` additive)
+
+Parseable entries also carry the raw material of a *semantic diff between two
+stored versions* — the comparison `feat diff` makes against a git ref, made
+possible against a ledger where the versions live in the workspace chain, not
+in anyone's working tree:
+
+- `scenarios` — one `{ name, digest }` per scenario, the digest taken over the
+  scenario's IR with source locations excluded. Two versions differ
+  semantically iff a name appears, disappears, or changes digest; a comment
+  added above a scenario changes nothing.
+- `interface` — the contract surface as sorted lines, `<kind> <SchemaName>`
+  (or `stream <pattern>`), exactly the shape `feat diff` compares.
+
+A consumer holding two envelopes for the same spec can state the delta —
+scenarios added/removed/changed, contract lines added/removed, status
+transitions — without ever parsing `.feat` source.
