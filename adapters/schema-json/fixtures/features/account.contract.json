@@ -1,0 +1,6 @@
+{
+  "schemas": {
+    "AccountRegistered": { "$ref": "../contracts/identity/account-registered.json" },
+    "Node": { "$ref": "../contracts/graph/node.json" }
+  }
+}

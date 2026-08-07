@@ -2,10 +2,9 @@
 // Compile-time only: the generate pipeline resolves schemas through this adapter
 // and inlines them into generated tests; nothing resolves at run time.
 
-import { readFileSync } from "node:fs";
-import path from "node:path";
 import { createRequire } from "node:module";
 import type { FeatSchemaAdapter, ResolvedSchema } from "@mmmnt/feat-types";
+import { bundle } from "./bundle.js";
 
 const require = createRequire(import.meta.url);
 const Ajv: typeof import("ajv").default = require("ajv");
@@ -21,14 +20,16 @@ class JsonSchemaAdapter implements FeatSchemaAdapter {
     addFormats(this.ajv as never);
   }
 
+  // `normalized` is what gets inlined, so it must survive the move: cross-file `$ref`s
+  // are followed here, against the source file's base URI, and their targets travel with
+  // the document. `raw` stays verbatim — the contract as authored.
   async resolve(ref: string, fromPath: string): Promise<ResolvedSchema> {
-    const abs = path.resolve(path.dirname(fromPath), ref);
-    const raw = JSON.parse(readFileSync(abs, "utf8")) as Record<string, unknown>;
+    const bundled = bundle(ref, fromPath);
     return {
-      id: abs,
+      id: bundled.id,
       format: "json-schema",
-      raw,
-      normalized: raw,
+      raw: bundled.raw,
+      normalized: bundled.schema,
     };
   }
 

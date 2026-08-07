@@ -1,0 +1,13 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://mmmnt.dev/fixtures/adrs/event-envelope.json",
+  "type": "object",
+  "required": ["eventId", "occurredAt"],
+  "properties": {
+    "eventId": { "$ref": "#/$defs/uuid" },
+    "occurredAt": { "type": "string" }
+  },
+  "$defs": {
+    "uuid": { "type": "string", "minLength": 36 }
+  }
+}
