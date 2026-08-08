@@ -28,6 +28,7 @@
     "@dotenvx/dotenvx": "^2.11.0",
     "@mmmnt/feat-adapter-fs": "workspace:*",
     "@mmmnt/feat-adapter-handler": "workspace:*",
+    "@mmmnt/feat-schema-json": "workspace:*",
     "@types/node": "^24.0.0",
     "@vitest/coverage-v8": "^3.2.7",
     "ajv-cli": "^5.0.0",

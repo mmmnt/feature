@@ -17,6 +17,9 @@ importers:
       '@mmmnt/feat-adapter-handler':
         specifier: workspace:*
         version: link:adapters/handler
+      '@mmmnt/feat-schema-json':
+        specifier: workspace:*
+        version: link:adapters/schema-json
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.3
