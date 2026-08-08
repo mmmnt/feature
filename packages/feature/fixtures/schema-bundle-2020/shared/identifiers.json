@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://feat.dev/fixtures/2020/identifiers.json",
+  "$defs": {
+    "uuid": { "type": "string", "format": "uuid" }
+  }
+}

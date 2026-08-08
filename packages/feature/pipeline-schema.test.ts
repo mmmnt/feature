@@ -8,6 +8,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { diffResponse, type MatchContext } from "@mmmnt/feat-runtime";
 import { generateAll } from "./src/pipeline.js";
 
 const require = createRequire(import.meta.url);
@@ -90,5 +91,32 @@ describe("generate resolves contract schemas through the configured adapter", ()
   it("fails loudly when schemas.adapter cannot be loaded — never silently verbatim", async () => {
     const root = path.join(PKG, "fixtures/schema-bundle-missing-adapter");
     await expect(generate(root)).rejects.toThrow(/schemas\.adapter/);
+  });
+
+  // Bundling preserves the root's `$schema`, so a draft/2020-12 contract reaches the
+  // generated test still declaring 2020-12. The runtime that reads it must agree.
+  it("carries a draft/2020-12 contract through to a matcher that can compile it", async () => {
+    const files = await generate(path.join(PKG, "fixtures/schema-bundle-2020"));
+    const schemas = inlineOf(files[0]!.content).schemas;
+    const schema = schemas.FlowViewResponse!;
+    expect(schema.$schema).toBe("https://json-schema.org/draft/2020-12/schema");
+    for (const ref of refsIn(JSON.stringify(schema))) expect(ref).toMatch(/^#/);
+
+    const ctx: MatchContext = { inline: { schemas: { FlowView: schema }, goldens: {} } };
+    const check = (body: Record<string, unknown>): string[] => {
+      const out: string[] = [];
+      diffResponse({ status: 200, body }, { status: 200, schemaName: "FlowView" }, ctx, "SPEC", out);
+      return out;
+    };
+    const ok = {
+      flowId: "5e2a7c90-1b3d-4e5f-8a6b-9c0d1e2f3a4b",
+      tenantId: "7f0e8a52-4b1c-4d2e-9f3a-1b2c3d4e5f60",
+      name: "Welcome",
+      span: [1, 2],
+    };
+    expect(check(ok)).toEqual([]);
+    // The cross-file `uuid` and the 2020-only `prefixItems` both had to survive.
+    expect(check({ ...ok, flowId: "not-a-uuid" }).join(" ")).toContain("flowId");
+    expect(check({ ...ok, span: ["a", 2] }).join(" ")).toContain("span");
   });
 });

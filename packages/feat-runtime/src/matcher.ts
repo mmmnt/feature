@@ -6,11 +6,29 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const Ajv: typeof import("ajv").default = require("ajv");
+const Ajv2020: typeof import("ajv/dist/2020.js").default = require("ajv/dist/2020.js");
 const addFormats: typeof import("ajv-formats").default = require("ajv-formats");
 
+// Dialect follows the document, not the toolchain. Ajv's default export only knows
+// draft-07; a draft/2020-12 `$schema` — which bundling preserves from the bundle root —
+// makes it refuse to compile at all ("no schema with key or ref .../2020-12/schema").
+// One Ajv per dialect, chosen per schema.
 const ajv = new Ajv({ strict: false, allErrors: true });
 addFormats(ajv);
-const compiled = new Map<string, ReturnType<typeof ajv.compile>>();
+const ajv2020 = new Ajv2020({ strict: false, allErrors: true });
+addFormats(ajv2020 as never);
+
+const DIALECT_2020 = /^https?:\/\/json-schema\.org\/draft\/2020-12\/schema\/?#?$/;
+
+function ajvFor(schema: object): typeof ajv {
+  const dialect = (schema as { $schema?: unknown }).$schema;
+  return typeof dialect === "string" && DIALECT_2020.test(dialect) ? (ajv2020 as typeof ajv) : ajv;
+}
+
+// Keyed by the schema OBJECT, not its name: the inlined schemas are module constants in
+// the generated file, so identity is stable, and a validator can never be handed to a
+// different schema — or, now, compiled by the wrong dialect's Ajv — that shares its name.
+const compiled = new WeakMap<object, ReturnType<typeof ajv.compile>>();
 
 export interface InlineData {
   schemas: Record<string, object>;
@@ -29,10 +47,10 @@ function validateSchema(schemaName: string, data: unknown, ctx: MatchContext, an
     out.push(`${anchor}: schema '${schemaName}' was not inlined at generate time`);
     return;
   }
-  let v = compiled.get(schemaName);
+  let v = compiled.get(schema);
   if (!v) {
-    v = ajv.compile(schema);
-    compiled.set(schemaName, v);
+    v = ajvFor(schema).compile(schema);
+    compiled.set(schema, v);
   }
   if (!v(data)) {
     const first = (v.errors ?? [])[0];

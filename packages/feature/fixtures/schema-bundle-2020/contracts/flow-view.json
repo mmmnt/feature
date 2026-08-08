@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://feat.dev/fixtures/2020/flow-view.json",
+  "type": "object",
+  "required": ["flowId", "name", "tenantId"],
+  "additionalProperties": false,
+  "properties": {
+    "flowId": { "$ref": "../shared/identifiers.json#/$defs/uuid" },
+    "tenantId": { "$ref": "../shared/identifiers.json#/$defs/uuid" },
+    "name": { "$ref": "#/$defs/displayName" },
+    "span": { "type": "array", "prefixItems": [{ "type": "integer" }, { "type": "integer" }] }
+  },
+  "$defs": {
+    "displayName": { "type": "string", "minLength": 1, "maxLength": 120 }
+  }
+}
