@@ -1,0 +1,6 @@
+{
+  "featVersion": "1.0",
+  "schemas": { "adapter": "@example/feat-schema-nowhere" },
+  "services": {},
+  "specs": { "dir": ".", "pattern": "*.feat", "contractPattern": "*.contract.json", "outputPattern": "{name}.test.ts" }
+}

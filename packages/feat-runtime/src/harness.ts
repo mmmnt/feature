@@ -5,11 +5,10 @@
 import path from "node:path";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { randomBytes } from "node:crypto";
-import { pathToFileURL } from "node:url";
-import { createRequire } from "node:module";
 import type {
   CapturedRecord, CapturedResponse, FeatConfig, FeatResponseAdapter, FeatServiceAdapter,
 } from "@mmmnt/feat-types";
+import { importAdapter } from "./import-adapter.js";
 import { loadConfig, variablesSidecarPath } from "./load-config.js";
 import { diffContains, diffRecords, diffResponse, type InlineData, type MatchContext } from "./matcher.js";
 
@@ -99,22 +98,6 @@ export class PredictionViolation extends Error {
   constructor(public violations: string[]) {
     super(`Prediction violated:\n  ${violations.join("\n  ")}`);
   }
-}
-
-async function importAdapter(specifier: string, projectRoot: string): Promise<{ createAdapter: (cfg: Record<string, unknown>) => unknown }> {
-  let resolved: string;
-  if (specifier.startsWith(".") || specifier.startsWith("/")) {
-    resolved = path.resolve(projectRoot, specifier);
-  } else {
-    // Resolve npm specifiers from the USER project root, per ADR-0001.
-    const req = createRequire(path.join(projectRoot, "package.json"));
-    resolved = req.resolve(specifier);
-  }
-  const mod = (await import(pathToFileURL(resolved).href)) as Record<string, unknown>;
-  const createAdapter = mod.createAdapter ?? (mod.default as Record<string, unknown> | undefined)?.createAdapter;
-  if (typeof createAdapter !== "function")
-    throw new Error(`Adapter module '${specifier}' lacks a createAdapter export (INV-10) — configuration error.`);
-  return { createAdapter: createAdapter as (cfg: Record<string, unknown>) => unknown };
 }
 
 export interface Harness {

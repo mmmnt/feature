@@ -5,10 +5,11 @@
 
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import path from "node:path";
-import type { BuiltSpec, FeatConfig } from "@mmmnt/feat-types";
+import type { BuiltSpec, FeatConfig, FeatSchemaAdapter } from "@mmmnt/feat-types";
 import { parse } from "@mmmnt/feat-core";
 import { derive, type TestTopology } from "@mmmnt/feat-derive";
 import { emit, EMITTER_VERSION } from "@mmmnt/feat-emit-ts";
+import { importAdapter } from "@mmmnt/feat-runtime";
 
 // "fixtures" is excluded by convention: fixture .feat files are test vectors
 // (e.g. the parser's bad-input corpus), not project specs.
@@ -36,7 +37,38 @@ export function discoverSpecs(root: string, specsDir: string): string[] {
   return out.sort();
 }
 
-function resolveContract(contractPath: string): { registry: Record<string, object>; text: string } {
+// The schema adapter is configuration, not a constant (INV-10): `schemas.adapter` names
+// it and a project may supply its own — a draft-2020-12 resolver, a registry-backed one.
+// Unset means the built-in JSON Schema adapter, so a config that predates the key still
+// generates. It is loaded the same way every other adapter is (@mmmnt/feat-runtime).
+const DEFAULT_SCHEMA_ADAPTER = "@mmmnt/feat-schema-json";
+
+async function loadSchemaAdapter(config: FeatConfig, projectRoot: string): Promise<FeatSchemaAdapter> {
+  const specifier = config.schemas?.adapter ?? DEFAULT_SCHEMA_ADAPTER;
+  let mod;
+  try {
+    mod = await importAdapter(specifier, projectRoot);
+  } catch (cause) {
+    // Loudly, and never by falling back to reading the referenced file verbatim: that
+    // read is the defect this path closes, and a silent fallback would reintroduce it
+    // invisibly — generated tests carrying `$ref`s that resolve against nothing.
+    throw new Error(
+      `Schema adapter '${specifier}' (feat.config.json › schemas.adapter) could not be loaded: ` +
+        `${(cause as Error).message}`,
+      { cause },
+    );
+  }
+  return mod.createAdapter({ ...config.schemas, projectRoot }) as FeatSchemaAdapter;
+}
+
+// A contract entry that is nothing but a `$ref` names a schema living in another file.
+// Resolution belongs to the adapter: what it returns as `normalized` is what gets inlined,
+// so it must already be self-contained (the generated test lands in a different directory
+// and nothing resolves at run time). Entries authored inline are already where they belong.
+async function resolveContract(
+  contractPath: string,
+  adapter: FeatSchemaAdapter,
+): Promise<{ registry: Record<string, object>; text: string }> {
   if (!existsSync(contractPath)) return { registry: {}, text: "" };
   const text = readFileSync(contractPath, "utf8");
   const doc = JSON.parse(text) as { schemas: Record<string, object> };
@@ -44,8 +76,7 @@ function resolveContract(contractPath: string): { registry: Record<string, objec
   for (const [name, schema] of Object.entries(doc.schemas)) {
     const ref = (schema as { $ref?: string }).$ref;
     if (ref && Object.keys(schema).length === 1) {
-      const refPath = path.resolve(path.dirname(contractPath), ref);
-      registry[name] = JSON.parse(readFileSync(refPath, "utf8")) as object;
+      registry[name] = (await adapter.resolve(ref, contractPath)).normalized;
     } else {
       registry[name] = schema;
     }
@@ -73,6 +104,9 @@ export async function generateAll(root: string, configPath: string): Promise<Gen
   const configAbs = path.resolve(root, configPath);
   const config = JSON.parse(readFileSync(configAbs, "utf8")) as FeatConfig;
   const specs = discoverSpecs(root, config.specs.dir);
+  // The project root is where the config lives — adapter resolution anchors there, so
+  // generate behaves identically regardless of the invoking cwd (as the harness does).
+  const schemaAdapter = await loadSchemaAdapter(config, path.dirname(configAbs));
   const results: GeneratedFile[] = [];
 
   for (const specAbs of specs) {
@@ -101,7 +135,7 @@ export async function generateAll(root: string, configPath: string): Promise<Gen
     }
     const baseName = path.basename(specAbs, ".feat");
     const contractPath = path.join(specDir, `${baseName}.contract.json`);
-    const { registry, text: contractText } = resolveContract(contractPath);
+    const { registry, text: contractText } = await resolveContract(contractPath, schemaAdapter);
     const goldens = collectGoldens(topology, specDir);
 
     const content = emit({

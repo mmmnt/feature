@@ -1,0 +1,25 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-FIX-001",
+  "schemas": {
+    "GetFlowInput": {
+      "type": "object",
+      "required": ["flowId"],
+      "additionalProperties": false,
+      "properties": {
+        "flowId": { "type": "string", "format": "uuid" }
+      }
+    },
+    "FlowViewResponse": { "$ref": "./contracts/flow-view.json" },
+    "FlowViewSchema": { "$ref": "./contracts/flow-view.json" },
+    "RFC7807": {
+      "type": "object",
+      "required": ["type", "title", "status"],
+      "properties": {
+        "type": { "type": "string" },
+        "title": { "type": "string" },
+        "status": { "type": "integer" }
+      }
+    }
+  }
+}

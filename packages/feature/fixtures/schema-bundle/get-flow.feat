@@ -1,0 +1,42 @@
+feat 1.0
+
+# Fixture for the generate pipeline's schema resolution. The contract below points at
+# schemas living in OTHER files, which in turn point at a shared document — the shape
+# that used to survive generate as a dangling relative `$ref`.
+
+spec SPEC-FIX-001 "GetFlow query"
+context Automation
+aggregate Flow
+type query
+status agreed
+
+construct:
+  handler at features/get-flow/handler.ts
+  touches features/get-flow/**
+
+enforce:
+  read the FlowView by flowId from the projection store
+  never mutate state; a query is a pure read
+  rejects NOT_FOUND when no flow view exists for the requested id
+
+contract:
+  input GetFlowInput
+  response FlowViewResponse
+  record FlowViewSchema
+  error RFC7807 from "contracts/adrs/error-format"
+
+scenario "returns the flow view":
+  given:
+    seed projectionStore [ FlowView with FlowViewSchema {
+      flowId: "5e2a7c90-1b3d-4e5f-8a6b-9c0d1e2f3a4b"
+      name: "Welcome"
+      tenantId: "7f0e8a52-4b1c-4d2e-9f3a-1b2c3d4e5f60"
+    } ]
+  when: GetFlow { flowId: "5e2a7c90-1b3d-4e5f-8a6b-9c0d1e2f3a4b" }
+  predict success:
+    response 200 FlowViewResponse { flowId: @when.flowId, name: "Welcome" }
+
+scenario "unknown flow":
+  when: GetFlow { flowId: "00000000-0000-4000-8000-000000000000" }
+  predict rejection NOT_FOUND:
+    response 404 RFC7807 { status: 404 }
