@@ -21,7 +21,7 @@ export interface CaseVariable {
   name: string;
   type: "string" | "number";
   definition:
-    | { kind: "call"; fn: "now" | "unique" }
+    | { kind: "call"; fn: "now" | "iso" | "unique"; offsetMs?: number }
     | { kind: "number"; value: number }
     | { kind: "template"; parts: (string | { ref: string })[] };
 }
@@ -38,12 +38,16 @@ export function resolveVariables(vars: CaseVariable[], frozenClock?: string): Re
     if (!v) throw new Error(`Variable '\${${name}}' is not declared — configuration error.`);
     let value: string | number;
     if (v.definition.kind === "call") {
-      value =
-        v.definition.fn === "now"
-          ? frozenClock !== undefined
-            ? Date.parse(frozenClock)
-            : Date.now()
-          : `${Date.now().toString(36)}${(uniqueCounter++).toString(36)}${randomBytes(3).toString("hex")}`;
+      if (v.definition.fn === "unique") {
+        value = `${Date.now().toString(36)}${(uniqueCounter++).toString(36)}${randomBytes(3).toString("hex")}`;
+      } else {
+        // One time concept: the scenario clock when frozen (ADR-0012), wall clock otherwise.
+        // The offset is applied to that base, so a frozen clock stays fully deterministic.
+        const base = frozenClock !== undefined ? Date.parse(frozenClock) : Date.now();
+        const at = base + (v.definition.offsetMs ?? 0);
+        // `iso` renders the instant; `now` reports it as epoch millis.
+        value = v.definition.fn === "iso" ? new Date(at).toISOString() : at;
+      }
     } else if (v.definition.kind === "number") {
       value = v.definition.value;
     } else {

@@ -227,7 +227,7 @@ variables:
 |---|---|
 | Entry | `NAME: TYPE = DEFINITION` — types: `string`, `number` |
 | Definition | a **source call**, a number literal, or a string **template** interpolating declared variables (`${ref}`) |
-| Sources | `now(): number` — epoch milliseconds **of the scenario clock** (honors `clock at`, ADR-0012); `unique(): string` — collision-resistant token. Sources are the sole nondeterminism entry. **The library grows by ADR only.** |
+| Sources | `now(): number` — epoch milliseconds **of the scenario clock** (honors `clock at`, ADR-0012); `iso(): string` — the same instant as an ISO-8601 string; `unique(): string` — collision-resistant token. `now` and `iso` accept an optional whole-millisecond offset — `iso(259200000)` is three days out, `iso(-3600000)` an hour ago — so a fixture can be **relative to the clock instead of an absolute date that silently expires**. `unique()` takes no offset. Sources are the sole nondeterminism entry. **The library grows by ADR only.** |
 | Resolution | **once per case, at execution start** — every reference in that case's `given`/`when`/predictions shares the value; a different case resolves fresh (case independence) |
 | Closed spaces | unknown function → parse error listing the reserved library; undeclared `${ref}` (definitions or scenarios) → `UNKNOWN_VARIABLE` listing declared; definition cycles → parse error; declared type must match the definition's produced type |
 | Evidence | spec text (with expressions) stays byte-locked and hashed; matching is exact **post-resolution** |

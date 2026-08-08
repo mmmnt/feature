@@ -365,18 +365,34 @@ const STATUSES = ["draft", "agreed", "built", "verified"];
 const CONTRACT_KINDS = ["input", "response", "event", "record", "error"];
 // ADR-0017: the reserved source library — the ONLY nondeterminism entry, and
 // it grows by ADR only. name → produced type.
-const SOURCE_FUNCTIONS: Record<string, string> = { now: "number", unique: "string" };
+// ADR-0017 sources. `now`/`iso` read the scenario clock; `iso` renders it as an ISO-8601
+// instant so a fixture can be written as a timestamp string rather than epoch millis.
+// `now` and `iso` accept an optional millisecond offset, which is what lets a spec express
+// "an hour from now" or "an hour ago" without hard-coding a calendar date that later expires.
+const SOURCE_FUNCTIONS: Record<string, string> = {
+  now: "number",
+  iso: "string",
+  unique: "string"
+};
+/** Sources for which an offset argument is meaningful — `unique()` has no time axis. */
+const OFFSETTABLE_SOURCES = new Set(["now", "iso"]);
 const VARIABLE_TYPES = ["string", "number"];
 const VAR_REF = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
 
 /** Parse one variable definition: source call | number literal | string template. */
 function parseVariableDefinition(src: string, line: number): Record<string, unknown> {
   let m: RegExpExecArray | null;
-  if ((m = /^([A-Za-z_][A-Za-z0-9_]*)\(\)$/.exec(src))) {
+  if ((m = /^([A-Za-z_][A-Za-z0-9_]*)\([ \t]*(-?\d+)?[ \t]*\)$/.exec(src))) {
     const fn = m[1]!;
     if (!(fn in SOURCE_FUNCTIONS))
       throw new ParseFailure("MALFORMED_SYNTAX", `Unknown function '${fn}()'.`, line, `Reserved functions: ${Object.keys(SOURCE_FUNCTIONS).map((f) => f + "()").join(", ")} — the library grows by ADR only.`);
-    return { kind: "call", fn };
+    if (m[2] === undefined) return { kind: "call", fn };
+    if (!OFFSETTABLE_SOURCES.has(fn))
+      throw new ParseFailure("MALFORMED_SYNTAX", `'${fn}()' takes no offset.`, line, `Only ${[...OFFSETTABLE_SOURCES].map((f) => f + "(ms)").join(" and ")} accept a millisecond offset — ${fn}() has no time axis.`);
+    const offsetMs = Number(m[2]);
+    if (!Number.isSafeInteger(offsetMs))
+      throw new ParseFailure("MALFORMED_SYNTAX", `Offset '${m[2]}' is not a safe integer.`, line, "Offsets are whole milliseconds, positive for the future or negative for the past.");
+    return { kind: "call", fn, offsetMs };
   }
   if (/^-?\d+(\.\d+)?$/.test(src)) return { kind: "number", value: Number(src) };
   if ((m = /^"((?:[^"\\]|\\.)*)"$/.exec(src))) {
@@ -391,7 +407,7 @@ function parseVariableDefinition(src: string, line: number): Record<string, unkn
     if (last < raw.length) parts.push(raw.slice(last));
     return { kind: "template", parts };
   }
-  throw new ParseFailure("MALFORMED_SYNTAX", `Unrecognized variable definition '${src}'.`, line, "Form: now() | unique() | <number> | \"template with ${refs}\"");
+  throw new ParseFailure("MALFORMED_SYNTAX", `Unrecognized variable definition '${src}'.`, line, "Form: now() | now(ms) | iso() | iso(ms) | unique() | <number> | \"template with ${refs}\"");
 }
 
 /** Collect every ${ref} inside the string literals of a value tree. */
