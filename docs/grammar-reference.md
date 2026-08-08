@@ -324,6 +324,7 @@ matcher     := LITERAL | "@when." PATH | "any" [ "uuid"|"timestamp"|"string"|"nu
 | --- | --- |
 | `"str"`, `42`, `true`, `null` | Strict equality |
 | `@when.<path>` | Equals the value sent in the `when:` payload |
+| `@given.response.<path>` | **Input-side, not a matcher.** Usable in `execute`, `when:`, and `deliver` payloads; reads the most recent preceding `execute`'s response body, so a scenario can name an id the system minted during setup. Unresolvable references fail the case rather than passing the literal through. |
 | `@deliver.<path>` / `@deliver[i].<path>` | Equals the value in the delivered stimulus (index required for saga sequences) |
 | `any` | Present, any value |
 | `any uuid` · `any timestamp` · `any string` · `any number` · `any boolean` | Present + format/type check |

@@ -60,6 +60,47 @@ export function resolveVariables(vars: CaseVariable[], frozenClock?: string): Re
   return out;
 }
 
+// ── @given.response references ───────────────────────────────────────────────
+// A scenario that establishes state with `execute` needs to name what that
+// execution produced — an id the system minted, which the spec cannot know in
+// advance. Without this, the only alternatives are hard-coding an id (forcing a
+// command to accept a caller-supplied one purely for testability) or leaving the
+// setup unreferencable. `@given.response.<path>` reads the MOST RECENT preceding
+// execute's response body, which is what a reader assumes on sight.
+const GIVEN_REF = /^@given\.response\.([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)$/;
+
+/**
+ * Replace `@given.response.<path>` strings through a value tree.
+ *
+ * Fails loudly on an unresolvable reference. Passing the literal through — which is
+ * what happened before this existed — sends the string "@given.response.id" to the
+ * system under test, which then fails somewhere far away for a reason that looks
+ * nothing like the cause.
+ */
+export function resolveGivenRefs<T>(value: T, last: CapturedResponse | undefined, anchor: string): T {
+  if (typeof value === "string") {
+    const m = GIVEN_REF.exec(value);
+    if (!m) return value;
+    if (!last)
+      throw new Error(`${anchor}: '${value}' references a given response, but no execute precedes it.`);
+    const path = m[1]!.split(".");
+    let cur: unknown = last.body;
+    for (const key of path) {
+      if (cur === null || typeof cur !== "object" || !(key in (cur as Record<string, unknown>)))
+        throw new Error(`${anchor}: '${value}' — the preceding response has no '${m[1]}'.`);
+      cur = (cur as Record<string, unknown>)[key];
+    }
+    return cur as T;
+  }
+  if (Array.isArray(value)) return value.map((v) => resolveGivenRefs(v, last, anchor)) as unknown as T;
+  if (value !== null && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) out[k] = resolveGivenRefs(v, last, anchor);
+    return out as T;
+  }
+  return value;
+}
+
 /** Substitute ${name} references (declared names only) through a value tree. */
 export function substituteVariables<T>(value: T, resolved: Record<string, string | number>): T {
   if (typeof value === "string") {
@@ -159,9 +200,13 @@ export async function createHarness(opts: { configPath: string }): Promise<Harne
       if ("fixture" in seed) throw new Error(`${c.anchor}: fixture seeds require generate-time inlining (not yet wired)`);
       await adapter.seed(seed.records);
     }
+    // Each execute may reference the one before it, so the reference target advances
+    // as the preconditions run.
+    let givenResponse: CapturedResponse | undefined;
     for (const pre of c.given?.executes ?? []) {
       if (!response) throw new Error(`${c.anchor}: execute precondition requires a response adapter`);
-      await response.invoke(pre.command, pre.payload, pre.actor);
+      const payload = resolveGivenRefs(pre.payload, givenResponse, c.anchor);
+      givenResponse = await response.invoke(pre.command, payload, pre.actor);
     }
 
     // ── Capture window ──
@@ -170,7 +215,8 @@ export async function createHarness(opts: { configPath: string }): Promise<Harne
     let captured: CapturedResponse | undefined;
     if (c.when) {
       if (!response) throw new Error(`${c.anchor}: when: requires a response adapter`);
-      captured = await response.invoke(c.when.command, c.when.payload, c.when.actor);
+      const payload = resolveGivenRefs(c.when.payload, givenResponse, c.anchor);
+      captured = await response.invoke(c.when.command, payload, c.when.actor);
     }
     // deliver-triggered stimulus (ADR-0011): events delivered in order, inside the
     // window; the delivered stimuli themselves are excluded from capture by the adapter.
@@ -179,7 +225,8 @@ export async function createHarness(opts: { configPath: string }): Promise<Harne
       if (!adapter) throw new Error(`${c.anchor}: deliver targets unknown service '${d.service}'`);
       if (!adapter.deliver)
         throw new Error(`${c.anchor}: adapter for '${d.service}' does not support deliver() — configuration error.`);
-      await adapter.deliver(d.event, d.payload);
+      // A delivered stimulus may also name what a precondition produced.
+      await adapter.deliver(d.event, resolveGivenRefs(d.payload, givenResponse, c.anchor));
     }
 
     // ADR-0020 (revising ADR-0014): convergence is a CEILING, not a
