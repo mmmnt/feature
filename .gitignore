@@ -31,5 +31,11 @@ FEATURES*.md
 # Committed fixture: resolveCdkEntry resolution target (not a real install)
 !packages/feat-cdk/fixtures/fake-consumer/node_modules/
 
+# The fs adapter's conformance run rebuilds this directory from scratch on every invocation
+# (rmSync + mkdirSync) and writes UUID-named files into it. It was tracked, so every test run
+# showed two deletions and two additions, and successive `git add -A` commits swept the churn in —
+# including a release commit. It is test OUTPUT, never input, and the suite recreates it.
+adapters/fs/fixtures/conformance/
+
 # generated run artifacts (reports, evidence, sidecars)
 .feature/

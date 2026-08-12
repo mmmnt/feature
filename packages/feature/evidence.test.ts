@@ -27,6 +27,20 @@ describe("evidence bundle", () => {
     expect(packaged).toBe(root);
   });
 
+  /**
+   * ⚠ AN EXPLICIT TIMEOUT, BECAUSE THIS IS AN E2E ON A UNIT-TEST DEFAULT.
+   *
+   * It forks the real CLI over the whole repo. Alone that costs ~0.4s and the 5000ms default
+   * looks like ample headroom — which is exactly why this failed intermittently for a while and
+   * read as an unrelated flake. Under `turbo run test` seventeen vitest instances run at once,
+   * each with its own worker pool, and this is the only one that ALSO forks a child process: it
+   * competes with the pool it is running inside. Measured under that load the fork alone reaches
+   * ~1.2s here, and CI runners have a fraction of these sixteen cores.
+   *
+   * 60s is not a guess at the real cost — it is a ceiling far enough above it that scheduling
+   * noise can never reach it, while a genuine hang still fails rather than hanging the suite.
+   * Tightening it back to catch regressions would be measuring the runner, not the code.
+   */
   it("produces a schema-valid bundle from the repo's own specs", () => {
     const out = path.join(tmp, "evidence.json");
     const stdout = execFileSync("node", [path.join(PKG, "bin/run.js"), "report", "--evidence", "--force", "--out", out], {
@@ -78,7 +92,7 @@ describe("evidence bundle", () => {
     expect(faced.interface.length).toBeGreaterThan(0);
     expect([...faced.interface].sort()).toEqual(faced.interface);
     expect(faced.interface.every((l: string) => /^(input|response|event|record|error|stream) /.test(l))).toBe(true);
-  });
+  }, 60_000);
 
   it("folds JUnit testcases into per-scenario runs with parsed violations (feat-evidence/2)", () => {
     const xml = `<?xml version="1.0"?>
