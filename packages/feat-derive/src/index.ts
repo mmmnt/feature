@@ -116,8 +116,22 @@ function resolvePrediction(
     const entry = declared[key];
     const defaultOrdering = svc.consistency === "eventual" ? "unordered" : "ordered";
     if (specType === "query") {
-      // ADR-0011: implicit zero side effects, unwritable by grammar.
-      out.services[key] = { ordering: defaultOrdering, records: [] };
+      // ADR-0011: implicit zero side effects, unwritable by grammar. `records: []` is SYNTHESISED
+      // rather than read from the author's prediction, which is what makes the guarantee
+      // unwritable: `has [X]` is a parse error (QUERY_SIDE_EFFECT) and its absence is not a
+      // loophole, because the empty assertion appears here whether or not it was written.
+      //
+      // ⚠ `contains` SURVIVES, and dropping it was a defect. The two clauses assert different
+      // things: `has` is exclusive capture — the writes a scenario made — while `contains` is a
+      // subset assertion against resulting state via the adapter's `read()`. A query that reads
+      // a seeded row leaves that row in state, and asserting it is still there claims no write
+      // whatsoever. Discarding it did not weaken the query guarantee; it silently deleted an
+      // orthogonal assertion, so a `contains` naming a record that does not exist PASSED.
+      // grammar-reference §"Predictions": "Queries predict `response` (+ optional `contains`)."
+      const queryEntry: ResolvedServiceAssertion = { ordering: defaultOrdering, records: [] };
+      const queryContains = substituteRecords(entry?.contains, row);
+      if (queryContains !== undefined) queryEntry.contains = queryContains;
+      out.services[key] = queryEntry;
       continue;
     }
     if (!entry) continue; // parser enforces INV-6; defensive
