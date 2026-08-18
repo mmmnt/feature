@@ -67,7 +67,12 @@
         "environment": {
           "type": "string",
           "pattern": "^[a-z][a-z0-9-]*$",
-          "description": "The environment the run verified (ADR-0016), copied from the config's top-level `environment`. Absent when the config declares none — the bundle never claims an environment the adapters weren't pointed at."
+          "description": "The environment the run verified (ADR-0016), copied from the config's top-level `environment`. Absent when the config declares none \u2014 the bundle never claims an environment the adapters weren't pointed at."
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{7,40}$",
+          "description": "The commit this evidence was produced from (CI sha or local HEAD); absent when neither exists."
         }
       }
     },
@@ -149,11 +154,11 @@
           },
           "handler": {
             "type": "string",
-            "description": "The construct's handler path — where the spec touches the codebase."
+            "description": "The construct's handler path \u2014 where the spec touches the codebase."
           },
           "excerpt": {
             "type": "array",
-            "description": "The spec's face: zone-tagged source lines up to the second scenario, capped at 60. Deterministic — same source, same excerpt.",
+            "description": "The spec's face: zone-tagged source lines up to the second scenario, capped at 60. Deterministic \u2014 same source, same excerpt.",
             "maxItems": 60,
             "items": {
               "type": "object",
@@ -184,7 +189,7 @@
           },
           "scenarios": {
             "type": "array",
-            "description": "The spec's scenario facet: one entry per scenario with a digest over its IR (source locations excluded). Two versions differ semantically iff a name or digest differs — the raw material of a server-side semantic diff.",
+            "description": "The spec's scenario facet: one entry per scenario with a digest over its IR (source locations excluded). Two versions differ semantically iff a name or digest differs \u2014 the raw material of a server-side semantic diff.",
             "items": {
               "type": "object",
               "required": [
@@ -205,7 +210,7 @@
           },
           "interface": {
             "type": "array",
-            "description": "The spec's contract surface, one sorted line per reference (`<kind> <SchemaName>` or `stream <pattern>`) — `feat diff`'s interface shape, carried so the ledger can diff two stored versions.",
+            "description": "The spec's contract surface, one sorted line per reference (`<kind> <SchemaName>` or `stream <pattern>`) \u2014 `feat diff`'s interface shape, carried so the ledger can diff two stored versions.",
             "items": {
               "type": "string"
             }
@@ -215,7 +220,7 @@
     },
     "verify": {
       "type": "object",
-      "description": "The spec↔test byte-lock result (`feat verify` semantics) at production time.",
+      "description": "The spec\u2194test byte-lock result (`feat verify` semantics) at production time.",
       "required": [
         "status"
       ],
@@ -297,7 +302,7 @@
       }
     },
     "variables": {
-      "description": "ADR-0017: per-case resolved variable values keyed by case anchor — replays the substitution against the byte-locked spec text.",
+      "description": "ADR-0017: per-case resolved variable values keyed by case anchor \u2014 replays the substitution against the byte-locked spec text.",
       "type": "object",
       "additionalProperties": {
         "type": "object",
@@ -310,7 +315,7 @@
       }
     },
     "runs": {
-      "description": "feat-evidence/2 (ADR-0020): per-scenario results — the run detail the dashboard violation view renders. Stage 1 derives these from the JUnit artifact; stage 2 moves them to a structured harness sidecar. Present only when a run artifact exists.",
+      "description": "feat-evidence/2 (ADR-0020): per-scenario results \u2014 the run detail the dashboard violation view renders. Stage 1 derives these from the JUnit artifact; stage 2 moves them to a structured harness sidecar. Present only when a run artifact exists.",
       "type": "array",
       "items": {
         "type": "object",
@@ -324,7 +329,7 @@
         "properties": {
           "name": {
             "type": "string",
-            "description": "The full test name — describe > scenario."
+            "description": "The full test name \u2014 describe > scenario."
           },
           "spec_id": {
             "type": [
@@ -344,7 +349,7 @@
           },
           "violations": {
             "type": "array",
-            "description": "Parsed prediction-violation rows. An unparseable failure records the failed scenario with no rows — never dropped.",
+            "description": "Parsed prediction-violation rows. An unparseable failure records the failed scenario with no rows \u2014 never dropped.",
             "items": {
               "type": "object",
               "required": [
@@ -356,7 +361,7 @@
               "properties": {
                 "path": {
                   "type": "string",
-                  "description": "The prediction coordinate, e.g. response › data › ledgerWorkspace › history."
+                  "description": "The prediction coordinate, e.g. response \u203a data \u203a ledgerWorkspace \u203a history."
                 },
                 "expected": {
                   "type": "string"

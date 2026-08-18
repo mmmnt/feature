@@ -8,6 +8,7 @@
 // JUnit artifact (stage 1). Stage 2 replaces the JUnit parse with a
 // structured run sidecar written by the harness itself.
 
+import { execSync } from "node:child_process";
 import { resolveEnvironment, variablesSidecarPath } from "@mmmnt/feat-runtime";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
@@ -45,15 +46,34 @@ function decodeXml(text: string): string {
  * construction — an unparseable failure still records the failed scenario,
  * it never drops it. Exported for unit testing.
  */
+/** The commit this evidence was produced FROM. CI is authoritative
+ *  (GITHUB_SHA); a local run asks git; neither is an error. */
+export function resolveCommit(root: string): string | null {
+  const fromCi = process.env["GITHUB_SHA"];
+  if (fromCi && /^[0-9a-f]{7,40}$/i.test(fromCi)) return fromCi;
+  try {
+    const head = execSync("git rev-parse HEAD", { cwd: root, stdio: ["ignore", "pipe", "ignore"] })
+      .toString()
+      .trim();
+    return /^[0-9a-f]{40}$/i.test(head) ? head : null;
+  } catch {
+    return null;
+  }
+}
+
 export function parseJunitRuns(xml: string): Array<Record<string, unknown>> {
   const runs: Array<Record<string, unknown>> = [];
   for (const tc of xml.matchAll(/<testcase\b([^>]*?)(?:\/>|>([\s\S]*?)<\/testcase>)/g)) {
     const attrs = tc[1] ?? "";
     const inner = tc[2] ?? "";
     const attr = (name: string) => {
-      const m = new RegExp(`${name}="([^"]*)"`).exec(attrs);
+      // Word boundary REQUIRED: name="…" also matches inside classname="…",
+      // which handed every run the FILE as its name and no spec id — every
+      // per-spec count downstream read null (found live 2026-08-18).
+      const m = new RegExp(`\\b${name}="([^"]*)"`).exec(attrs);
       return m ? decodeXml(m[1] ?? "") : null;
     };
+    void 0;
     const name = attr("name") ?? "";
     const specId = /SPEC-[A-Z0-9]+-[A-Z0-9]+/.exec(name)?.[0] ?? null;
     const time = attr("time");
@@ -176,6 +196,11 @@ export async function produceEvidence(root: string, configPath: string): Promise
       config_digest: sha256(configText),
       // Environment: config override > FEAT_ENVIRONMENT > ENVIRONMENT (fail-fast).
       environment: resolveEnvironment(config),
+      // The producing commit — CI's sha when present, the local HEAD
+      // otherwise, absent when neither exists. Downstream ledgers anchor
+      // per-spec verdicts to it; a bundle that cannot name its commit is
+      // still valid, it just anchors to nothing.
+      ...(resolveCommit(root) !== null ? { commit: resolveCommit(root) } : {}),
     },
     specs,
     verify,

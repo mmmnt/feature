@@ -131,3 +131,19 @@ describe("evidence bundle", () => {
     ]);
   });
 });
+
+
+describe("junit attribute extraction", () => {
+  it("reads name, not the name buried inside classname", () => {
+    // vitest junit puts the FILE in classname and the full title in name;
+    // without a word boundary the matcher took classname's value and every
+    // run lost its spec id — production counts read null for days.
+    const xml = `<testsuites><testsuite name="s">
+      <testcase classname="packages/foo/foo.test.ts" name="SPEC-REQ-001: RaiseRequest &gt; a member raises a request" time="0.5"></testcase>
+    </testsuite></testsuites>`;
+    const runs = parseJunitRuns(xml);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]!.name).toBe("SPEC-REQ-001: RaiseRequest > a member raises a request");
+    expect(runs[0]!.spec_id).toBe("SPEC-REQ-001");
+  });
+});
