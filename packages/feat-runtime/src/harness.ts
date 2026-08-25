@@ -120,6 +120,8 @@ export function substituteVariables<T>(value: T, resolved: Record<string, string
 export interface HarnessCase {
   anchor: string;
   name: string;
+  /** The spec's type — handed to each service adapter's startCapture (see TestCase.specType). */
+  specType?: string;
   /** ADR-0017: the spec's variable table, resolved once per case. */
   variables?: CaseVariable[];
   given?: {
@@ -210,7 +212,11 @@ export async function createHarness(opts: { configPath: string }): Promise<Harne
     }
 
     // ── Capture window ──
-    for (const adapter of services.values()) await adapter.startCapture();
+    // The spec's type travels with the window (ADR-0011): an adapter that reports resulting
+    // STATE for a command must not report that same seeded state as a WRITE to a query, whose
+    // `records: []` is synthesised as a side-effect-freedom guarantee. Optional, so an adapter
+    // that does not care simply ignores it.
+    for (const adapter of services.values()) await adapter.startCapture(c.specType === undefined ? {} : { specType: c.specType });
 
     let captured: CapturedResponse | undefined;
     if (c.when) {

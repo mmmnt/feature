@@ -228,6 +228,7 @@ const CASES: HarnessCase[] = [
   {
     "anchor": "SPEC-RT-001 › \"loads a valid config\"",
     "name": "loads a valid config",
+    "specType": "infrastructure",
     "prediction": {
       "type": "success",
       "services": {
@@ -281,6 +282,7 @@ const CASES: HarnessCase[] = [
   {
     "anchor": "SPEC-RT-001 › \"missing file\"",
     "name": "missing file",
+    "specType": "infrastructure",
     "prediction": {
       "type": "rejection",
       "services": {
@@ -315,6 +317,7 @@ const CASES: HarnessCase[] = [
   {
     "anchor": "SPEC-RT-001 › \"eventual service without convergence timeout\"",
     "name": "eventual service without convergence timeout",
+    "specType": "infrastructure",
     "prediction": {
       "type": "rejection",
       "services": {
@@ -349,6 +352,7 @@ const CASES: HarnessCase[] = [
   {
     "anchor": "SPEC-RT-001 › \"schema-invalid configs are rejected\" › row[1]",
     "name": "schema-invalid configs are rejected › row[1]",
+    "specType": "infrastructure",
     "prediction": {
       "type": "rejection",
       "services": {
@@ -383,6 +387,7 @@ const CASES: HarnessCase[] = [
   {
     "anchor": "SPEC-RT-001 › \"schema-invalid configs are rejected\" › row[2]",
     "name": "schema-invalid configs are rejected › row[2]",
+    "specType": "infrastructure",
     "prediction": {
       "type": "rejection",
       "services": {
@@ -417,6 +422,7 @@ const CASES: HarnessCase[] = [
   {
     "anchor": "SPEC-RT-001 › \"schema-invalid configs are rejected\" › row[3]",
     "name": "schema-invalid configs are rejected › row[3]",
+    "specType": "infrastructure",
     "prediction": {
       "type": "rejection",
       "services": {
@@ -451,6 +457,7 @@ const CASES: HarnessCase[] = [
   {
     "anchor": "SPEC-RT-001 › \"schema-invalid configs are rejected\" › row[4]",
     "name": "schema-invalid configs are rejected › row[4]",
+    "specType": "infrastructure",
     "prediction": {
       "type": "rejection",
       "services": {
@@ -485,6 +492,7 @@ const CASES: HarnessCase[] = [
   {
     "anchor": "SPEC-RT-001 › \"schema-invalid configs are rejected\" › row[5]",
     "name": "schema-invalid configs are rejected › row[5]",
+    "specType": "infrastructure",
     "prediction": {
       "type": "rejection",
       "services": {

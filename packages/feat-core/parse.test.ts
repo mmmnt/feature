@@ -3011,6 +3011,7 @@ const CASES: HarnessCase[] = [
   {
     "anchor": "SPEC-CORE-001 › \"parses the founding exemplar (create-flow)\"",
     "name": "parses the founding exemplar (create-flow)",
+    "specType": "infrastructure",
     "prediction": {
       "type": "success",
       "services": {
@@ -3036,6 +3037,7 @@ const CASES: HarnessCase[] = [
   {
     "anchor": "SPEC-CORE-001 › \"parses the CRUD exemplar (create-user)\"",
     "name": "parses the CRUD exemplar (create-user)",
+    "specType": "infrastructure",
     "prediction": {
       "type": "success",
       "services": {
@@ -3061,6 +3063,7 @@ const CASES: HarnessCase[] = [
   {
     "anchor": "SPEC-CORE-001 › \"parses the seeds exemplar (tenant-at-limit)\"",
     "name": "parses the seeds exemplar (tenant-at-limit)",
+    "specType": "infrastructure",
     "prediction": {
       "type": "success",
       "services": {
@@ -3086,6 +3089,7 @@ const CASES: HarnessCase[] = [
   {
     "anchor": "SPEC-CORE-001 › \"parses the ordering exemplar (publish-order)\"",
     "name": "parses the ordering exemplar (publish-order)",
+    "specType": "infrastructure",
     "prediction": {
       "type": "success",
       "services": {
@@ -3111,6 +3115,7 @@ const CASES: HarnessCase[] = [
   {
     "anchor": "SPEC-CORE-001 › \"parses the compiler-shaped exemplar (emit-test-file)\"",
     "name": "parses the compiler-shaped exemplar (emit-test-file)",
+    "specType": "infrastructure",
     "prediction": {
       "type": "success",
       "services": {
@@ -3136,6 +3141,7 @@ const CASES: HarnessCase[] = [
   {
     "anchor": "SPEC-CORE-001 › \"parses the projection exemplar (flow-view)\"",
     "name": "parses the projection exemplar (flow-view)",
+    "specType": "infrastructure",
     "prediction": {
       "type": "success",
       "services": {
@@ -3161,6 +3167,7 @@ const CASES: HarnessCase[] = [
   {
     "anchor": "SPEC-CORE-001 › \"parses the query exemplar (get-flow)\"",
     "name": "parses the query exemplar (get-flow)",
+    "specType": "infrastructure",
     "prediction": {
       "type": "success",
       "services": {
@@ -3186,6 +3193,7 @@ const CASES: HarnessCase[] = [
   {
     "anchor": "SPEC-CORE-001 › \"parses the expressiveness exemplar (suspend-user)\"",
     "name": "parses the expressiveness exemplar (suspend-user)",
+    "specType": "infrastructure",
     "prediction": {
       "type": "success",
       "services": {
@@ -3211,6 +3219,7 @@ const CASES: HarnessCase[] = [
   {
     "anchor": "SPEC-CORE-001 › \"parses the saga exemplar (ship-order)\"",
     "name": "parses the saga exemplar (ship-order)",
+    "specType": "infrastructure",
     "prediction": {
       "type": "success",
       "services": {
@@ -3236,6 +3245,7 @@ const CASES: HarnessCase[] = [
   {
     "anchor": "SPEC-CORE-001 › \"parses the quoted-payload-keys exemplar (userinfo-profile)\"",
     "name": "parses the quoted-payload-keys exemplar (userinfo-profile)",
+    "specType": "infrastructure",
     "prediction": {
       "type": "success",
       "services": {
@@ -3261,6 +3271,7 @@ const CASES: HarnessCase[] = [
   {
     "anchor": "SPEC-CORE-001 › \"parses the dotted-record-types exemplar (capture-charge)\"",
     "name": "parses the dotted-record-types exemplar (capture-charge)",
+    "specType": "infrastructure",
     "prediction": {
       "type": "success",
       "services": {
@@ -3286,6 +3297,7 @@ const CASES: HarnessCase[] = [
   {
     "anchor": "SPEC-CORE-001 › \"parses the spec-variables exemplar (waitlist-variables, ADR-0017)\"",
     "name": "parses the spec-variables exemplar (waitlist-variables, ADR-0017)",
+    "specType": "infrastructure",
     "prediction": {
       "type": "success",
       "services": {
@@ -3311,6 +3323,7 @@ const CASES: HarnessCase[] = [
   {
     "anchor": "SPEC-CORE-001 › \"rejects invalid specs with the precise code\" › row[1]",
     "name": "rejects invalid specs with the precise code › row[1]",
+    "specType": "infrastructure",
     "prediction": {
       "type": "rejection",
       "services": {
@@ -3342,6 +3355,7 @@ const CASES: HarnessCase[] = [
   {
     "anchor": "SPEC-CORE-001 › \"rejects invalid specs with the precise code\" › row[2]",
     "name": "rejects invalid specs with the precise code › row[2]",
+    "specType": "infrastructure",
     "prediction": {
       "type": "rejection",
       "services": {
@@ -3373,6 +3387,7 @@ const CASES: HarnessCase[] = [
   {
     "anchor": "SPEC-CORE-001 › \"rejects invalid specs with the precise code\" › row[3]",
     "name": "rejects invalid specs with the precise code › row[3]",
+    "specType": "infrastructure",
     "prediction": {
       "type": "rejection",
       "services": {
@@ -3404,6 +3419,7 @@ const CASES: HarnessCase[] = [
   {
     "anchor": "SPEC-CORE-001 › \"rejects invalid specs with the precise code\" › row[4]",
     "name": "rejects invalid specs with the precise code › row[4]",
+    "specType": "infrastructure",
     "prediction": {
       "type": "rejection",
       "services": {
@@ -3435,6 +3451,7 @@ const CASES: HarnessCase[] = [
   {
     "anchor": "SPEC-CORE-001 › \"rejects invalid specs with the precise code\" › row[5]",
     "name": "rejects invalid specs with the precise code › row[5]",
+    "specType": "infrastructure",
     "prediction": {
       "type": "rejection",
       "services": {
@@ -3466,6 +3483,7 @@ const CASES: HarnessCase[] = [
   {
     "anchor": "SPEC-CORE-001 › \"rejects invalid specs with the precise code\" › row[6]",
     "name": "rejects invalid specs with the precise code › row[6]",
+    "specType": "infrastructure",
     "prediction": {
       "type": "rejection",
       "services": {
@@ -3497,6 +3515,7 @@ const CASES: HarnessCase[] = [
   {
     "anchor": "SPEC-CORE-001 › \"rejects invalid specs with the precise code\" › row[7]",
     "name": "rejects invalid specs with the precise code › row[7]",
+    "specType": "infrastructure",
     "prediction": {
       "type": "rejection",
       "services": {
@@ -3528,6 +3547,7 @@ const CASES: HarnessCase[] = [
   {
     "anchor": "SPEC-CORE-001 › \"rejects invalid specs with the precise code\" › row[8]",
     "name": "rejects invalid specs with the precise code › row[8]",
+    "specType": "infrastructure",
     "prediction": {
       "type": "rejection",
       "services": {
@@ -3559,6 +3579,7 @@ const CASES: HarnessCase[] = [
   {
     "anchor": "SPEC-CORE-001 › \"rejects invalid specs with the precise code\" › row[9]",
     "name": "rejects invalid specs with the precise code › row[9]",
+    "specType": "infrastructure",
     "prediction": {
       "type": "rejection",
       "services": {
@@ -3590,6 +3611,7 @@ const CASES: HarnessCase[] = [
   {
     "anchor": "SPEC-CORE-001 › \"rejects invalid specs with the precise code\" › row[10]",
     "name": "rejects invalid specs with the precise code › row[10]",
+    "specType": "infrastructure",
     "prediction": {
       "type": "rejection",
       "services": {
@@ -3621,6 +3643,7 @@ const CASES: HarnessCase[] = [
   {
     "anchor": "SPEC-CORE-001 › \"rejects invalid specs with the precise code\" › row[11]",
     "name": "rejects invalid specs with the precise code › row[11]",
+    "specType": "infrastructure",
     "prediction": {
       "type": "rejection",
       "services": {
@@ -3652,6 +3675,7 @@ const CASES: HarnessCase[] = [
   {
     "anchor": "SPEC-CORE-001 › \"rejects invalid specs with the precise code\" › row[12]",
     "name": "rejects invalid specs with the precise code › row[12]",
+    "specType": "infrastructure",
     "prediction": {
       "type": "rejection",
       "services": {

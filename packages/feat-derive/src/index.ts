@@ -25,6 +25,15 @@ export interface ResolvedPrediction {
 export interface TestCase {
   anchor: string;
   name: string;
+  /**
+   * The SPEC'S type, carried onto every case so a service adapter can tell a query from a
+   * command (ADR-0011). Added 2026-08-25: adapters are constructed once per harness, before any
+   * spec is known, so without this the capture channel has to mean the same thing for both — and
+   * an adapter that reports resulting STATE (so a command can assert a seeded row it correctly
+   * left alone) makes that same seeded row look like a WRITE to a query, whose synthesised
+   * `records: []` then fails. Two honest requirements, one channel, no way to tell them apart.
+   */
+  specType?: string;
   given?: Given;
   when?: Invocation;
   delivers?: Delivery[];
@@ -181,6 +190,7 @@ export function derive(spec: BuiltSpec, config: FeatConfig): TestTopology {
       const testCase: TestCase = {
         anchor,
         name,
+        specType: spec.identity.type,
         prediction: resolvePrediction(scenario, config, spec.identity.type, row),
       };
       if (spec.variables && spec.variables.length > 0) testCase.variables = spec.variables;

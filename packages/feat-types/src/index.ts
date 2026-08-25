@@ -214,7 +214,14 @@ export interface FeatServiceAdapter {
   setup(): Promise<void>;
   teardown(): Promise<void>;
   reset(): Promise<void>;
-  startCapture(): Promise<void>;
+  /**
+   * Open the capture window. `context.specType` is the running spec's type — an adapter that
+   * reports resulting state (so a command can assert a seeded row it correctly left alone) uses
+   * it to withhold that state from a QUERY, whose synthesised `records: []` would otherwise read
+   * a seeded precondition as a side effect. Optional in both directions: an adapter that does not
+   * care ignores the argument, and a harness that does not pass it loses nothing it had.
+   */
+  startCapture(context?: { specType?: string }): Promise<void>;
   stopCapture(): Promise<CapturedRecord[]>;
   read(query: Record<string, unknown>): Promise<unknown | null>;
   seed?(records: SeedRecord[]): Promise<void>;
