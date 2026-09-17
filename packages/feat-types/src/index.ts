@@ -77,6 +77,7 @@ export type Matcher =
   | { matcher: "literal"; value: string | number | boolean | null }
   | { matcher: "whenRef"; path: string }
   | { matcher: "deliverRef"; path: string; index?: number }
+  | { matcher: "captureRef"; service: string; path: string; index?: number }
   | { matcher: "any"; ofType?: "uuid" | "timestamp" | "string" | "number" | "boolean" }
   | { matcher: "regex"; pattern: string | { $placeholder: string } }
   | { matcher: "absent" }

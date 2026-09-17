@@ -294,6 +294,9 @@ export async function createHarness(opts: { configPath: string }): Promise<Harne
     const ctx: MatchContext = {
       when: c.when?.payload,
       delivers: c.delivers?.map((d) => d.payload),
+      // Every surface's capture, before any of them is diffed — so `@<service>[i].<path>`
+      // resolves the same whatever order the diffs run in.
+      captures: capturedRecords,
       inline,
     };
     if (c.prediction.response)

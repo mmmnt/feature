@@ -29,7 +29,7 @@ enforce:
   rejects MISSING_PRAGMA when the first non-comment line is not a feat version pragma
   rejects UNSUPPORTED_VERSION when the pragma names a version this toolchain does not support
   rejects MALFORMED_SYNTAX when a compiler-zone block violates the grammar
-  rejects UNKNOWN_SERVICE_KEY when a prediction targets a service absent from the config services
+  rejects UNKNOWN_SERVICE_KEY when a prediction targets a service absent from the config services, or a cross-surface capture reference names one (ADR-0021 — a reference names a service, so it shares the closed space)
   rejects UNKNOWN_COMMAND when a when or execute names a command absent from response.commands
   rejects UNDECLARED_SCHEMA when a scenario references a schema absent from the contract block
   rejects UNKNOWN_ACTOR when an as-clause names an actor absent from response.actors
@@ -127,6 +127,7 @@ scenario outline "rejects invalid specs with the precise code":
     | "packages/feat-core/fixtures/bad/unsupported-version.feat" | "UNSUPPORTED_VERSION"     |
     | "packages/feat-core/fixtures/bad/malformed-syntax.feat"    | "MALFORMED_SYNTAX"        |
     | "packages/feat-core/fixtures/bad/unknown-service.feat"     | "UNKNOWN_SERVICE_KEY"     |
+    | "packages/feat-core/fixtures/bad/unknown-capture-service.feat" | "UNKNOWN_SERVICE_KEY" |
     | "packages/feat-core/fixtures/bad/unknown-command.feat"     | "UNKNOWN_COMMAND"         |
     | "packages/feat-core/fixtures/bad/undeclared-schema.feat"   | "UNDECLARED_SCHEMA"       |
     | "packages/feat-core/fixtures/bad/unknown-actor.feat"       | "UNKNOWN_ACTOR"           |

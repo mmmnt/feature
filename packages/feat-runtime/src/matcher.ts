@@ -38,6 +38,12 @@ export interface InlineData {
 export interface MatchContext {
   when?: Record<string, unknown> | undefined;
   delivers?: Record<string, unknown>[] | undefined;
+  /**
+   * What each configured service captured this case, by service key, in CAPTURE order — the
+   * subject of `@<service>[i].<path>`. Complete before any diffing begins, so a reference never
+   * depends on which surface is diffed first.
+   */
+  captures?: Map<string, CapturedRecord[]> | undefined;
   inline: InlineData;
 }
 
@@ -106,6 +112,38 @@ export function applyMatcher(actual: unknown, present: boolean, m: Matcher, ctx:
       const expected = pathGet(delivery ?? {}, m.path);
       if (!present || !deepEqual(actual, expected))
         out.push(`${anchor}: expected @deliver.${m.path} = ${JSON.stringify(expected)}, got ${present ? JSON.stringify(actual) : "(absent)"}`);
+      return;
+    }
+    /**
+     * A value captured on ANOTHER surface must equal this one — the assertion the vocabulary
+     * could not make before: a system-minted id that travels from one surface to another cannot
+     * be pinned by a literal (nobody knows it) or by `any` (which pins nothing).
+     *
+     * ⚠ A MISSING REFERENT IS A VIOLATION, NOT A PASS. If the referenced surface captured fewer
+     * records than the index names, the honest report is that the reference could not resolve —
+     * silently comparing against `undefined` would make the strongest assertion in the language
+     * pass whenever the thing it points at failed to happen.
+     */
+    case "captureRef": {
+      const index = m.index ?? 0;
+      const records = ctx.captures?.get(m.service);
+      const ref = `@${m.service}[${index}].${m.path}`;
+      if (records === undefined) {
+        out.push(`${anchor}: ${ref} names a service that captured nothing in this case`);
+        return;
+      }
+      const record = records[index];
+      if (record === undefined) {
+        out.push(`${anchor}: ${ref} is out of range — ${m.service} captured ${records.length} record(s)`);
+        return;
+      }
+      const expected = pathGet((record.payload ?? {}) as Record<string, unknown>, m.path);
+      if (expected === undefined) {
+        out.push(`${anchor}: ${ref} resolved to nothing — that field is absent on the captured record`);
+        return;
+      }
+      if (!present || !deepEqual(actual, expected))
+        out.push(`${anchor}: expected ${ref} = ${JSON.stringify(expected)}, got ${present ? JSON.stringify(actual) : "(absent)"}`);
       return;
     }
     case "any": {
