@@ -4,6 +4,12 @@ feat 1.0
 # vocabulary of what they capture; event instruments (Stripe, CloudEvents,
 # brokers) name types with dots. Exercises dotted types in a `has` prediction
 # and in a `seed` record, alongside plain-IDENT types in the same file.
+#
+# ALSO the cross-surface capture reference (ADR-0021): the payment instrument
+# assigns the charge its id, and the local receipt must record THAT id. The
+# value exists on neither side until the case runs, so no literal can name it
+# and `any string` would pin nothing — `@payments[0].id` is the only form that
+# states the law. See the third scenario.
 
 spec SPEC-PAY-001 "CaptureCharge"
 context Payments
@@ -39,6 +45,7 @@ scenario "successful charge capture":
       amount: @when.amountCents
       currency: "usd"
       livemode: false
+      id: any string
     } ]
     database has [ INSERT with ReceiptRow {
       amountCents: @when.amountCents
@@ -52,3 +59,23 @@ scenario "rejects a non-positive amount":
     response 422 ErrorResponse { code: "AMOUNT_INVALID" }
     payments has []
     database has []
+
+# ADR-0021 — the receipt records the id the INSTRUMENT assigned, not one of our
+# own devising. Both surfaces carry the value; neither spec author nor compiler
+# can know it. `any string` on both sides would pass even when the two disagree,
+# which is the whole failure this form exists to catch: a local record pointing
+# at a charge that exists nowhere.
+scenario "the receipt records the charge id the instrument assigned":
+  when: CaptureCharge { amountCents: 2500, currency: "usd" }
+  predict success:
+    response 201 CaptureReceipt { chargeId: @payments[0].id, amountCents: @when.amountCents }
+    payments has unordered [ charge.succeeded with Charge {
+      amount: @when.amountCents
+      currency: "usd"
+      id: any string
+    } ]
+    database has [ INSERT with ReceiptRow {
+      amountCents: @when.amountCents
+      currency: @when.currency
+      chargeRef: @payments[0].id
+    } ]

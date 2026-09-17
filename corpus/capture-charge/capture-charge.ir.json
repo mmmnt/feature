@@ -127,6 +127,10 @@
                   "livemode": {
                     "matcher": "literal",
                     "value": false
+                  },
+                  "id": {
+                    "matcher": "any",
+                    "ofType": "string"
                   }
                 }
               }
@@ -185,6 +189,84 @@
           },
           "database": {
             "records": []
+          }
+        }
+      }
+    },
+    {
+      "name": "the receipt records the charge id the instrument assigned",
+      "when": {
+        "command": "CaptureCharge",
+        "payload": {
+          "amountCents": 2500,
+          "currency": "usd"
+        }
+      },
+      "prediction": {
+        "type": "success",
+        "response": {
+          "status": 201,
+          "schemaName": "CaptureReceipt",
+          "valueBlock": {
+            "chargeId": {
+              "matcher": "captureRef",
+              "service": "payments",
+              "path": "id",
+              "index": 0
+            },
+            "amountCents": {
+              "matcher": "whenRef",
+              "path": "amountCents"
+            }
+          }
+        },
+        "services": {
+          "payments": {
+            "ordering": "unordered",
+            "records": [
+              {
+                "type": "charge.succeeded",
+                "schemaName": "Charge",
+                "valueBlock": {
+                  "amount": {
+                    "matcher": "whenRef",
+                    "path": "amountCents"
+                  },
+                  "currency": {
+                    "matcher": "literal",
+                    "value": "usd"
+                  },
+                  "id": {
+                    "matcher": "any",
+                    "ofType": "string"
+                  }
+                }
+              }
+            ]
+          },
+          "database": {
+            "records": [
+              {
+                "type": "INSERT",
+                "schemaName": "ReceiptRow",
+                "valueBlock": {
+                  "amountCents": {
+                    "matcher": "whenRef",
+                    "path": "amountCents"
+                  },
+                  "currency": {
+                    "matcher": "whenRef",
+                    "path": "currency"
+                  },
+                  "chargeRef": {
+                    "matcher": "captureRef",
+                    "service": "payments",
+                    "path": "id",
+                    "index": 0
+                  }
+                }
+              }
+            ]
           }
         }
       }

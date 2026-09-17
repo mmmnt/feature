@@ -1,0 +1,30 @@
+feat 1.0
+
+# A cross-surface capture reference (ADR-0021) names a SERVICE, so it lives in the same closed
+# space as a prediction target, a seed and a deliver — `@ghostStore[0].id` is UNKNOWN_SERVICE_KEY,
+# listing the configured services, exactly as a mistyped prediction target already is. One
+# rejection vocabulary for one closed space, not a second one that means the same thing.
+
+spec SPEC-BAD-013 "Unknown capture-reference service"
+context Bad
+aggregate Thing
+type command
+status draft
+
+construct:
+  handler at src/do-thing.ts
+  touches src/**
+
+enforce:
+  do the thing
+
+contract:
+  input ThingInput
+  response ThingResult
+  record ThingRow
+
+scenario "does the thing":
+  when: DoThing { value: 1 }
+  predict success:
+    response OK ThingResult
+    eventStore has [ Wrote with ThingRow { ref: @ghostStore[0].id } ]

@@ -314,7 +314,9 @@ Micro-grammar (every bare word below is KEYWORD or validated IDENT — never pro
 record      := DOTTED-IDENT:type "with" IDENT:schemaName [ valueBlock ]  # schemaName ∈ contract: block
 DOTTED-IDENT := IDENT { "." IDENT }                                  # ADR-0015: adapters own the type vocabulary
 valueBlock  := "{" { IDENT:field ":" matcher } "}"
-matcher     := LITERAL | "@when." PATH | "any" [ "uuid"|"timestamp"|"string"|"number"|"boolean" ]
+matcher     := LITERAL | "@when." PATH | "@deliver" [ "[" INT "]" ] "." PATH
+             | "@" IDENT:serviceKey [ "[" INT "]" ] "." PATH        # ADR-0021: cross-surface
+             | "any" [ "uuid"|"timestamp"|"string"|"number"|"boolean" ]
              | "matching" STRING | "absent" | valueBlock
 ```
 
@@ -326,6 +328,7 @@ matcher     := LITERAL | "@when." PATH | "any" [ "uuid"|"timestamp"|"string"|"nu
 | `@when.<path>` | Equals the value sent in the `when:` payload |
 | `@given.response.<path>` | **Input-side, not a matcher.** Usable in `execute`, `when:`, and `deliver` payloads; reads the most recent preceding `execute`'s response body, so a scenario can name an id the system minted during setup. Unresolvable references fail the case rather than passing the literal through. |
 | `@deliver.<path>` / `@deliver[i].<path>` | Equals the value in the delivered stimulus (index required for saga sequences) |
+| `@<service>[i].<path>` | **Cross-surface capture reference** (ADR-0021): equals a value captured on another surface in the same scenario. `<service>` is a configured service key (INV-7); `[i]` selects the i-th record captured on it in **capture order**, defaulting to `0`. Use it when a value travels between surfaces and no literal can name it — a system-minted id written to one surface and recorded on another. A reference that cannot resolve (unknown index, absent field) is a **violation**, never a silent pass. |
 | `any` | Present, any value |
 | `any uuid` · `any timestamp` · `any string` · `any number` · `any boolean` | Present + format/type check |
 | `matching "<regex>"` | String matches pattern |

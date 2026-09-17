@@ -69,6 +69,10 @@ describe("feat grammar tokenization", () => {
     expect(scopesAt("      id: any uuid", "any")).toContain("support.function.matcher.feat");
     expect(scopesAt("      deletedAt: absent", "absent")).toContain("support.function.matcher.feat");
     expect(scopesAt("      email: @when.email", "@when.email")).toContain("variable.language.stimulus-ref.feat");
+    expect(scopesAt("      id: @deliver[1].orderId", "@deliver[1].orderId")).toContain("variable.language.stimulus-ref.feat");
+    // ADR-0021 — a cross-surface capture reference names a service, and reads like every other
+    // reference in the language, so it highlights like one.
+    expect(scopesAt("      chargeRef: @payments[0].id", "@payments[0].id")).toContain("variable.language.stimulus-ref.feat");
     expect(scopesAt("  deliver OrderPublished { orderId: \"x\" } to eventBroker", "deliver")).toContain("keyword.control.trigger.feat");
   });
 

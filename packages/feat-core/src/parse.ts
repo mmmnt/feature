@@ -237,6 +237,37 @@ function parseInlinePayload(src: string): Record<string, unknown> {
   return obj;
 }
 
+/**
+ * Every value block reachable from a prediction — the response's, each predicted record's, each
+ * `contains` record's, and every block nested inside them. Used to reach matchers that carry a
+ * closed-space name of their own.
+ */
+function valueBlocksIn(prediction: Record<string, unknown>): Record<string, unknown>[] {
+  const out: Record<string, unknown>[] = [];
+  const response = prediction.response as Record<string, unknown> | undefined;
+  if (response?.valueBlock) out.push(response.valueBlock as Record<string, unknown>);
+  const services = (prediction.services as Record<string, Record<string, unknown>> | undefined) ?? {};
+  for (const entry of Object.values(services)) {
+    for (const rec of [
+      ...((entry.records as Record<string, unknown>[] | undefined) ?? []),
+      ...((entry.contains as Record<string, unknown>[] | undefined) ?? []),
+    ]) {
+      if (rec.valueBlock) out.push(rec.valueBlock as Record<string, unknown>);
+    }
+  }
+  return out;
+}
+
+/** Walks a value block, nested blocks included, pushing every capture reference's service key. */
+function collectCaptureServices(block: Record<string, unknown>, into: string[]): void {
+  for (const matcher of Object.values(block)) {
+    const m = matcher as Record<string, unknown> | undefined;
+    if (!m || typeof m !== "object") continue;
+    if (m.matcher === "captureRef") into.push(m.service as string);
+    if (m.matcher === "nested") collectCaptureServices(m.fields as Record<string, unknown>, into);
+  }
+}
+
 // ── Value blocks: field → matcher (ADR-0002/0011/0012/0013) ──────────────────
 type Matcher = Record<string, unknown>;
 
@@ -253,6 +284,18 @@ function parseMatcher(c: ValueCursor): Matcher {
     c.pos += m[0].length;
     const out: Matcher = { matcher: "deliverRef", path: m[2] };
     if (m[1] !== undefined) out.index = Number(m[1]);
+    return out;
+  }
+  /**
+   * Cross-surface capture reference: `@<service>[i].<path>` — equals a value captured on
+   * ANOTHER surface in this same scenario. `@deliver` and `@when` are matched first, so the
+   * service-key space can never shadow them; the key itself is checked against the configured
+   * services with the rest of the closed spaces (UNKNOWN_SERVICE_KEY).
+   */
+  if ((m = /^@([A-Za-z][A-Za-z0-9_-]*)(?:\[(\d+)\])?\.([A-Za-z0-9_.\-]+)/.exec(rest()))) {
+    c.pos += m[0].length;
+    const out: Matcher = { matcher: "captureRef", service: m[1], path: m[3] };
+    if (m[2] !== undefined) out.index = Number(m[2]);
     return out;
   }
   if ((m = /^any\b(?:[ \t]+(uuid|timestamp|string|number|boolean))?/.exec(rest()))) {
@@ -720,6 +763,12 @@ function parseFeat(source: string, ctx: ConfigContext): Record<string, unknown> 
     for (const key of Object.keys(services ?? {})) serviceRefs.push(key);
     for (const seed of (given?.seeds as Record<string, unknown>[] | undefined) ?? []) serviceRefs.push(seed.service as string);
     for (const del of (sc.delivers as Record<string, unknown>[] | undefined) ?? []) serviceRefs.push(del.service as string);
+    /**
+     * A cross-surface capture reference names a service too, so it joins the same closed space —
+     * `@nosuchservice[0].id` is UNKNOWN_SERVICE_KEY, listing the configured ones, exactly as a
+     * mistyped `seed` or `deliver` target already is. One rejection vocabulary, not two.
+     */
+    for (const block of valueBlocksIn(prediction)) collectCaptureServices(block, serviceRefs);
     for (const key of serviceRefs)
       if (!ctx.serviceKeys.includes(key))
         throw new ParseFailure("UNKNOWN_SERVICE_KEY", `Service '${key}' is not configured.`, undefined, `Configured services: ${ctx.serviceKeys.join(", ")}`);

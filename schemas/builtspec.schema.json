@@ -4,55 +4,113 @@
   "title": "BuiltSpec IR",
   "description": "The language-neutral intermediate representation produced by parsing a .feat file (F13 hedge: a future Go toolchain binds to this same contract). Corpus .ir.json fixtures instantiate this schema and are the parser's ground truth. TS types in @mmmnt/feat-types derive from this document.",
   "type": "object",
-  "required": ["featVersion", "identity", "construct", "enforce", "contract", "scenarios"],
+  "required": [
+    "featVersion",
+    "identity",
+    "construct",
+    "enforce",
+    "contract",
+    "scenarios"
+  ],
   "additionalProperties": false,
   "properties": {
-    "featVersion": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+$" },
+    "featVersion": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+$"
+    },
     "variables": {
       "description": "Spec variables (ADR-0017): the only expressions in the language, confined to the variables: block. Sources (now/unique) resolve once per case at execution time; templates compose over declared variables (DAG).",
       "type": "array",
       "minItems": 1,
       "items": {
         "type": "object",
-        "required": ["name", "type", "definition"],
+        "required": [
+          "name",
+          "type",
+          "definition"
+        ],
         "additionalProperties": false,
         "properties": {
-          "name": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
-          "type": { "enum": ["string", "number"] },
+          "name": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+          },
+          "type": {
+            "enum": [
+              "string",
+              "number"
+            ]
+          },
           "definition": {
             "oneOf": [
               {
                 "type": "object",
-                "properties": { "kind": { "const": "call" }, "fn": { "enum": ["now", "unique"] } },
-                "required": ["kind", "fn"],
-                "additionalProperties": false
-              },
-              {
-                "type": "object",
-                "properties": { "kind": { "const": "number" }, "value": { "type": "number" } },
-                "required": ["kind", "value"],
+                "properties": {
+                  "kind": {
+                    "const": "call"
+                  },
+                  "fn": {
+                    "enum": [
+                      "now",
+                      "unique"
+                    ]
+                  }
+                },
+                "required": [
+                  "kind",
+                  "fn"
+                ],
                 "additionalProperties": false
               },
               {
                 "type": "object",
                 "properties": {
-                  "kind": { "const": "template" },
+                  "kind": {
+                    "const": "number"
+                  },
+                  "value": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "value"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "const": "template"
+                  },
                   "parts": {
                     "type": "array",
                     "items": {
                       "oneOf": [
-                        { "type": "string" },
+                        {
+                          "type": "string"
+                        },
                         {
                           "type": "object",
-                          "properties": { "ref": { "type": "string" } },
-                          "required": ["ref"],
+                          "properties": {
+                            "ref": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "ref"
+                          ],
                           "additionalProperties": false
                         }
                       ]
                     }
                   }
                 },
-                "required": ["kind", "parts"],
+                "required": [
+                  "kind",
+                  "parts"
+                ],
                 "additionalProperties": false
               }
             ]
@@ -62,141 +120,374 @@
     },
     "identity": {
       "type": "object",
-      "required": ["id", "name", "context", "aggregate", "type", "status"],
+      "required": [
+        "id",
+        "name",
+        "context",
+        "aggregate",
+        "type",
+        "status"
+      ],
       "additionalProperties": false,
       "properties": {
-        "id": { "type": "string", "pattern": "^SPEC-[A-Z0-9]+-[0-9]+$" },
-        "name": { "type": "string" },
-        "context": { "type": "string" },
-        "aggregate": { "type": "string" },
-        "type": { "enum": ["command", "query", "policy", "projection", "saga", "infrastructure", "integration", "scaffold"] },
-        "status": { "enum": ["draft", "agreed", "built", "verified"] }
+        "id": {
+          "type": "string",
+          "pattern": "^SPEC-[A-Z0-9]+-[0-9]+$"
+        },
+        "name": {
+          "type": "string"
+        },
+        "context": {
+          "type": "string"
+        },
+        "aggregate": {
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "command",
+            "query",
+            "policy",
+            "projection",
+            "saga",
+            "infrastructure",
+            "integration",
+            "scaffold"
+          ]
+        },
+        "status": {
+          "enum": [
+            "draft",
+            "agreed",
+            "built",
+            "verified"
+          ]
+        }
       }
     },
     "construct": {
       "type": "array",
       "minItems": 1,
-      "items": { "$ref": "#/definitions/constructInstruction" }
+      "items": {
+        "$ref": "#/definitions/constructInstruction"
+      }
     },
     "enforce": {
       "type": "array",
       "minItems": 1,
-      "items": { "$ref": "#/definitions/enforceStep" }
+      "items": {
+        "$ref": "#/definitions/enforceStep"
+      }
     },
     "contract": {
       "type": "array",
       "minItems": 1,
-      "items": { "$ref": "#/definitions/contractReference" }
+      "items": {
+        "$ref": "#/definitions/contractReference"
+      }
     },
     "scenarios": {
       "type": "array",
       "minItems": 1,
-      "items": { "$ref": "#/definitions/scenario" }
+      "items": {
+        "$ref": "#/definitions/scenario"
+      }
     }
   },
   "definitions": {
     "constructInstruction": {
       "type": "object",
-      "required": ["kind"],
+      "required": [
+        "kind"
+      ],
       "oneOf": [
         {
-          "properties": { "kind": { "const": "handler" }, "path": { "type": "string" } },
-          "required": ["kind", "path"], "additionalProperties": false
+          "properties": {
+            "kind": {
+              "const": "handler"
+            },
+            "path": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "path"
+          ],
+          "additionalProperties": false
         },
         {
-          "properties": { "kind": { "const": "import" }, "symbol": { "type": "string" }, "path": { "type": "string" } },
-          "required": ["kind", "symbol", "path"], "additionalProperties": false
+          "properties": {
+            "kind": {
+              "const": "import"
+            },
+            "symbol": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "symbol",
+            "path"
+          ],
+          "additionalProperties": false
         },
         {
-          "properties": { "kind": { "const": "register" }, "registrationKind": { "type": "string" }, "name": { "type": "string" }, "path": { "type": "string" } },
-          "required": ["kind", "registrationKind", "name", "path"], "additionalProperties": false
+          "properties": {
+            "kind": {
+              "const": "register"
+            },
+            "registrationKind": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "registrationKind",
+            "name",
+            "path"
+          ],
+          "additionalProperties": false
         },
         {
-          "properties": { "kind": { "const": "emitsTo" }, "streamPattern": { "type": "string" } },
-          "required": ["kind", "streamPattern"], "additionalProperties": false
+          "properties": {
+            "kind": {
+              "const": "emitsTo"
+            },
+            "streamPattern": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "streamPattern"
+          ],
+          "additionalProperties": false
         },
         {
-          "properties": { "kind": { "const": "touches" }, "glob": { "type": "string" } },
-          "required": ["kind", "glob"], "additionalProperties": false
+          "properties": {
+            "kind": {
+              "const": "touches"
+            },
+            "glob": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "glob"
+          ],
+          "additionalProperties": false
         },
         {
-          "properties": { "kind": { "const": "needs" }, "specId": { "type": "string", "pattern": "^SPEC-[A-Z0-9]+-[0-9]+$" } },
-          "required": ["kind", "specId"], "additionalProperties": false
+          "properties": {
+            "kind": {
+              "const": "needs"
+            },
+            "specId": {
+              "type": "string",
+              "pattern": "^SPEC-[A-Z0-9]+-[0-9]+$"
+            }
+          },
+          "required": [
+            "kind",
+            "specId"
+          ],
+          "additionalProperties": false
         },
         {
-          "properties": { "kind": { "const": "custom" }, "text": { "type": "string" } },
-          "required": ["kind", "text"], "additionalProperties": false
+          "properties": {
+            "kind": {
+              "const": "custom"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "text"
+          ],
+          "additionalProperties": false
         }
       ]
     },
     "enforceStep": {
       "type": "object",
-      "required": ["kind", "text"],
+      "required": [
+        "kind",
+        "text"
+      ],
       "additionalProperties": false,
       "properties": {
-        "kind": { "enum": ["validate", "load", "apply", "onSuccess", "onRejection", "constraint", "rejects"] },
-        "rejectionId": { "type": "string", "description": "Present iff kind is 'rejects' (ADR-0008); validated two-way against scenario rejection IDs." },
-        "text": { "type": "string", "description": "The directive line (for 'rejects': the freeform reason)." }
+        "kind": {
+          "enum": [
+            "validate",
+            "load",
+            "apply",
+            "onSuccess",
+            "onRejection",
+            "constraint",
+            "rejects"
+          ]
+        },
+        "rejectionId": {
+          "type": "string",
+          "description": "Present iff kind is 'rejects' (ADR-0008); validated two-way against scenario rejection IDs."
+        },
+        "text": {
+          "type": "string",
+          "description": "The directive line (for 'rejects': the freeform reason)."
+        }
       }
     },
     "contractReference": {
       "type": "object",
-      "required": ["kind"],
+      "required": [
+        "kind"
+      ],
       "oneOf": [
         {
-          "properties": { "kind": { "enum": ["input", "response", "event", "record", "error"] }, "schemaName": { "type": "string" }, "from": { "type": "string" } },
-          "required": ["kind", "schemaName"], "additionalProperties": false
+          "properties": {
+            "kind": {
+              "enum": [
+                "input",
+                "response",
+                "event",
+                "record",
+                "error"
+              ]
+            },
+            "schemaName": {
+              "type": "string"
+            },
+            "from": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "schemaName"
+          ],
+          "additionalProperties": false
         },
         {
-          "properties": { "kind": { "const": "stream" }, "pattern": { "type": "string" } },
-          "required": ["kind", "pattern"], "additionalProperties": false
+          "properties": {
+            "kind": {
+              "const": "stream"
+            },
+            "pattern": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "pattern"
+          ],
+          "additionalProperties": false
         }
       ]
     },
     "scenario": {
       "type": "object",
-      "required": ["name", "prediction"],
-      "oneOf": [ { "required": ["when"] }, { "required": ["delivers"] } ],
+      "required": [
+        "name",
+        "prediction"
+      ],
+      "oneOf": [
+        {
+          "required": [
+            "when"
+          ]
+        },
+        {
+          "required": [
+            "delivers"
+          ]
+        }
+      ],
       "additionalProperties": false,
       "description": "Scenario names are unique within a spec (parser-enforced, ADR-0010) and serve as failure anchors. Trigger: when (command/query) XOR delivers (projection/policy/saga) — per-type enforcement per ADR-0011.",
       "properties": {
-        "name": { "type": "string" },
-        "given": { "$ref": "#/definitions/given" },
-        "when": { "$ref": "#/definitions/invocation" },
+        "name": {
+          "type": "string"
+        },
+        "given": {
+          "$ref": "#/definitions/given"
+        },
+        "when": {
+          "$ref": "#/definitions/invocation"
+        },
         "delivers": {
           "type": "array",
           "minItems": 1,
           "description": "Ordered event deliveries (ADR-0011); multiple entries = saga sequence. Excluded from capture.",
-          "items": { "$ref": "#/definitions/delivery" }
+          "items": {
+            "$ref": "#/definitions/delivery"
+          }
         },
-        "prediction": { "$ref": "#/definitions/prediction" },
+        "prediction": {
+          "$ref": "#/definitions/prediction"
+        },
         "examples": {
           "type": "array",
           "minItems": 1,
           "description": "Scenario-outline rows (ADR-0012): one derived test case per row; keys are placeholder names.",
-          "items": { "type": "object", "minProperties": 1 }
+          "items": {
+            "type": "object",
+            "minProperties": 1
+          }
         },
-        "loc": { "$ref": "#/definitions/loc" }
+        "loc": {
+          "$ref": "#/definitions/loc"
+        }
       }
     },
     "delivery": {
       "type": "object",
-      "required": ["event", "payload", "service"],
+      "required": [
+        "event",
+        "payload",
+        "service"
+      ],
       "additionalProperties": false,
       "properties": {
-        "event": { "type": "string" },
-        "payload": { "type": "object" },
-        "service": { "type": "string" }
+        "event": {
+          "type": "string"
+        },
+        "payload": {
+          "type": "object"
+        },
+        "service": {
+          "type": "string"
+        }
       }
     },
     "loc": {
       "type": "object",
       "description": "Optional source location stamped by the parser (ADR-0010). Omitted in hand-authored fixtures; stripped before INV-1 determinism comparison.",
-      "required": ["line"],
+      "required": [
+        "line"
+      ],
       "additionalProperties": false,
       "properties": {
-        "line": { "type": "integer", "minimum": 1 },
-        "column": { "type": "integer", "minimum": 1 }
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "column": {
+          "type": "integer",
+          "minimum": 1
+        }
       }
     },
     "given": {
@@ -209,71 +500,147 @@
         },
         "context": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "description": "Freeform lines, verbatim."
         },
         "executes": {
           "type": "array",
-          "items": { "$ref": "#/definitions/invocation" }
+          "items": {
+            "$ref": "#/definitions/invocation"
+          }
         },
         "seeds": {
           "type": "array",
-          "items": { "$ref": "#/definitions/seed" }
+          "items": {
+            "$ref": "#/definitions/seed"
+          }
         }
       }
     },
     "invocation": {
       "type": "object",
-      "required": ["command", "payload"],
+      "required": [
+        "command",
+        "payload"
+      ],
       "additionalProperties": false,
       "properties": {
-        "command": { "type": "string" },
-        "actor": { "type": "string", "description": "Actor name from response.actors, or reserved 'anonymous' (ADR-0012). Omitted = actors.default." },
-        "payload": { "type": "object", "description": "Inline JSON; outline placeholders appear as {\"$placeholder\": \"<name>\"} (ADR-0012)." }
+        "command": {
+          "type": "string"
+        },
+        "actor": {
+          "type": "string",
+          "description": "Actor name from response.actors, or reserved 'anonymous' (ADR-0012). Omitted = actors.default."
+        },
+        "payload": {
+          "type": "object",
+          "description": "Inline JSON; outline placeholders appear as {\"$placeholder\": \"<name>\"} (ADR-0012)."
+        }
       }
     },
     "seed": {
       "type": "object",
-      "required": ["service"],
+      "required": [
+        "service"
+      ],
       "additionalProperties": false,
       "properties": {
-        "service": { "type": "string" },
+        "service": {
+          "type": "string"
+        },
         "records": {
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["type", "values"],
+            "required": [
+              "type",
+              "values"
+            ],
             "additionalProperties": false,
             "properties": {
-              "type": { "type": "string" },
-              "schemaName": { "type": "string" },
-              "values": { "type": "object" }
+              "type": {
+                "type": "string"
+              },
+              "schemaName": {
+                "type": "string"
+              },
+              "values": {
+                "type": "object"
+              }
             }
           }
         },
-        "fixture": { "type": "string", "description": "Path to a JSON fixture file (bulk form)." }
+        "fixture": {
+          "type": "string",
+          "description": "Path to a JSON fixture file (bulk form)."
+        }
       },
-      "oneOf": [ { "required": ["records"] }, { "required": ["fixture"] } ]
+      "oneOf": [
+        {
+          "required": [
+            "records"
+          ]
+        },
+        {
+          "required": [
+            "fixture"
+          ]
+        }
+      ]
     },
     "prediction": {
       "type": "object",
-      "required": ["type"],
+      "required": [
+        "type"
+      ],
       "additionalProperties": false,
       "description": "response: required for when:-triggered scenarios, absent for deliver-triggered (ADR-0011). services: required with one entry per configured key (INV-6) except type query, where services are implicitly zero (has [X] is a parse error) and the property is omitted.",
       "properties": {
-        "type": { "enum": ["success", "rejection", "error"] },
-        "rejectionId": { "type": "string" },
-        "errorCode": { "type": "string" },
+        "type": {
+          "enum": [
+            "success",
+            "rejection",
+            "error"
+          ]
+        },
+        "rejectionId": {
+          "type": "string"
+        },
+        "errorCode": {
+          "type": "string"
+        },
         "response": {
           "type": "object",
-          "required": ["status", "schemaName"],
+          "required": [
+            "status",
+            "schemaName"
+          ],
           "additionalProperties": false,
-          "not": { "required": ["valueBlock", "golden"] },
+          "not": {
+            "required": [
+              "valueBlock",
+              "golden"
+            ]
+          },
           "properties": {
-            "status": { "type": ["integer", "string"] },
-            "schemaName": { "type": "string" },
-            "valueBlock": { "$ref": "#/definitions/valueBlock" },
-            "golden": { "type": "string", "description": "Golden-fixture path (ADR-0013); deep structural equality; exclusive with valueBlock." }
+            "status": {
+              "type": [
+                "integer",
+                "string"
+              ]
+            },
+            "schemaName": {
+              "type": "string"
+            },
+            "valueBlock": {
+              "$ref": "#/definitions/valueBlock"
+            },
+            "golden": {
+              "type": "string",
+              "description": "Golden-fixture path (ADR-0013); deep structural equality; exclusive with valueBlock."
+            }
           }
         },
         "services": {
@@ -282,22 +649,40 @@
           "additionalProperties": {
             "type": "object",
             "additionalProperties": false,
-            "anyOf": [ { "required": ["records"] }, { "required": ["contains"] } ],
+            "anyOf": [
+              {
+                "required": [
+                  "records"
+                ]
+              },
+              {
+                "required": [
+                  "contains"
+                ]
+              }
+            ],
             "properties": {
               "ordering": {
-                "enum": ["ordered", "unordered"],
+                "enum": [
+                  "ordered",
+                  "unordered"
+                ],
                 "description": "Present only when explicitly overridden (ADR-0004); otherwise derive resolves from the service's consistency model."
               },
               "records": {
                 "type": "array",
                 "description": "Captured-write assertions (`has`).",
-                "items": { "$ref": "#/definitions/predictedRecord" }
+                "items": {
+                  "$ref": "#/definitions/predictedRecord"
+                }
               },
               "contains": {
                 "type": "array",
                 "minItems": 1,
                 "description": "Resulting-state assertions via adapter read() (`contains`, ADR-0011).",
-                "items": { "$ref": "#/definitions/predictedRecord" }
+                "items": {
+                  "$ref": "#/definitions/predictedRecord"
+                }
               }
             }
           }
@@ -306,74 +691,173 @@
     },
     "predictedRecord": {
       "type": "object",
-      "required": ["type", "schemaName"],
+      "required": [
+        "type",
+        "schemaName"
+      ],
       "additionalProperties": false,
-      "not": { "required": ["valueBlock", "golden"] },
+      "not": {
+        "required": [
+          "valueBlock",
+          "golden"
+        ]
+      },
       "properties": {
-        "type": { "type": "string" },
-        "schemaName": { "type": "string" },
-        "valueBlock": { "$ref": "#/definitions/valueBlock" },
-        "golden": { "type": "string", "description": "Golden-fixture path (ADR-0013); deep structural equality; exclusive with valueBlock." }
+        "type": {
+          "type": "string"
+        },
+        "schemaName": {
+          "type": "string"
+        },
+        "valueBlock": {
+          "$ref": "#/definitions/valueBlock"
+        },
+        "golden": {
+          "type": "string",
+          "description": "Golden-fixture path (ADR-0013); deep structural equality; exclusive with valueBlock."
+        }
       }
     },
     "valueBlock": {
       "type": "object",
       "description": "Field path → matcher (ADR-0002).",
-      "additionalProperties": { "$ref": "#/definitions/matcher" }
+      "additionalProperties": {
+        "$ref": "#/definitions/matcher"
+      }
     },
     "matcher": {
       "oneOf": [
         {
           "type": "object",
-          "required": ["matcher"],
+          "required": [
+            "matcher"
+          ],
           "additionalProperties": false,
           "properties": {
-            "matcher": { "const": "literal" },
-            "value": { "type": ["string", "number", "boolean", "null"] }
+            "matcher": {
+              "const": "literal"
+            },
+            "value": {
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            }
           }
         },
         {
           "type": "object",
-          "required": ["matcher", "path"],
+          "required": [
+            "matcher",
+            "path"
+          ],
           "additionalProperties": false,
           "properties": {
-            "matcher": { "const": "whenRef" },
-            "path": { "type": "string" }
+            "matcher": {
+              "const": "whenRef"
+            },
+            "path": {
+              "type": "string"
+            }
           }
         },
         {
           "type": "object",
-          "required": ["matcher", "path"],
+          "required": [
+            "matcher",
+            "path"
+          ],
           "additionalProperties": false,
           "properties": {
-            "matcher": { "const": "deliverRef" },
-            "path": { "type": "string" },
-            "index": { "type": "integer", "minimum": 0, "description": "Required when the scenario has multiple deliveries (saga sequences)." }
+            "matcher": {
+              "const": "deliverRef"
+            },
+            "path": {
+              "type": "string"
+            },
+            "index": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Required when the scenario has multiple deliveries (saga sequences)."
+            }
           }
         },
         {
           "type": "object",
-          "required": ["matcher"],
+          "required": [
+            "matcher",
+            "service",
+            "path"
+          ],
           "additionalProperties": false,
           "properties": {
-            "matcher": { "const": "any" },
-            "ofType": { "enum": ["uuid", "timestamp", "string", "number", "boolean"] }
+            "matcher": {
+              "const": "captureRef"
+            },
+            "service": {
+              "type": "string",
+              "description": "A configured service key (INV-7); the surface whose capture is referenced."
+            },
+            "path": {
+              "type": "string"
+            },
+            "index": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Which record captured on that service, in CAPTURE order. Defaults to 0."
+            }
           }
         },
         {
           "type": "object",
-          "required": ["matcher", "pattern"],
+          "required": [
+            "matcher"
+          ],
           "additionalProperties": false,
           "properties": {
-            "matcher": { "const": "regex" },
+            "matcher": {
+              "const": "any"
+            },
+            "ofType": {
+              "enum": [
+                "uuid",
+                "timestamp",
+                "string",
+                "number",
+                "boolean"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "matcher",
+            "pattern"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "matcher": {
+              "const": "regex"
+            },
             "pattern": {
               "oneOf": [
-                { "type": "string" },
+                {
+                  "type": "string"
+                },
                 {
                   "type": "object",
-                  "required": ["$placeholder"],
+                  "required": [
+                    "$placeholder"
+                  ],
                   "additionalProperties": false,
-                  "properties": { "$placeholder": { "type": "string" } },
+                  "properties": {
+                    "$placeholder": {
+                      "type": "string"
+                    }
+                  },
                   "description": "Outline placeholder in the matching-argument position (ADR-0012 addendum); derive substitutes the row value."
                 }
               ]
@@ -382,35 +866,64 @@
         },
         {
           "type": "object",
-          "required": ["matcher"],
-          "additionalProperties": false,
-          "properties": { "matcher": { "const": "absent" } }
-        },
-        {
-          "type": "object",
-          "required": ["matcher", "name"],
+          "required": [
+            "matcher"
+          ],
           "additionalProperties": false,
           "properties": {
-            "matcher": { "const": "placeholder" },
-            "name": { "type": "string", "description": "Outline placeholder name; resolved per examples row (ADR-0012)." }
+            "matcher": {
+              "const": "absent"
+            }
           }
         },
         {
           "type": "object",
-          "required": ["matcher", "path"],
+          "required": [
+            "matcher",
+            "name"
+          ],
           "additionalProperties": false,
           "properties": {
-            "matcher": { "const": "goldenFixture" },
-            "path": { "type": "string", "description": "Golden fixture path relative to the spec (ADR-0013); deep structural equality." }
+            "matcher": {
+              "const": "placeholder"
+            },
+            "name": {
+              "type": "string",
+              "description": "Outline placeholder name; resolved per examples row (ADR-0012)."
+            }
           }
         },
         {
           "type": "object",
-          "required": ["matcher", "fields"],
+          "required": [
+            "matcher",
+            "path"
+          ],
           "additionalProperties": false,
           "properties": {
-            "matcher": { "const": "nested" },
-            "fields": { "$ref": "#/definitions/valueBlock" }
+            "matcher": {
+              "const": "goldenFixture"
+            },
+            "path": {
+              "type": "string",
+              "description": "Golden fixture path relative to the spec (ADR-0013); deep structural equality."
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "matcher",
+            "fields"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "matcher": {
+              "const": "nested"
+            },
+            "fields": {
+              "$ref": "#/definitions/valueBlock"
+            }
           }
         }
       ]
