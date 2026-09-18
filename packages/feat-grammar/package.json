@@ -1,6 +1,6 @@
 {
   "name": "@mmmnt/feat-grammar",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "TextMate grammar for the .feat execution specification language — powers editor extensions, Shiki, and any TextMate-compatible highlighter",
   "type": "module",
   "main": "index.js",
