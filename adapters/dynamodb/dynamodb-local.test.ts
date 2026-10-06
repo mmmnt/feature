@@ -172,6 +172,52 @@ describe.runIf(available)("dynamodb adapter against real DynamoDB (Local)", () =
     expect(records[0]!.key).toBe("PK=CRUD|SK=ROW#1");
   }, 30_000);
 
+  // ── ADR-0021: the fence — an absence proof is a fact, not a timeout ─────────────────────
+  it("settle() vouches for every write made before it — nothing missing, no clock", async () => {
+    const a = createAdapter({ options: { ...options(), fence: true } });
+    await a.setup();
+    await a.reset();
+    await a.startCapture();
+    const c = client();
+    for (let i = 1; i <= 3; i++) {
+      await c.send(new PutItemCommand({ TableName: TABLE, Item: { PK: { S: "FENCE" }, SK: { S: `ROW#${i}` } } }));
+    }
+    const started = Date.now();
+    expect(await a.settle!()).toBe(true);
+    const settledIn = Date.now() - started;
+    // Every write before the fence is visible the moment settle answers — no sleep in this test.
+    expect((await a.peekCapture!()).filter((r) => r.type === "INSERT")).toHaveLength(3);
+    const records = await a.stopCapture();
+    await a.teardown();
+    expect(records.map((r) => r.key)).toEqual(["PK=FENCE|SK=ROW#1", "PK=FENCE|SK=ROW#2", "PK=FENCE|SK=ROW#3"]);
+    expect(settledIn).toBeLessThan(1500); // the clock this replaces
+  }, 30_000);
+
+  it("the fence leaves no trace: a later window and read() never see a sentinel", async () => {
+    const a = createAdapter({ options: { ...options(), fence: true } });
+    await a.setup();
+    await a.reset();
+    await a.startCapture();
+    expect(await a.settle!()).toBe(true);
+    expect(await a.stopCapture()).toEqual([]);
+    await a.startCapture();
+    expect(await a.settle!()).toBe(true);
+    expect(await a.stopCapture()).toEqual([]);
+    const rows = (await a.read({})) as Array<{ payload: Record<string, unknown> }>;
+    await a.teardown();
+    expect(rows.some((r) => "__feat_fence" in r.payload)).toBe(false);
+  }, 30_000);
+
+  it("without options.fence, settle() does not vouch — the harness keeps the ceiling", async () => {
+    const a = createAdapter({ options: options() });
+    await a.setup();
+    await a.reset();
+    await a.startCapture();
+    expect(await a.settle!()).toBe(false);
+    await a.stopCapture();
+    await a.teardown();
+  }, 30_000);
+
   it("a table without a stream is a configuration error at setup()", async () => {
     const a = createAdapter({ options: { ...options(), table: "feat-adapter-no-stream" } });
     await expect(a.setup()).rejects.toThrowError(/no active stream.*configuration error/s);

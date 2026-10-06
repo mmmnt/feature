@@ -235,57 +235,7 @@ export async function createHarness(opts: { configPath: string }): Promise<Harne
       await adapter.deliver(d.event, resolveGivenRefs(d.payload, givenResponse, c.anchor));
     }
 
-    // ADR-0020 (revising ADR-0014): convergence is a CEILING, not a
-    // sentence. When every eventual service in the prediction asserts a
-    // non-empty record list and its adapter can peek, poll and exit as soon
-    // as each target count has arrived AND the capture has gone quiet for
-    // one extra poll — prediction inversion demands that extra unpredicted
-    // records still get their chance to surface. Absence proofs (records
-    // []), contains assertions, and peek-less adapters keep the full window.
-    let wait = 0;
-    for (const key of Object.keys(c.prediction.services)) {
-      const svc = config.services[key];
-      if (svc?.consistency === "eventual")
-        wait = Math.max(wait, svc.convergenceTimeout ?? 0);
-    }
-    if (wait > 0) {
-      const goals: Array<{ peek: () => Promise<CapturedRecord[]>; min: number }> = [];
-      let earlyExitLegal = true;
-      for (const [key, assertion] of Object.entries(c.prediction.services)) {
-        const svc = config.services[key];
-        if (svc?.consistency !== "eventual") continue;
-        const records = (assertion as { records?: unknown[] }).records;
-        const hasContains = (assertion as { contains?: unknown[] }).contains !== undefined;
-        const adapter = services.get(key);
-        const peek = adapter?.peekCapture?.bind(adapter);
-        if (!hasContains && Array.isArray(records) && records.length > 0 && peek) {
-          goals.push({ peek, min: records.length });
-        } else {
-          earlyExitLegal = false;
-        }
-      }
-      if (earlyExitLegal && goals.length > 0) {
-        const deadline = Date.now() + wait;
-        const POLL_MS = 150;
-        let lastTotal = -1;
-        while (Date.now() < deadline) {
-          let total = 0;
-          let reached = true;
-          for (const g of goals) {
-            const count = (await g.peek()).length;
-            total += count;
-            if (count < g.min) reached = false;
-          }
-          // Exit only when every target is met AND nothing new arrived since
-          // the previous poll — the quiet grace that keeps inversion honest.
-          if (reached && total === lastTotal) break;
-          lastTotal = total;
-          await new Promise((r) => setTimeout(r, Math.min(POLL_MS, Math.max(1, deadline - Date.now()))));
-        }
-      } else {
-        await new Promise((r) => setTimeout(r, wait));
-      }
-    }
+    await awaitConvergence(c.prediction.services, config.services, services);
 
     const capturedRecords = new Map<string, CapturedRecord[]>();
     for (const [key, adapter] of services) capturedRecords.set(key, await adapter.stopCapture());
@@ -329,4 +279,82 @@ export async function createHarness(opts: { configPath: string }): Promise<Harne
       if (response) await response.teardown();
     },
   };
+}
+
+/**
+ * The convergence window, as one decision (ADR-0014 → ADR-0020 → ADR-0021).
+ *
+ *   fence    — every eventual service in the prediction offers settle() and every one vouched
+ *              before the ceiling: the window ends on proof. Absence proofs included.
+ *   peek     — ADR-0020: every eventual service predicts records and can peek; exit once each
+ *              target count has arrived and the capture went quiet for one more poll.
+ *   ceiling  — anything else waits the full convergenceTimeout (absence without a fence, a
+ *              settle that could not vouch or never answered, contains assertions, no peek).
+ *   none     — no eventual service in the prediction: strong services capture at once.
+ *
+ * The ceiling is never exceeded: a fence that does not answer in time falls through to the
+ * ADR-0020 decision with whatever time is left, so the slowest path is exactly today's.
+ */
+export async function awaitConvergence(
+  predicted: Record<string, unknown>,
+  configured: Record<string, { consistency?: string; convergenceTimeout?: number } | undefined>,
+  adapters: Map<string, FeatServiceAdapter>
+): Promise<{ mode: "none" | "fence" | "peek" | "ceiling" }> {
+  const eventualKeys = Object.keys(predicted).filter((k) => configured[k]?.consistency === "eventual");
+  let wait = 0;
+  for (const key of eventualKeys) wait = Math.max(wait, configured[key]?.convergenceTimeout ?? 0);
+  if (wait <= 0) return { mode: "none" };
+  const deadline = Date.now() + wait;
+  const remaining = () => Math.max(0, deadline - Date.now());
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  // ── ADR-0021: the fence ──
+  const settles = eventualKeys.map((k) => adapters.get(k)?.settle?.bind(adapters.get(k)));
+  if (settles.length > 0 && settles.every((f) => typeof f === "function")) {
+    const TIMED_OUT = Symbol("timeout");
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const proofs = await Promise.race([
+      Promise.all(settles.map((f) => f!().catch(() => false))),
+      new Promise<typeof TIMED_OUT>((r) => {
+        timer = setTimeout(() => r(TIMED_OUT), remaining());
+      })
+    ]);
+    if (timer) clearTimeout(timer);
+    if (proofs !== TIMED_OUT && proofs.every((p) => p === true)) return { mode: "fence" };
+  }
+
+  // ── ADR-0020: the early exit for write predictions ──
+  const goals: Array<{ peek: () => Promise<CapturedRecord[]>; min: number }> = [];
+  let earlyExitLegal = true;
+  for (const key of eventualKeys) {
+    const assertion = predicted[key] as { records?: unknown[]; contains?: unknown[] };
+    const adapter = adapters.get(key);
+    const peek = adapter?.peekCapture?.bind(adapter);
+    if (assertion?.contains === undefined && Array.isArray(assertion?.records) && assertion.records.length > 0 && peek) {
+      goals.push({ peek, min: assertion.records.length });
+    } else {
+      earlyExitLegal = false;
+    }
+  }
+  if (earlyExitLegal && goals.length > 0) {
+    const POLL_MS = 150;
+    let lastTotal = -1;
+    while (remaining() > 0) {
+      let total = 0;
+      let reached = true;
+      for (const g of goals) {
+        const count = (await g.peek()).length;
+        total += count;
+        if (count < g.min) reached = false;
+      }
+      // Exit only when every target is met AND nothing new arrived since the previous poll —
+      // the quiet grace that keeps inversion honest.
+      if (reached && total === lastTotal) return { mode: "peek" };
+      lastTotal = total;
+      await sleep(Math.min(POLL_MS, Math.max(1, remaining())));
+    }
+    return { mode: "ceiling" };
+  }
+  await sleep(remaining());
+  return { mode: "ceiling" };
 }

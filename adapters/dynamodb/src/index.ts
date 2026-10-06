@@ -94,6 +94,13 @@ interface DynamoAdapterConfig {
     endpointEnv?: string;
     auth?: AuthOptions;
     ephemeral?: EphemeralOptions;
+    /**
+     * ADR-0021: let settle() vouch for the capture by writing a sentinel row and draining the
+     * stream until it arrives. Sound only where the stream is a single ordered sequence — one
+     * open shard and one writer (DynamoDB Local, the feat run lane). Off by default; with more
+     * than one open shard settle() declines to vouch even when on.
+     */
+    fence?: boolean;
   };
 }
 
@@ -222,6 +229,7 @@ class DynamoAdapter implements FeatServiceAdapter {
   private streamArn: string | null = null;
   private iterators: string[] | null = null;
   private captured: CapturedRecord[] = [];
+  private keySchema: { name: string; type: string }[] = [];
   private container: string | null = null;
   private exposedEnv: { name: string; prior: string | undefined }[] = [];
 
@@ -355,6 +363,11 @@ class DynamoAdapter implements FeatServiceAdapter {
           "use NEW_AND_OLD_IMAGES (or NEW_IMAGE) — configuration error.",
       );
     this.streamArn = arn;
+    const types = new Map((out.Table?.AttributeDefinitions ?? []).map((d) => [d.AttributeName, d.AttributeType]));
+    this.keySchema = (out.Table?.KeySchema ?? []).map((k) => ({
+      name: String(k.AttributeName),
+      type: String(types.get(k.AttributeName) ?? "")
+    }));
   }
 
   async teardown(): Promise<void> {
@@ -416,13 +429,52 @@ class DynamoAdapter implements FeatServiceAdapter {
       for (let i = 0; i < 25 && emptyBatches < 2 && iterator; i++) {
         const resp = await streams.send(new GetRecordsCommand({ ShardIterator: iterator, Limit: 1000 }));
         const records = resp.Records ?? [];
-        for (const r of records) this.captured.push(mapStreamRecord(r as StreamImageRecord));
+        for (const r of records) {
+          // A fence sentinel (ADR-0021) is the instrument's own mark, never the system's effect.
+          if (isFenceRecord(r as StreamImageRecord)) {
+            this.fenceSeen.add(fenceToken(r as StreamImageRecord));
+            continue;
+          }
+          this.captured.push(mapStreamRecord(r as StreamImageRecord));
+        }
         if (records.length === 0) emptyBatches++;
         else emptyBatches = 0;
         iterator = resp.NextShardIterator ?? undefined;
       }
       if (iterator) this.iterators[s] = iterator;
     }
+  }
+
+  private fenceSeen = new Set<string>();
+
+  /**
+   * ADR-0021: prove the capture has caught up. A sentinel row is written AFTER every write the
+   * system has made (the harness calls this once the stimulus has returned); on a single ordered
+   * stream, the sentinel's arrival means everything before it has arrived too. Declines (false)
+   * when the fence is off, the stream has more than one open shard, or the key schema is not
+   * string-keyed — the harness then keeps the ceiling, exactly as before.
+   */
+  async settle(): Promise<boolean> {
+    if (!this.opts.fence || !this.iterators) return false;
+    if (this.iterators.length !== 1) return false;
+    if (this.keySchema.length === 0 || this.keySchema.some((k) => k.type !== "S")) return false;
+    // Let any write the system queued but has not yet issued leave the event loop first.
+    await new Promise((r) => setImmediate(r));
+    const token = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    const item: Record<string, AttributeValue> = { [FENCE_ATTR]: { S: token } };
+    for (const k of this.keySchema) item[k.name] = { S: `${FENCE_ATTR}#${token}` };
+    const { ddb } = this.clients();
+    await ddb.send(new PutItemCommand({ TableName: this.table, Item: item }));
+    const deadline = Date.now() + 10_000;
+    while (Date.now() < deadline && this.iterators) {
+      await this.drainOnce();
+      if (this.fenceSeen.has(token)) {
+        this.fenceSeen.delete(token);
+        return true;
+      }
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    return false;
   }
 
   /** ADR-0020: the harness's early-exit window peeks without consuming. */
@@ -449,6 +501,7 @@ class DynamoAdapter implements FeatServiceAdapter {
     do {
       const resp = await ddb.send(new ScanCommand({ TableName: this.table, ExclusiveStartKey: startKey }));
       for (const item of resp.Items ?? []) {
+        if (FENCE_ATTR in item) continue; // ADR-0021: sentinels are the instrument's, not the system's
         items.push({ type: "ITEM", payload: unmarshall(item), timestamp: 0 });
       }
       startKey = resp.LastEvaluatedKey;
@@ -469,6 +522,22 @@ class DynamoAdapter implements FeatServiceAdapter {
       }
     }
   }
+}
+
+/** ADR-0021: the attribute that marks a fence sentinel row. */
+export const FENCE_ATTR = "__feat_fence";
+
+function fenceImage(r: StreamImageRecord): Record<string, AttributeValue> | undefined {
+  const d = (r as { dynamodb?: { NewImage?: Record<string, AttributeValue>; OldImage?: Record<string, AttributeValue> } }).dynamodb;
+  return d?.NewImage ?? d?.OldImage;
+}
+export function isFenceRecord(r: StreamImageRecord): boolean {
+  const img = fenceImage(r);
+  return Boolean(img && FENCE_ATTR in img);
+}
+function fenceToken(r: StreamImageRecord): string {
+  const v = fenceImage(r)?.[FENCE_ATTR] as { S?: string } | undefined;
+  return String(v?.S ?? "");
 }
 
 export function createAdapter(config: Record<string, unknown>): FeatServiceAdapter {

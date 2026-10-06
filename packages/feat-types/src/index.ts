@@ -241,6 +241,16 @@ export interface FeatServiceAdapter {
    * and stopCapture, and must not consume what stopCapture will return.
    */
   peekCapture?(): Promise<CapturedRecord[]>;
+  /**
+   * Prove the capture has caught up with every effect written so far (ADR-0021: the fence).
+   * Resolve `true` only when everything the system under test has already written is now
+   * visible to stopCapture — the harness then ends the convergence window without waiting out
+   * the ceiling, which is what makes an absence proof (`records []`) a fact instead of a
+   * timeout. Resolve `false` when that cannot be vouched for (the harness keeps the ceiling).
+   * Writes the system starts AFTER its handler returned are outside any fence; an adapter for an
+   * in-process instrument should yield the event loop before vouching.
+   */
+  settle?(): Promise<boolean>;
 }
 
 export interface FeatSchemaAdapter {
