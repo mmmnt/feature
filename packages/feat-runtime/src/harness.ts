@@ -320,7 +320,29 @@ export async function awaitConvergence(
       })
     ]);
     if (timer) clearTimeout(timer);
-    if (proofs !== TIMED_OUT && proofs.every((p) => p === true)) return { mode: "fence" };
+    if (proofs !== TIMED_OUT && proofs.every((p) => p === true)) {
+      // FEAT_FENCE_AUDIT: check the fence against the clock it replaced. Wait out the ceiling
+      // anyway; any capture that grew after the fence is a late write the fence would have hidden.
+      if (process.env.FEAT_FENCE_AUDIT) {
+        const peekers = eventualKeys
+          .map((k) => [k, adapters.get(k)?.peekCapture?.bind(adapters.get(k))] as const)
+          .filter((e): e is readonly [string, () => Promise<CapturedRecord[]>] => typeof e[1] === "function");
+        const before = await Promise.all(peekers.map(async ([, peek]) => (await peek()).length));
+        await sleep(remaining());
+        const after = await Promise.all(peekers.map(async ([, peek]) => (await peek()).length));
+        const grew = peekers
+          .map(([k], i) => ({ k, b: before[i]!, a: after[i]! }))
+          .filter((x) => x.a !== x.b)
+          .map((x) => `${x.k} ${x.b} → ${x.a}`);
+        if (grew.length > 0) {
+          throw new Error(
+            `fence audit: the fence vouched, then the capture grew before the ceiling (${grew.join(", ")}) — ` +
+              `a write landed after settle(); that adapter must not vouch for this system`
+          );
+        }
+      }
+      return { mode: "fence" };
+    }
   }
 
   // ── ADR-0020: the early exit for write predictions ──

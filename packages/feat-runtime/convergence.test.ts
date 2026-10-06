@@ -113,3 +113,39 @@ describe("ADR-0021: awaitConvergence — the fence", () => {
     expect(r.ms).toBeLessThan(CEILING);
   });
 });
+
+// The audit: the fence's claim, checked against the clock it replaced. With FEAT_FENCE_AUDIT=1 a
+// fenced exit still waits out the ceiling and FAILS the case if any capture grew after the fence —
+// a late write the fence would have hidden. Run once over a whole suite before trusting the fence.
+describe("ADR-0021: FEAT_FENCE_AUDIT", () => {
+  it("fails a fenced case whose capture grew after the fence said it was complete", async () => {
+    const seen: CapturedRecord[] = [];
+    setTimeout(() => seen.push({ type: "Late", payload: {} }), 100);
+    process.env.FEAT_FENCE_AUDIT = "1";
+    try {
+      await expect(
+        awaitConvergence(
+          { projections: { records: [] } },
+          { projections: eventual },
+          adapters({ projections: { settle: async () => true, peekCapture: async () => [...seen] } })
+        )
+      ).rejects.toThrow(/fence audit.*projections.*0 → 1/);
+    } finally {
+      delete process.env.FEAT_FENCE_AUDIT;
+    }
+  });
+
+  it("passes a fenced case whose capture held still through the ceiling", async () => {
+    process.env.FEAT_FENCE_AUDIT = "1";
+    try {
+      const r = await awaitConvergence(
+        { projections: { records: [] } },
+        { projections: eventual },
+        adapters({ projections: { settle: async () => true, peekCapture: async () => [] } })
+      );
+      expect(r.mode).toBe("fence");
+    } finally {
+      delete process.env.FEAT_FENCE_AUDIT;
+    }
+  });
+});
