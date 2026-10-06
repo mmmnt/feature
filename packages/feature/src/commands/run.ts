@@ -1,5 +1,6 @@
 // `feat run` — execute the generated test suites (runner subprocess, GAP-D09).
-// --spec filters to a single spec ID. JUnit output per the config report block.
+// --spec filters to a single spec ID; --shard i/n runs one disjoint slice (for N isolated jobs).
+// JUnit output per the config report block, suffixed per shard.
 
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -9,6 +10,7 @@ import { runTests } from "@mmmnt/feat-runner";
 import { resolveEnvironment, variablesSidecarPath } from "@mmmnt/feat-runtime";
 import { rmSync } from "node:fs";
 import { generateAll } from "../pipeline.js";
+import { parseShard, selectShard, shardJunitPath } from "../shard.js";
 
 export default class Run extends Command {
   static override description = "Execute the generated tests with the adapter lifecycle";
@@ -17,6 +19,10 @@ export default class Run extends Command {
     config: Flags.string({ char: "c", description: "Path to feat.config.json", default: "feat.config.json" }),
     spec: Flags.string({ description: "Run only the spec with this ID (e.g. SPEC-RT-001)" }),
     coverage: Flags.boolean({ description: "Collect coverage via the runner's coverage provider" }),
+    shard: Flags.string({
+      description:
+        "Run slice i of n (e.g. 2/4). Each shard needs its OWN instruments — shards that share a store are not isolated."
+    }),
   };
 
   public async run(): Promise<void> {
@@ -41,6 +47,20 @@ export default class Run extends Command {
       }
     }
 
+    let shard: ReturnType<typeof parseShard> | undefined;
+    if (flags.shard) {
+      try {
+        shard = parseShard(flags.shard);
+      } catch (e) {
+        this.logToStderr(`ERROR ${(e as Error).message}`);
+        this.exit(1);
+      }
+      const keep = new Set(selectShard(files.map((f) => f.out), shard!));
+      files = files.filter((f) => keep.has(f.out));
+      this.log(`shard ${shard!.index}/${shard!.total}: ${files.length} file(s)`);
+      if (files.length === 0) return; // more shards than files — this slice is honestly empty
+    }
+
     const missing = files.filter((f) => !existsSync(f.out));
     if (missing.length > 0) {
       this.logToStderr("ERROR [NOT_GENERATED] Missing generated test files:");
@@ -49,7 +69,8 @@ export default class Run extends Command {
       this.exit(1);
     }
 
-    const junit = config.report?.format?.includes("junit") ? config.report.junitOutput : undefined;
+    const junitBase = config.report?.format?.includes("junit") ? config.report.junitOutput : undefined;
+    const junit = junitBase !== undefined ? shardJunitPath(junitBase, shard) : undefined;
     const runOpts: Parameters<typeof runTests>[0] = {
       files: files.map((f) => path.relative(root, f.out)),
       root,
