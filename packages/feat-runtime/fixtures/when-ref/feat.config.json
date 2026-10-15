@@ -1,0 +1,17 @@
+{
+  "featVersion": "1.0",
+  "environment": "local",
+  "schemas": { "adapter": "@mmmnt/feat-schema-json" },
+  "response": {
+    "adapter": "./adapter.mjs",
+    "commands": {
+      "Offer": { "module": "unused", "export": "offer" },
+      "Book": { "module": "unused", "export": "book" }
+    }
+  },
+  "services": {
+    "memory": { "adapter": "./adapter.mjs", "consistency": "acid" }
+  },
+  "specs": { "dir": ".", "pattern": "**/*.feat", "contractPattern": "**/*.contract.json", "outputPattern": "{name}.test.ts" },
+  "report": { "format": ["console"] }
+}

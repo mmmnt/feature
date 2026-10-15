@@ -218,21 +218,27 @@ export async function createHarness(opts: { configPath: string }): Promise<Harne
     // that does not care simply ignores it.
     for (const adapter of services.values()) await adapter.startCapture(c.specType === undefined ? {} : { specType: c.specType });
 
+    // `@when.<path>` / `@deliver.<path>` equal the values SENT — after `@given.response.*` resolved —
+    // so what is invoked and what the matchers read are one value, never the payload as written.
     let captured: CapturedResponse | undefined;
+    let sentWhen: Record<string, unknown> | undefined;
     if (c.when) {
       if (!response) throw new Error(`${c.anchor}: when: requires a response adapter`);
-      const payload = resolveGivenRefs(c.when.payload, givenResponse, c.anchor);
-      captured = await response.invoke(c.when.command, payload, c.when.actor);
+      sentWhen = resolveGivenRefs(c.when.payload, givenResponse, c.anchor) as Record<string, unknown>;
+      captured = await response.invoke(c.when.command, sentWhen, c.when.actor);
     }
     // deliver-triggered stimulus (ADR-0011): events delivered in order, inside the
     // window; the delivered stimuli themselves are excluded from capture by the adapter.
+    const sentDelivers: Array<Record<string, unknown>> = [];
     for (const d of c.delivers ?? []) {
       const adapter = services.get(d.service);
       if (!adapter) throw new Error(`${c.anchor}: deliver targets unknown service '${d.service}'`);
       if (!adapter.deliver)
         throw new Error(`${c.anchor}: adapter for '${d.service}' does not support deliver() — configuration error.`);
       // A delivered stimulus may also name what a precondition produced.
-      await adapter.deliver(d.event, resolveGivenRefs(d.payload, givenResponse, c.anchor));
+      const sent = resolveGivenRefs(d.payload, givenResponse, c.anchor) as Record<string, unknown>;
+      sentDelivers.push(sent);
+      await adapter.deliver(d.event, sent);
     }
 
     await awaitConvergence(c.prediction.services, config.services, services);
@@ -242,8 +248,8 @@ export async function createHarness(opts: { configPath: string }): Promise<Harne
 
     // ── Diff ──
     const ctx: MatchContext = {
-      when: c.when?.payload,
-      delivers: c.delivers?.map((d) => d.payload),
+      when: c.when ? sentWhen : undefined,
+      delivers: c.delivers ? sentDelivers : undefined,
       // Every surface's capture, before any of them is diffed — so `@<service>[i].<path>`
       // resolves the same whatever order the diffs run in.
       captures: capturedRecords,
