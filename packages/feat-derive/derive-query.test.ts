@@ -51,7 +51,7 @@ describe("derive — the query guarantee preserves `contains`", () => {
 
   it("still synthesises `has []` for a service the query never mentioned", () => {
     const out = derive(specWith("query", { projectionStore: { contains: row } }), config);
-    expect(out.cases[0]!.prediction.services.ledger).toEqual({ ordering: "ordered", records: [] });
+    expect(out.cases[0]!.prediction.services.ledger).toEqual({ records: [] });
   });
 
   it("never lets a query assert a write, however the prediction was written", () => {

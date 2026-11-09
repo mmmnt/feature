@@ -1,6 +1,6 @@
 // @mmmnt/feat-derive — BuiltSpec IR + FeatConfig → TestTopology (PRD §3, ADR-0004/0011/0012/0014).
 // Pure and deterministic (INV-2): no I/O, no clock, no randomness. Outline rows expand to
-// concrete cases; ordering resolves from the consistency model unless overridden; query
+// concrete cases; ordering is left to the harness (the active tier's consistency) unless the spec overrides it; query
 // predictions synthesize implicit `has []` for every configured service (ADR-0011).
 
 import type {
@@ -9,7 +9,8 @@ import type {
 } from "@mmmnt/feat-types";
 
 export interface ResolvedServiceAssertion {
-  ordering: "ordered" | "unordered";
+  /** Present only when the spec wrote `ordered`/`unordered`; the harness resolves the default from the ACTIVE config's consistency (ADR-0024). */
+  ordering?: "ordered" | "unordered";
   records?: PredictedRecord[];
   contains?: PredictedRecord[];
 }
@@ -47,7 +48,6 @@ export interface TestTopology {
   specName: string;
   cases: TestCase[];
   serviceKeys: string[];
-  maxConvergenceTimeout: number;
 }
 
 type Row = Record<string, unknown>;
@@ -121,9 +121,7 @@ function resolvePrediction(
 
   const declared: Record<string, ServicePrediction> = p.services ?? {};
   for (const key of Object.keys(config.services).sort()) {
-    const svc = config.services[key]!;
     const entry = declared[key];
-    const defaultOrdering = svc.consistency === "eventual" ? "unordered" : "ordered";
     if (specType === "query") {
       // ADR-0011: implicit zero side effects, unwritable by grammar. `records: []` is SYNTHESISED
       // rather than read from the author's prediction, which is what makes the guarantee
@@ -137,16 +135,15 @@ function resolvePrediction(
       // whatsoever. Discarding it did not weaken the query guarantee; it silently deleted an
       // orthogonal assertion, so a `contains` naming a record that does not exist PASSED.
       // grammar-reference §"Predictions": "Queries predict `response` (+ optional `contains`)."
-      const queryEntry: ResolvedServiceAssertion = { ordering: defaultOrdering, records: [] };
+      const queryEntry: ResolvedServiceAssertion = { records: [] };
       const queryContains = substituteRecords(entry?.contains, row);
       if (queryContains !== undefined) queryEntry.contains = queryContains;
       out.services[key] = queryEntry;
       continue;
     }
     if (!entry) continue; // parser enforces INV-6; defensive
-    const resolved: ResolvedServiceAssertion = {
-      ordering: entry.ordering ?? defaultOrdering,
-    };
+    const resolved: ResolvedServiceAssertion = {};
+    if (entry.ordering !== undefined) resolved.ordering = entry.ordering;
     const records = substituteRecords(entry.records, row);
     if (records !== undefined) resolved.records = records;
     const contains = substituteRecords(entry.contains, row);
@@ -176,10 +173,6 @@ function substituteGiven(given: Given | undefined, row: Row): Given | undefined 
 
 export function derive(spec: BuiltSpec, config: FeatConfig): TestTopology {
   const cases: TestCase[] = [];
-  let maxConvergenceTimeout = 0;
-  for (const svc of Object.values(config.services))
-    if (svc.consistency === "eventual" && (svc.convergenceTimeout ?? 0) > maxConvergenceTimeout)
-      maxConvergenceTimeout = svc.convergenceTimeout ?? 0;
 
   for (const scenario of spec.scenarios) {
     const rows: (Row | null)[] = scenario.examples ? scenario.examples : [null];
@@ -222,6 +215,5 @@ export function derive(spec: BuiltSpec, config: FeatConfig): TestTopology {
     specName: spec.identity.name,
     cases,
     serviceKeys: Object.keys(config.services).sort(),
-    maxConvergenceTimeout,
   };
 }

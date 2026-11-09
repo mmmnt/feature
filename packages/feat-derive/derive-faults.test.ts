@@ -35,3 +35,21 @@ describe("derive — given.faults", () => {
     expect(out.cases[1]!.given!.faults![1]!.detail).toEqual({ stream: "carts" });
   });
 });
+
+describe("derive — ordering is the harness's to default (ADR-0024)", () => {
+  const mk = (ordering?: string): BuiltSpec =>
+    ({
+      identity: { id: "SPEC-O-001", name: "Order", type: "command" },
+      scenarios: [{ name: "w", when: { command: "Do", payload: {} }, prediction: { type: "success", services: { eventStore: { ...(ordering ? { ordering } : {}), records: [] } } } }],
+    }) as unknown as BuiltSpec;
+  const strong = { services: { eventStore: { consistency: "strong" } } } as unknown as FeatConfig;
+  const eventual = { services: { eventStore: { consistency: "eventual", convergenceTimeout: 100 } } } as unknown as FeatConfig;
+
+  it("leaves ordering out when the spec wrote none, whatever the consistency", () => {
+    expect(derive(mk(), strong).cases[0]!.prediction.services.eventStore).toEqual({ records: [] });
+    expect(derive(mk(), eventual).cases[0]!.prediction.services.eventStore).toEqual({ records: [] });
+  });
+  it("keeps an ordering the spec wrote", () => {
+    expect(derive(mk("unordered"), strong).cases[0]!.prediction.services.eventStore!.ordering).toBe("unordered");
+  });
+});

@@ -4,7 +4,9 @@
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { generateAll } from "./src/pipeline.js";
 
 const PKG = path.dirname(fileURLToPath(import.meta.url));
 const BIN = path.join(PKG, "bin/run.js");
@@ -39,5 +41,17 @@ describe("every command reads the config through loadConfig", { timeout: 30_000 
     const r = feat(["lint", "--config", "feat.integration.config.json"]);
     expect(r.code).toBe(0);
     expect(r.out).toContain("lint: 1 spec(s)");
+  });
+});
+
+describe("generation is the same in every tier (ADR-0024)", () => {
+  it("a base and its overlay generate byte-identical files, whatever the tiers' services say", async () => {
+    const spec = await generateAll(ROOT, "feat.config.json");
+    const integration = await generateAll(ROOT, "feat.integration.config.json");
+    expect(integration.map((f) => f.content)).toEqual(spec.map((f) => f.content));
+    expect(spec[0]!.content).toContain("Inputs-hash: sha256:");
+    // the embedded config path is the BASE's, not the overlay's
+    expect(spec[0]!.content).toContain('"../feat.config.json"');
+    expect(readFileSync(path.join(ROOT, "feat.integration.config.json"), "utf8")).toContain("eventual");
   });
 });

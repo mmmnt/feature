@@ -190,6 +190,8 @@ export interface FeatConfig {
    * suites are environment-agnostic).
    */
   environment?: string;
+  /** Tier overlay (ADR-0024): the base this config overrides (kept in the merged result). */
+  extends?: string;
   schemas: { adapter: string };
   response?: ResponseConfig;
   services: Record<string, ServiceConfig>;

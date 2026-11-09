@@ -25,6 +25,11 @@ export interface RunOptions {
   coverage?: boolean;
   /** Suppress the runner's console output (machine-consumption mode). */
   quiet?: boolean;
+  /** Per-test and hook timeouts, computed by the caller from the ACTIVE config (ADR-0024). */
+  testTimeoutMs?: number;
+  hookTimeoutMs?: number;
+  /** Absolute path of the active config; handed to the generated suites as FEAT_CONFIG. */
+  configPath?: string;
 }
 
 export interface RunResult {
@@ -40,7 +45,11 @@ const CONSUMER_CONFIGS = ["vitest.config.ts", "vitest.config.mts", "vitest.confi
  * when one exists (static import — vitest's config bundler handles TS), then
  * overrides test selection. Exported for unit testing.
  */
-export function runConfigSource(root: string, absFiles: string[]): string {
+export function runConfigSource(
+  root: string,
+  absFiles: string[],
+  timeouts: { testTimeoutMs?: number; hookTimeoutMs?: number } = {},
+): string {
   const consumer = CONSUMER_CONFIGS.map((f) => path.join(root, f)).find((f) => existsSync(f));
   const globs = absFiles.map((f) => f.split(path.sep).join("/"));
   const lines = [
@@ -53,6 +62,8 @@ export function runConfigSource(root: string, absFiles: string[]): string {
     "    ...(resolved.test ?? {}),",
     `    include: ${JSON.stringify(globs)},`,
     "    passWithNoTests: false,",
+    ...(timeouts.testTimeoutMs !== undefined ? [`    testTimeout: ${timeouts.testTimeoutMs},`] : []),
+    ...(timeouts.hookTimeoutMs !== undefined ? [`    hookTimeout: ${timeouts.hookTimeoutMs},`] : []),
     "  },",
     "};",
     "",
@@ -70,7 +81,13 @@ export function runTests(opts: RunOptions): RunResult {
   // imports resolve exactly as they would from the project root.
   const configPath = path.join(opts.root, "node_modules", ".cache", "feat", "feat-run.vitest.config.mjs");
   mkdirSync(path.dirname(configPath), { recursive: true });
-  writeFileSync(configPath, runConfigSource(opts.root, absFiles));
+  writeFileSync(
+    configPath,
+    runConfigSource(opts.root, absFiles, {
+      ...(opts.testTimeoutMs !== undefined ? { testTimeoutMs: opts.testTimeoutMs } : {}),
+      ...(opts.hookTimeoutMs !== undefined ? { hookTimeoutMs: opts.hookTimeoutMs } : {}),
+    }),
+  );
 
   const args = ["vitest", "run", "--config", configPath];
   if (!opts.quiet) args.push("--reporter=default");
@@ -98,7 +115,7 @@ export function runTests(opts: RunOptions): RunResult {
   const result = spawnSync(win ? "npx.cmd" : "npx", win ? args.map(quote) : args, {
     cwd: opts.root,
     stdio: opts.quiet ? "ignore" : "inherit",
-    env: process.env,
+    env: opts.configPath !== undefined ? { ...process.env, FEAT_CONFIG: opts.configPath } : process.env,
     shell: win,
   });
   const out: RunResult = { exitCode: result.status ?? 1 };

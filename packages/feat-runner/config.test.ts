@@ -28,6 +28,14 @@ describe("runConfigSource", () => {
     expect(src).toContain("passWithNoTests: false");
   });
 
+  it("carries the timeouts the caller computed from the active config (ADR-0024)", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "feat-runner-"));
+    const src = runConfigSource(root, [path.join(root, "g.test.ts")], { testTimeoutMs: 123456, hookTimeoutMs: 120000 });
+    expect(src).toContain("testTimeout: 123456,");
+    expect(src).toContain("hookTimeout: 120000,");
+    expect(runConfigSource(root, [path.join(root, "g.test.ts")])).not.toContain("testTimeout");
+  });
+
   it("config-function consumers are awaited, not spread raw", () => {
     const root = mkdtempSync(path.join(tmpdir(), "feat-runner-"));
     const src = runConfigSource(root, [path.join(root, "g.test.ts")]);

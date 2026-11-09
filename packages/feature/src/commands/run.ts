@@ -3,6 +3,7 @@
 // JUnit output per the config report block, suffixed per shard.
 
 import { readConfigOrExit } from "../config.js";
+import { runTimeouts, type Prepared } from "../pipeline.js";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { Command, Flags } from "@oclif/core";
@@ -35,7 +36,8 @@ export default class Run extends Command {
     // ADR-0017: fresh sidecar per run — staleness structurally impossible.
     rmSync(variablesSidecarPath(root, flags.config), { force: true });
 
-    let files = (await generateAll(root, flags.config)).map((f) => ({
+    let prepared: Prepared | undefined;
+    let files = (await generateAll(root, flags.config, { onPrepared: (p) => (prepared = p) })).map((f) => ({
       specId: f.specPath,
       out: f.outputPath,
       content: f.content,
@@ -75,7 +77,13 @@ export default class Run extends Command {
     const runOpts: Parameters<typeof runTests>[0] = {
       files: files.map((f) => path.relative(root, f.out)),
       root,
+      configPath: path.resolve(root, flags.config),
     };
+    if (prepared) {
+      const t = runTimeouts(prepared);
+      runOpts.testTimeoutMs = t.testTimeoutMs;
+      runOpts.hookTimeoutMs = t.hookTimeoutMs;
+    }
     if (junit !== undefined) runOpts.junitOutput = junit;
     if (flags.coverage) runOpts.coverage = true;
     const result = runTests(runOpts);

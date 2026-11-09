@@ -139,7 +139,7 @@ export interface HarnessCase {
     rejectionId?: string;
     errorCode?: string;
     response?: { status: number | string; schemaName: string; valueBlock?: Record<string, unknown>; golden?: string };
-    services: Record<string, { ordering: "ordered" | "unordered"; records?: unknown[]; contains?: unknown[] }>;
+    services: Record<string, { ordering?: "ordered" | "unordered"; records?: unknown[]; contains?: unknown[] }>;
   };
 }
 
@@ -225,6 +225,11 @@ export async function createHarness(opts: { configPath: string }): Promise<Harne
     await adapter.setup();
     services.set(key, adapter);
   }
+
+  // ADR-0024: the default ordering belongs to the ACTIVE tier (its consistency), not to generation:
+  // an event feed (eventual) is a multiset, anything else is a sequence.
+  const defaultOrdering = (key: string): "ordered" | "unordered" =>
+    config.services[key]?.consistency === "eventual" ? "unordered" : "ordered";
 
   // ADR-0023: what the case needs from its adapters, checked before anything runs.
   function preflight(c: HarnessCase): void {
@@ -369,7 +374,7 @@ export async function createHarness(opts: { configPath: string }): Promise<Harne
       diffResponse(captured, c.prediction.response as never, ctx, c.anchor, violations);
     for (const [key, assertion] of Object.entries(c.prediction.services)) {
       if (assertion.records !== undefined)
-        diffRecords(capturedRecords.get(key) ?? [], assertion.records as never, assertion.ordering, ctx, `${c.anchor} › ${key}`, violations);
+        diffRecords(capturedRecords.get(key) ?? [], assertion.records as never, assertion.ordering ?? defaultOrdering(key), ctx, `${c.anchor} › ${key}`, violations);
       if (assertion.contains !== undefined) {
         const adapter = services.get(key);
         if (!adapter) {

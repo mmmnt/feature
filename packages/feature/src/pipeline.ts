@@ -9,7 +9,7 @@ import path from "node:path";
 import type { BuiltSpec, FeatConfig, FeatSchemaAdapter } from "@mmmnt/feat-types";
 import { parse } from "@mmmnt/feat-core";
 import { derive, type TestTopology } from "@mmmnt/feat-derive";
-import { emit, EMITTER_VERSION } from "@mmmnt/feat-emit-ts";
+import { emit, timingEnvelope, EMITTER_VERSION } from "@mmmnt/feat-emit-ts";
 import { importAdapter } from "@mmmnt/feat-runtime";
 import { checkSeeds, formatSeedViolations, type SeedViolation } from "./seed-fixtures.js";
 
@@ -224,13 +224,25 @@ export async function prepareAll(root: string, configPath: string): Promise<Prep
   return out;
 }
 
-export async function generateAll(root: string, configPath: string): Promise<GeneratedFile[]> {
+/** The runner's timeouts for this run: the worst derived case under the ACTIVE config (ADR-0024). */
+export function runTimeouts(prepared: Prepared): { testTimeoutMs: number; hookTimeoutMs: number } {
+  return timingEnvelope(prepared.specs.flatMap((sp) => sp.topology.cases), prepared.config);
+}
+
+export async function generateAll(
+  root: string,
+  configPath: string,
+  opts: { onPrepared?: (prepared: Prepared) => void } = {},
+): Promise<GeneratedFile[]> {
   const prepared = await prepareAll(root, configPath);
+  opts.onPrepared?.(prepared);
   if (prepared.violations.length > 0)
     throw new Error(
       `${prepared.violations.length} seed violation(s); nothing was generated:\n${formatSeedViolations(prepared.violations)}`,
     );
   const { config, configAbs } = prepared;
+  // A tier overlay embeds its base's path, so the file is the same whichever tier generated it (ADR-0024).
+  const baseConfigAbs = config.extends ? path.resolve(path.dirname(configAbs), config.extends) : configAbs;
   const results: GeneratedFile[] = [];
 
   for (const { specAbs, specRel, spec, topology, specDir, registry, contractText } of prepared.specs) {
@@ -243,24 +255,19 @@ export async function generateAll(root: string, configPath: string): Promise<Gen
       hashInputs: {
         specText: readFileSync(specAbs, "utf8"),
         contractText,
+        // ADR-0024: only what could change the parse or the derived structure — the three closed
+        // reference spaces and the language version. Adapters, consistency, timeouts and options
+        // never enter the hash, so a generated file is byte-identical in every tier.
         configSlice: {
           featVersion: config.featVersion,
-          response: config.response
-            ? {
-                adapter: config.response.adapter,
-                commands: config.response.commands,
-                actors: config.response.actors,
-                // invoke feeds the emitted timing envelope, so it is derivation-relevant.
-                invoke: config.response.invoke,
-              }
-            : undefined,
-          services: config.services,
+          commands: Object.keys(config.response?.commands ?? {}).sort(),
+          actors: Object.keys(config.response?.actors ?? {}).filter((k) => k !== "default").sort(),
+          services: Object.keys(config.services).sort(),
         } as object,
       },
       specPath: specRel,
-      configPath: path.relative(specDir, configAbs),
-      invokeTimeoutMs:
-        typeof config.response?.invoke?.timeout === "number" ? config.response.invoke.timeout : undefined,
+      // The path embedded is the BASE's (the tier-independent one); FEAT_CONFIG names the active tier at run time.
+      configPath: path.relative(specDir, baseConfigAbs),
       emitterVersion: EMITTER_VERSION,
       featVersion: spec.featVersion,
     });
