@@ -25,6 +25,7 @@ function inputs(overrides: Partial<EmitInputs> = {}): EmitInputs {
     goldens: {},
     hashInputs: { specText: "x", contractText: "y", configSlice: {} },
     specPath: "specs/envelope.feat",
+    namespacePath: "specs/envelope.feat",
     configPath: "../feat.config.json",
     emitterVersion: "0.0.0-test",
     featVersion: "1.0",
@@ -49,6 +50,12 @@ describe("emitted file is environment-agnostic (ADR-0024)", () => {
 
   it("stays byte-deterministic for identical inputs", () => {
     expect(emit(inputs())).toBe(emit(inputs()));
+  });
+
+  it("hands the harness the spec path its namespace derives from (SPEC-RT-006)", () => {
+    const out = emit(inputs({ namespacePath: "adapters/kurrent/observe.feat" }));
+    expect(out).toContain('const SPEC_PATH = "adapters/kurrent/observe.feat";');
+    expect(out).toContain("createHarness({ configPath: CONFIG_PATH, specPath: SPEC_PATH })");
   });
 });
 

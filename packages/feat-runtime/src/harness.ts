@@ -9,7 +9,9 @@ import type {
   CapturedRecord, CapturedResponse, FeatConfig, FeatResponseAdapter, FeatServiceAdapter,
 } from "@mmmnt/feat-types";
 import { importAdapter } from "./import-adapter.js";
+import { HarnessConfigurationError } from "./errors.js";
 import { loadConfig, variablesSidecarPath } from "./load-config.js";
+import { assertNamespaceNotConfigured, deriveNamespace } from "./namespace.js";
 import { diffContains, diffRecords, diffResponse, pathGet, type InlineData, type MatchContext } from "./matcher.js";
 import { EXCLUSIVE_FAULTS, type Fault, type FaultCatalog, type FaultCount, type ReadQuery } from "@mmmnt/feat-types";
 
@@ -143,20 +145,7 @@ export interface HarnessCase {
   };
 }
 
-/**
- * A case asks for something the adapters in front of it cannot give (ADR-0023). Raised BEFORE the case
- * has any effect — no reset, seed, execute or invoke has run — and never a silent pass.
- */
-export class HarnessConfigurationError extends Error {
-  constructor(
-    public code: "CLOCK_UNSUPPORTED" | "MODE_UNSUPPORTED" | "FAULT_UNSUPPORTED" | "FAULT_REQUIRES_SERIAL",
-    message: string,
-    public service?: string,
-    public mode?: "state",
-  ) {
-    super(`Configuration error (exit 2): ${message}`);
-  }
-}
+export { HarnessConfigurationError } from "./errors.js";
 
 const COUNT_WORDS: Record<FaultCount, string> = { once: "once", times: "times n", reset: "until reset" };
 
@@ -202,7 +191,7 @@ export interface Harness {
   teardown(): Promise<void>;
 }
 
-export async function createHarness(opts: { configPath: string }): Promise<Harness> {
+export async function createHarness(opts: { configPath: string; specPath?: string }): Promise<Harness> {
   const loaded = await loadConfig({ path: opts.configPath });
   if (loaded.status === "ERR")
     throw new Error(`Configuration error (exit 2): ${JSON.stringify(loaded.body)}`);
@@ -211,19 +200,48 @@ export async function createHarness(opts: { configPath: string }): Promise<Harne
   // so generated tests behave identically regardless of the invoking cwd.
   const projectRoot = path.dirname(path.resolve(process.cwd(), opts.configPath));
 
-  let response: FeatResponseAdapter | undefined;
-  if (config.response) {
-    const mod = await importAdapter(config.response.adapter, projectRoot);
-    response = mod.createAdapter({ ...config.response, projectRoot }) as FeatResponseAdapter;
-    await response.setup(config.response.invoke ?? {});
-  }
+  // SPEC-RT-006: one namespace per spec file, derived from its path alone and handed to every adapter.
+  assertNamespaceNotConfigured(config as never, opts.configPath);
+  const namespace = opts.specPath !== undefined ? deriveNamespace(opts.specPath, projectRoot) : undefined;
+  const priorNamespaceEnv = process.env.FEAT_NAMESPACE;
+  if (namespace !== undefined) process.env.FEAT_NAMESPACE = namespace;
+  const restoreEnv = () => {
+    if (namespace === undefined) return;
+    if (priorNamespaceEnv === undefined) delete process.env.FEAT_NAMESPACE;
+    else process.env.FEAT_NAMESPACE = priorNamespaceEnv;
+  };
+  // A host (or in-process adapter) that reports a namespace must report the one it was given: a host that
+  // ignores it writes outside the namespace, and an absence proof would pass while the system misbehaves.
+  const honoured = async (who: string, adapter: { reportedNamespace?: () => string | undefined | Promise<string | undefined> }) => {
+    if (namespace === undefined || typeof adapter.reportedNamespace !== "function") return;
+    const reported = await adapter.reportedNamespace();
+    if (reported !== namespace)
+      throw new HarnessConfigurationError(
+        "NAMESPACE_NOT_HONOURED",
+        `${who} reports ${reported === undefined ? "no namespace" : `namespace ${reported}`}, but the namespace delivered for ${opts.specPath} is ${namespace}.`,
+      );
+  };
 
+  let response: FeatResponseAdapter | undefined;
   const services = new Map<string, FeatServiceAdapter>();
-  for (const [key, svc] of Object.entries(config.services)) {
-    const mod = await importAdapter(svc.adapter, projectRoot);
-    const adapter = mod.createAdapter({ key, ...svc, projectRoot }) as FeatServiceAdapter;
-    await adapter.setup();
-    services.set(key, adapter);
+  try {
+    if (config.response) {
+      const mod = await importAdapter(config.response.adapter, projectRoot);
+      response = mod.createAdapter({ ...config.response, projectRoot, ...(namespace !== undefined ? { namespace } : {}) }) as FeatResponseAdapter;
+      await response.setup(config.response.invoke ?? {});
+      await honoured("the response adapter", response);
+    }
+
+    for (const [key, svc] of Object.entries(config.services)) {
+      const mod = await importAdapter(svc.adapter, projectRoot);
+      const adapter = mod.createAdapter({ key, ...svc, projectRoot, ...(namespace !== undefined ? { namespace } : {}) }) as FeatServiceAdapter;
+      await adapter.setup();
+      await honoured(`the adapter for '${key}'`, adapter);
+      services.set(key, adapter);
+    }
+  } catch (e) {
+    restoreEnv();
+    throw e;
   }
 
   // ADR-0024: the default ordering belongs to the ACTIVE tier (its consistency), not to generation:
@@ -403,8 +421,12 @@ export async function createHarness(opts: { configPath: string }): Promise<Harne
   return {
     runCase,
     async teardown() {
-      for (const adapter of services.values()) await adapter.teardown();
-      if (response) await response.teardown();
+      try {
+        for (const adapter of services.values()) await adapter.teardown();
+        if (response) await response.teardown();
+      } finally {
+        restoreEnv();
+      }
     },
   };
 }

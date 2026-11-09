@@ -29,6 +29,10 @@
       "PreflightSerial": {
         "module": "packages/feat-runner/fixtures/probe.mjs",
         "export": "preflightSerial"
+      },
+      "RunHarnessNamespace": {
+        "module": "packages/feat-runtime/fixtures/harness/probe.mjs",
+        "export": "runNamespace"
       }
     }
   },

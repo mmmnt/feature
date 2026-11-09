@@ -1,0 +1,12 @@
+{
+  "extends": "namespace.config.json",
+  "services": {
+    "store": {
+      "adapter": "./namespace-stub.mjs",
+      "consistency": "strong",
+      "options": {
+        "namespace": "fixed"
+      }
+    }
+  }
+}

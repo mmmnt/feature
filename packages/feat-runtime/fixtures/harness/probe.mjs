@@ -39,3 +39,51 @@ export async function runCases(input) {
   if (state.armedDetail !== undefined) body.armedDetail = state.armedDetail;
   return { status: "OK", body };
 }
+
+// ── SPEC-RT-006: RunHarnessNamespace ──
+import { assertNoNamespaceCollision, deriveNamespace, normalizeSpecPath, NAMESPACE_PATTERN } from "../../src/index.ts";
+
+export async function runNamespace(input) {
+  const st = (globalThis.__featNamespaceProbe = { trace: [], hostKind: input.hostKind, hostEcho: input.hostEcho ?? "ok" });
+  const configName = { configured: "namespace-configured", "configured-overlay": "namespace-configured-overlay" }[input.config ?? ""] ?? "namespace";
+  const configPath = path.resolve(process.cwd(), `packages/feat-runtime/fixtures/harness/${configName}.config.json`);
+  const configDir = path.dirname(configPath);
+  const specs = input.specs ?? [];
+  const digest = input.digest === "collide" ? () => "abcdef0123456789" : undefined;
+  const envName = input.env;
+  const prior = envName ? process.env[envName] : undefined;
+  const harnesses = [];
+  const fail = (e) => {
+    if (typeof e?.code !== "string") throw e;
+    return { status: "ERR", body: { code: e.code, trace: st.trace.join(" "), detail: e.message } };
+  };
+  try {
+    assertNoNamespaceCollision(specs, configDir, digest);
+    for (const specPath of specs) harnesses.push(await createHarness({ configPath, specPath }));
+    for (const h of harnesses) {
+      for (let i = 1; i <= (input.cases ?? 0); i++) {
+        st.trace.push(`case:c${i}`);
+        await h.runCase(
+          { anchor: `c${i}`, name: `c${i}`, when: { command: "Ping", payload: {} }, prediction: { type: "success", services: { store: { records: [] } } } },
+          { schemas: {}, goldens: {} },
+        );
+        if (envName) st.trace.push(`env=${process.env[envName]}`);
+      }
+    }
+  } catch (e) {
+    for (const h of harnesses.reverse()) await h.teardown();
+    return fail(e);
+  }
+  if (envName) st.trace.push("teardown");
+  for (const h of harnesses.reverse()) await h.teardown();
+  if (envName) st.trace.push(process.env[envName] === prior ? "env=restored" : `env=${process.env[envName]}`);
+  const namespaces = specs.map((sp) => `${normalizeSpecPath(sp, configDir)}=${deriveNamespace(sp, configDir)}`);
+  return {
+    status: "OK",
+    body: {
+      namespaces: namespaces.join(","),
+      trace: st.trace.join(" "),
+      valid: specs.every((sp) => NAMESPACE_PATTERN.test(deriveNamespace(sp, configDir))),
+    },
+  };
+}

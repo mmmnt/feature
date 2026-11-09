@@ -218,7 +218,12 @@ export interface CapturedRecord {
 
 // ── Adapter interfaces (ADR-0001: modules export createAdapter(config)) ──────
 
-export interface FeatResponseAdapter {
+/** The namespace an adapter (or a spec host) is running under, if it can say (SPEC-RT-006). */
+export interface ReportsNamespace {
+  reportedNamespace?(): string | undefined | Promise<string | undefined>;
+}
+
+export interface FeatResponseAdapter extends ReportsNamespace {
   /**
    * Optional (ADR-0023): receive the scenario clock — an ISO-8601 instant with a zone designator, or
    * null for "no frozen clock". The harness delivers it on every case, after the resets. A response
@@ -259,7 +264,7 @@ export interface FaultFiring {
   count: number;
 }
 
-export interface FeatServiceAdapter {
+export interface FeatServiceAdapter extends ReportsNamespace {
   /** What this binding can inject (ADR-0023); a fault outside it, or with an undeclared count, is FAULT_UNSUPPORTED. */
   readonly faults?: FaultCatalog;
   /** Arm a fault as a precondition; reset() MUST disarm everything. The adapter's own capture, read and seed are never faulted. */

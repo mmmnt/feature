@@ -268,6 +268,7 @@ export async function generateAll(
         } as object,
       },
       specPath: specRel,
+      namespacePath: path.relative(path.dirname(baseConfigAbs), specAbs).split(path.sep).join("/"),
       // The path embedded is the BASE's (the tier-independent one); FEAT_CONFIG names the active tier at run time.
       configPath: path.relative(specDir, baseConfigAbs),
       emitterVersion: EMITTER_VERSION,

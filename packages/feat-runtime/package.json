@@ -21,7 +21,7 @@
   "scripts": {
     "build": "node scripts/copy-schema.mjs && tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --exclude '**/load-config.test.ts' --exclude '**/harness-observation.test.ts' --exclude '**/harness-faults.test.ts' --exclude '**/load-config-extends.test.ts' --passWithNoTests"
+    "test": "vitest run --exclude '**/load-config.test.ts' --exclude '**/harness-observation.test.ts' --exclude '**/harness-faults.test.ts' --exclude '**/load-config-extends.test.ts' --exclude '**/harness-namespace.test.ts' --passWithNoTests"
   },
   "dependencies": {
     "@mmmnt/feat-types": "workspace:^",

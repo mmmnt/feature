@@ -451,6 +451,13 @@ that per-spec `.contract.json` registries `$ref` into.
   itself extends is `EXTENDS_CHAIN`. The base is the spec tier (in-process, in-memory, `strong`); an
   overlay is the integration tier. Every command (`run`, `verify`, `audit`, `lint`, `fmt`, `report`,
   `generate`, `parse`) reads the merged config, so a drifting overlay is refused everywhere.
+- **Namespace (SPEC-RT-006)**: the runner derives one namespace per spec file from the file's path
+  alone — `"s"` + the first 12 hex characters of the SHA-256 of the path relative to the config
+  directory (`/` separators, no leading `./`) — and hands it to every adapter
+  (`createAdapter({ ...config, namespace })`), sets `FEAT_NAMESPACE` for the file and checks any
+  adapter or spec host that reports one (`NAMESPACE_NOT_HONOURED`). Two files deriving one value stop
+  the run (`NAMESPACE_COLLISION`); a `namespace` written in a config file's response config or a
+  service's options is refused (`NAMESPACE_CONFIGURED`). Namespaces isolate data, not availability.
 - **Selecting a tier**: `feat run --config <overlay>`; `feat run` hands the generated suites the
   active config as `FEAT_CONFIG`. `specs.exclude` (globs relative to `specs.dir`) removes spec files
   from a tier's run.
