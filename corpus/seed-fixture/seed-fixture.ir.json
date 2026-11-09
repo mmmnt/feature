@@ -1,0 +1,94 @@
+{
+  "featVersion": "1.0",
+  "identity": {
+    "id": "SPEC-SHF-001",
+    "name": "CountShelf query",
+    "context": "Catalog",
+    "aggregate": "Shelf",
+    "type": "query",
+    "status": "agreed"
+  },
+  "construct": [
+    {
+      "kind": "handler",
+      "path": "features/count-shelf/handler.ts"
+    },
+    {
+      "kind": "touches",
+      "glob": "features/count-shelf/**"
+    }
+  ],
+  "enforce": [
+    {
+      "kind": "constraint",
+      "text": "read the shelf rows for the given shelf from the projection store"
+    },
+    {
+      "kind": "constraint",
+      "text": "never mutate state; a query is a pure read"
+    },
+    {
+      "kind": "rejects",
+      "rejectionId": "NOT_FOUND",
+      "text": "the shelf holds no rows"
+    }
+  ],
+  "contract": [
+    {
+      "kind": "input",
+      "schemaName": "CountShelfInput"
+    },
+    {
+      "kind": "response",
+      "schemaName": "ShelfCount"
+    },
+    {
+      "kind": "record",
+      "schemaName": "ShelfItemRow"
+    },
+    {
+      "kind": "error",
+      "schemaName": "RFC7807",
+      "from": "contracts/adrs/error-format"
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "counts the fixture-seeded shelf",
+      "given": {
+        "context": [
+          "The shelf holds three rows, seeded from a fixture: two typed against ShelfItemRow and one untyped."
+        ],
+        "seeds": [
+          {
+            "service": "projectionStore",
+            "fixture": "fixtures/shelf.rows.json"
+          }
+        ]
+      },
+      "when": {
+        "command": "CountShelf",
+        "payload": {
+          "shelfId": "3c1d5e7f-0a2b-4c4d-8e6f-1a3b5c7d9e0f"
+        }
+      },
+      "prediction": {
+        "type": "success",
+        "response": {
+          "status": 200,
+          "schemaName": "ShelfCount",
+          "valueBlock": {
+            "shelfId": {
+              "matcher": "whenRef",
+              "path": "shelfId"
+            },
+            "count": {
+              "matcher": "literal",
+              "value": 3
+            }
+          }
+        }
+      }
+    }
+  ]
+}

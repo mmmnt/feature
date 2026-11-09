@@ -1,0 +1,5 @@
+[
+  { "type": "ShelfItem", "schemaName": "ShelfItemRow", "values": { "shelfId": "3c1d5e7f-0a2b-4c4d-8e6f-1a3b5c7d9e0f", "sku": "A-100", "qty": 4 } },
+  { "type": "ShelfItem", "schemaName": "ShelfItemRow", "values": { "shelfId": "3c1d5e7f-0a2b-4c4d-8e6f-1a3b5c7d9e0f", "sku": "B-200", "qty": 0 } },
+  { "type": "ShelfNote", "values": { "shelfId": "3c1d5e7f-0a2b-4c4d-8e6f-1a3b5c7d9e0f", "note": "untyped: shape-checked only" } }
+]

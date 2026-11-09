@@ -1,0 +1,40 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-SHF-001",
+  "schemas": {
+    "CountShelfInput": {
+      "type": "object",
+      "required": ["shelfId"],
+      "additionalProperties": false,
+      "properties": {
+        "shelfId": { "type": "string", "format": "uuid" }
+      }
+    },
+    "ShelfCount": {
+      "type": "object",
+      "required": ["shelfId", "count"],
+      "properties": {
+        "shelfId": { "type": "string", "format": "uuid" },
+        "count": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "ShelfItemRow": {
+      "type": "object",
+      "required": ["shelfId", "sku", "qty"],
+      "properties": {
+        "shelfId": { "type": "string", "format": "uuid" },
+        "sku": { "type": "string", "minLength": 1 },
+        "qty": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "RFC7807": {
+      "type": "object",
+      "required": ["type", "title", "status"],
+      "properties": {
+        "type": { "type": "string" },
+        "title": { "type": "string" },
+        "status": { "type": "integer" }
+      }
+    }
+  }
+}

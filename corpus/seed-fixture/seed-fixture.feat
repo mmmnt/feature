@@ -1,0 +1,37 @@
+feat 1.0
+
+# Corpus exemplar #14 — the seed fixture form, checked (ADR-0003 + ADR-0007, SPEC-GEN-001).
+# `seed <service> from "<path>"` names a JSON array of { type, schemaName?, values } records, resolved
+# against THIS file's directory. At generate time every record's schemaName must be declared in
+# `contract:` (here ShelfItemRow) and its values must validate against that schema; a record with no
+# schemaName is shape-checked only. The records are inlined in file order, so the generated suite
+# is self-contained. Violations are generate errors, not parse errors: the parser sees only the path.
+
+spec SPEC-SHF-001 "CountShelf query"
+context Catalog
+aggregate Shelf
+type query
+status agreed
+
+construct:
+  handler at features/count-shelf/handler.ts
+  touches features/count-shelf/**
+
+enforce:
+  read the shelf rows for the given shelf from the projection store
+  never mutate state; a query is a pure read
+  rejects NOT_FOUND when the shelf holds no rows
+
+contract:
+  input CountShelfInput
+  response ShelfCount
+  record ShelfItemRow
+  error RFC7807 from "contracts/adrs/error-format"
+
+scenario "counts the fixture-seeded shelf":
+  given:
+    The shelf holds three rows, seeded from a fixture: two typed against ShelfItemRow and one untyped.
+    seed projectionStore from "fixtures/shelf.rows.json"
+  when: CountShelf { shelfId: "3c1d5e7f-0a2b-4c4d-8e6f-1a3b5c7d9e0f" }
+  predict success:
+    response 200 ShelfCount { shelfId: @when.shelfId, count: 3 }

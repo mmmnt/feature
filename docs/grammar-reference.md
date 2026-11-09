@@ -210,6 +210,14 @@ Three line kinds, freely mixed:
 Seed records take **full literal values only** — no matchers, no `@when` (seeds are writes, and
 `given` precedes `when`). Optional `with <Schema>` validates seed data at generate time.
 Fixture JSON is data, not glue code — DP-3 stands; imperative seed scripts are forbidden.
+At generate time (SPEC-GEN-001) every seed record is checked: a `seed ... from "<path>"` fixture is
+resolved against the directory of the spec, must be a JSON array of `{ type, schemaName?, values }`
+records, and each record's `schemaName` must be declared in `contract:` (ADR-0007) with `values` valid
+against that schema; inline `with <Schema>` values get the same values check. A record without
+`schemaName` is shape-checked only. Violations are generate errors (not parse errors), all reported
+together with the fixture path (or `given › seed[i]`) and record index (0-based), under the codes
+`SEED_FIXTURE_NOT_FOUND`, `SEED_FIXTURE_NOT_JSON`, `SEED_FIXTURE_NOT_RECORDS`,
+`SEED_FIXTURE_SCHEMA_UNDECLARED`, `SEED_FIXTURE_VALUES_INVALID` and `SEED_VALUES_INVALID` (inline).
 
 ### 5.1b Spec variables — `variables:` (ADR-0017)
 

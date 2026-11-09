@@ -26,3 +26,4 @@ pnpm dlx ajv-cli@5 validate --spec=draft7 -s schemas/contract.schema.json -d "co
 ```
 | 11 | `waitlist-variables/` | SPEC-WL-001 | Spec variables (ADR-0017): `variables:` block, source calls (`now()`), definition-side template composition, `${ref}` interpolation in when-payloads and predictions, idempotent-repeat via shared per-case resolution |
 | `userinfo-profile` | #12 — quoted payload keys (ADR-0019): colon-namespaced IdP claims in payloads and shapes | SPEC-IDP-001 |
+| 14 | `seed-fixture/` | SPEC-SHF-001 | The seed fixture form, checked (ADR-0003 + ADR-0007, SPEC-GEN-001): `seed <service> from "<path>"` resolved against the spec directory; fixture records are `{type, schemaName?, values}`, each schemaName declared in `contract:` and its values valid against it at generate time; a record with no schemaName is shape-checked only; inlined in file order so the generated suite is self-contained; query spec |
