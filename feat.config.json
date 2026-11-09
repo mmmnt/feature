@@ -13,6 +13,10 @@
       "LoadConfig": {
         "module": "packages/feat-runtime/src/load-config.ts",
         "export": "loadConfig"
+      },
+      "InlineSeedFixtures": {
+        "module": "packages/feature/src/seed-fixtures.ts",
+        "export": "inlineSeedFixtures"
       }
     }
   },

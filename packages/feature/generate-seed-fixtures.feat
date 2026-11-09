@@ -1,0 +1,139 @@
+feat 1.0
+
+# SPEC-GEN-001 — seed fixtures are checked when `feat generate` inlines them (ADR-0003 fixture
+# form, ADR-0007 closed schema reference space). Today pipeline.ts reads `seed <svc> from "<path>"`,
+# casts the JSON and inlines it unchecked. This spec is the missing check. Rulings 79123645 and 473acc1d (Sift, 2026-11-09): fixture seeds are built
+# before Sift's specs move forward. Ruling 05537e6e (Sift workspace, 2026-11-09): inline `with <Schema>`
+# seed values are validated in the same change, and the founder flipped the spec draft -> agreed.
+#
+# Same mechanism as everything else in the closed space: declared names come from the paired
+# contract, values are validated by the configured schema adapter (FeatSchemaAdapter.validate, the
+# adapter that resolved the registry). Inline `seed <svc> [ T with S {..} ]` records get the same
+# values check (ruling 05537e6e); their undeclared names stay the parser's UNDECLARED_SCHEMA.
+
+spec SPEC-GEN-001 "Check and inline seed fixtures at generate time"
+context Toolchain
+aggregate Generation
+type command
+status agreed
+
+construct:
+  handler at packages/feature/src/seed-fixtures.ts
+  touches packages/feature/src/seed-fixtures.ts
+  touches packages/feature/src/pipeline.ts
+  touches packages/feature/generate-seed-fixtures.feat
+  touches packages/feature/generate-seed-fixtures.contract.json
+  touches packages/feature/fixtures/seed/**
+  touches feat.config.json
+  imports parse from @mmmnt/feat-core
+  needs SPEC-CORE-001
+  The workspace is the directory holding the given config. For every spec under the config's specs.dir,
+  every seed of the form `seed <service> from "<path>"` is resolved against the directory of the spec
+  that names it (never the config directory, never the working directory), read, and parsed as JSON.
+  A fixture is a JSON array of records { type: string, schemaName?: string, values: object }, the
+  shape of an inline seed record. The step runs before emit; the checked records replace the seed
+  in the topology, in file order, so the generated suite carries the data and reads no fixture at run time.
+  schemaName is optional per the SeedRecord type: a record without one is shape-checked only. A record
+  with one must name a schema declared in the spec's paired contract (the same closed space as ADR-0007),
+  and its values must validate against that schema through the configured schema adapter.
+  Records are indexed from 0 in file order. Every message names the fixture path exactly as the spec
+  wrote it and, for a record problem, the record index.
+  The refusal's code is that of the first violation in spec order, then seed order, then record order; its count is the
+  number of violations found, and its detail lists them all, one per line.
+  The step collects every violation across every fixture of every spec before answering, and writes nothing:
+  no generated test file exists after a refusal. The caller (feat generate) writes only after this step answers OK.
+  Inline seed records (`seed <service> [ <Type> with <Schema> { ... } ]`) are checked in the same step:
+  their values must validate against the declared schema through the same adapter. An undeclared inline
+  schema name never reaches this step: the parser refuses it (UNDECLARED_SCHEMA). Inline records are not
+  otherwise altered. An inline problem is anchored `scenario "<name>" given › seed[i] record j`, where i is
+  the seed's index in that scenario's given and j the record's index in the list.
+  The report always states how many seed records were checked (fixture and inline) and how many fixtures
+  were inlined, so a pass is never silent about its input.
+
+enforce:
+  resolve every fixture path against the directory of the spec that names it
+  rejects SEED_FIXTURE_NOT_FOUND when the resolved path names no readable file
+  rejects SEED_FIXTURE_NOT_JSON when the file's contents are not valid JSON
+  rejects SEED_FIXTURE_NOT_RECORDS when the JSON is not an array of { type, schemaName?, values } records
+  rejects SEED_FIXTURE_SCHEMA_UNDECLARED when a record's schemaName is absent from the paired contract
+  rejects SEED_FIXTURE_VALUES_INVALID when a fixture record's values fail the declared schema
+  rejects SEED_VALUES_INVALID when an inline seed record's values fail the declared schema
+  report every violation in one answer, not only the first
+  validate inline seed record values against the declared schema, leaving the records unchanged
+
+contract:
+  input SeedFixtureInput
+  response SeedFixtureReport
+  error SeedFixtureError
+
+scenario "a valid fixture is inlined in file order and leaves nothing to read at run time":
+  when: InlineSeedFixtures { config: "packages/feature/fixtures/seed/valid/feat.config.json" }
+  predict success:
+    response OK SeedFixtureReport { specs: 1, fixtures: 1, records: 3, unresolved: 0, recordTypes: ["ItemAdded", "ItemRenamed", "ItemAdded"] }
+    filesystem has []
+
+scenario "a fixture path resolves against the spec, not the config":
+  when: InlineSeedFixtures { config: "packages/feature/fixtures/seed/relative/feat.config.json" }
+  predict success:
+    response OK SeedFixtureReport { specs: 1, fixtures: 1, records: 1, unresolved: 0, recordTypes: ["ItemAdded"] }
+    filesystem has []
+
+scenario "valid inline seeds pass and are counted without reading any fixture":
+  when: InlineSeedFixtures { config: "packages/feature/fixtures/seed/inline/feat.config.json" }
+  predict success:
+    response OK SeedFixtureReport { specs: 1, fixtures: 0, records: 1, unresolved: 0, recordTypes: ["ItemAdded"] }
+    filesystem has []
+
+scenario "an inline record whose values fail the declared schema is refused with its anchor":
+  when: InlineSeedFixtures { config: "packages/feature/fixtures/seed/inline-bad/feat.config.json" }
+  predict rejection SEED_VALUES_INVALID:
+    response ERR SeedFixtureError { code: "SEED_VALUES_INVALID", count: 1, detail: matching "add an item.*given › seed\\[0\\] record 0.*ItemEvent.*/itemId must be string" }
+    filesystem has []
+
+scenario "a record naming an undeclared schema is refused with its fixture and index":
+  when: InlineSeedFixtures { config: "packages/feature/fixtures/seed/undeclared/feat.config.json" }
+  predict rejection SEED_FIXTURE_SCHEMA_UNDECLARED:
+    response ERR SeedFixtureError { code: "SEED_FIXTURE_SCHEMA_UNDECLARED", count: 1, detail: matching "data/items\\.json record 1.*NoSuchSchema" }
+    filesystem has []
+
+scenario "a record whose values fail the declared schema is refused with the schema error":
+  when: InlineSeedFixtures { config: "packages/feature/fixtures/seed/bad-values/feat.config.json" }
+  predict rejection SEED_FIXTURE_VALUES_INVALID:
+    response ERR SeedFixtureError { code: "SEED_FIXTURE_VALUES_INVALID", count: 1, detail: matching "data/items\\.json record 0.*ItemEvent.*/itemId must be string" }
+    filesystem has []
+
+scenario "a fixture file that does not exist is refused and named":
+  when: InlineSeedFixtures { config: "packages/feature/fixtures/seed/missing/feat.config.json" }
+  predict rejection SEED_FIXTURE_NOT_FOUND:
+    response ERR SeedFixtureError { code: "SEED_FIXTURE_NOT_FOUND", count: 1, detail: matching "data/absent\\.json" }
+    filesystem has []
+
+scenario "a fixture file that is not JSON is refused and named":
+  when: InlineSeedFixtures { config: "packages/feature/fixtures/seed/not-json/feat.config.json" }
+  predict rejection SEED_FIXTURE_NOT_JSON:
+    response ERR SeedFixtureError { code: "SEED_FIXTURE_NOT_JSON", count: 1, detail: matching "data/items\\.json" }
+    filesystem has []
+
+scenario "a fixture that is not an array is refused and named":
+  when: InlineSeedFixtures { config: "packages/feature/fixtures/seed/not-array/feat.config.json" }
+  predict rejection SEED_FIXTURE_NOT_RECORDS:
+    response ERR SeedFixtureError { code: "SEED_FIXTURE_NOT_RECORDS", count: 1, detail: matching "data/items\\.json" }
+    filesystem has []
+
+scenario "a record without values is refused with its index":
+  when: InlineSeedFixtures { config: "packages/feature/fixtures/seed/bad-record/feat.config.json" }
+  predict rejection SEED_FIXTURE_NOT_RECORDS:
+    response ERR SeedFixtureError { code: "SEED_FIXTURE_NOT_RECORDS", count: 1, detail: matching "data/items\\.json record 1.*values" }
+    filesystem has []
+
+scenario "every violation of every fixture is reported together":
+  when: InlineSeedFixtures { config: "packages/feature/fixtures/seed/multi/feat.config.json" }
+  predict rejection SEED_FIXTURE_SCHEMA_UNDECLARED:
+    response ERR SeedFixtureError { code: "SEED_FIXTURE_SCHEMA_UNDECLARED", count: 3, detail: matching "data/first\\.json record 2" }
+    filesystem has []
+
+scenario "inline and fixture violations are reported together":
+  when: InlineSeedFixtures { config: "packages/feature/fixtures/seed/mixed/feat.config.json" }
+  predict rejection SEED_VALUES_INVALID:
+    response ERR SeedFixtureError { code: "SEED_VALUES_INVALID", count: 2, detail: matching "data/items\\.json record 1" }
+    filesystem has []

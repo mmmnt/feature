@@ -1,0 +1,32 @@
+{
+  "featVersion": "1.0",
+  "schemas": {
+    "adapter": "@mmmnt/feat-schema-json"
+  },
+  "response": {
+    "adapter": "@mmmnt/feat-adapter-handler",
+    "commands": {
+      "AddItem": {
+        "module": "src/add-item.ts",
+        "export": "addItem"
+      }
+    }
+  },
+  "services": {
+    "store": {
+      "adapter": "@mmmnt/feat-adapter-memory",
+      "consistency": "acid"
+    }
+  },
+  "specs": {
+    "dir": ".",
+    "pattern": "**/*.feat",
+    "contractPattern": "**/*.contract.json",
+    "outputPattern": "{name}.test.ts"
+  },
+  "report": {
+    "format": [
+      "console"
+    ]
+  }
+}

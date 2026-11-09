@@ -10,6 +10,7 @@ import { parse } from "@mmmnt/feat-core";
 import { derive, type TestTopology } from "@mmmnt/feat-derive";
 import { emit, EMITTER_VERSION } from "@mmmnt/feat-emit-ts";
 import { importAdapter } from "@mmmnt/feat-runtime";
+import { checkSeeds, formatSeedViolations, type SeedViolation } from "./seed-fixtures.js";
 
 // "fixtures" is excluded by convention: fixture .feat files are test vectors
 // (e.g. the parser's bad-input corpus), not project specs.
@@ -100,42 +101,73 @@ function collectGoldens(topology: TestTopology, specDir: string): Record<string,
   return goldens;
 }
 
-export async function generateAll(root: string, configPath: string): Promise<GeneratedFile[]> {
+export interface PreparedSpec {
+  specAbs: string;
+  specRel: string;
+  spec: BuiltSpec;
+  topology: TestTopology;
+  specDir: string;
+  registry: Record<string, object>;
+  contractText: string;
+}
+
+export interface Prepared {
+  config: FeatConfig;
+  configAbs: string;
+  specs: PreparedSpec[];
+  /** SPEC-GEN-001: every seed violation across every spec, in spec → scenario → seed → record order. */
+  violations: SeedViolation[];
+  fixtures: number;
+  records: number;
+  recordTypes: string[];
+}
+
+// Parse, derive and resolve every spec, checking and inlining its seeds (SPEC-GEN-001).
+// Writes nothing; a seed violation is collected, never thrown, so all are reported together.
+export async function prepareAll(root: string, configPath: string): Promise<Prepared> {
   const configAbs = path.resolve(root, configPath);
   const config = JSON.parse(readFileSync(configAbs, "utf8")) as FeatConfig;
   const specs = discoverSpecs(root, config.specs.dir);
   // The project root is where the config lives — adapter resolution anchors there, so
   // generate behaves identically regardless of the invoking cwd (as the harness does).
   const schemaAdapter = await loadSchemaAdapter(config, path.dirname(configAbs));
-  const results: GeneratedFile[] = [];
+  const out: Prepared = { config, configAbs, specs: [], violations: [], fixtures: 0, records: 0, recordTypes: [] };
 
   for (const specAbs of specs) {
     const specRel = path.relative(root, specAbs);
-    const parsed = await parse({ spec: specRel, config: configPath });
+    const parsed = await parse({ spec: specAbs, config: configAbs });
     if (parsed.status === "ERR")
       throw new Error(`Parse failed for ${specRel}: ${JSON.stringify(parsed.body)}`);
     const spec = parsed.body as unknown as BuiltSpec;
 
     const topology = derive(spec, config);
     const specDir = path.dirname(specAbs);
-
-    // Seed fixtures inline at generate time (ADR-0003 fixture form; keeps derive pure
-    // and generated tests self-contained per ADR-0001).
-    for (const c of topology.cases) {
-      if (!c.given?.seeds) continue;
-      c.given.seeds = c.given.seeds.map((seed) => {
-        if ("fixture" in seed) {
-          const records = JSON.parse(
-            readFileSync(path.resolve(specDir, seed.fixture), "utf8"),
-          ) as { type: string; schemaName?: string; values: Record<string, unknown> }[];
-          return { service: seed.service, records };
-        }
-        return seed;
-      });
-    }
     const baseName = path.basename(specAbs, ".feat");
     const contractPath = path.join(specDir, `${baseName}.contract.json`);
     const { registry, text: contractText } = await resolveContract(contractPath, schemaAdapter);
+
+    // Seeds are checked, and fixture seeds inlined, at generate time (ADR-0003 fixture form;
+    // SPEC-GEN-001): derive stays pure and generated tests stay self-contained per ADR-0001.
+    const seedCheck = checkSeeds(topology, specDir, registry, schemaAdapter);
+    out.violations.push(...seedCheck.violations);
+    out.fixtures += seedCheck.fixtures;
+    out.records += seedCheck.records;
+    out.recordTypes.push(...seedCheck.recordTypes);
+    out.specs.push({ specAbs, specRel, spec, topology, specDir, registry, contractText });
+  }
+  return out;
+}
+
+export async function generateAll(root: string, configPath: string): Promise<GeneratedFile[]> {
+  const prepared = await prepareAll(root, configPath);
+  if (prepared.violations.length > 0)
+    throw new Error(
+      `${prepared.violations.length} seed violation(s); nothing was generated:\n${formatSeedViolations(prepared.violations)}`,
+    );
+  const { config, configAbs } = prepared;
+  const results: GeneratedFile[] = [];
+
+  for (const { specAbs, specRel, spec, topology, specDir, registry, contractText } of prepared.specs) {
     const goldens = collectGoldens(topology, specDir);
 
     const content = emit({
@@ -169,7 +201,7 @@ export async function generateAll(root: string, configPath: string): Promise<Gen
 
     const outputPath = path.join(
       specDir,
-      config.specs.outputPattern.replace("{name}", baseName),
+      config.specs.outputPattern.replace("{name}", path.basename(specAbs, ".feat")),
     );
     results.push({ specPath: specRel, outputPath, content });
   }

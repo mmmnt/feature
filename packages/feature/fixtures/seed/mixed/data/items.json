@@ -1,0 +1,18 @@
+[
+  {
+    "type": "ItemAdded",
+    "values": {
+      "itemId": "11111111-0000-4000-8000-000000000001",
+      "name": "Item-1"
+    },
+    "schemaName": "ItemEvent"
+  },
+  {
+    "type": "X",
+    "values": {
+      "itemId": "11111111-0000-4000-8000-000000000002",
+      "name": "Item-2"
+    },
+    "schemaName": "NoSuchSchema"
+  }
+]
