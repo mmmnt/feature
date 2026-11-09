@@ -1,0 +1,23 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-ADPHND-001",
+  "schemas": {
+    "ProbeInput": {
+      "type": "object",
+      "required": ["script"],
+      "additionalProperties": false,
+      "properties": { "script": { "type": "string", "minLength": 1 } }
+    },
+    "ProbeResult": {
+      "type": "object",
+      "required": ["trace"],
+      "additionalProperties": false,
+      "properties": { "trace": { "type": "string" } }
+    },
+    "ClockError": {
+      "type": "object",
+      "required": ["code"],
+      "properties": { "code": { "enum": ["INVALID_CLOCK"] }, "detail": { "type": "string" } }
+    }
+  }
+}

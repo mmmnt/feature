@@ -95,6 +95,9 @@ importers:
       '@mmmnt/feat-adapter-kit':
         specifier: workspace:^
         version: link:../../packages/feat-adapter-kit
+      '@mmmnt/feat-runtime':
+        specifier: workspace:^
+        version: link:../../packages/feat-runtime
       vitest:
         specifier: ^3.2.0
         version: 3.2.7(@types/node@24.13.3)
