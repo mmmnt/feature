@@ -1,0 +1,7 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://feat.dev/fixtures/identifiers.json",
+  "$defs": {
+    "uuid": { "type": "string", "format": "uuid" }
+  }
+}

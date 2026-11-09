@@ -62,6 +62,38 @@ async function loadSchemaAdapter(config: FeatConfig, projectRoot: string): Promi
   return mod.createAdapter({ ...config.schemas, projectRoot }) as FeatSchemaAdapter;
 }
 
+/** Walk a JSON pointer ("/a/b") inside a schema; false when it names nothing there. */
+function pointerResolves(root: unknown, fragment: string): boolean {
+  let cur: unknown = root;
+  for (const token of fragment.split("/").slice(1)) {
+    const key = token.replace(/~1/g, "/").replace(/~0/g, "~");
+    cur = Array.isArray(cur) ? cur[Number(key)] : typeof cur === "object" && cur !== null ? (cur as Record<string, unknown>)[key] : undefined;
+    if (cur === undefined) return false;
+  }
+  return true;
+}
+
+/**
+ * True when an inline schema holds a `$ref` that will not resolve once the schema stands alone in
+ * a generated test: one naming another file, or a local pointer that is not inside the schema
+ * itself (so it names the contract document, e.g. `#/schemas/Sibling`). Absolute URIs are left alone.
+ */
+function needsBundling(schema: unknown): boolean {
+  const walk = (node: unknown): boolean => {
+    if (Array.isArray(node)) return node.some(walk);
+    if (typeof node !== "object" || node === null) return false;
+    for (const [k, v] of Object.entries(node)) {
+      if (k === "$ref" && typeof v === "string") {
+        if (/^[A-Za-z][A-Za-z0-9+.-]*:/.test(v)) continue;
+        if (!v.startsWith("#")) return true;
+        if (v !== "#" && !pointerResolves(schema, v.slice(1))) return true;
+      } else if (walk(v)) return true;
+    }
+    return false;
+  };
+  return walk(schema);
+}
+
 // A contract entry that is nothing but a `$ref` names a schema living in another file.
 // Resolution belongs to the adapter: what it returns as `normalized` is what gets inlined,
 // so it must already be self-contained (the generated test lands in a different directory
@@ -78,6 +110,15 @@ async function resolveContract(
     const ref = (schema as { $ref?: string }).$ref;
     if (ref && Object.keys(schema).length === 1) {
       registry[name] = (await adapter.resolve(ref, contractPath)).normalized;
+    } else if (needsBundling(schema)) {
+      // An inline schema whose nested properties `$ref` another file, or a sibling entry of this
+      // contract: the base URI is lost in the move exactly as for a bare ref, so it is bundled too. Schemas with no file
+      // reference are kept verbatim — generated output for them is unchanged.
+      registry[name] = (
+        adapter.resolveInline
+          ? await adapter.resolveInline(schema as Record<string, unknown>, contractPath)
+          : await adapter.resolve(`#/schemas/${name}`, contractPath)
+      ).normalized;
     } else {
       registry[name] = schema;
     }

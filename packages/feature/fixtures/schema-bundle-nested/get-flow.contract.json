@@ -1,0 +1,102 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-FIX-003",
+  "schemas": {
+    "GetFlowInput": {
+      "type": "object",
+      "required": [
+        "flowId"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "flowId": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    },
+    "FlowViewResponse": {
+      "type": "object",
+      "required": [
+        "flowId",
+        "name"
+      ],
+      "$defs": {
+        "displayName": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "properties": {
+        "flowId": {
+          "$ref": "./shared/identifiers.json#/$defs/uuid"
+        },
+        "tenantId": {
+          "$ref": "./shared/identifiers.json#/$defs/uuid"
+        },
+        "name": {
+          "$ref": "#/$defs/displayName"
+        },
+        "owner": {
+          "$ref": "#/schemas/Owner"
+        }
+      }
+    },
+    "FlowViewSchema": {
+      "type": "object",
+      "required": [
+        "flowId"
+      ],
+      "properties": {
+        "flowId": {
+          "$ref": "./shared/identifiers.json#/$defs/uuid"
+        },
+        "name": {
+          "type": "string"
+        },
+        "tenantId": {
+          "type": "string"
+        }
+      }
+    },
+    "RFC7807": {
+      "type": "object",
+      "required": [
+        "type",
+        "title",
+        "status"
+      ],
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "status": {
+          "type": "integer"
+        }
+      }
+    },
+    "Owner": {
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "$defs": {
+        "slug": {
+          "type": "string",
+          "pattern": "^[a-z]+$"
+        }
+      },
+      "properties": {
+        "id": {
+          "$ref": "./shared/identifiers.json#/$defs/uuid"
+        },
+        "slug": {
+          "$ref": "#/$defs/slug"
+        }
+      }
+    }
+  }
+}

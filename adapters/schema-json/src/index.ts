@@ -4,7 +4,7 @@
 
 import { createRequire } from "node:module";
 import type { FeatSchemaAdapter, ResolvedSchema } from "@mmmnt/feat-types";
-import { bundle } from "./bundle.js";
+import { bundle, bundleInline } from "./bundle.js";
 
 const require = createRequire(import.meta.url);
 const Ajv: typeof import("ajv").default = require("ajv");
@@ -42,6 +42,13 @@ class JsonSchemaAdapter implements FeatSchemaAdapter {
       raw: bundled.raw,
       normalized: bundled.schema,
     };
+  }
+
+  // A schema authored inline in the contract: same bundling, but its own local pointers keep
+  // meaning the schema itself (it becomes its own document in the generated test).
+  async resolveInline(schema: Record<string, unknown>, fromPath: string): Promise<ResolvedSchema> {
+    const bundled = bundleInline(schema, fromPath);
+    return { id: bundled.id, format: "json-schema", raw: bundled.raw, normalized: bundled.schema };
   }
 
   validate(data: unknown, schema: ResolvedSchema): { valid: boolean; errors?: string[] } {

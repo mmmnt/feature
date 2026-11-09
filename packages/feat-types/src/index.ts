@@ -255,6 +255,12 @@ export interface FeatServiceAdapter {
 
 export interface FeatSchemaAdapter {
   resolve(ref: string, fromPath: string): Promise<ResolvedSchema>;
+  /**
+   * Optional: resolve a schema authored INLINE in the contract at `fromPath`, following the
+   * relative file references nested in its properties. Without it the pipeline falls back to
+   * resolve("#/schemas/<name>"), which cannot keep the schema's own local pointers.
+   */
+  resolveInline?(schema: Record<string, unknown>, fromPath: string): Promise<ResolvedSchema>;
   validate(data: unknown, schema: ResolvedSchema): { valid: boolean; errors?: string[] };
 }
 

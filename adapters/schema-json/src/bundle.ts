@@ -67,6 +67,15 @@ class Bundler {
   private readonly placement = new Map<string, string>();
   private readonly defs: Obj = {};
   private readonly usedKeys = new Set<string>();
+  /** file#pointer → where that node was relocated to (`/$defs/<key>`); inline bundling only. */
+  private readonly nodePlacement = new Map<string, string>();
+  /**
+   * The schema whose own tree is being rewritten when it is a standalone document in the output
+   * (an inline contract entry, or a contract node relocated into it) and where it now lives.
+   * A local pointer that resolves inside it means the schema itself; one that does not names the
+   * contract document it was authored in. Null for a whole relocated file (its locals are its own root).
+   */
+  private scope: { node: Obj; prefix: string } | null = null;
 
   private load(file: string): Json {
     if (this.docs.has(file)) return this.docs.get(file);
@@ -118,8 +127,11 @@ class Bundler {
 
   /** Stable, collision-free `$defs` key for a relocated document. */
   private allocKey(file: string): string {
-    const stem =
-      path.basename(file).replace(/\.[^.]+$/, "").replace(/[^A-Za-z0-9_-]/g, "_") || "schema";
+    return this.allocName(path.basename(file).replace(/\.[^.]+$/, ""));
+  }
+
+  private allocName(raw: string): string {
+    const stem = raw.replace(/[^A-Za-z0-9_-]/g, "_") || "schema";
     let key = stem;
     for (let n = 2; this.usedKeys.has(key); n++) key = `${stem}_${n}`;
     this.usedKeys.add(key);
@@ -142,11 +154,50 @@ class Bundler {
     const doc = this.load(file);
     if (!isObj(doc)) throw new Error(`Schema resolution: '${file}' is not a JSON Schema object.`);
 
+    const saved = this.scope;
+    this.scope = null;
     const rewritten = this.rewriteSchema(doc, file, false, true) as Obj;
+    this.scope = saved;
     delete rewritten["$id"];
     delete rewritten["$schema"];
     this.defs[key] = rewritten;
     return `/$defs/${key}`;
+  }
+
+  private inScope(fragment: string): boolean {
+    let cur: Json = this.scope!.node;
+    if (fragment === "") return true;
+    for (const token of fragment.split("/").slice(1)) {
+      const key = unescapeToken(token);
+      cur = Array.isArray(cur) ? cur[Number(key)] : isObj(cur) ? cur[key] : undefined;
+      if (cur === undefined) return false;
+    }
+    return true;
+  }
+
+  /** Relocate ONE node of a document (not the whole document) into `$defs`; see `scope`. */
+  private placeNode(file: string, pointer: string): string {
+    if (pointer === "") return this.place(file);
+    const id = `${file}#${pointer}`;
+    const existing = this.nodePlacement.get(id);
+    if (existing !== undefined) return existing;
+
+    const key = this.allocName(unescapeToken(pointer.split("/").pop() ?? ""));
+    const where = `/$defs/${key}`;
+    this.nodePlacement.set(id, where);
+    this.defs[key] = {};
+    const node = this.deref({ file, pointer });
+    if (!isObj(node))
+      throw new Error(`Schema resolution: '#${pointer}' in ${file} does not point at a JSON Schema object.`);
+
+    const saved = this.scope;
+    this.scope = { node, prefix: where };
+    const rewritten = this.rewriteSchema(node, file, false, false) as Obj;
+    this.scope = saved;
+    delete rewritten["$id"];
+    delete rewritten["$schema"];
+    this.defs[key] = rewritten;
+    return where;
   }
 
   private rewriteRef(ref: string, file: string, nestedId: boolean): string {
@@ -158,6 +209,13 @@ class Bundler {
         `Schema resolution: '${ref}' in ${file} sits under a subschema that declares its own ` +
           `$id, which re-bases relative references — unsupported. Give the subschema its own file.`,
       );
+    if (this.scope !== null && (ref === "#" || ref.startsWith("#/"))) {
+      const fragment = ref.slice(1);
+      if (this.inScope(fragment)) return `#${this.scope.prefix}${fragment}`;
+      // Not inside the schema: it names the contract document the schema was authored in.
+      const doc = this.locate(ref, file);
+      return `#${this.placeNode(doc.file, doc.pointer)}`;
+    }
     const target = this.locate(ref, file);
     const pointer = `${this.place(target.file)}${target.pointer}`;
     return pointer === "" ? "#" : `#${pointer}`;
@@ -191,24 +249,40 @@ class Bundler {
         `Schema resolution: '${ref}' (from ${fromPath}) does not point at a JSON Schema object.`,
       );
 
-    // Reserve the `$defs` keys the root already owns before relocating anything into it,
-    // and record the root's own file as the bundle root so refs back to it stay "#…".
-    const rootDefs = node["$defs"];
-    if (isObj(rootDefs)) for (const key of Object.keys(rootDefs)) this.usedKeys.add(key);
+    // Record the root's own file as the bundle root so refs back to it stay "#…".
     if (loc.pointer === "") this.placement.set(loc.file, "");
-
-    const out = this.rewriteSchema(node, loc.file, false, loc.pointer === "") as Obj;
-    if (Object.keys(this.defs).length > 0) {
-      // Assigning an existing key keeps its position, so a root that already had `$defs`
-      // keeps it where the author put it — emit stays byte-identical for identical input.
-      out["$defs"] = { ...(isObj(out["$defs"]) ? out["$defs"] : {}), ...this.defs };
-    }
-
+    const out = this.finish(node, loc.file, loc.pointer === "");
     return {
       id: `${loc.file}${loc.pointer === "" ? "" : `#${loc.pointer}`}`,
       raw: node,
       schema: out,
     };
+  }
+
+  /**
+   * A schema authored INLINE in `fromPath` (a contract entry). It is its own document in the
+   * generated test: a local pointer that resolves inside it stays as authored, a local pointer
+   * that does not names the contract document (`#/schemas/Sibling`) and that node is relocated
+   * into `$defs`, and every relative file reference resolves against `fromPath`'s directory.
+   */
+  runInline(schema: Obj, fromPath: string): Bundled {
+    const file = path.resolve(fromPath);
+    this.scope = { node: schema, prefix: "" };
+    return { id: `${file}#inline`, raw: schema, schema: this.finish(schema, file, true) };
+  }
+
+  private finish(node: Obj, file: string, atDocRoot: boolean): Obj {
+    // Reserve the `$defs` keys the root already owns before relocating anything into it.
+    const rootDefs = node["$defs"];
+    if (isObj(rootDefs)) for (const key of Object.keys(rootDefs)) this.usedKeys.add(key);
+
+    const out = this.rewriteSchema(node, file, false, atDocRoot) as Obj;
+    if (Object.keys(this.defs).length > 0) {
+      // Assigning an existing key keeps its position, so a root that already had `$defs`
+      // keeps it where the author put it — emit stays byte-identical for identical input.
+      out["$defs"] = { ...(isObj(out["$defs"]) ? out["$defs"] : {}), ...this.defs };
+    }
+    return out;
   }
 }
 
@@ -219,4 +293,12 @@ class Bundler {
  */
 export function bundle(ref: string, fromPath: string): Bundled {
   return new Bundler().run(ref, fromPath);
+}
+
+/**
+ * Bundle a schema authored inline in `fromPath`: relative file references inside it are
+ * followed against that file's directory; its own local pointers are left as authored.
+ */
+export function bundleInline(schema: Record<string, unknown>, fromPath: string): Bundled {
+  return new Bundler().runInline(schema, fromPath);
 }
