@@ -193,7 +193,7 @@ export interface FeatConfig {
   schemas: { adapter: string };
   response?: ResponseConfig;
   services: Record<string, ServiceConfig>;
-  specs: { dir: string; pattern: string; contractPattern: string; outputPattern: string };
+  specs: { dir: string; pattern: string; contractPattern: string; outputPattern: string; exclude?: string[] };
   report?: { format: ("console" | "junit")[]; junitOutput?: string };
 }
 

@@ -23,18 +23,42 @@ export interface GeneratedFile {
   content: string;
 }
 
-export function discoverSpecs(root: string, specsDir: string): string[] {
+/** A glob (`**`, `*`, `?`) over posix-style relative paths, as a RegExp. `**` crosses directories, `*` does not. */
+function globToRegExp(glob: string): RegExp {
+  let re = "";
+  for (let i = 0; i < glob.length; i++) {
+    const c = glob[i]!;
+    if (c === "*") {
+      if (glob[i + 1] === "*") {
+        i++;
+        if (glob[i + 1] === "/") {
+          i++;
+          re += "(?:.*/)?";
+        } else re += ".*";
+      } else re += "[^/]*";
+    } else if (c === "?") re += "[^/]";
+    else re += c.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+  }
+  return new RegExp(`^${re}$`);
+}
+
+/** Spec files under `specsDir`, minus those a `specs.exclude` glob (relative to specsDir) removes (ADR-0024). */
+export function discoverSpecs(root: string, specsDir: string, exclude: readonly string[] = []): string[] {
   const out: string[] = [];
+  const base = path.resolve(root, specsDir);
+  const excluded = exclude.map(globToRegExp);
   const walk = (d: string) => {
     for (const entry of readdirSync(d)) {
       if (EXCLUDED_DIRS.has(entry)) continue;
       const p = path.join(d, entry);
       const s = statSync(p);
       if (s.isDirectory()) walk(p);
-      else if (entry.endsWith(".feat")) out.push(p);
+      else if (entry.endsWith(".feat")) {
+        const rel = path.relative(base, p).split(path.sep).join("/");
+        if (!excluded.some((r) => r.test(rel))) out.push(p);
+      }
     }
   };
-  const base = path.resolve(root, specsDir);
   if (existsSync(base)) walk(base);
   return out.sort();
 }
@@ -169,7 +193,7 @@ export interface Prepared {
 export async function prepareAll(root: string, configPath: string): Promise<Prepared> {
   const configAbs = path.resolve(root, configPath);
   const config = await readConfig(root, configPath);
-  const specs = discoverSpecs(root, config.specs.dir);
+  const specs = discoverSpecs(root, config.specs.dir, config.specs.exclude);
   // The project root is where the config lives — adapter resolution anchors there, so
   // generate behaves identically regardless of the invoking cwd (as the harness does).
   const schemaAdapter = await loadSchemaAdapter(config, path.dirname(configAbs));

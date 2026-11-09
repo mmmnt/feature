@@ -22,7 +22,7 @@ export default class Audit extends Command {
     const { flags } = await this.parse(Audit);
     const root = process.cwd();
     const config = await readConfigOrExit(this, root, flags.config);
-    const specs = discoverSpecs(root, config.specs.dir);
+    const specs = discoverSpecs(root, config.specs.dir, config.specs.exclude);
     let errors = 0;
     let warnings = 0;
 

@@ -130,7 +130,7 @@ export async function produceEvidence(root: string, configPath: string): Promise
 
   // Spec inventory
   const specs: Record<string, unknown>[] = [];
-  for (const specAbs of discoverSpecs(root, config.specs.dir)) {
+  for (const specAbs of discoverSpecs(root, config.specs.dir, config.specs.exclude)) {
     const rel = path.relative(root, specAbs);
     const source = readFileSync(specAbs, "utf8");
     const entry: Record<string, unknown> = { path: rel, content_digest: sha256(source) };

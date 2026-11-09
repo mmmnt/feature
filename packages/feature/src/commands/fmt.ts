@@ -21,7 +21,7 @@ export default class Fmt extends Command {
     const { flags } = await this.parse(Fmt);
     const root = process.cwd();
     const config = await readConfigOrExit(this, root, flags.config);
-    const specs = discoverSpecs(root, config.specs.dir);
+    const specs = discoverSpecs(root, config.specs.dir, config.specs.exclude);
     let changed = 0;
     let tabbed = 0;
 
