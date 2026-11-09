@@ -1,0 +1,49 @@
+{
+  "featVersion": "1.0",
+  "schemas": {
+    "adapter": "@mmmnt/feat-schema-json"
+  },
+  "response": {
+    "adapter": "./stub.mjs",
+    "commands": {
+      "Ping": {}
+    }
+  },
+  "services": {
+    "store": {
+      "adapter": "./stub.mjs",
+      "consistency": "strong",
+      "options": {
+        "faults": {
+          "AppendToStream": {
+            "NotLeader": [
+              "once",
+              "times",
+              "reset"
+            ],
+            "WrongExpectedVersion": [
+              "once",
+              "times",
+              "reset"
+            ],
+            "AccessDenied": [
+              "reset"
+            ]
+          },
+          "Connection": {
+            "Timeout": [
+              "reset"
+            ]
+          }
+        },
+        "observed": false
+      }
+    }
+  },
+  "specs": {
+    "dir": ".",
+    "pattern": "**/*.feat",
+    "contractPattern": "**/*.contract.json",
+    "outputPattern": "{name}.test.ts"
+  }
+}

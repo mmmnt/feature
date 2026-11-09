@@ -1,0 +1,286 @@
+feat 1.0
+
+# SPEC-RT-003 (amended by founder ruling c7af7871 of 2026-11-09; agreed and ordered built by Sift
+# decision 0026e0ea, 2026-11-09) — the harness and faults
+# (ADR-0023 D3): a fault the case declares is armed as a precondition, consumed by the named
+# operation, checked for consumption, and disarmed by the next reset; a fault the binding cannot
+# produce, or cannot produce with the count the case writes, stops the case before it has any
+# effect.
+#
+# WHAT CHANGED versus harness-faults.feat (and nothing else):
+#  1. Catalog shape: an operation maps each fault to the counts it DECLARES, ["once", "times",
+#     "reset"] in any subset (`times` covers every n). The earlier shape, an array of fault
+#     names, is still accepted and means all three counts.
+#  2. The hold-only mechanism (stub option holdOnly, the special case for Connection) is gone:
+#     a hold-only fault is simply one that declares ["reset"].
+#  3. Preflight refuses a count the fault does not declare: FAULT_UNSUPPORTED, same code, same
+#     moment, detail names the declared counts.
+#  4. Stub and fixtures: options.faults has the new shape and options.holdOnly is removed;
+#     fault.config.json declares AccessDenied as ["reset"] and Connection.Timeout as ["reset"];
+#     a new fixture fault-legacy.config.json keeps the array shape.
+#  5. Scenarios: "a transport fault that is not until reset ..." is replaced by "a count the fault
+#     does not declare ..." (same expectation, new reason text); two scenarios are added (a
+#     non-transport fault declaring only reset; the legacy array shape).
+# Unchanged: the contract file, every other scenario, the arm/consume/fire order, FAULT_NOT_CONSUMED. Builds only after the `fault` amendment of
+# SPEC-CORE-001 (parse) and SPEC-RT-002 (the check that runs first) are agreed.
+#
+# Driven through the same probe as SPEC-RT-002 (`RunHarnessCase { config, cases }`). Its stub
+# service adapter (fixtures/harness/stub.mjs) is extended: options.faults is its catalog
+# ({ AppendToStream: { NotLeader: [once, times, reset], WrongExpectedVersion: [once, times, reset],
+# AccessDenied: [reset] }, Connection: { Timeout: [reset] } }),
+# options.observed decides whether it implements firedFaults(), and `fault()` absent from the
+# stub when options.faults is absent. The response stub's Ping { appends: n } makes n calls of
+# AppendToStream on the store stub, each answering ok or the armed fault's name. The probe adds
+# to the calls string: arm:<service>=<Operation>/<Fault>/<times|reset> when fault() is called,
+# consume:<service>=<Operation>:<ok|Fault> for each system call of an operation, and
+# fired:<service> when firedFaults() is called; `armedDetail` renders the last arm's detail as
+# key=value pairs; `violationCodes` is the comma-joined violation codes of a failed case.
+# Fixture configs (all: response stub `response` with command Ping, service `store` strong, no
+# setClock): fault.config.json (catalog above, observed), fault-unobserved.config.json (same,
+# no firedFaults), no-fault.config.json (no fault method), fault-legacy.config.json (catalog in the
+# earlier array shape: { AppendToStream: [NotLeader] }).
+#
+# What the order pins: preflight -> reset -> seeds -> given executes -> arm -> startCapture ->
+# trigger -> stopCapture -> firedFaults -> diff. Executes run before arming, so setup that calls
+# the faulted operation is never hit; arming is before the window, so it is never a capture.
+
+spec SPEC-RT-003 "Harness: fault arming, consumption and refusal"
+context Toolchain
+aggregate Runtime
+type infrastructure
+status agreed
+
+construct:
+  handler at packages/feat-runtime/src/harness.ts
+  touches packages/feat-runtime/**
+  touches packages/feat-types/**
+  needs SPEC-RT-002
+  needs SPEC-CORE-001
+  Types (feat-types): HarnessCase.given.faults?: Fault[] (the IR shape); FaultCatalog =
+  Record<string, readonly string[] | Record<string, readonly FaultCount[]>> with FaultCount =
+  "once" | "times" | "reset"; FaultArm, FaultFiring; on FeatServiceAdapter `readonly faults?: FaultCatalog`, `fault?(arm: FaultArm)` and
+  `firedFaults?(): Promise<FaultFiring[]>`.
+  Preflight, in the same first step as SPEC-RT-002's checks and before any adapter call: for each
+  fault of the case, the named service's adapter must have fault() and list the operation and the
+  fault under it, and the count the case writes (once, times n, until reset) must be among the
+  counts that fault declares (an array-shaped entry declares all three); otherwise throw
+  HarnessConfigurationError FAULT_UNSUPPORTED with service and a detail that lists the adapter's
+  catalog, or names the declared counts, or says "no fault()".
+  Arm each fault in written order, after the given executes and before startCapture:
+  fault({ operation, fault, detail, times }). After stopCapture, for each service that was armed and
+  has firedFaults(), call it once: a fault armed times n must have fired n times and one armed until
+  reset at least once, else add the violation FAULT_NOT_CONSUMED naming service, operation, fault,
+  expected and actual. A service without firedFaults() is not checked.
+  Adapter obligation, asserted by the adapter kit (not here): reset() disarms every fault.
+
+enforce:
+  check that every fault of the case is offered by its service's adapter before any adapter call
+  rejects FAULT_UNSUPPORTED when a fault names an operation or a fault the adapter does not offer, an adapter with no fault method, or a count the fault does not declare
+  arm the faults in written order after the given executes and before the capture window opens
+  consume a once fault on the next call, a times n fault on the next n, an until reset fault on every call of the case
+  fail the case with FAULT_NOT_CONSUMED when an observed fault fired fewer times than armed
+  leave an adapter that cannot see consumption unchecked
+
+contract:
+  input RunInput
+  response RunResult
+  error HarnessError
+
+scenario "faults are armed after the seeds and the given executes and before the capture window":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/fault.config.json"
+    cases: [
+      { anchor: "c1", name: "c1", given: { seeds: [ { service: "store", records: [ { type: "Seeded", values: { n: 1 } } ] } ], executes: [ { command: "Ping", payload: { appends: 1 } } ], faults: [ { service: "store", operation: "AppendToStream", fault: "NotLeader", times: 1 } ] }, when: { command: "Ping", payload: { appends: 1 } }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } }
+    ]
+  }
+  predict success:
+    response OK RunResult { outcome: "passed", calls: "reset:store seed:store execute:Ping consume:store=AppendToStream:ok arm:store=AppendToStream/NotLeader/1 start:store invoke:Ping consume:store=AppendToStream:NotLeader stop:store fired:store" }
+    filesystem has []
+
+scenario "once is the next call only":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/fault.config.json"
+    cases: [
+      { anchor: "c1", name: "c1", given: { faults: [ { service: "store", operation: "AppendToStream", fault: "NotLeader", times: 1 } ] }, when: { command: "Ping", payload: { appends: 2 } }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } }
+    ]
+  }
+  predict success:
+    response OK RunResult { outcome: "passed", calls: "reset:store arm:store=AppendToStream/NotLeader/1 start:store invoke:Ping consume:store=AppendToStream:NotLeader consume:store=AppendToStream:ok stop:store fired:store" }
+    filesystem has []
+
+scenario "times n is the next n calls":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/fault.config.json"
+    cases: [
+      { anchor: "c1", name: "c1", given: { faults: [ { service: "store", operation: "AppendToStream", fault: "NotLeader", times: 2 } ] }, when: { command: "Ping", payload: { appends: 3 } }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } }
+    ]
+  }
+  predict success:
+    response OK RunResult { outcome: "passed", calls: "reset:store arm:store=AppendToStream/NotLeader/2 start:store invoke:Ping consume:store=AppendToStream:NotLeader consume:store=AppendToStream:NotLeader consume:store=AppendToStream:ok stop:store fired:store" }
+    filesystem has []
+
+scenario "until reset is every call of the case":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/fault.config.json"
+    cases: [
+      { anchor: "c1", name: "c1", given: { faults: [ { service: "store", operation: "AppendToStream", fault: "NotLeader", times: "reset" } ] }, when: { command: "Ping", payload: { appends: 3 } }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } }
+    ]
+  }
+  predict success:
+    response OK RunResult { outcome: "passed", calls: "reset:store arm:store=AppendToStream/NotLeader/reset start:store invoke:Ping consume:store=AppendToStream:NotLeader consume:store=AppendToStream:NotLeader consume:store=AppendToStream:NotLeader stop:store fired:store" }
+    filesystem has []
+
+scenario "several faults are armed in written order and the detail reaches the adapter":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/fault.config.json"
+    cases: [
+      { anchor: "c1", name: "c1", given: { faults: [ { service: "store", operation: "AppendToStream", fault: "WrongExpectedVersion", detail: { stream: "orders" }, times: 1 }, { service: "store", operation: "AppendToStream", fault: "NotLeader", times: 1 } ] }, when: { command: "Ping", payload: { appends: 2 } }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } }
+    ]
+  }
+  predict success:
+    response OK RunResult { outcome: "passed", calls: "reset:store arm:store=AppendToStream/WrongExpectedVersion/1 arm:store=AppendToStream/NotLeader/1 start:store invoke:Ping consume:store=AppendToStream:WrongExpectedVersion consume:store=AppendToStream:NotLeader stop:store fired:store", armedDetail: "stream=orders" }
+    filesystem has []
+
+scenario "reset disarms, so a fault never leaks into the next case":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/fault.config.json"
+    cases: [
+      { anchor: "c1", name: "c1", given: { faults: [ { service: "store", operation: "AppendToStream", fault: "NotLeader", times: "reset" } ] }, when: { command: "Ping", payload: { appends: 1 } }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } }
+      { anchor: "c2", name: "c2", when: { command: "Ping", payload: { appends: 1 } }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } }
+    ]
+  }
+  predict success:
+    response OK RunResult { outcome: "passed", calls: "reset:store arm:store=AppendToStream/NotLeader/reset start:store invoke:Ping consume:store=AppendToStream:NotLeader stop:store fired:store reset:store start:store invoke:Ping consume:store=AppendToStream:ok stop:store" }
+    filesystem has []
+
+scenario "an armed fault the system never consumed fails the case":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/fault.config.json"
+    cases: [
+      { anchor: "c1", name: "c1", given: { faults: [ { service: "store", operation: "AppendToStream", fault: "NotLeader", times: 1 } ] }, when: { command: "Ping", payload: { appends: 0 } }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } }
+    ]
+  }
+  predict success:
+    response OK RunResult { outcome: "failed", violationCodes: "FAULT_NOT_CONSUMED", calls: "reset:store arm:store=AppendToStream/NotLeader/1 start:store invoke:Ping stop:store fired:store" }
+    filesystem has []
+
+scenario "times n consumed fewer than n times fails the case":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/fault.config.json"
+    cases: [
+      { anchor: "c1", name: "c1", given: { faults: [ { service: "store", operation: "AppendToStream", fault: "NotLeader", times: 3 } ] }, when: { command: "Ping", payload: { appends: 2 } }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } }
+    ]
+  }
+  predict success:
+    response OK RunResult { outcome: "failed", violationCodes: "FAULT_NOT_CONSUMED", calls: "reset:store arm:store=AppendToStream/NotLeader/3 start:store invoke:Ping consume:store=AppendToStream:NotLeader consume:store=AppendToStream:NotLeader stop:store fired:store" }
+    filesystem has []
+
+scenario "until reset never consumed fails the case":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/fault.config.json"
+    cases: [
+      { anchor: "c1", name: "c1", given: { faults: [ { service: "store", operation: "AppendToStream", fault: "NotLeader", times: "reset" } ] }, when: { command: "Ping", payload: { appends: 0 } }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } }
+    ]
+  }
+  predict success:
+    response OK RunResult { outcome: "failed", violationCodes: "FAULT_NOT_CONSUMED", calls: "reset:store arm:store=AppendToStream/NotLeader/reset start:store invoke:Ping stop:store fired:store" }
+    filesystem has []
+
+scenario "an adapter that cannot see consumption is exempt":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/fault-unobserved.config.json"
+    cases: [
+      { anchor: "c1", name: "c1", given: { faults: [ { service: "store", operation: "AppendToStream", fault: "NotLeader", times: 1 } ] }, when: { command: "Ping", payload: { appends: 0 } }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } }
+    ]
+  }
+  predict success:
+    response OK RunResult { outcome: "passed", calls: "reset:store arm:store=AppendToStream/NotLeader/1 start:store invoke:Ping stop:store" }
+    filesystem has []
+
+scenario "an operation the adapter does not offer is refused before any effect":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/fault.config.json"
+    cases: [
+      { anchor: "c1", name: "c1", given: { executes: [ { command: "Ping", payload: { appends: 1 } } ], faults: [ { service: "store", operation: "DeleteStream", fault: "NotLeader", times: 1 } ] }, when: { command: "Ping", payload: { appends: 1 } }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } }
+    ]
+  }
+  predict rejection FAULT_UNSUPPORTED:
+    response ERR HarnessError { code: "FAULT_UNSUPPORTED", calls: "", service: "store", detail: matching "AppendToStream" }
+    filesystem has []
+
+scenario "a fault name the adapter does not offer is refused before any effect":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/fault.config.json"
+    cases: [
+      { anchor: "c1", name: "c1", given: { faults: [ { service: "store", operation: "AppendToStream", fault: "Gremlins", times: 1 } ] }, when: { command: "Ping", payload: { appends: 1 } }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } }
+    ]
+  }
+  predict rejection FAULT_UNSUPPORTED:
+    response ERR HarnessError { code: "FAULT_UNSUPPORTED", calls: "", service: "store", detail: matching "NotLeader" }
+    filesystem has []
+
+scenario "an adapter with no fault method is refused before any effect":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/no-fault.config.json"
+    cases: [
+      { anchor: "c1", name: "c1", given: { faults: [ { service: "store", operation: "AppendToStream", fault: "NotLeader", times: 1 } ] }, when: { command: "Ping", payload: { appends: 1 } }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } }
+    ]
+  }
+  predict rejection FAULT_UNSUPPORTED:
+    response ERR HarnessError { code: "FAULT_UNSUPPORTED", calls: "", service: "store", detail: matching "fault" }
+    filesystem has []
+
+scenario "a count the fault does not declare is refused before any effect":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/fault.config.json"
+    cases: [
+      { anchor: "c1", name: "c1", given: { faults: [ { service: "store", operation: "Connection", fault: "Timeout", times: 1 } ] }, when: { command: "Ping", payload: { appends: 1 } }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } }
+    ]
+  }
+  predict rejection FAULT_UNSUPPORTED:
+    response ERR HarnessError { code: "FAULT_UNSUPPORTED", calls: "", service: "store", detail: matching "until reset" }
+    filesystem has []
+
+scenario "a fault that is not a transport fault can declare only until reset too":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/fault.config.json"
+    cases: [
+      { anchor: "c1", name: "c1", given: { executes: [ { command: "Ping", payload: { appends: 1 } } ], faults: [ { service: "store", operation: "AppendToStream", fault: "AccessDenied", times: 2 } ] }, when: { command: "Ping", payload: { appends: 1 } }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } }
+    ]
+  }
+  predict rejection FAULT_UNSUPPORTED:
+    response ERR HarnessError { code: "FAULT_UNSUPPORTED", calls: "", service: "store", detail: matching "AccessDenied" }
+    filesystem has []
+
+scenario "a fault that declares only until reset is armed when the case writes until reset":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/fault.config.json"
+    cases: [
+      { anchor: "c1", name: "c1", given: { faults: [ { service: "store", operation: "AppendToStream", fault: "AccessDenied", times: "reset" } ] }, when: { command: "Ping", payload: { appends: 2 } }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } }
+    ]
+  }
+  predict success:
+    response OK RunResult { outcome: "passed", calls: "reset:store arm:store=AppendToStream/AccessDenied/reset start:store invoke:Ping consume:store=AppendToStream:AccessDenied consume:store=AppendToStream:AccessDenied stop:store fired:store" }
+    filesystem has []
+
+scenario "a catalog in the earlier array shape declares every count":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/fault-legacy.config.json"
+    cases: [
+      { anchor: "c1", name: "c1", given: { faults: [ { service: "store", operation: "AppendToStream", fault: "NotLeader", times: 1 } ] }, when: { command: "Ping", payload: { appends: 1 } }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } }
+    ]
+  }
+  predict success:
+    response OK RunResult { outcome: "passed", calls: "reset:store arm:store=AppendToStream/NotLeader/1 start:store invoke:Ping consume:store=AppendToStream:NotLeader stop:store fired:store" }
+    filesystem has []
+
+scenario "a transport fault until reset is armed and checked like any other":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/fault.config.json"
+    cases: [
+      { anchor: "c1", name: "c1", given: { faults: [ { service: "store", operation: "Connection", fault: "Timeout", times: "reset" } ] }, when: { command: "Ping", payload: { appends: 0 } }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } }
+    ]
+  }
+  predict success:
+    response OK RunResult { outcome: "failed", violationCodes: "FAULT_NOT_CONSUMED", calls: "reset:store arm:store=Connection/Timeout/reset start:store invoke:Ping stop:store fired:store" }
+    filesystem has []

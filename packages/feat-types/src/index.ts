@@ -241,7 +241,29 @@ export interface ObservationSupport {
   state: boolean;
 }
 
+/** How many times a fault may be armed for (ADR-0023): `times` covers every n. */
+export type FaultCount = "once" | "times" | "reset";
+/** Operation -> fault -> the counts it declares; the array form (fault names) declares all three. */
+export type FaultCatalog = Record<string, readonly string[] | Record<string, readonly FaultCount[]>>;
+export interface FaultArm {
+  operation: string;
+  fault: string;
+  detail?: Record<string, unknown>;
+  times: number | "reset";
+}
+export interface FaultFiring {
+  operation: string;
+  fault: string;
+  count: number;
+}
+
 export interface FeatServiceAdapter {
+  /** What this binding can inject (ADR-0023); a fault outside it, or with an undeclared count, is FAULT_UNSUPPORTED. */
+  readonly faults?: FaultCatalog;
+  /** Arm a fault as a precondition; reset() MUST disarm everything. The adapter's own capture, read and seed are never faulted. */
+  fault?(arm: FaultArm): Promise<void>;
+  /** Optional: how often each armed fault was consumed. Absent = consumption is not observed (not checked). */
+  firedFaults?(): Promise<FaultFiring[]>;
   /** Declares the observation modes served; an adapter that declares nothing is { diff: "native", state: true }. */
   readonly observes?: ObservationSupport;
   /** Optional (ADR-0023): receive the scenario clock, or null; see FeatResponseAdapter.setClock. */

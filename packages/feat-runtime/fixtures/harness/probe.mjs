@@ -32,6 +32,10 @@ export async function runCases(input) {
   }
   const body = { outcome, calls: state.calls.join(" ") };
   if (state.readHint !== undefined) body.readHint = state.readHint;
-  if (violations.length > 0) body.violations = violations;
+  if (violations.length > 0) {
+    body.violations = violations;
+    body.violationCodes = violations.map((v) => /^([A-Z_]+):/.exec(v)?.[1]).filter(Boolean).join(",");
+  }
+  if (state.armedDetail !== undefined) body.armedDetail = state.armedDetail;
   return { status: "OK", body };
 }

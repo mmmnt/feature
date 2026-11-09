@@ -11,7 +11,7 @@ import type {
 import { importAdapter } from "./import-adapter.js";
 import { loadConfig, variablesSidecarPath } from "./load-config.js";
 import { diffContains, diffRecords, diffResponse, pathGet, type InlineData, type MatchContext } from "./matcher.js";
-import type { ReadQuery } from "@mmmnt/feat-types";
+import type { Fault, FaultCatalog, FaultCount, ReadQuery } from "@mmmnt/feat-types";
 
 // ── Spec variables (ADR-0017) ────────────────────────────────────────────────
 // Sources resolve ONCE PER CASE at execution start; every ${name} reference in
@@ -127,6 +127,7 @@ export interface HarnessCase {
   variables?: CaseVariable[];
   given?: {
     clock?: string;
+    faults?: Fault[];
     context?: string[];
     executes?: { command: string; actor?: string; payload: Record<string, unknown> }[];
     seeds?: ({ service: string; records: { type: string; schemaName?: string; values: Record<string, unknown> }[] } | { service: string; fixture: string })[];
@@ -148,13 +149,33 @@ export interface HarnessCase {
  */
 export class HarnessConfigurationError extends Error {
   constructor(
-    public code: "CLOCK_UNSUPPORTED" | "MODE_UNSUPPORTED",
+    public code: "CLOCK_UNSUPPORTED" | "MODE_UNSUPPORTED" | "FAULT_UNSUPPORTED",
     message: string,
     public service?: string,
     public mode?: "state",
   ) {
     super(`Configuration error (exit 2): ${message}`);
   }
+}
+
+const COUNT_WORDS: Record<FaultCount, string> = { once: "once", times: "times n", reset: "until reset" };
+
+/** Why an adapter cannot arm this fault (ADR-0023), or undefined when it can. */
+function faultProblem(adapter: FeatServiceAdapter | undefined, f: Fault): string | undefined {
+  if (!adapter) return `service '${f.service}' is not configured`;
+  if (typeof adapter.fault !== "function") return `the adapter for '${f.service}' has no fault() method`;
+  const catalog: FaultCatalog = adapter.faults ?? {};
+  const entry = catalog[f.operation];
+  if (entry === undefined)
+    return `the adapter for '${f.service}' offers no operation '${f.operation}' (offers: ${Object.keys(catalog).join(", ") || "none"})`;
+  const names = Array.isArray(entry) ? (entry as readonly string[]) : Object.keys(entry);
+  if (!names.includes(f.fault))
+    return `the adapter for '${f.service}' offers no fault '${f.fault}' under '${f.operation}' (offers: ${names.join(", ")})`;
+  const counts: readonly FaultCount[] = Array.isArray(entry) ? ["once", "times", "reset"] : (entry as Record<string, readonly FaultCount[]>)[f.fault]!;
+  const wanted: FaultCount = f.times === "reset" ? "reset" : f.times === 1 && counts.includes("once") ? "once" : "times";
+  if (!counts.includes(wanted))
+    return `the fault '${f.operation}/${f.fault}' of '${f.service}' declares only ${counts.map((c) => COUNT_WORDS[c]).join(" | ")}, not ${f.times === "reset" ? "until reset" : f.times === 1 ? "once" : `times ${f.times}`}`;
+  return undefined;
 }
 
 /** The query hint of a `contains` assertion: type + the literal top-level fields (and @when values) of each record. */
@@ -215,6 +236,11 @@ export async function createHarness(opts: { configPath: string }): Promise<Harne
           `${c.anchor}: 'clock at' needs a response adapter with setClock() — the configured response adapter cannot honour it.`,
         );
     }
+    for (const f of c.given?.faults ?? []) {
+      const problem = faultProblem(services.get(f.service), f);
+      if (problem !== undefined)
+        throw new HarnessConfigurationError("FAULT_UNSUPPORTED", `${c.anchor}: fault ${f.service} ${f.operation} ${f.fault}: ${problem}.`, f.service);
+    }
     for (const [key, assertion] of Object.entries(c.prediction.services)) {
       if (assertion.contains === undefined) continue;
       const observes = services.get(key)?.observes ?? { diff: "native", state: true };
@@ -268,6 +294,13 @@ export async function createHarness(opts: { configPath: string }): Promise<Harne
       givenResponse = await response.invoke(pre.command, payload, pre.actor);
     }
 
+    // ADR-0023: faults are armed after the seeds and the given executes (setup never consumes them)
+    // and before the capture window (arming is never a captured effect), in written order.
+    for (const f of c.given?.faults ?? []) {
+      const { service, ...arm } = f;
+      await services.get(service)!.fault!(arm);
+    }
+
     // ── Capture window ──
     // The spec's type travels with the window (ADR-0011): an adapter that reports resulting
     // STATE for a command must not report that same seeded state as a WRITE to a query, whose
@@ -302,6 +335,26 @@ export async function createHarness(opts: { configPath: string }): Promise<Harne
 
     const capturedRecords = new Map<string, CapturedRecord[]>();
     for (const [key, adapter] of services) capturedRecords.set(key, await adapter.stopCapture());
+
+    // ADR-0023: an armed fault the system never consumed means the scenario did not exercise what it
+    // claims. An adapter that cannot observe consumption (no firedFaults) is not checked.
+    for (const key of new Set((c.given?.faults ?? []).map((f) => f.service))) {
+      const adapter = services.get(key)!;
+      if (!adapter.firedFaults) continue;
+      const fired = await adapter.firedFaults();
+      const wanted = new Map<string, { operation: string; fault: string; need: number }>();
+      for (const f of (c.given?.faults ?? []).filter((x) => x.service === key)) {
+        const id = `${f.operation}/${f.fault}`;
+        const w = wanted.get(id) ?? { operation: f.operation, fault: f.fault, need: 0 };
+        w.need += f.times === "reset" ? 1 : f.times;
+        wanted.set(id, w);
+      }
+      for (const [id, w] of wanted) {
+        const got = fired.filter((x) => x.operation === w.operation && x.fault === w.fault).reduce((n, x) => n + x.count, 0);
+        if (got < w.need)
+          violations.push(`FAULT_NOT_CONSUMED: ${c.anchor} › ${key}: fault ${id} armed for ${w.need} call(s), consumed ${got}`);
+      }
+    }
 
     // ── Diff ──
     const ctx: MatchContext = {

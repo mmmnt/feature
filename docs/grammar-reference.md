@@ -226,10 +226,16 @@ Fixture JSON is data, not glue code — DP-3 stands; imperative seed scripts are
 context, so a mistyped precondition cannot silently become a comment. A word that merely begins
 with those letters (`faults`, `faultline`) is not reserved. A fault on an unconfigured service is
 `UNKNOWN_SERVICE_KEY`. A fault is a precondition, never an assertion: the scenario predicts what the
-system does about it with the existing `predict` forms. *Execution* — arming, consumption, the
-unsupported-fault and not-consumed failures — belongs to the harness (SPEC-RT-003) and is not part
-of this revision of the toolchain: until it lands, a spec that declares a fault parses and derives
-but the harness does not arm it.
+system does about it with the existing `predict` forms: a `predict rejection` (zero effects on every
+service, so a half-write the product accepted before the fault fails as an unpredicted effect), a
+`predict error`, or a `predict success` when a retry recovers. The harness (SPEC-RT-003, ADR-0023)
+arms the faults after the seeds and the `given` executes and before the capture window, in written
+order, and consumes them as the count says. A fault armed and **not consumed** (fewer firings than
+the count) fails the case with `FAULT_NOT_CONSUMED`, unless the adapter cannot observe consumption.
+An adapter declares a catalog of the faults it can produce and the counts each accepts (`once`,
+`times`, `reset`; an array of fault names declares all three); a fault outside it, or armed with an
+undeclared count, or against an adapter with no `fault()`, is `FAULT_UNSUPPORTED` before the case has
+any effect. An adapter's own capture, `read()` and `seed()` are never faulted.
 At generate time (SPEC-GEN-001) every seed record is checked: a `seed ... from "<path>"` fixture is
 resolved against the directory of the spec, must be a JSON array of `{ type, schemaName?, values }`
 records, and each record's `schemaName` must be declared in `contract:` (ADR-0007) with `values` valid
