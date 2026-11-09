@@ -1,0 +1,364 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "contracts/adrs/feat-host-protocol.schema.json",
+  "title": "FeatHostProtocol",
+  "description": "The Feat Host Protocol: one line of JSON-RPC 2.0 between @mmmnt/feat-adapter-stdio-jsonrpc and a spec host, over the host's stdin/stdout. One request line, one response line, correlated by id. Every params and result shape is closed (additionalProperties false) except the values the protocol carries opaquely (invoke input, seed values, read query, deliver payload, capture payload and metadata). A line is either a request or a response; a response's result is typed by the method of the request it answers, so each method's result shape is a named definition (#/definitions/results/<method>) that the client applies to the request it sent.",
+  "oneOf": [
+    { "$ref": "#/definitions/request" },
+    { "$ref": "#/definitions/successResponse" },
+    { "$ref": "#/definitions/errorResponse" }
+  ],
+  "definitions": {
+    "id": { "type": "integer", "minimum": 1 },
+    "namespace": {
+      "description": "The runner namespace of the spec file (SPEC-RT-006: s plus the first 12 hex characters of the SHA-256 of the spec path): the host applies it to every key, stream, topic, label, alias or tag it writes and echoes it in the setup result.",
+      "type": "string",
+      "pattern": "^s[0-9a-f]{12}$"
+    },
+    "service": { "type": "string", "minLength": 1 },
+    "object": { "type": "object" },
+    "request": {
+      "title": "request",
+      "oneOf": [
+        { "$ref": "#/definitions/requests/setup" },
+        { "$ref": "#/definitions/requests/teardown" },
+        { "$ref": "#/definitions/requests/reset" },
+        { "$ref": "#/definitions/requests/setClock" },
+        { "$ref": "#/definitions/requests/invoke" },
+        { "$ref": "#/definitions/requests/seed" },
+        { "$ref": "#/definitions/requests/startCapture" },
+        { "$ref": "#/definitions/requests/peekCapture" },
+        { "$ref": "#/definitions/requests/stopCapture" },
+        { "$ref": "#/definitions/requests/settle" },
+        { "$ref": "#/definitions/requests/read" },
+        { "$ref": "#/definitions/requests/deliver" },
+        { "$ref": "#/definitions/requests/fault" }
+      ]
+    },
+    "requests": {
+      "setup": {
+        "type": "object",
+        "required": ["jsonrpc", "id", "method", "params"],
+        "additionalProperties": false,
+        "properties": {
+          "jsonrpc": { "const": "2.0" },
+          "id": { "$ref": "#/definitions/id" },
+          "method": { "const": "setup" },
+          "params": {
+            "type": "object",
+            "required": ["protocol", "services", "namespace"],
+            "additionalProperties": false,
+            "properties": {
+              "protocol": { "const": 2, "description": "The Feat Host Protocol version the client speaks. The unversioned wire protocol is 1. Exact match: a host answers the version it was asked for or the version it speaks, and the client accepts only its own." },
+              "services": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/definitions/service" } },
+              "namespace": { "$ref": "#/definitions/namespace" }
+            }
+          }
+        }
+      },
+      "teardown": {
+        "type": "object",
+        "required": ["jsonrpc", "id", "method", "params"],
+        "additionalProperties": false,
+        "properties": {
+          "jsonrpc": { "const": "2.0" },
+          "id": { "$ref": "#/definitions/id" },
+          "method": { "const": "teardown" },
+          "params": {
+            "type": "object",
+            "required": ["services"],
+            "additionalProperties": false,
+            "properties": {
+              "services": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/definitions/service" } }
+            }
+          }
+        }
+      },
+      "reset": {
+        "type": "object",
+        "required": ["jsonrpc", "id", "method", "params"],
+        "additionalProperties": false,
+        "properties": {
+          "jsonrpc": { "const": "2.0" },
+          "id": { "$ref": "#/definitions/id" },
+          "method": { "const": "reset" },
+          "params": { "type": "object", "additionalProperties": false }
+        }
+      },
+      "setClock": {
+        "type": "object",
+        "required": ["jsonrpc", "id", "method", "params"],
+        "additionalProperties": false,
+        "properties": {
+          "jsonrpc": { "const": "2.0" },
+          "id": { "$ref": "#/definitions/id" },
+          "method": { "const": "setClock" },
+          "params": {
+            "type": "object",
+            "required": ["clock"],
+            "additionalProperties": false,
+            "properties": {
+              "clock": {
+                "description": "RFC 3339 date-time WITH a zone designator freezes the scenario clock; null unfreezes it (the host's wall clock), so one case's freeze never reaches the next.",
+                "anyOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }]
+              }
+            }
+          }
+        }
+      },
+      "invoke": {
+        "type": "object",
+        "required": ["jsonrpc", "id", "method", "params"],
+        "additionalProperties": false,
+        "properties": {
+          "jsonrpc": { "const": "2.0" },
+          "id": { "$ref": "#/definitions/id" },
+          "method": { "const": "invoke" },
+          "params": {
+            "type": "object",
+            "required": ["command", "input"],
+            "additionalProperties": false,
+            "properties": {
+              "command": { "type": "string", "minLength": 1 },
+              "input": { "type": "object" },
+              "actor": { "type": "string" }
+            }
+          }
+        }
+      },
+      "seed": {
+        "type": "object",
+        "required": ["jsonrpc", "id", "method", "params"],
+        "additionalProperties": false,
+        "properties": {
+          "jsonrpc": { "const": "2.0" },
+          "id": { "$ref": "#/definitions/id" },
+          "method": { "const": "seed" },
+          "params": {
+            "type": "object",
+            "required": ["service", "records"],
+            "additionalProperties": false,
+            "properties": {
+              "service": { "$ref": "#/definitions/service" },
+              "records": { "type": "array", "items": { "$ref": "#/definitions/seedRecord" } }
+            }
+          }
+        }
+      },
+      "startCapture": {
+        "type": "object",
+        "required": ["jsonrpc", "id", "method", "params"],
+        "additionalProperties": false,
+        "properties": {
+          "jsonrpc": { "const": "2.0" },
+          "id": { "$ref": "#/definitions/id" },
+          "method": { "const": "startCapture" },
+          "params": {
+            "type": "object",
+            "required": ["service"],
+            "additionalProperties": false,
+            "properties": {
+              "service": { "$ref": "#/definitions/service" },
+              "specType": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      },
+      "peekCapture": {
+        "type": "object",
+        "required": ["jsonrpc", "id", "method", "params"],
+        "additionalProperties": false,
+        "properties": {
+          "jsonrpc": { "const": "2.0" },
+          "id": { "$ref": "#/definitions/id" },
+          "method": { "const": "peekCapture" },
+          "params": { "$ref": "#/definitions/serviceOnly" }
+        }
+      },
+      "stopCapture": {
+        "type": "object",
+        "required": ["jsonrpc", "id", "method", "params"],
+        "additionalProperties": false,
+        "properties": {
+          "jsonrpc": { "const": "2.0" },
+          "id": { "$ref": "#/definitions/id" },
+          "method": { "const": "stopCapture" },
+          "params": { "$ref": "#/definitions/serviceOnly" }
+        }
+      },
+      "settle": {
+        "type": "object",
+        "required": ["jsonrpc", "id", "method", "params"],
+        "additionalProperties": false,
+        "properties": {
+          "jsonrpc": { "const": "2.0" },
+          "id": { "$ref": "#/definitions/id" },
+          "method": { "const": "settle" },
+          "params": { "$ref": "#/definitions/serviceOnly" }
+        }
+      },
+      "read": {
+        "type": "object",
+        "required": ["jsonrpc", "id", "method", "params"],
+        "additionalProperties": false,
+        "properties": {
+          "jsonrpc": { "const": "2.0" },
+          "id": { "$ref": "#/definitions/id" },
+          "method": { "const": "read" },
+          "params": {
+            "type": "object",
+            "required": ["service", "query"],
+            "additionalProperties": false,
+            "properties": {
+              "service": { "$ref": "#/definitions/service" },
+              "query": { "type": "object" }
+            }
+          }
+        }
+      },
+      "deliver": {
+        "type": "object",
+        "required": ["jsonrpc", "id", "method", "params"],
+        "additionalProperties": false,
+        "properties": {
+          "jsonrpc": { "const": "2.0" },
+          "id": { "$ref": "#/definitions/id" },
+          "method": { "const": "deliver" },
+          "params": {
+            "type": "object",
+            "required": ["service", "event", "payload"],
+            "additionalProperties": false,
+            "properties": {
+              "service": { "$ref": "#/definitions/service" },
+              "event": { "type": "string", "minLength": 1 },
+              "payload": { "type": "object" }
+            }
+          }
+        }
+      },
+      "fault": {
+        "type": "object",
+        "required": ["jsonrpc", "id", "method", "params"],
+        "additionalProperties": false,
+        "properties": {
+          "jsonrpc": { "const": "2.0" },
+          "id": { "$ref": "#/definitions/id" },
+          "method": { "const": "fault" },
+          "params": {
+            "type": "object",
+            "required": ["service", "kind"],
+            "additionalProperties": false,
+            "properties": {
+              "service": { "$ref": "#/definitions/service" },
+              "kind": { "type": "string", "minLength": 1 },
+              "times": { "type": "integer", "minimum": 1 }
+            }
+          }
+        }
+      }
+    },
+    "serviceOnly": {
+      "type": "object",
+      "required": ["service"],
+      "additionalProperties": false,
+      "properties": { "service": { "$ref": "#/definitions/service" } }
+    },
+    "seedRecord": {
+      "type": "object",
+      "required": ["type", "values"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "type": "string", "minLength": 1 },
+        "schemaName": { "type": "string" },
+        "values": { "type": "object" }
+      }
+    },
+    "capturedRecord": {
+      "type": "object",
+      "required": ["type", "payload", "timestamp"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "type": "string", "minLength": 1 },
+        "key": { "type": "string" },
+        "payload": { "type": "object" },
+        "timestamp": { "type": "number" },
+        "metadata": { "type": "object" }
+      }
+    },
+    "successResponse": {
+      "title": "success response",
+      "type": "object",
+      "required": ["jsonrpc", "id", "result"],
+      "additionalProperties": false,
+      "properties": {
+        "jsonrpc": { "const": "2.0" },
+        "id": { "$ref": "#/definitions/id" },
+        "result": {}
+      }
+    },
+    "errorResponse": {
+      "title": "error response",
+      "description": "id is null only when the host could not read the request line well enough to know its id: code -32700 (the line is not JSON) or -32600 (the line is JSON but carries no usable id, or is not a request). Any error whose request id is known carries that id.",
+      "type": "object",
+      "required": ["jsonrpc", "id", "error"],
+      "additionalProperties": false,
+      "properties": {
+        "jsonrpc": { "const": "2.0" },
+        "id": { "oneOf": [{ "$ref": "#/definitions/id" }, { "type": "null" }] },
+        "error": {
+          "type": "object",
+          "required": ["code", "message"],
+          "additionalProperties": false,
+          "properties": {
+            "code": { "type": "integer" },
+            "message": { "type": "string" },
+            "data": {}
+          }
+        }
+      },
+      "if": { "type": "object", "properties": { "id": { "type": "null" } } },
+      "then": { "type": "object", "properties": { "error": { "type": "object", "properties": { "code": { "enum": [-32700, -32600] } } } } }
+    },
+    "empty": { "type": "object", "additionalProperties": false },
+    "results": {
+      "setup": {
+        "type": "object",
+        "required": ["protocol", "namespace"],
+        "additionalProperties": false,
+        "properties": {
+          "protocol": { "type": "integer", "minimum": 1, "description": "The version the host speaks. Any positive integer is a well-formed answer so that a mismatch is named by the client (PROTOCOL_MISMATCH) instead of reported as a malformed line; only 2 is accepted." },
+          "namespace": { "$ref": "#/definitions/namespace" }
+        }
+      },
+      "teardown": { "$ref": "#/definitions/empty" },
+      "reset": { "$ref": "#/definitions/empty" },
+      "setClock": { "$ref": "#/definitions/empty" },
+      "seed": { "$ref": "#/definitions/empty" },
+      "startCapture": { "$ref": "#/definitions/empty" },
+      "deliver": { "$ref": "#/definitions/empty" },
+      "fault": { "$ref": "#/definitions/empty" },
+      "invoke": {
+        "type": "object",
+        "required": ["status", "body"],
+        "additionalProperties": false,
+        "properties": {
+          "status": { "anyOf": [{ "type": "integer" }, { "type": "string" }] },
+          "body": { "anyOf": [{ "type": "object" }, { "type": "null" }] },
+          "headers": { "type": "object", "additionalProperties": { "type": "string" } },
+          "metadata": { "type": "object" }
+        }
+      },
+      "peekCapture": { "type": "array", "items": { "$ref": "#/definitions/capturedRecord" } },
+      "stopCapture": { "type": "array", "items": { "$ref": "#/definitions/capturedRecord" } },
+      "settle": {
+        "type": "object",
+        "required": ["settled"],
+        "additionalProperties": false,
+        "properties": { "settled": { "type": "boolean" } }
+      },
+      "read": {
+        "oneOf": [{ "type": "null" }, { "type": "array", "items": { "type": "object" } }]
+      }
+    }
+  }
+}

@@ -33,6 +33,10 @@
       "RunHarnessNamespace": {
         "module": "packages/feat-runtime/fixtures/harness/probe.mjs",
         "export": "runNamespace"
+      },
+      "Exchange": {
+        "module": "adapters/stdio-jsonrpc/src/exchange.ts",
+        "export": "exchange"
       }
     }
   },
@@ -46,10 +50,20 @@
     }
   },
   "specs": {
-    "dir": "packages",
+    "dir": ".",
     "pattern": "**/*.feat",
     "contractPattern": "**/*.contract.json",
-    "outputPattern": "{name}.test.ts"
+    "outputPattern": "{name}.test.ts",
+    "exclude": [
+      "drafts/**",
+      "corpus/**",
+      "**/fixtures/**",
+      "docs/**",
+      "reports/**",
+      "coverage/**",
+      "editor/**",
+      "editors/**"
+    ]
   },
   "report": {
     "format": [

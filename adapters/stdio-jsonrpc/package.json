@@ -1,0 +1,46 @@
+{
+  "name": "@mmmnt/feat-adapter-stdio-jsonrpc",
+  "version": "0.1.0",
+  "description": "Feat response and service adapters over the Feat Host Protocol: JSON-RPC 2.0 on a spec host's stdio (SPEC-RPC-001/002).",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "schemas"
+  ],
+  "scripts": {
+    "build": "node scripts/copy-schema.mjs && tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --exclude '**/transport.test.ts' --exclude '**/host-sharing.test.ts' --passWithNoTests"
+  },
+  "dependencies": {
+    "@mmmnt/feat-types": "workspace:^",
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.0",
+    "vitest": "^3.2.0",
+    "@mmmnt/feat-runtime": "workspace:^"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mmmnt/feature.git",
+    "directory": "adapters/stdio-jsonrpc"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
