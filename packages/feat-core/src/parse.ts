@@ -229,6 +229,27 @@ function parseLiteralObject(c: ValueCursor): Record<string, unknown> {
   return out;
 }
 
+const FAULT_FORM = "fault <service> <Operation> <Fault> [{ json }] [once | times <n> | until reset]";
+
+// ADR-0023: `fault <service> <Operation> <Fault> [{ json }] [once | times <n> | until reset]`.
+// <Operation> is UpperCamel, <Fault> UpperCamel or UPPER_SNAKE; `times` is always present in the IR.
+function parseFaultLine(t: string, line: number): Record<string, unknown> {
+  let times: number | "reset" = 1;
+  let head = t;
+  const tail = /[ \t]+(once|times[ \t]+([1-9][0-9]*)|until[ \t]+reset)$/.exec(t);
+  if (tail) {
+    head = t.slice(0, tail.index);
+    if (tail[2] !== undefined) times = Number(tail[2]);
+    else if (tail[1]!.startsWith("until")) times = "reset";
+  }
+  const m = /^fault[ \t]+([A-Za-z_][A-Za-z0-9_]*)[ \t]+([A-Z][A-Za-z0-9]*)[ \t]+([A-Z][A-Za-z0-9]*|[A-Z][A-Z0-9_]*)(?:[ \t]+(\{[\s\S]*\}))?$/.exec(head);
+  if (!m) throw new ParseFailure("MALFORMED_SYNTAX", `Malformed fault line: '${t}'.`, line, `Form: ${FAULT_FORM}`);
+  const fault: Record<string, unknown> = { service: m[1], operation: m[2], fault: m[3] };
+  if (m[4] !== undefined) fault.detail = parseInlinePayload(m[4]);
+  fault.times = times;
+  return fault;
+}
+
 function parseInlinePayload(src: string): Record<string, unknown> {
   const c = new ValueCursor(src.trim());
   const obj = parseLiteralObject(c);
@@ -646,6 +667,12 @@ function parseFeat(source: string, ctx: ConfigContext): Record<string, unknown> 
           inv.payload = parseInlinePayload(m[3]!);
           executes.push(inv);
           given.executes = executes;
+        } else if (/^fault(?:[ \t]|$)/.test(t)) {
+          // ADR-0023: `fault` is reserved as the first word of a given line. A line that starts with it
+          // and does not match the form is MALFORMED_SYNTAX, never freeform context.
+          const faults = (given.faults as unknown[] | undefined) ?? [];
+          faults.push(parseFaultLine(t, s.line));
+          given.faults = faults;
         } else if ((m = /^seed[ \t]+([A-Za-z_][A-Za-z0-9_]*)[ \t]+from[ \t]+"((?:[^"\\]|\\.)*)"$/.exec(t))) {
           const seeds = (given.seeds as unknown[] | undefined) ?? [];
           seeds.push({ service: m[1], fixture: m[2] });
@@ -767,6 +794,7 @@ function parseFeat(source: string, ctx: ConfigContext): Record<string, unknown> 
     for (const key of Object.keys(services ?? {})) serviceRefs.push(key);
     for (const seed of (given?.seeds as Record<string, unknown>[] | undefined) ?? []) serviceRefs.push(seed.service as string);
     for (const del of (sc.delivers as Record<string, unknown>[] | undefined) ?? []) serviceRefs.push(del.service as string);
+    for (const f of (given?.faults as Record<string, unknown>[] | undefined) ?? []) serviceRefs.push(f.service as string);
     /**
      * A cross-surface capture reference names a service too, so it joins the same closed space —
      * `@nosuchservice[0].id` is UNKNOWN_SERVICE_KEY, listing the configured ones, exactly as a

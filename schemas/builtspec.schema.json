@@ -516,6 +516,28 @@
           "items": {
             "$ref": "#/definitions/seed"
           }
+        },
+        "faults": {
+          "type": "array",
+          "description": "Logical faults the named service's adapter arms as preconditions, in written order (ADR-0023). Armed after seeds and executes, before the capture window.",
+          "items": {
+            "$ref": "#/definitions/fault"
+          }
+        }
+      }
+    },
+    "fault": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["service", "operation", "fault", "times"],
+      "properties": {
+        "service": { "type": "string", "description": "A configured service key (INV-7)." },
+        "operation": { "type": "string", "pattern": "^[A-Z][A-Za-z0-9]*$" },
+        "fault": { "type": "string", "pattern": "^([A-Z][A-Za-z0-9]*|[A-Z][A-Z0-9_]*)$" },
+        "detail": { "type": "object", "description": "Literal data for the adapter; no matchers." },
+        "times": {
+          "oneOf": [{ "type": "integer", "minimum": 1 }, { "const": "reset" }],
+          "description": "Consumption: n calls (1 is the default, `once`), or \"reset\" for every call until the case ends. Always emitted."
         }
       }
     },

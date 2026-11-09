@@ -68,7 +68,7 @@
           "captures": { "1": { "name": "keyword.control.section.feat" } }
         },
         {
-          "match": "^\\s+(handler at|touches|imports|input|response|record|event|error|rejects|clock at|execute)\\b",
+          "match": "^\\s+(handler at|touches|imports|input|response|record|event|error|rejects|clock at|execute|fault)\\b",
           "captures": { "1": { "name": "keyword.other.directive.feat" } }
         }
       ]

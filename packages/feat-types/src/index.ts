@@ -66,11 +66,22 @@ export type Seed =
   | { service: string; records: SeedRecord[] }
   | { service: string; fixture: string };
 
+/** ADR-0023: a logical fault the named service's adapter arms as a precondition. */
+export interface Fault {
+  service: string;
+  operation: string;
+  fault: string;
+  detail?: Record<string, unknown>;
+  /** Consumption: n calls (1 = once), or "reset" for every call until the case ends. */
+  times: number | "reset";
+}
+
 export interface Given {
   clock?: string;
   context?: string[];
   executes?: Invocation[];
   seeds?: Seed[];
+  faults?: Fault[];
 }
 
 export type Matcher =

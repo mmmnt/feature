@@ -167,6 +167,10 @@ function substituteGiven(given: Given | undefined, row: Row): Given | undefined 
       payload: substituteValue(e.payload, row) as Record<string, unknown>,
     }));
   if (given.seeds) out.seeds = given.seeds;
+  if (given.faults)
+    out.faults = given.faults.map((f) =>
+      f.detail === undefined ? f : { ...f, detail: substituteValue(f.detail, row) as Record<string, unknown> },
+    );
   return out;
 }
 

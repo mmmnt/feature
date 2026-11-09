@@ -1,0 +1,196 @@
+{
+  "featVersion": "1.0",
+  "identity": {
+    "id": "SPEC-ORD-003",
+    "name": "PlaceOrder under product faults",
+    "context": "Orders",
+    "aggregate": "Order",
+    "type": "command",
+    "status": "agreed"
+  },
+  "construct": [
+    {
+      "kind": "handler",
+      "path": "features/place-order/handler.ts"
+    },
+    {
+      "kind": "touches",
+      "glob": "features/place-order/**"
+    }
+  ],
+  "enforce": [
+    {
+      "kind": "constraint",
+      "text": "append OrderPlaced to the order's stream with the expected revision"
+    },
+    {
+      "kind": "rejects",
+      "rejectionId": "CONCURRENCY_CONFLICT",
+      "text": "the store reports a wrong expected revision"
+    },
+    {
+      "kind": "constraint",
+      "text": "retry once when the store reports the node is not the leader"
+    },
+    {
+      "kind": "rejects",
+      "rejectionId": "STORE_UNAVAILABLE",
+      "text": "the store denies the append"
+    }
+  ],
+  "contract": [
+    {
+      "kind": "input",
+      "schemaName": "PlaceOrderInput"
+    },
+    {
+      "kind": "response",
+      "schemaName": "OrderAccepted"
+    },
+    {
+      "kind": "event",
+      "schemaName": "OrderPlacedEvent"
+    },
+    {
+      "kind": "error",
+      "schemaName": "Refusal"
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "a concurrent writer wins the append",
+      "given": {
+        "context": [
+          "Another writer has already appended to this order's stream."
+        ],
+        "faults": [
+          {
+            "service": "eventStore",
+            "operation": "AppendToStream",
+            "fault": "WrongExpectedVersion",
+            "times": 1
+          }
+        ]
+      },
+      "when": {
+        "command": "PlaceOrder",
+        "payload": {
+          "orderId": "o-1",
+          "sku": "sku-9"
+        }
+      },
+      "prediction": {
+        "type": "rejection",
+        "rejectionId": "CONCURRENCY_CONFLICT",
+        "response": {
+          "status": 409,
+          "schemaName": "Refusal",
+          "valueBlock": {
+            "code": {
+              "matcher": "literal",
+              "value": "CONCURRENCY_CONFLICT"
+            }
+          }
+        },
+        "services": {
+          "eventStore": {
+            "records": []
+          }
+        }
+      }
+    },
+    {
+      "name": "a not-leader answer is retried once and the order is placed",
+      "given": {
+        "faults": [
+          {
+            "service": "eventStore",
+            "operation": "AppendToStream",
+            "fault": "NotLeader",
+            "detail": {
+              "node": "n2"
+            },
+            "times": 1
+          }
+        ]
+      },
+      "when": {
+        "command": "PlaceOrder",
+        "payload": {
+          "orderId": "o-2",
+          "sku": "sku-9"
+        }
+      },
+      "prediction": {
+        "type": "success",
+        "response": {
+          "status": 202,
+          "schemaName": "OrderAccepted",
+          "valueBlock": {
+            "orderId": {
+              "matcher": "whenRef",
+              "path": "orderId"
+            }
+          }
+        },
+        "services": {
+          "eventStore": {
+            "records": [
+              {
+                "type": "OrderPlaced",
+                "schemaName": "OrderPlacedEvent",
+                "valueBlock": {
+                  "orderId": {
+                    "matcher": "whenRef",
+                    "path": "orderId"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "access denied holds for the whole case",
+      "given": {
+        "faults": [
+          {
+            "service": "eventStore",
+            "operation": "AppendToStream",
+            "fault": "AccessDenied",
+            "detail": {
+              "stream": "orders"
+            },
+            "times": "reset"
+          }
+        ]
+      },
+      "when": {
+        "command": "PlaceOrder",
+        "payload": {
+          "orderId": "o-3"
+        }
+      },
+      "prediction": {
+        "type": "rejection",
+        "rejectionId": "STORE_UNAVAILABLE",
+        "response": {
+          "status": 503,
+          "schemaName": "Refusal",
+          "valueBlock": {
+            "code": {
+              "matcher": "literal",
+              "value": "STORE_UNAVAILABLE"
+            }
+          }
+        },
+        "services": {
+          "eventStore": {
+            "records": []
+          }
+        }
+      }
+    }
+  ]
+}

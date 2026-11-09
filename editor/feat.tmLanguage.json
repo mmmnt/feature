@@ -76,7 +76,7 @@
       }
     },
     "trigger": {
-      "match": "^\\s*(when|deliver|execute|seed|clock at)\\b(?:\\s*\\((as)\\s+([A-Za-z0-9_-]+)\\))?",
+      "match": "^\\s*(when|deliver|execute|seed|fault|clock at)\\b(?:\\s*\\((as)\\s+([A-Za-z0-9_-]+)\\))?",
       "captures": {
         "1": { "name": "keyword.control.trigger.feat" },
         "2": { "name": "keyword.other.as.feat" },

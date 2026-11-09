@@ -1,7 +1,7 @@
-# The `.feat` Language — Grammar Reference v1.2
+# The `.feat` Language — Grammar Reference v1.3
 
 > Language version: `feat 1.0`
-> Design decisions are recorded as ADRs (ADR-0001…0022) in the project decision log.
+> Design decisions are recorded as ADRs (ADR-0001…0023) in the project decision log.
 > The `corpus/` directory holds canonical exemplars paired with expected-IR fixtures —
 > when this document and the corpus disagree, that is a bug in one of them; fix the spec first.
 
@@ -206,18 +206,30 @@ additionally stamps optional `loc` (line/column) on IR nodes for editor jump-to-
 
 ### 5.1 `given:` — the hybrid zone
 
-Three line kinds, freely mixed:
+Four line kinds, freely mixed:
 
 | Kind | Form | Semantics |
 | --- | --- | --- |
 | Freeform | any unmatched line | Human/agent context; opaque |
 | `execute` | `execute [(as <actor>)] <Command> { <json> }` | Runs the command through the **response adapter** before the capture window opens (INV-9) |
 | `seed` (ADR-0003) | `seed <service> [ <records> ]` or `seed <service> from "<path.json>"` | Injects state directly through the service adapter's `seed()`; fixture form for bulk state |
+| `fault` (ADR-0023) | `fault <service> <Operation> <Fault> [{ <json> }] [once \| times <n> \| until reset]` | Declares a **logical fault** the product will return, as a precondition armed after the seeds and the `given` executes and before the capture window, in written order. Consumed by the system's next call of `<Operation>` on `<service>` (`once`, the default), the next `<n>` calls (`times <n>`, `n` ≥ 1), or every call until the case ends (`until reset`). `<service>` is a configured service key (INV-7). `<Operation>` is UpperCamel; `<Fault>` is UpperCamel or UPPER_SNAKE (§1.2); both are the **adapter's vocabulary**, not the language's. The optional `{ … }` is literal data for the adapter (no matchers, no `@when`). The IR is `given.faults[]` = `{ service, operation, fault, detail?, times }`, `times` always present (`1`, `n`, or `"reset"`). |
 | `clock at` (ADR-0012) | `clock at "2026-07-16T00:00:00Z"` | Freezes scenario time. v1: honored by the **handler adapter only** (it injects the clock); remote protocols need their own test-time hooks. |
 
 Seed records take **full literal values only** — no matchers, no `@when` (seeds are writes, and
 `given` precedes `when`). Optional `with <Schema>` validates seed data at generate time.
 Fixture JSON is data, not glue code — DP-3 stands; imperative seed scripts are forbidden.
+
+**`fault` is reserved at the start of a `given` line.** A line that is exactly `fault`, or begins
+`fault` followed by a space or tab, is a fault line: a well-formed one is recorded in
+`given.faults`, any other is `MALFORMED_SYNTAX` (hint: the form above) — it is never freeform
+context, so a mistyped precondition cannot silently become a comment. A word that merely begins
+with those letters (`faults`, `faultline`) is not reserved. A fault on an unconfigured service is
+`UNKNOWN_SERVICE_KEY`. A fault is a precondition, never an assertion: the scenario predicts what the
+system does about it with the existing `predict` forms. *Execution* — arming, consumption, the
+unsupported-fault and not-consumed failures — belongs to the harness (SPEC-RT-003) and is not part
+of this revision of the toolchain: until it lands, a spec that declares a fault parses and derives
+but the harness does not arm it.
 At generate time (SPEC-GEN-001) every seed record is checked: a `seed ... from "<path>"` fixture is
 resolved against the directory of the spec, must be a JSON array of `{ type, schemaName?, values }`
 records, and each record's `schemaName` must be declared in `contract:` (ADR-0007) with `values` valid
@@ -460,7 +472,7 @@ Generated tests import only `@mmmnt/feat-runtime` and run standalone under `npx 
 **Block openers:** `spec` `context` `aggregate` `type` `status` `construct:` `enforce:` `contract:`
 `scenario` `scenario outline` `given:` `when:` `predict` `examples:`
 **Status values:** `draft` `agreed` `built` `verified`
-**Trigger/actor:** `deliver … to` `as` `anonymous` · **Given:** `clock at`
+**Trigger/actor:** `deliver … to` `as` `anonymous` · **Given:** `clock at` `fault`
 **Contract:** `input` `response` `event` `record` `error` `stream` `from`
 **Construct:** `handler at` `imports … from` `register … in` `emit to` `touches`
 **Enforce:** `rejects … when`

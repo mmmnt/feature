@@ -1,0 +1,26 @@
+feat 1.0
+
+spec SPEC-BAD-101 "Fault without an operation"
+context Bad
+aggregate Thing
+type command
+status draft
+
+construct:
+  handler at src/do-thing.ts
+  touches src/**
+
+enforce:
+  do the thing
+
+contract:
+  input ThingInput
+  response ThingResult
+
+scenario "does the thing":
+  given:
+    fault eventStore
+  when: DoThing { value: 1 }
+  predict success:
+    response OK ThingResult
+    eventStore has []

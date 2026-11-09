@@ -1,0 +1,66 @@
+{
+  "featVersion": "1.0",
+  "identity": {
+    "id": "SPEC-OK-101",
+    "name": "A word that merely begins with fault",
+    "context": "Ok",
+    "aggregate": "Thing",
+    "type": "command",
+    "status": "draft"
+  },
+  "construct": [
+    {
+      "kind": "handler",
+      "path": "src/do-thing.ts"
+    },
+    {
+      "kind": "touches",
+      "glob": "src/**"
+    }
+  ],
+  "enforce": [
+    {
+      "kind": "constraint",
+      "text": "do the thing"
+    }
+  ],
+  "contract": [
+    {
+      "kind": "input",
+      "schemaName": "ThingInput"
+    },
+    {
+      "kind": "response",
+      "schemaName": "ThingResult"
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "does the thing",
+      "given": {
+        "context": [
+          "faults in the upstream are rare, and this line is context",
+          "faultline is one word"
+        ]
+      },
+      "when": {
+        "command": "DoThing",
+        "payload": {
+          "value": 1
+        }
+      },
+      "prediction": {
+        "type": "success",
+        "response": {
+          "status": "OK",
+          "schemaName": "ThingResult"
+        },
+        "services": {
+          "eventStore": {
+            "records": []
+          }
+        }
+      }
+    }
+  ]
+}

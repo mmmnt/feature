@@ -8,6 +8,9 @@ feat 1.0
 #
 # AMENDMENT (ADR-0022, UpperCamel rejection ids; Sift founder ruling 19878957 (1), "Change
 # Feature's grammar"; flipped to agreed and ordered built by Sift decision 0026e0ea, 2026-11-09).
+#
+# AMENDMENT (ADR-0023, `fault` in given:; Sift founder rulings 05537e6e (3) "reserved inside given:
+# in feat 1.0" and 0026e0ea, 2026-11-09).
 
 spec SPEC-CORE-001 "Parse a .feat file to BuiltSpec IR"
 context Toolchain
@@ -29,13 +32,21 @@ construct:
   A rejection id (in `rejects <ID> when` and `predict rejection <ID>:`) is UPPER_SNAKE ([A-Z0-9_]+) or
   UpperCamel ([A-Z][A-Za-z0-9]*) and is kept verbatim in the IR (ADR-0022). Anything else in the
   rejection-id position of a prediction is MALFORMED_SYNTAX.
+  Inside a scenario's given: block `fault` is a reserved first word (ADR-0023): a line that is exactly
+  `fault`, or starts `fault` followed by a space or tab, is a fault line and is never freeform context.
+  The form is `fault <service> <Operation> <Fault> [{ json }] [once | times <n> | until reset]`, <Operation>
+  UpperCamel, <Fault> UpperCamel or UPPER_SNAKE, <n> a positive integer. A well-formed line lands in the
+  scenario's given.faults, in written order, as { service, operation, fault, detail?, times } with times
+  always present (1 for the default and for once, n, or "reset"). Anything else that begins with the
+  reserved word is MALFORMED_SYNTAX. A word that merely begins with the letters, such as `faults` or
+  `faultline`, is not reserved and stays freeform. The fault's service joins the closed service space.
 
 enforce:
   read the version pragma before anything else
   rejects MISSING_PRAGMA when the first non-comment line is not a feat version pragma
   rejects UNSUPPORTED_VERSION when the pragma names a version this toolchain does not support
-  rejects MALFORMED_SYNTAX when a compiler-zone block violates the grammar
-  rejects UNKNOWN_SERVICE_KEY when a prediction targets a service absent from the config services, or a cross-surface capture reference names one (ADR-0021 — a reference names a service, so it shares the closed space)
+  rejects MALFORMED_SYNTAX when a compiler-zone block violates the grammar, a fault line in given: included (ADR-0023)
+  rejects UNKNOWN_SERVICE_KEY when a prediction or a given fault targets a service absent from the config services, or a cross-surface capture reference names one (ADR-0021 — a reference names a service, so it shares the closed space)
   rejects UNKNOWN_COMMAND when a when or execute names a command absent from response.commands
   rejects UNDECLARED_SCHEMA when a scenario references a schema absent from the contract block
   rejects UNKNOWN_ACTOR when an as-clause names an actor absent from response.actors
@@ -128,6 +139,18 @@ scenario "parses the UpperCamel rejection-id exemplar (rejection-camelcase, ADR-
     response OK BuiltSpec equals fixture "../../corpus/rejection-camelcase/rejection-camelcase.ir.json"
     filesystem has []
 
+scenario "parses the fault exemplar (given-fault, ADR-0023)":
+  when: Parse { spec: "corpus/given-fault/given-fault.feat", config: "corpus/given-fault/feat.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "../../corpus/given-fault/given-fault.ir.json"
+    filesystem has []
+
+scenario "a word that merely begins with fault stays freeform context":
+  when: Parse { spec: "packages/feat-core/fixtures/ok/fault-prefix-word.feat", config: "packages/feat-core/fixtures/parse.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "../../packages/feat-core/fixtures/ok/fault-prefix-word.ir.json"
+    filesystem has []
+
 scenario outline "rejects invalid specs with the precise code":
   when: Parse { spec: <spec>, config: "packages/feat-core/fixtures/parse.config.json" }
   predict rejection <code>:
@@ -151,3 +174,10 @@ scenario outline "rejects invalid specs with the precise code":
     | "packages/feat-core/fixtures/bad/rejection-id-lower-camel.feat"      | "MALFORMED_SYNTAX" |
     | "packages/feat-core/fixtures/bad/rejection-id-mixed-case-snake.feat" | "MALFORMED_SYNTAX" |
     | "packages/feat-core/fixtures/bad/rejection-id-kebab.feat"            | "MALFORMED_SYNTAX" |
+    | "packages/feat-core/fixtures/bad/fault-missing-operation.feat"      | "MALFORMED_SYNTAX"        |
+    | "packages/feat-core/fixtures/bad/fault-lowercase-operation.feat"    | "MALFORMED_SYNTAX"        |
+    | "packages/feat-core/fixtures/bad/fault-times-zero.feat"             | "MALFORMED_SYNTAX"        |
+    | "packages/feat-core/fixtures/bad/fault-times-without-count.feat"    | "MALFORMED_SYNTAX"        |
+    | "packages/feat-core/fixtures/bad/fault-trailing-junk.feat"          | "MALFORMED_SYNTAX"        |
+    | "packages/feat-core/fixtures/bad/fault-bare-keyword.feat"           | "MALFORMED_SYNTAX"        |
+    | "packages/feat-core/fixtures/bad/fault-unknown-service.feat"        | "UNKNOWN_SERVICE_KEY"     |
