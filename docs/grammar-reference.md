@@ -438,6 +438,25 @@ that per-spec `.contract.json` registries `$ref` into.
   property of the config a run actually used, and `feat report --evidence` stamps it into
   the bundle. Deliberately **outside** the derivation-relevant slice: generated suites are
   environment-agnostic (committed once, run everywhere).
+- **Tier overlay (ADR-0024)**: optional top-level `extends` names a base config (path relative to
+  this file); one level only. The overlay replaces `environment`, `response`, `services.<key>`,
+  `specs` and `report` **whole, key by key** (a replaced `services.eventStore` carries none of the
+  base's options; a service the overlay does not mention is the base's); `featVersion` and
+  `schemas` are inherited and may not be redeclared; `environment` is **not** inherited. The merged
+  document is what is validated. The overlay may not add a service key, nor add or remove a command
+  name or an actor name — `TIER_SPACE_MISMATCH`; a missing base is `EXTENDS_NOT_FOUND`, a base that
+  itself extends is `EXTENDS_CHAIN`. The base is the spec tier (in-process, in-memory, `strong`); an
+  overlay is the integration tier. Every command (`run`, `verify`, `audit`, `lint`, `fmt`, `report`,
+  `generate`, `parse`) reads the merged config, so a drifting overlay is refused everywhere.
+- **Selecting a tier**: `feat run --config <overlay>`; `feat run` hands the generated suites the
+  active config as `FEAT_CONFIG`. `specs.exclude` (globs relative to `specs.dir`) removes spec files
+  from a tier's run.
+- **Generation is environment-agnostic**: a generated suite and its `Inputs-hash` depend only on
+  the spec, its contract, `featVersion` and the three closed spaces (service keys, command names,
+  actor names). Adapters, consistency, timeouts and options never enter the hash; the default
+  `ordered`/`unordered` is resolved by the harness from the active config, and the per-test timeout
+  envelope is computed by `feat run` from it (so a generated file run directly with `npx vitest`
+  gets vitest's default timeout).
 - **Command routing (ADR-0009)**: `response.commands` maps every command name to an
   adapter-specific invocation shape (HTTP: `{method, path}`; handler: `{module, export}`).
 - **Actors (ADR-0012)**: `response.actors` registers named actors with adapter-specific auth

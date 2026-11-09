@@ -45,6 +45,13 @@ still gets an honest bundle (the inventory records `parse_error`; `verify`
 reports `fail`). Gate on `feat verify && feat run` as usual — the bundle is a
 record, not a gate.
 
+## Tier provenance (ADR-0024)
+
+`project.config` records `resolved` (a digest of the merged config) and, when the config extends a
+base, the `overlay` and `base` files with their digests. `project.bindings` records the response
+adapter and, per service, the adapter, consistency and timeouts the run was bound to — so a bundle
+from the integration tier is distinguishable from a spec-tier one by what it ran against.
+
 ## Environment & output location (supersedes the static ADR-0016 field)
 
 The bundle's `project.environment` resolves: `config.environment` (explicit

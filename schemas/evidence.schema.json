@@ -13,6 +13,17 @@
     "verify"
   ],
   "additionalProperties": false,
+  "definitions": {
+    "configFile": {
+      "type": "object",
+      "required": ["path", "digest"],
+      "additionalProperties": false,
+      "properties": {
+        "path": { "type": "string" },
+        "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      }
+    }
+  },
   "properties": {
     "contract": {
       "enum": [
@@ -68,6 +79,46 @@
           "type": "string",
           "pattern": "^[a-z][a-z0-9-]*$",
           "description": "The environment the run verified (ADR-0016), copied from the config's top-level `environment`. Absent when the config declares none \u2014 the bundle never claims an environment the adapters weren't pointed at."
+        },
+        "config": {
+          "type": "object",
+          "required": ["resolved"],
+          "additionalProperties": false,
+          "description": "ADR-0024: the files behind the config the run used. `resolved` digests the merged config; `overlay` and `base` are present when the config extends a base.",
+          "properties": {
+            "resolved": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+            "overlay": { "$ref": "#/definitions/configFile" },
+            "base": { "$ref": "#/definitions/configFile" }
+          }
+        },
+        "bindings": {
+          "type": "object",
+          "required": ["services"],
+          "additionalProperties": false,
+          "description": "ADR-0024: what the run's adapters were bound to, so an integration bundle is distinguishable from a spec-tier one.",
+          "properties": {
+            "response": {
+              "type": "object",
+              "required": ["adapter"],
+              "additionalProperties": false,
+              "properties": { "adapter": { "type": "string" } }
+            },
+            "services": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["key", "adapter", "consistency"],
+                "additionalProperties": false,
+                "properties": {
+                  "key": { "type": "string" },
+                  "adapter": { "type": "string" },
+                  "consistency": { "enum": ["acid", "strong", "eventual"] },
+                  "convergenceTimeout": { "type": "integer", "minimum": 0 },
+                  "absenceTimeout": { "type": "integer", "minimum": 0 }
+                }
+              }
+            }
+          }
         },
         "commit": {
           "type": "string",

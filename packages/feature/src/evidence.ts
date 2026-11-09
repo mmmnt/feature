@@ -124,6 +124,41 @@ export function excerptLines(source: string): Array<{ n: number; zone: string; t
   return out;
 }
 
+/** Stable digest of the merged config: key order cannot change it. */
+function canonicalDigest(value: unknown): string {
+  const canon = (v: unknown): unknown =>
+    Array.isArray(v) ? v.map(canon)
+    : typeof v === "object" && v !== null
+      ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon((v as Record<string, unknown>)[k])]))
+      : v;
+  return sha256(JSON.stringify(canon(value)));
+}
+
+function configProvenance(root: string, configPath: string, configText: string, config: FeatConfig): Record<string, unknown> {
+  const rel = (p: string) => path.relative(root, p).split(path.sep).join("/");
+  const out: Record<string, unknown> = { resolved: canonicalDigest(config) };
+  if (config.extends === undefined) return out;
+  const overlayAbs = path.resolve(root, configPath);
+  const baseAbs = path.resolve(path.dirname(overlayAbs), config.extends);
+  out.overlay = { path: rel(overlayAbs), digest: sha256(configText) };
+  out.base = { path: rel(baseAbs), digest: sha256(readFileSync(baseAbs, "utf8")) };
+  return out;
+}
+
+function bindingsOf(config: FeatConfig): Record<string, unknown> {
+  const services = Object.keys(config.services).sort().map((key) => {
+    const s = config.services[key]!;
+    return {
+      key,
+      adapter: s.adapter,
+      consistency: s.consistency,
+      ...(s.convergenceTimeout !== undefined ? { convergenceTimeout: s.convergenceTimeout } : {}),
+      ...(s.absenceTimeout !== undefined ? { absenceTimeout: s.absenceTimeout } : {}),
+    };
+  });
+  return { ...(config.response ? { response: { adapter: config.response.adapter } } : {}), services };
+}
+
 export async function produceEvidence(root: string, configPath: string): Promise<Record<string, unknown>> {
   const configText = readFileSync(path.resolve(root, configPath), "utf8");
   const config = await readConfig(root, configPath);
@@ -195,6 +230,9 @@ export async function produceEvidence(root: string, configPath: string): Promise
     project: {
       feat_version: config.featVersion,
       config_digest: sha256(configText),
+      // ADR-0024: which files made the config the run actually used, and what each service was bound to.
+      config: configProvenance(root, configPath, configText, config),
+      bindings: bindingsOf(config),
       // Environment: config override > FEAT_ENVIRONMENT > ENVIRONMENT (fail-fast).
       environment: resolveEnvironment(config),
       // The producing commit — CI's sha when present, the local HEAD

@@ -8,7 +8,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import { afterAll, describe, expect, it } from "vitest";
-import { parseJunitRuns } from "./src/evidence.js";
+import { parseJunitRuns, produceEvidence } from "./src/evidence.js";
 
 const require = createRequire(import.meta.url);
 const Ajv: typeof import("ajv").default = require("ajv");
@@ -146,4 +146,43 @@ describe("junit attribute extraction", () => {
     expect(runs[0]!.name).toBe("SPEC-REQ-001: RaiseRequest > a member raises a request");
     expect(runs[0]!.spec_id).toBe("SPEC-REQ-001");
   });
+});
+
+async function within<T>(dir: string, f: () => Promise<T>): Promise<T> {
+  const cwd = process.cwd();
+  process.chdir(dir);
+  try {
+    return await f();
+  } finally {
+    process.chdir(cwd);
+  }
+}
+
+describe("evidence under a tier overlay", () => {
+  // ADR-0024: a bundle produced under a tier overlay names the base and the overlay and what each service was
+  // bound to, so a reader of an integration bundle can see it ran Kurrent-at-eventual and not memory-at-strong.
+  it("records the overlay, its base and the bindings of the active tier", async () => {
+    const root = path.join(PKG, "fixtures/tier");
+    const tier = await within(root, () => produceEvidence(root, "feat.integration.config.json"));
+    const project = tier.project as Record<string, any>;
+    expect(project.environment).toBe("integration");
+    expect(project.config.overlay).toMatchObject({ path: "feat.integration.config.json" });
+    expect(project.config.base).toMatchObject({ path: "feat.config.json" });
+    for (const d of [project.config.overlay.digest, project.config.base.digest, project.config.resolved])
+      expect(d).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(project.bindings.services).toEqual([
+      { key: "store", adapter: "@mmmnt/feat-adapter-memory", consistency: "eventual", convergenceTimeout: 100 },
+    ]);
+    expect(project.bindings.response).toEqual({ adapter: "@mmmnt/feat-adapter-handler" });
+
+    const base = (await within(root, () => produceEvidence(root, "feat.config.json"))).project as Record<string, any>;
+    expect(base.config.overlay).toBeUndefined();
+    expect(base.bindings.services[0].consistency).toBe("strong");
+    expect(base.config.resolved).not.toBe(project.config.resolved);
+
+    const ajv = new Ajv({ strict: false, allErrors: true });
+    addFormats(ajv);
+    const validate = ajv.compile(JSON.parse(readFileSync(path.join(ROOT, "schemas/evidence.schema.json"), "utf8")));
+    expect(validate(tier), JSON.stringify(validate.errors)).toBe(true);
+  }, 60_000);
 });
