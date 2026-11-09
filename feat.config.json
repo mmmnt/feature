@@ -6,6 +6,10 @@
   "response": {
     "adapter": "@mmmnt/feat-adapter-handler",
     "commands": {
+      "ObserveMemory": {
+        "module": "adapters/memory/fixtures/probe.mjs",
+        "export": "observe"
+      },
       "Parse": {
         "module": "packages/feat-core/src/parse.ts",
         "export": "parse"

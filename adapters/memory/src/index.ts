@@ -38,6 +38,8 @@ interface LogEntry {
 }
 
 class MemoryAdapter implements FeatServiceAdapter {
+  /** The log is native (stopCapture/peekCapture report writes) and read() answers it (SPEC-ADPMEM-001). */
+  readonly observes = { diff: "native", state: true } as const;
   private log: LogEntry[] = [];
   private seq = 0;
   private captureFrom: number | null = null;
@@ -81,16 +83,37 @@ class MemoryAdapter implements FeatServiceAdapter {
     this.captureFrom = null;
   }
 
-  async startCapture(): Promise<void> {
+  // The spec type (ADR-0011) is accepted: the memory log reports the same records for every
+  // spec type, so nothing here depends on it.
+  async startCapture(_context?: { specType?: string }): Promise<void> {
     this.captureFrom = this.seq;
+  }
+
+  private captured(from: number): CapturedRecord[] {
+    return this.log
+      .filter((e) => e.seq >= from && !e.stimulus)
+      .map((e) => ({ type: e.type, key: String(e.seq), payload: e.payload, timestamp: e.seq }));
   }
 
   async stopCapture(): Promise<CapturedRecord[]> {
     const from = this.captureFrom ?? this.seq;
     this.captureFrom = null;
-    return this.log
-      .filter((e) => e.seq >= from && !e.stimulus)
-      .map((e) => ({ type: e.type, key: String(e.seq), payload: e.payload, timestamp: e.seq }));
+    return this.captured(from);
+  }
+
+  /** ADR-0020: what stopCapture would return now, without closing the window; [] with none open. */
+  async peekCapture(): Promise<CapturedRecord[]> {
+    return this.captureFrom === null ? [] : this.captured(this.captureFrom);
+  }
+
+  /**
+   * ADR-0021: every write the adapter can see is a synchronous push onto its own log, so after one
+   * yield of the event loop the capture has caught up. No window open: nothing to vouch for.
+   */
+  async settle(): Promise<boolean> {
+    if (this.captureFrom === null) return false;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    return true;
   }
 
   async deliver(event: string, payload: Record<string, unknown>): Promise<void> {
