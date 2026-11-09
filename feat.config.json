@@ -17,6 +17,10 @@
       "InlineSeedFixtures": {
         "module": "packages/feature/src/seed-fixtures.ts",
         "export": "inlineSeedFixtures"
+      },
+      "RunHarnessCase": {
+        "module": "packages/feat-runtime/fixtures/harness/probe.mjs",
+        "export": "runCases"
       }
     }
   },

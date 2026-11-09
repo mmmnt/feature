@@ -1,0 +1,45 @@
+{
+  "featVersion": "1.0",
+  "schemas": {
+    "adapter": "@mmmnt/feat-schema-json"
+  },
+  "response": {
+    "adapter": "./stub.mjs",
+    "invoke": {
+      "clock": false
+    },
+    "commands": {
+      "Ping": {}
+    }
+  },
+  "services": {
+    "store": {
+      "adapter": "./stub.mjs",
+      "consistency": "strong",
+      "options": {
+        "clock": false,
+        "observes": {
+          "diff": "native",
+          "state": true
+        },
+        "state": [
+          {
+            "type": "OrderPlaced",
+            "key": "1",
+            "payload": {
+              "orderId": "o-1",
+              "total": 5
+            },
+            "timestamp": 0
+          }
+        ]
+      }
+    }
+  },
+  "specs": {
+    "dir": ".",
+    "pattern": "**/*.feat",
+    "contractPattern": "**/*.contract.json",
+    "outputPattern": "{name}.test.ts"
+  }
+}

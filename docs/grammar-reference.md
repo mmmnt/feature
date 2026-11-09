@@ -214,7 +214,7 @@ Four line kinds, freely mixed:
 | `execute` | `execute [(as <actor>)] <Command> { <json> }` | Runs the command through the **response adapter** before the capture window opens (INV-9) |
 | `seed` (ADR-0003) | `seed <service> [ <records> ]` or `seed <service> from "<path.json>"` | Injects state directly through the service adapter's `seed()`; fixture form for bulk state |
 | `fault` (ADR-0023) | `fault <service> <Operation> <Fault> [{ <json> }] [once \| times <n> \| until reset]` | Declares a **logical fault** the product will return, as a precondition armed after the seeds and the `given` executes and before the capture window, in written order. Consumed by the system's next call of `<Operation>` on `<service>` (`once`, the default), the next `<n>` calls (`times <n>`, `n` ≥ 1), or every call until the case ends (`until reset`). `<service>` is a configured service key (INV-7). `<Operation>` is UpperCamel; `<Fault>` is UpperCamel or UPPER_SNAKE (§1.2); both are the **adapter's vocabulary**, not the language's. The optional `{ … }` is literal data for the adapter (no matchers, no `@when`). The IR is `given.faults[]` = `{ service, operation, fault, detail?, times }`, `times` always present (`1`, `n`, or `"reset"`). |
-| `clock at` (ADR-0012) | `clock at "2026-07-16T00:00:00Z"` | Freezes scenario time. v1: honored by the **handler adapter only** (it injects the clock); remote protocols need their own test-time hooks. |
+| `clock at` (ADR-0012, ADR-0023) | `clock at "2026-07-16T00:00:00Z"` | Freezes scenario time: an ISO-8601 instant **with a zone designator**. The harness delivers it on every case (a `null` when the case has no `clock at`), after the resets and before anything runs, to every adapter that offers the optional `setClock(clock)` hook. The **response adapter** must offer the hook, or a case that uses `clock at` is a configuration error (`CLOCK_UNSUPPORTED`) before any effect — never a silent pass. Which adapters offer it: none yet (the handler adapter's side, SPEC-ADPHND-001, is not built); remote protocols need their own test-time hooks. `now()`/`iso()` in `variables:` honour the clock regardless. |
 
 Seed records take **full literal values only** — no matchers, no `@when` (seeds are writes, and
 `given` precedes `when`). Optional `with <Schema>` validates seed data at generate time.
@@ -304,6 +304,15 @@ is the explicit "nothing happens here". Omission is a validation error.
 **Query guarantee (ADR-0011)**: for `type query`, service predictions are implicitly `has []`
 everywhere and writing any `has [X]` is a **parse error** — side-effect freedom is unviolable
 by construction. Queries predict `response` (+ optional `contains`).
+**Observation modes (ADR-0023)**: `has` is the *diff* mode and `contains` the *state* mode. Diff is
+not optional: INV-6 puts a `has` on every service of every prediction, so every adapter serves it,
+natively or by comparing snapshots. State is the mode an adapter may lack. An adapter declares what
+it serves (`observes: { diff: "native" | "snapshot", state }`; none declared means both); a `contains`
+on a service whose adapter does not serve state is a configuration error (`MODE_UNSUPPORTED`) before
+the case has any effect. For a `contains` the harness hands `read()` a hint
+(`{ expect: [{ type, key? }] }`: each predicted record's type and its literal top-level fields) that
+an adapter may use to narrow its read; it may answer more than asked, never less.
+
 **Closed key space (INV-7)**: a service key not present in `feat.config.json` is a parse-time
 error listing the configured keys.
 

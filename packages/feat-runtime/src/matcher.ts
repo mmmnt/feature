@@ -83,7 +83,7 @@ const RX = {
   timestamp: /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/,
 };
 
-function pathGet(obj: unknown, dotted: string): unknown {
+export function pathGet(obj: unknown, dotted: string): unknown {
   let cur: unknown = obj;
   for (const part of dotted.split(".")) {
     if (typeof cur !== "object" || cur === null) return undefined;

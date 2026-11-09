@@ -217,12 +217,35 @@ export interface CapturedRecord {
 // ── Adapter interfaces (ADR-0001: modules export createAdapter(config)) ──────
 
 export interface FeatResponseAdapter {
+  /**
+   * Optional (ADR-0023): receive the scenario clock — an ISO-8601 instant with a zone designator, or
+   * null for "no frozen clock". The harness delivers it on every case, after the resets. A response
+   * adapter without it cannot run a spec that uses `clock at` (CLOCK_UNSUPPORTED).
+   */
+  setClock?(clock: string | null): Promise<void>;
   setup(config: Record<string, unknown>): Promise<void>;
   teardown(): Promise<void>;
   invoke(command: string, input: Record<string, unknown>, actor?: string): Promise<CapturedResponse>;
 }
 
+/** The query hint `contains` hands to read() (ADR-0023): one entry per predicted record. */
+export interface ReadQuery {
+  expect?: { type: string; key?: Record<string, string | number | boolean | null> }[];
+}
+
+/** Which observation modes an adapter serves (ADR-0023). Diff is never optional (INV-6). */
+export interface ObservationSupport {
+  /** "native": the product reports writes. "snapshot": two reads compared (cannot see a write undone in the window). */
+  diff: "native" | "snapshot";
+  /** read() answers the stored records, so `contains` can be asserted. */
+  state: boolean;
+}
+
 export interface FeatServiceAdapter {
+  /** Declares the observation modes served; an adapter that declares nothing is { diff: "native", state: true }. */
+  readonly observes?: ObservationSupport;
+  /** Optional (ADR-0023): receive the scenario clock, or null; see FeatResponseAdapter.setClock. */
+  setClock?(clock: string | null): Promise<void>;
   setup(): Promise<void>;
   teardown(): Promise<void>;
   reset(): Promise<void>;
@@ -235,7 +258,11 @@ export interface FeatServiceAdapter {
    */
   startCapture(context?: { specType?: string }): Promise<void>;
   stopCapture(): Promise<CapturedRecord[]>;
-  read(query: Record<string, unknown>): Promise<unknown | null>;
+  /**
+   * Resulting state. `query.expect` is a HINT built from a `contains` assertion: an adapter may use it to
+   * narrow its read, may answer more than asked, never less.
+   */
+  read(query: ReadQuery): Promise<unknown | null>;
   seed?(records: SeedRecord[]): Promise<void>;
   /**
    * Deliver an event as a scenario stimulus (projection/policy/saga triggers,

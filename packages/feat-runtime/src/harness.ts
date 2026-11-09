@@ -10,7 +10,8 @@ import type {
 } from "@mmmnt/feat-types";
 import { importAdapter } from "./import-adapter.js";
 import { loadConfig, variablesSidecarPath } from "./load-config.js";
-import { diffContains, diffRecords, diffResponse, type InlineData, type MatchContext } from "./matcher.js";
+import { diffContains, diffRecords, diffResponse, pathGet, type InlineData, type MatchContext } from "./matcher.js";
+import type { ReadQuery } from "@mmmnt/feat-types";
 
 // ── Spec variables (ADR-0017) ────────────────────────────────────────────────
 // Sources resolve ONCE PER CASE at execution start; every ${name} reference in
@@ -141,6 +142,34 @@ export interface HarnessCase {
   };
 }
 
+/**
+ * A case asks for something the adapters in front of it cannot give (ADR-0023). Raised BEFORE the case
+ * has any effect — no reset, seed, execute or invoke has run — and never a silent pass.
+ */
+export class HarnessConfigurationError extends Error {
+  constructor(
+    public code: "CLOCK_UNSUPPORTED" | "MODE_UNSUPPORTED",
+    message: string,
+    public service?: string,
+    public mode?: "state",
+  ) {
+    super(`Configuration error (exit 2): ${message}`);
+  }
+}
+
+/** The query hint of a `contains` assertion: type + the literal top-level fields (and @when values) of each record. */
+function readHint(contains: unknown[], when: Record<string, unknown> | undefined): ReadQuery {
+  const expect = (contains as { type: string; valueBlock?: Record<string, { matcher: string; value?: unknown; path?: string }> }[]).map((r) => {
+    const key: Record<string, string | number | boolean | null> = {};
+    for (const [field, m] of Object.entries(r.valueBlock ?? {})) {
+      const v = m.matcher === "literal" ? m.value : m.matcher === "whenRef" ? pathGet(when ?? {}, m.path ?? "") : undefined;
+      if (v === null || ["string", "number", "boolean"].includes(typeof v)) key[field] = v as string | number | boolean | null;
+    }
+    return Object.keys(key).length > 0 ? { type: r.type, key } : { type: r.type };
+  });
+  return { expect };
+}
+
 export class PredictionViolation extends Error {
   constructor(public violations: string[]) {
     super(`Prediction violated:\n  ${violations.join("\n  ")}`);
@@ -176,7 +205,31 @@ export async function createHarness(opts: { configPath: string }): Promise<Harne
     services.set(key, adapter);
   }
 
+  // ADR-0023: what the case needs from its adapters, checked before anything runs.
+  function preflight(c: HarnessCase): void {
+    if (c.given?.clock !== undefined) {
+      const reached = response ? typeof response.setClock === "function" : [...services.values()].some((a) => typeof a.setClock === "function");
+      if (!reached)
+        throw new HarnessConfigurationError(
+          "CLOCK_UNSUPPORTED",
+          `${c.anchor}: 'clock at' needs a response adapter with setClock() — the configured response adapter cannot honour it.`,
+        );
+    }
+    for (const [key, assertion] of Object.entries(c.prediction.services)) {
+      if (assertion.contains === undefined) continue;
+      const observes = services.get(key)?.observes ?? { diff: "native", state: true };
+      if (!observes.state)
+        throw new HarnessConfigurationError(
+          "MODE_UNSUPPORTED",
+          `${c.anchor} › ${key}: 'contains' asserts resulting state, which the adapter for '${key}' does not serve (observes.state is false).`,
+          key,
+          "state",
+        );
+    }
+  }
+
   async function runCase(rawCase: HarnessCase, inline: InlineData): Promise<void> {
+    preflight(rawCase);
     // ADR-0017: resolve the variable table once, substitute throughout — the
     // case's given/when/predictions share every value by construction.
     let c = rawCase;
@@ -193,6 +246,10 @@ export async function createHarness(opts: { configPath: string }): Promise<Harne
     }
     const violations: string[] = [];
     for (const adapter of services.values()) await adapter.reset();
+    // ADR-0023: the scenario clock, on EVERY case (null when there is none), after the resets.
+    const clock = c.given?.clock ?? null;
+    if (response?.setClock) await response.setClock(clock);
+    for (const adapter of services.values()) if (adapter.setClock) await adapter.setClock(clock);
 
     // ── Preconditions: before the capture window (INV-9) ──
     for (const seed of c.given?.seeds ?? []) {
@@ -267,7 +324,7 @@ export async function createHarness(opts: { configPath: string }): Promise<Harne
         } else {
           // contains (ADR-0011): resulting state via adapter read(); the shared
           // convergence wait has already elapsed for eventual services.
-          const state = await adapter.read({});
+          const state = await adapter.read(readHint(assertion.contains, sentWhen));
           const records = Array.isArray(state) ? (state as CapturedRecord[]) : [];
           if (!Array.isArray(state))
             violations.push(`${c.anchor} › ${key}: adapter read() did not return a record array — configuration error.`);
