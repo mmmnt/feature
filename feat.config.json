@@ -6,6 +6,10 @@
   "response": {
     "adapter": "@mmmnt/feat-adapter-handler",
     "commands": {
+      "ObserveFs": {
+        "module": "adapters/fs/fixtures/probe.mjs",
+        "export": "observe"
+      },
       "ObserveMemory": {
         "module": "adapters/memory/fixtures/probe.mjs",
         "export": "observe"

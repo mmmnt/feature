@@ -1,0 +1,93 @@
+feat 1.0
+
+# SPEC-ADPFS-001 — the fs adapter's two optional window methods: peekCapture (ADR-0020) and
+# settle (ADR-0021), plus its declaration of observation modes (SPEC-RT-002). Agreed and ordered built by Sift decision 58a4ac88
+# (2026-11-09: "flip them, queue in that order").
+#
+# Driven through adapters/fs/fixtures/probe.mjs (part of the build, inside touches).
+# `ObserveFs { script }` creates a scratch directory under the OS temp dir, makes it the
+# adapter's scope, and runs a space-separated script: `write:<file>`, `delete:<file>`, `start`,
+# `peek`, `settle`, `stop`. The answer is a `trace` (each step; peek/stop carry the record
+# count, settle carries true/false), `lastTypes` (record types of the last peek or stop,
+# comma-joined, in capture order) and `peekEqualsStop`, as in SPEC-ADPMEM-001.
+#
+# Can settle ever be truthful for fs? Visibility is not the problem: a completed local write is
+# visible to the next stat. DETECTION is: the adapter reports a file as written when its mtime
+# differs from the snapshot taken at startCapture, and a rewrite inside the filesystem's
+# timestamp granularity of the snapshot (milliseconds on ext4 and tmpfs, a second on HFS+, two
+# on FAT) leaves the mtime unchanged, so that write is invisible to stopCapture. A fence that
+# vouches "every write is visible" would then be false. fs is declared `acid`, which is the
+# honest model — the capture is read at once and nobody waits on it — so the harness never
+# needs a fence for it. settle therefore answers false, always. It would become answerable
+# with content digests in the snapshot (a change to stopCapture's cost and semantics, which is
+# its own spec), and this spec says so rather than leaving the question open.
+
+spec SPEC-ADPFS-001 "Filesystem adapter: peek and settle"
+context Toolchain
+aggregate Adapters
+type infrastructure
+status agreed
+
+construct:
+  handler at adapters/fs/src/index.ts
+  touches adapters/fs/**
+  needs SPEC-RT-002
+  Add `observes = { diff: "snapshot", state: false }`: the adapter derives its diff by comparing
+  two snapshots of the scope, and read() reports no state (it answers null, today's behavior).
+  A write and a delete of the same file inside one window cancel out of a snapshot diff; that
+  is the meaning of "snapshot", recorded in the evidence, not hidden.
+  peekCapture(): while a window is open, take a snapshot now and return the FILE_WRITTEN and
+  FILE_DELETED records stopCapture would return against it, without clearing the window's
+  baseline; with no window open return []. Factor the diff so stopCapture and peekCapture share it.
+  settle(): resolve false, whatever the window state (see the header for why).
+
+enforce:
+  peekCapture returns the in-window changes without closing the window
+  peekCapture returns [] when no window is open
+  settle resolves false
+
+contract:
+  input ObserveInput
+  response ObserveResult
+
+scenario "a peek reports a written file and consumes nothing":
+  when: ObserveFs { script: "start write:a.txt peek peek stop" }
+  predict success:
+    response OK ObserveResult { trace: "start write:a.txt peek=1 peek=1 stop=1", lastTypes: "FILE_WRITTEN", peekEqualsStop: true }
+    filesystem has []
+
+scenario "a peek reports a deleted file":
+  when: ObserveFs { script: "write:b.txt start delete:b.txt peek stop" }
+  predict success:
+    response OK ObserveResult { trace: "write:b.txt start delete:b.txt peek=1 stop=1", lastTypes: "FILE_DELETED", peekEqualsStop: true }
+    filesystem has []
+
+scenario "a file that existed before the window and did not change is not reported":
+  when: ObserveFs { script: "write:c.txt start peek stop" }
+  predict success:
+    response OK ObserveResult { trace: "write:c.txt start peek=0 stop=0" }
+    filesystem has []
+
+scenario "a peek after stop finds the window closed":
+  when: ObserveFs { script: "start write:d.txt stop peek" }
+  predict success:
+    response OK ObserveResult { trace: "start write:d.txt stop=1 peek=0" }
+    filesystem has []
+
+scenario "settle declines inside a window with a write in it":
+  when: ObserveFs { script: "start write:e.txt settle stop" }
+  predict success:
+    response OK ObserveResult { trace: "start write:e.txt settle=false stop=1" }
+    filesystem has []
+
+scenario "settle declines inside an empty window, so an absence is never proven by a fence":
+  when: ObserveFs { script: "start settle stop" }
+  predict success:
+    response OK ObserveResult { trace: "start settle=false stop=0" }
+    filesystem has []
+
+scenario "settle declines outside a window":
+  when: ObserveFs { script: "settle" }
+  predict success:
+    response OK ObserveResult { trace: "settle=false" }
+    filesystem has []

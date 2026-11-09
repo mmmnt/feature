@@ -16,6 +16,8 @@ interface FsAdapterConfig {
 }
 
 class FsAdapter implements FeatServiceAdapter {
+  /** Two snapshots compared; read() reports no state (SPEC-ADPFS-001). */
+  readonly observes = { diff: "snapshot", state: false } as const;
   private root: string;
   private before: Map<string, number> | null = null;
 
@@ -50,12 +52,13 @@ class FsAdapter implements FeatServiceAdapter {
     this.before = null;
   }
 
-  async startCapture(): Promise<void> {
+  // The spec type (ADR-0011) is accepted: a snapshot diff is the same for every spec type.
+  async startCapture(_context?: { specType?: string }): Promise<void> {
     this.before = this.snapshot();
   }
 
-  async stopCapture(): Promise<CapturedRecord[]> {
-    const before = this.before ?? new Map<string, number>();
+  /** The FILE_WRITTEN / FILE_DELETED records between `before` and a snapshot taken now. */
+  private diff(before: Map<string, number>): CapturedRecord[] {
     const after = this.snapshot();
     const records: CapturedRecord[] = [];
     for (const [p, mtime] of after) {
@@ -78,8 +81,26 @@ class FsAdapter implements FeatServiceAdapter {
         });
       }
     }
+    return records;
+  }
+
+  async stopCapture(): Promise<CapturedRecord[]> {
+    const records = this.diff(this.before ?? new Map<string, number>());
     this.before = null;
     return records;
+  }
+
+  /** ADR-0020: what stopCapture would return now; the baseline stays. [] with no window open. */
+  async peekCapture(): Promise<CapturedRecord[]> {
+    return this.before === null ? [] : this.diff(this.before);
+  }
+
+  /**
+   * ADR-0021: always false. A rewrite inside the filesystem's timestamp granularity leaves the mtime
+   * unchanged, so the snapshot diff cannot prove every write is visible; the harness keeps its ceiling.
+   */
+  async settle(): Promise<boolean> {
+    return false;
   }
 
   async read(): Promise<unknown | null> {

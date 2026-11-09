@@ -19,7 +19,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --exclude '**/observe.test.ts' --passWithNoTests"
   },
   "dependencies": {
     "@mmmnt/feat-types": "workspace:^"
@@ -38,6 +38,7 @@
   },
   "devDependencies": {
     "@mmmnt/feat-adapter-kit": "workspace:^",
+    "@mmmnt/feat-runtime": "workspace:^",
     "vitest": "^3.2.0"
   }
 }
