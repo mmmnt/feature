@@ -85,3 +85,19 @@ describe("resolve() produces a self-contained schema", () => {
     expect(adapter.validate({ id: "a", edges: [{ weight: 1 }] }, resolved).valid).toBe(false);
   });
 });
+
+describe("validate() follows the schema's own dialect", () => {
+  const schema = (extra: object): ResolvedSchema => ({
+    id: "S",
+    format: "json-schema",
+    raw: {},
+    normalized: { type: "object", required: ["n"], properties: { n: { type: "integer" } }, ...extra },
+  });
+
+  it("validates against a draft/2020-12 schema instead of failing to compile it", () => {
+    const adapter = createAdapter({});
+    const s = schema({ $schema: "https://json-schema.org/draft/2020-12/schema" });
+    expect(adapter.validate({ n: 1 }, s)).toEqual({ valid: true });
+    expect(adapter.validate({ n: "x" }, s).valid).toBe(false);
+  });
+});
