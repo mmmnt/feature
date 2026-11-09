@@ -45,6 +45,11 @@ const INLINE: InlineData = {
           "pattern": "^[0-9]+\\.[0-9]+$",
           "description": "Language version this project targets (ADR-0005)."
         },
+        "extends": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Tier overlay (ADR-0024): the base config this file overrides, relative to this file. One level only. The overlay replaces environment, response, services.<key>, specs and report whole; featVersion and schemas are inherited."
+        },
         "environment": {
           "type": "string",
           "pattern": "^[a-z][a-z0-9-]*$",
@@ -164,6 +169,13 @@ const INLINE: InlineData = {
             },
             "outputPattern": {
               "type": "string"
+            },
+            "exclude": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Globs of spec files removed from this tier's run (ADR-0024), relative to specs.dir."
             }
           }
         },

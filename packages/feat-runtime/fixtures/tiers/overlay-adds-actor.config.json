@@ -1,0 +1,34 @@
+{
+  "extends": "base.config.json",
+  "response": {
+    "adapter": "@mmmnt/feat-adapter-handler",
+    "commands": {
+      "Ping": {
+        "module": "src/ping.ts",
+        "export": "ping"
+      },
+      "Pong": {
+        "module": "src/pong.ts",
+        "export": "pong"
+      }
+    },
+    "actors": {
+      "default": "operator",
+      "operator": {
+        "context": {
+          "role": "operator"
+        }
+      },
+      "auditor": {
+        "context": {
+          "role": "auditor"
+        }
+      },
+      "root": {
+        "context": {
+          "role": "root"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "extends": "base.config.json",
+  "schemas": {
+    "adapter": "@mmmnt/feat-schema-json"
+  }
+}

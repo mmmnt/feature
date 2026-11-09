@@ -1,0 +1,178 @@
+feat 1.0
+
+# SPEC-RT-004 — loadConfig resolves a tier overlay (ADR-0024). Agreed by Sift decision 0026e0ea,
+# with the services-removed outline row deleted by founder ruling "004 - a" (2026-11-09): services
+# merge per key, so an overlay can add a service but never remove one. It extends SPEC-RT-001 (loadConfig stays one function); SPEC-RT-001 is
+# verified and is not edited.
+#
+# The fixtures are in packages/feat-runtime/fixtures/tiers/ (part of the build). base.config.json
+# is the spec tier: environment "spec", response handler with commands Ping and Pong and actors
+# default operator + auditor, services eventStore (memory, strong, options { inMemory: true,
+# seed: "base" }) and filesystem (fs, acid), specs and report blocks, featVersion 1.0, schemas.
+# The overlays are named by the scenarios and each differs from the base in the one way its
+# scenario names; overlay-ok.config.json replaces environment ("integration"), response (http,
+# the same commands and actors), services.eventStore (kurrent, eventual, convergenceTimeout 5000,
+# options { connection: "kurrentdb://k:2113" }), specs and report, and leaves services.filesystem,
+# featVersion and schemas to the base.
+#
+# What the merge is: the overlay is the base with environment, response, services.<key>, specs
+# and report replaced WHOLE (a replaced key carries nothing of the base's value for that key);
+# featVersion and schemas are inherited and may not be redeclared by the overlay; `environment` is
+# not inherited (an overlay without one has none, and resolves it from the process environment, so
+# a bundle can never be stamped with the base's environment by accident); `extends` is kept in the
+# result so a consumer can tell an overlay and find its base. The result is validated against the
+# config schema AFTER the merge, so an overlay file alone need not carry schemas, services or specs.
+
+spec SPEC-RT-004 "Load a tier overlay (extends)"
+context Toolchain
+aggregate Config
+type infrastructure
+status agreed
+
+construct:
+  handler at packages/feat-runtime/src/load-config.ts
+  touches packages/feat-runtime/**
+  touches schemas/feat.config.schema.json
+  needs SPEC-RT-001
+  Add `extends` (string, relative to the overlay file) to the config schema. When present: resolve
+  the base against the overlay's directory, read and validate it as an ordinary config (a base
+  that is itself invalid is INVALID_CONFIG naming the base path), refuse a base that has `extends`
+  (EXTENDS_CHAIN, naming both files; one level only, which also refuses a file that extends
+  itself), merge as described above, check the closed spaces, then validate the merged document
+  and run the MISSING_CONVERGENCE_TIMEOUT rule on it. A missing base is EXTENDS_NOT_FOUND naming
+  the path as written and the path it resolved to. The closed spaces are the keys of services, of
+  response.commands and of response.actors (the actors key `default` is not a space member); an
+  overlay that adds or removes a member of any is TIER_SPACE_MISMATCH with space (service,
+  command or actor), change (added or removed) and the name in detail.
+
+enforce:
+  read the overlay and resolve its base relative to the overlay
+  rejects EXTENDS_NOT_FOUND when the base file does not exist
+  rejects EXTENDS_CHAIN when the base itself extends another file
+  replace environment, response, services.<key>, specs and report whole, inherit featVersion and schemas
+  rejects INVALID_CONFIG when the overlay redeclares featVersion or schemas, or the merged document violates the config schema
+  rejects TIER_SPACE_MISMATCH when the overlay adds a service key, or adds or removes a command name or an actor name
+  rejects MISSING_CONVERGENCE_TIMEOUT when a merged service declares eventual consistency without a convergenceTimeout
+  return the merged config with extends kept
+
+contract:
+  input LoadConfigInput
+  response FeatConfigResult
+  error ConfigError
+
+scenario "an overlay replaces a service whole and keeps nothing of the base's options":
+  when: LoadConfig { path: "packages/feat-runtime/fixtures/tiers/overlay-ok.config.json" }
+  predict success:
+    response OK FeatConfigResult {
+      environment: "integration"
+      extends: "base.config.json"
+      services: {
+        eventStore: {
+          adapter: "@mmmnt/feat-adapter-kurrent"
+          consistency: "eventual"
+          convergenceTimeout: 5000
+          options: { connection: "kurrentdb://k:2113", inMemory: absent, seed: absent }
+        }
+      }
+    }
+    filesystem has []
+
+scenario "a service the overlay does not mention is the base's":
+  when: LoadConfig { path: "packages/feat-runtime/fixtures/tiers/overlay-ok.config.json" }
+  predict success:
+    response OK FeatConfigResult {
+      services: { filesystem: { adapter: "@mmmnt/feat-adapter-fs", consistency: "acid" } }
+    }
+    filesystem has []
+
+scenario "featVersion and schemas are inherited":
+  when: LoadConfig { path: "packages/feat-runtime/fixtures/tiers/overlay-ok.config.json" }
+  predict success:
+    response OK FeatConfigResult { featVersion: "1.0", schemas: { adapter: "@mmmnt/feat-schema-json" } }
+    filesystem has []
+
+scenario "the response block is replaced whole":
+  when: LoadConfig { path: "packages/feat-runtime/fixtures/tiers/overlay-ok.config.json" }
+  predict success:
+    response OK FeatConfigResult {
+      response: {
+        adapter: "@mmmnt/feat-adapter-http"
+        invoke: { baseUrl: "https://orders.integration.example" }
+        commands: { Ping: { method: "GET", path: "/ping", module: absent } }
+      }
+    }
+    filesystem has []
+
+scenario "specs and report are replaced whole":
+  when: LoadConfig { path: "packages/feat-runtime/fixtures/tiers/overlay-ok.config.json" }
+  predict success:
+    response OK FeatConfigResult {
+      specs: { exclude: ["**/*.transport.feat"], dir: "packages" }
+      report: { junitOutput: ".feature/reports/integration-junit.xml" }
+    }
+    filesystem has []
+
+scenario "an overlay without an environment has none, not the base's":
+  when: LoadConfig { path: "packages/feat-runtime/fixtures/tiers/overlay-no-environment.config.json" }
+  predict success:
+    response OK FeatConfigResult { extends: "base.config.json", environment: absent }
+    filesystem has []
+
+scenario "an overlay file alone need not carry schemas, services or specs":
+  when: LoadConfig { path: "packages/feat-runtime/fixtures/tiers/overlay-minimal.config.json" }
+  predict success:
+    response OK FeatConfigResult { environment: "integration", schemas: { adapter: "@mmmnt/feat-schema-json" }, specs: { dir: "packages" } }
+    filesystem has []
+
+scenario "a missing base is named":
+  when: LoadConfig { path: "packages/feat-runtime/fixtures/tiers/overlay-missing-base.config.json" }
+  predict rejection EXTENDS_NOT_FOUND:
+    response ERR ConfigError { code: "EXTENDS_NOT_FOUND", detail: matching "no-such-base.config.json" }
+    filesystem has []
+
+scenario "a chain is named and refused":
+  when: LoadConfig { path: "packages/feat-runtime/fixtures/tiers/overlay-chain.config.json" }
+  predict rejection EXTENDS_CHAIN:
+    response ERR ConfigError { code: "EXTENDS_CHAIN", detail: matching "overlay-ok.config.json" }
+    filesystem has []
+
+scenario "a file that extends itself is a chain":
+  when: LoadConfig { path: "packages/feat-runtime/fixtures/tiers/overlay-self.config.json" }
+  predict rejection EXTENDS_CHAIN:
+    response ERR ConfigError { code: "EXTENDS_CHAIN", detail: matching "overlay-self.config.json" }
+    filesystem has []
+
+scenario "a base that is itself invalid is named":
+  when: LoadConfig { path: "packages/feat-runtime/fixtures/tiers/overlay-invalid-base.config.json" }
+  predict rejection INVALID_CONFIG:
+    response ERR ConfigError { code: "INVALID_CONFIG", detail: matching "invalid-base.config.json" }
+    filesystem has []
+
+scenario outline "an overlay may not redeclare what it inherits":
+  when: LoadConfig { path: <path> }
+  predict rejection INVALID_CONFIG:
+    response ERR ConfigError { code: "INVALID_CONFIG", detail: matching <detail> }
+    filesystem has []
+  examples:
+    | path                                                                | detail          |
+    | "packages/feat-runtime/fixtures/tiers/overlay-redeclares-schemas.config.json"     | "schemas"       |
+    | "packages/feat-runtime/fixtures/tiers/overlay-redeclares-featversion.config.json" | "featVersion"   |
+
+scenario "a merged service that is eventual without a timeout is refused":
+  when: LoadConfig { path: "packages/feat-runtime/fixtures/tiers/overlay-eventual-no-timeout.config.json" }
+  predict rejection MISSING_CONVERGENCE_TIMEOUT:
+    response ERR ConfigError { code: "MISSING_CONVERGENCE_TIMEOUT", detail: matching "eventStore" }
+    filesystem has []
+
+scenario outline "an overlay may not add a service or add or remove a command or an actor":
+  when: LoadConfig { path: <path> }
+  predict rejection TIER_SPACE_MISMATCH:
+    response ERR ConfigError { code: "TIER_SPACE_MISMATCH", space: <space>, change: <change>, detail: matching <name> }
+    filesystem has []
+  examples:
+    | path                                                                  | space     | change    | name           |
+    | "packages/feat-runtime/fixtures/tiers/overlay-adds-service.config.json"    | "service" | "added"   | "auditLog"     |
+    | "packages/feat-runtime/fixtures/tiers/overlay-adds-command.config.json"    | "command" | "added"   | "Purge"        |
+    | "packages/feat-runtime/fixtures/tiers/overlay-removes-command.config.json" | "command" | "removed" | "Pong"         |
+    | "packages/feat-runtime/fixtures/tiers/overlay-adds-actor.config.json"      | "actor"   | "added"   | "root"         |
+    | "packages/feat-runtime/fixtures/tiers/overlay-removes-actor.config.json"   | "actor"   | "removed" | "auditor"      |

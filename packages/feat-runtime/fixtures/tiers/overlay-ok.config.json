@@ -1,0 +1,59 @@
+{
+  "extends": "base.config.json",
+  "environment": "integration",
+  "response": {
+    "adapter": "@mmmnt/feat-adapter-http",
+    "invoke": {
+      "baseUrl": "https://orders.integration.example"
+    },
+    "commands": {
+      "Ping": {
+        "method": "GET",
+        "path": "/ping"
+      },
+      "Pong": {
+        "method": "GET",
+        "path": "/pong"
+      }
+    },
+    "actors": {
+      "default": "operator",
+      "operator": {
+        "headers": {
+          "authorization": "Bearer o"
+        }
+      },
+      "auditor": {
+        "headers": {
+          "authorization": "Bearer a"
+        }
+      }
+    }
+  },
+  "services": {
+    "eventStore": {
+      "adapter": "@mmmnt/feat-adapter-kurrent",
+      "consistency": "eventual",
+      "convergenceTimeout": 5000,
+      "options": {
+        "connection": "kurrentdb://k:2113"
+      }
+    }
+  },
+  "specs": {
+    "dir": "packages",
+    "pattern": "**/*.feat",
+    "contractPattern": "**/*.contract.json",
+    "outputPattern": "{name}.test.ts",
+    "exclude": [
+      "**/*.transport.feat"
+    ]
+  },
+  "report": {
+    "format": [
+      "console",
+      "junit"
+    ],
+    "junitOutput": ".feature/reports/integration-junit.xml"
+  }
+}
