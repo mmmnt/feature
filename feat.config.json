@@ -37,6 +37,10 @@
       "Exchange": {
         "module": "adapters/stdio-jsonrpc/src/exchange.ts",
         "export": "exchange"
+      },
+      "ProbeHandlerClock": {
+        "module": "adapters/handler/fixtures/probe.mjs",
+        "export": "probe"
       }
     }
   },
