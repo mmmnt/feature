@@ -11,12 +11,13 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --exclude '**/observe.test.ts' --passWithNoTests"
   },
   "dependencies": {
     "@mmmnt/feat-types": "workspace:^"
   },
   "devDependencies": {
+    "@mmmnt/feat-runtime": "workspace:^",
     "typescript": "^5.8.0",
     "vitest": "^3.2.0"
   },

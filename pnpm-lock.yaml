@@ -193,6 +193,9 @@ importers:
         specifier: workspace:^
         version: link:../../packages/feat-types
     devDependencies:
+      '@mmmnt/feat-runtime':
+        specifier: workspace:^
+        version: link:../../packages/feat-runtime
       typescript:
         specifier: ^5.8.0
         version: 5.9.3

@@ -6,6 +6,10 @@
   "response": {
     "adapter": "@mmmnt/feat-adapter-handler",
     "commands": {
+      "ObserveStripe": {
+        "module": "adapters/stripe/fixtures/probe.mjs",
+        "export": "observe"
+      },
       "ObserveFs": {
         "module": "adapters/fs/fixtures/probe.mjs",
         "export": "observe"

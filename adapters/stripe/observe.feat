@@ -1,0 +1,104 @@
+feat 1.0
+
+# SPEC-ADPSTR-001 — the stripe adapter's two optional window methods: peekCapture (ADR-0020)
+# and settle (ADR-0021), plus its declaration of observation modes (SPEC-RT-002). Agreed and ordered built by Sift decision 58a4ac88
+# (2026-11-09: "flip them, queue in that order").
+#
+# Driven through adapters/stripe/fixtures/probe.mjs (part of the build, inside touches). The
+# probe starts a local stub of the Events API (the one adapters/stripe/events-window.test.ts
+# already uses, moved to fixtures/fake-stripe.mjs: newest-first pages, id cursors, has_more,
+# types[] filters) and creates the adapter against it. `ObserveStripe { script, types? }` runs
+# a space-separated script: `emit:<event.type>` (the stub appends an event), `start`, `peek`,
+# `settle`, `stop`. The answer is a `trace` (peek/stop carry the record count, settle
+# true/false), `lastTypes` (comma-joined, capture order) and `peekEqualsStop`, as in
+# SPEC-ADPMEM-001.
+#
+# Can settle ever be truthful for stripe? No. A fence needs a point after which "everything
+# written before it is visible". The Events API offers none: events arrive after the API call
+# that caused them with no documented bound, and Stripe states that events are not guaranteed
+# to be delivered in the order they were generated, so the arrival of any event (a sentinel
+# included) proves nothing about the earlier ones. A sentinel would also be a write to the very
+# account under test, and an event the capture then has to filter. The adapter is declared
+# `eventual` with a convergenceTimeout, and settle answers false: the harness keeps the
+# ceiling, which is the truthful wait. peekCapture IS possible, because listing events after
+# the cursor is read-only; it must not move the cursor.
+#
+# Finding for the build (not a scenario here): stopCapture without a startCapture lists the
+# whole feed, because a null cursor means both "no events existed at start" and "no window".
+# The window needs its own flag; peekCapture and settle depend on it.
+
+spec SPEC-ADPSTR-001 "Stripe adapter: peek and settle"
+context Toolchain
+aggregate Adapters
+type infrastructure
+status agreed
+
+construct:
+  handler at adapters/stripe/src/index.ts
+  touches adapters/stripe/**
+  needs SPEC-RT-002
+  Add `observes = { diff: "native", state: true }`: the events feed is the diff, and read()
+  lists the feed.
+  Track whether a window is open apart from the cursor (see the header).
+  peekCapture(): while a window is open, list the events after the cursor exactly as
+  stopCapture does (oldest first, the types filter applied) and leave the cursor where it is;
+  with no window open return [].
+  settle(): resolve false, whatever the window state (see the header for why), without any
+  request to Stripe.
+
+enforce:
+  peekCapture lists the events after the cursor without moving it
+  peekCapture returns [] when no window is open
+  settle resolves false and makes no request
+
+contract:
+  input ObserveInput
+  response ObserveResult
+
+scenario "a peek reports the window's events and the cursor stays put":
+  when: ObserveStripe { script: "start emit:charge.succeeded peek peek stop" }
+  predict success:
+    response OK ObserveResult { trace: "start emit:charge.succeeded peek=1 peek=1 stop=1", lastTypes: "charge.succeeded", peekEqualsStop: true }
+    filesystem has []
+
+scenario "events from before the window are not in a peek":
+  when: ObserveStripe { script: "emit:charge.succeeded start peek stop" }
+  predict success:
+    response OK ObserveResult { trace: "emit:charge.succeeded start peek=0 stop=0" }
+    filesystem has []
+
+scenario "a peek sees an event that arrives between two peeks":
+  when: ObserveStripe { script: "start peek emit:refund.created peek stop" }
+  predict success:
+    response OK ObserveResult { trace: "start peek=0 emit:refund.created peek=1 stop=1", lastTypes: "refund.created", peekEqualsStop: true }
+    filesystem has []
+
+scenario "the types filter applies to a peek":
+  when: ObserveStripe { script: "start emit:refund.created emit:charge.succeeded peek stop", types: ["charge.succeeded"] }
+  predict success:
+    response OK ObserveResult { trace: "start emit:refund.created emit:charge.succeeded peek=1 stop=1", lastTypes: "charge.succeeded" }
+    filesystem has []
+
+scenario "a peek after stop finds the window closed":
+  when: ObserveStripe { script: "start emit:charge.succeeded stop peek" }
+  predict success:
+    response OK ObserveResult { trace: "start emit:charge.succeeded stop=1 peek=0" }
+    filesystem has []
+
+scenario "a peek with no window open is empty even though the feed is not":
+  when: ObserveStripe { script: "emit:charge.succeeded peek" }
+  predict success:
+    response OK ObserveResult { trace: "emit:charge.succeeded peek=0" }
+    filesystem has []
+
+scenario "settle declines after the event it could have waited for has arrived":
+  when: ObserveStripe { script: "start emit:charge.succeeded settle peek stop" }
+  predict success:
+    response OK ObserveResult { trace: "start emit:charge.succeeded settle=false peek=1 stop=1" }
+    filesystem has []
+
+scenario "settle declines outside a window":
+  when: ObserveStripe { script: "settle" }
+  predict success:
+    response OK ObserveResult { trace: "settle=false" }
+    filesystem has []

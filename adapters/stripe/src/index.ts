@@ -36,6 +36,10 @@ class StripeAdapter implements FeatServiceAdapter {
   private readonly baseUrl: string;
   private readonly types: string[] | undefined;
   private cursor: string | null = null;
+  /** A null cursor means both "no events existed at start" and "no window", so the window is its own flag. */
+  private windowOpen = false;
+  /** The events feed is the diff and read() lists it (SPEC-ADPSTR-001). */
+  readonly observes = { diff: "native", state: true } as const;
 
   constructor(config: StripeAdapterConfig) {
     const envName = config.options?.apiKeyEnv ?? "STRIPE_SECRET_KEY";
@@ -70,18 +74,21 @@ class StripeAdapter implements FeatServiceAdapter {
 
   async reset(): Promise<void> {
     this.cursor = null;
+    this.windowOpen = false;
   }
 
-  async startCapture(): Promise<void> {
+  // The spec type (ADR-0011) is accepted: the events feed is the same for every spec type.
+  async startCapture(_context?: { specType?: string }): Promise<void> {
     const newest = await this.listEvents({ limit: "1" });
     this.cursor = newest[0]?.id ?? null;
+    this.windowOpen = true;
   }
 
-  async stopCapture(): Promise<CapturedRecord[]> {
+  /** The events after the cursor, oldest first, the types filter applied. Read-only. */
+  private async eventsAfterCursor(): Promise<CapturedRecord[]> {
     const params: Record<string, string> = {};
     if (this.cursor) params.ending_before = this.cursor;
     const events = await this.listEvents(params);
-    this.cursor = null;
     // Stripe returns newest-first; capture order is oldest-first.
     return events.reverse().map((e) => ({
       type: e.type,
@@ -89,6 +96,26 @@ class StripeAdapter implements FeatServiceAdapter {
       payload: e.data.object,
       timestamp: e.created * 1000,
     }));
+  }
+
+  async stopCapture(): Promise<CapturedRecord[]> {
+    const records = await this.eventsAfterCursor();
+    this.cursor = null;
+    this.windowOpen = false;
+    return records;
+  }
+
+  /** ADR-0020: list the window's events without moving the cursor; [] with no window open. */
+  async peekCapture(): Promise<CapturedRecord[]> {
+    return this.windowOpen ? this.eventsAfterCursor() : [];
+  }
+
+  /**
+   * ADR-0021: always false, with no request. The Events API has no ordering or fence (events arrive
+   * unordered and unbounded after the call), so no arrival proves the earlier events are visible.
+   */
+  async settle(): Promise<boolean> {
+    return false;
   }
 
   async read(): Promise<unknown | null> {
