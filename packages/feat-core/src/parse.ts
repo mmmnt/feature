@@ -549,7 +549,7 @@ function parseFeat(source: string, ctx: ConfigContext): Record<string, unknown> 
     }
 
     if (section === "enforce") {
-      if ((m = /^rejects[ \t]+([A-Z0-9_]+)[ \t]+when[ \t]+(.+)$/s.exec(t)))
+      if ((m = /^rejects[ \t]+([A-Z][A-Za-z0-9]*|[A-Z0-9_]+)[ \t]+when[ \t]+(.+)$/s.exec(t)))
         enforce.push({ kind: "rejects", rejectionId: m[1], text: m[2]!.replace(/\n/g, " ") });
       else if (/^validate[ \t]/.test(t)) enforce.push({ kind: "validate", text: t });
       else if (/^load[ \t]/.test(t)) enforce.push({ kind: "load", text: t });
@@ -617,7 +617,11 @@ function parseFeat(source: string, ctx: ConfigContext): Record<string, unknown> 
       }
 
       // predict …:
-      if ((m = /^predict[ \t]+(success|rejection|error)(?:[ \t]+([A-Z0-9_]+|<[A-Za-z_][A-Za-z0-9_-]*>))?:$/.exec(t))) {
+      // ADR-0022: a rejection id is UPPER_SNAKE or UpperCamel; `predict error <CODE>` stays UPPER_SNAKE.
+      if (
+        (m = /^predict[ \t]+(success|rejection|error)(?:[ \t]+([A-Z][A-Za-z0-9]*|[A-Z0-9_]+|<[A-Za-z_][A-Za-z0-9_-]*>))?:$/.exec(t)) &&
+        (m[1] !== "error" || m[2] === undefined || /^(?:[A-Z0-9_]+|<.*>)$/.test(m[2]))
+      ) {
         const prediction: Record<string, unknown> = { type: m[1] };
         if (m[1] === "rejection" && m[2]) prediction.rejectionId = m[2];
         if (m[1] === "error" && m[2]) prediction.errorCode = m[2];
@@ -626,7 +630,7 @@ function parseFeat(source: string, ctx: ConfigContext): Record<string, unknown> 
         continue;
       }
       if (/^predict[ \t]/.test(t))
-        throw new ParseFailure("MALFORMED_SYNTAX", `Unknown prediction form: '${t}'.`, s.line, "Use 'predict success:', 'predict rejection <ID>:', or 'predict error <CODE>:'");
+        throw new ParseFailure("MALFORMED_SYNTAX", `Unknown prediction form: '${t}'.`, s.line, "Use 'predict success:', 'predict rejection <ID>:' (ID is UPPER_SNAKE or UpperCamel), or 'predict error <CODE>:' (CODE is UPPER_SNAKE)");
 
       // examples:
       if (t === "examples:") { scenarioPhase = "examples"; continue; }

@@ -61,6 +61,7 @@ describe("feat grammar tokenization", () => {
     expect(scopesAt('  when: CreateUser { email: "a@b.c" }', "CreateUser")).toContain("entity.name.function.command.feat");
     expect(scopesAt("  predict success:", "predict")).toContain("keyword.control.predict.feat");
     expect(scopesAt("  predict rejection DUPLICATE_EMAIL:", "DUPLICATE_EMAIL")).toContain("constant.other.rejection-id.feat");
+    expect(scopesAt("  predict rejection NotOperator:", "NotOperator")).toContain("constant.other.rejection-id.feat");
     expect(scopesAt("    database has [ INSERT with UserRow {", "has")).toContain("keyword.other.assertion.feat");
     expect(scopesAt("    database has [ INSERT with UserRow {", "database")).toContain("variable.other.service.feat");
   });

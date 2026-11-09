@@ -1,0 +1,20 @@
+{
+  "featVersion": "1.0",
+  "schemas": { "adapter": "@mmmnt/feat-schema-json" },
+  "response": {
+    "adapter": "@mmmnt/feat-adapter-handler",
+    "commands": {
+      "AnswerQuestion": { "module": "features/answer-question/handler.ts", "export": "answerQuestion" }
+    },
+    "actors": {
+      "default": "operator",
+      "operator": { "context": { "role": "operator", "sub": "test-operator" } },
+      "reader": { "context": { "role": "reader", "sub": "test-reader" } }
+    }
+  },
+  "services": {
+    "answers": { "adapter": "@mmmnt/feat-adapter-memory", "consistency": "acid" }
+  },
+  "specs": { "dir": ".", "pattern": "*.feat", "contractPattern": "*.contract.json", "outputPattern": "{name}.test.ts" },
+  "report": { "format": ["console"] }
+}

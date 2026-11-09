@@ -1,7 +1,7 @@
-# The `.feat` Language — Grammar Reference v1.1
+# The `.feat` Language — Grammar Reference v1.2
 
 > Language version: `feat 1.0`
-> Design decisions are recorded as ADRs (ADR-0001…0014) in the project decision log.
+> Design decisions are recorded as ADRs (ADR-0001…0022) in the project decision log.
 > The `corpus/` directory holds canonical exemplars paired with expected-IR fixtures —
 > when this document and the corpus disagree, that is a bug in one of them; fix the spec first.
 
@@ -50,6 +50,14 @@ feat 1.x". Minor versions are strictly additive; majors may break.
   when indentation returns to the parent level. Spaces only; a tab in leading whitespace is a
   parse error.
 - **Comments**: `#` to end of line, allowed anywhere.
+- **Rejection ids** (ADR-0022): the `<ID>` of `rejects <ID> when …` and `predict rejection <ID>:`
+  is one token, either **UPPER_SNAKE** (`[A-Z0-9_]+`, e.g. `UNIQUE_NAME`) or **UpperCamel**
+  (`[A-Z][A-Za-z0-9]*`, e.g. `NotOperator`). The two forms are both valid and may be mixed in one
+  spec. An id is kept verbatim and compared **case-sensitively and exactly**: `NotOperator` and
+  `NOT_OPERATOR` are two different ids. Anything else in the id position of a `predict rejection`
+  line (`notOperator`, `Not_Operator`, `not-operator`) is a `MALFORMED_SYNTAX` parse error whose
+  hint names both valid forms. A `rejects` line whose id is not valid is, as before, an opaque
+  enforce-zone constraint; the two-way lint (B2) then reports the predicted id with no `rejects`.
 - **No escape hatches**: every file must have at minimum the header, one construct directive,
   one enforce directive, one contract reference, and one scenario with a prediction.
 
@@ -121,7 +129,7 @@ Freeform, with **one structured keyword** (ADR-0008):
 
 | Keyword | Form | Purpose |
 | --- | --- | --- |
-| `rejects` | `rejects UNIQUE_NAME when a flow with this name exists for the tenant` | Justifies a business-rule rejection. `<ID>` is typed (KEYWORD position, validated two-way against scenario rejection IDs); the reason is FREEFORM. |
+| `rejects` | `rejects UNIQUE_NAME when a flow with this name exists for the tenant` · `rejects NotOperator when the caller is not an operator` | Justifies a business-rule rejection. `<ID>` is typed (KEYWORD position; UPPER_SNAKE or UpperCamel, §1.2; validated two-way, case-sensitively, against scenario rejection IDs); the reason is FREEFORM. |
 
 **Two-way lint**: every `predict rejection <ID>` must have a matching `rejects <ID>` line, and
 every `rejects <ID>` must be predicted by at least one scenario. Predictions and build
@@ -266,7 +274,7 @@ Three types, fixed grammar:
 | Form | Assertion behavior |
 | --- | --- |
 | `predict success:` | Positive response + expected effects per service |
-| `predict rejection <ID>:` | Error response + **zero effects across ALL configured services** |
+| `predict rejection <ID>:` | Error response + **zero effects across ALL configured services**. `<ID>` is UPPER_SNAKE or UpperCamel (§1.2). |
 | `predict error <CODE>:` | Error response + zero or compensating effects |
 
 Prediction lines:
@@ -367,7 +375,7 @@ scenario outline "unknown users are rejected":
 
 `<placeholder>` tokens are valid in `when:`/`execute` payloads, in value blocks, and in the
 **rejection-ID position** (`predict rejection <code>:` — every value the column supplies must be
-a declared `rejects` ID; the two-way lint evaluates per expanded row). The `examples:` pipe table
+a declared `rejects` ID; the two-way lint evaluates per expanded row; a row value is a rejection id in either form and is compared exactly). The `examples:` pipe table
 supplies one row per derived test case (column headers = placeholder names; cells are JSON
 literals). Anchors extend with `› row[i]`. Shared schemas across specs
 need no outline-style syntax — the documented convention is a workspace `contracts/` directory

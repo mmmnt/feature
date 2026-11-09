@@ -60,7 +60,7 @@
       "name": "keyword.other.construct.feat"
     },
     "enforce-rejects": {
-      "match": "^\\s*(rejects)\\s+([A-Z0-9_]+)\\s+(when)\\b",
+      "match": "^\\s*(rejects)\\s+([A-Z][A-Za-z0-9]*|[A-Z0-9_]+)\\s+(when)\\b",
       "captures": {
         "1": { "name": "keyword.other.rejects.feat" },
         "2": { "name": "entity.name.constant.rejection-id.feat" },
@@ -84,7 +84,7 @@
       }
     },
     "predict": {
-      "match": "^\\s*(predict)\\s+(success|rejection|error)\\b(?:\\s+([A-Z0-9_]+|<[A-Za-z_][A-Za-z0-9_-]*>))?",
+      "match": "^\\s*(predict)\\s+(success|rejection|error)\\b(?:\\s+([A-Z][A-Za-z0-9]*|[A-Z0-9_]+|<[A-Za-z_][A-Za-z0-9_-]*>))?",
       "captures": {
         "1": { "name": "keyword.control.predict.feat" },
         "2": { "name": "constant.language.prediction-type.feat" },

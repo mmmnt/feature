@@ -25,5 +25,6 @@ pnpm dlx ajv-cli@5 validate --spec=draft7 -s schemas/builtspec.schema.json -d "c
 pnpm dlx ajv-cli@5 validate --spec=draft7 -s schemas/contract.schema.json -d "corpus/*/*.contract.json"
 ```
 | 11 | `waitlist-variables/` | SPEC-WL-001 | Spec variables (ADR-0017): `variables:` block, source calls (`now()`), definition-side template composition, `${ref}` interpolation in when-payloads and predictions, idempotent-repeat via shared per-case resolution |
-| `userinfo-profile` | #12 — quoted payload keys (ADR-0019): colon-namespaced IdP claims in payloads and shapes | SPEC-IDP-001 |
+| 12 | `userinfo-profile/` | SPEC-IDP-001 | Quoted payload keys (ADR-0019): colon-namespaced IdP claims in payloads and shapes |
+| 13 | `rejection-camelcase/` | SPEC-REJ-001 | UpperCamel rejection ids (ADR-0022): `rejects NotOperator`, `rejects AlreadyAnswered`, `predict rejection NotOperator:` beside an UPPER_SNAKE id (`UNKNOWN_QUESTION`) in one spec; actors (`as operator` / `as reader`); ids kept verbatim in the IR |
 | 14 | `seed-fixture/` | SPEC-SHF-001 | The seed fixture form, checked (ADR-0003 + ADR-0007, SPEC-GEN-001): `seed <service> from "<path>"` resolved against the spec directory; fixture records are `{type, schemaName?, values}`, each schemaName declared in `contract:` and its values valid against it at generate time; a record with no schemaName is shape-checked only; inlined in file order so the generated suite is self-contained; query spec |

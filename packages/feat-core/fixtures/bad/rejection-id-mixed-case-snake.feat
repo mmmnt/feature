@@ -1,0 +1,26 @@
+feat 1.0
+
+spec SPEC-BAD-015 "Rejection id mixing camel and underscore"
+context Bad
+aggregate Thing
+type command
+status draft
+
+construct:
+  handler at src/do-thing.ts
+  touches src/**
+
+enforce:
+  do the thing
+  rejects Not_Operator when the thing is refused
+
+contract:
+  input ThingInput
+  response ThingResult
+  error ThingError
+
+scenario "refuses the thing":
+  when: DoThing { value: 1 }
+  predict rejection Not_Operator:
+    response ERR ThingError { code: "X" }
+    eventStore has []
