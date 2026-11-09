@@ -11,7 +11,7 @@ import type {
 import { importAdapter } from "./import-adapter.js";
 import { loadConfig, variablesSidecarPath } from "./load-config.js";
 import { diffContains, diffRecords, diffResponse, pathGet, type InlineData, type MatchContext } from "./matcher.js";
-import type { Fault, FaultCatalog, FaultCount, ReadQuery } from "@mmmnt/feat-types";
+import { EXCLUSIVE_FAULTS, type Fault, type FaultCatalog, type FaultCount, type ReadQuery } from "@mmmnt/feat-types";
 
 // ── Spec variables (ADR-0017) ────────────────────────────────────────────────
 // Sources resolve ONCE PER CASE at execution start; every ${name} reference in
@@ -149,7 +149,7 @@ export interface HarnessCase {
  */
 export class HarnessConfigurationError extends Error {
   constructor(
-    public code: "CLOCK_UNSUPPORTED" | "MODE_UNSUPPORTED" | "FAULT_UNSUPPORTED",
+    public code: "CLOCK_UNSUPPORTED" | "MODE_UNSUPPORTED" | "FAULT_UNSUPPORTED" | "FAULT_REQUIRES_SERIAL",
     message: string,
     public service?: string,
     public mode?: "state",
@@ -245,6 +245,13 @@ export async function createHarness(opts: { configPath: string }): Promise<Harne
       const problem = faultProblem(services.get(f.service), f);
       if (problem !== undefined)
         throw new HarnessConfigurationError("FAULT_UNSUPPORTED", `${c.anchor}: fault ${f.service} ${f.operation} ${f.fault}: ${problem}.`, f.service);
+      // SPEC-RT-005: an exclusive fault pauses something every other file shares; only the serial pass may arm it.
+      if (EXCLUSIVE_FAULTS.includes(f.fault) && process.env.FEAT_SERIAL !== "1")
+        throw new HarnessConfigurationError(
+          "FAULT_REQUIRES_SERIAL",
+          `${c.anchor}: fault ${f.service} ${f.operation} ${f.fault} is exclusive and may only run in the serial pass (FEAT_SERIAL=1), not alongside other spec files.`,
+          f.service,
+        );
     }
     for (const [key, assertion] of Object.entries(c.prediction.services)) {
       if (assertion.contains === undefined) continue;

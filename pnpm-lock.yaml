@@ -273,6 +273,10 @@ importers:
       '@mmmnt/feat-types':
         specifier: workspace:^
         version: link:../feat-types
+    devDependencies:
+      '@mmmnt/feat-runtime':
+        specifier: workspace:^
+        version: link:../feat-runtime
 
   packages/feat-runtime:
     dependencies:

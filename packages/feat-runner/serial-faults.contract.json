@@ -1,0 +1,74 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-RT-005",
+  "schemas": {
+    "PlanInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "specs": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "exclusive": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "fault": {
+          "type": "string"
+        },
+        "worker": {
+          "enum": [
+            "serial",
+            "parallel"
+          ]
+        }
+      }
+    },
+    "PlanResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "parallel": {
+          "type": "string"
+        },
+        "serial": {
+          "type": "string"
+        },
+        "order": {
+          "type": "string"
+        },
+        "serialWorkers": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "exit": {
+          "type": "integer"
+        },
+        "reported": {
+          "type": "string"
+        }
+      }
+    },
+    "PlanError": {
+      "type": "object",
+      "required": [
+        "code"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "FAULT_REQUIRES_SERIAL"
+          ]
+        },
+        "detail": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

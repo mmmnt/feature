@@ -332,3 +332,10 @@ export interface ResolvedSchema {
   raw: unknown;
   normalized: Record<string, unknown>;
 }
+
+/**
+ * Faults that cannot share a product with any other spec file (SPEC-RT-005): BrokerLoss pauses a
+ * container every namespace shares, so a file arming one runs alone, in the serial pass. Names are
+ * the part of `Operation.Fault` after the dot.
+ */
+export const EXCLUSIVE_FAULTS: readonly string[] = ["BrokerLoss"];

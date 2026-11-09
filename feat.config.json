@@ -21,6 +21,14 @@
       "RunHarnessCase": {
         "module": "packages/feat-runtime/fixtures/harness/probe.mjs",
         "export": "runCases"
+      },
+      "PlanRun": {
+        "module": "packages/feat-runner/fixtures/probe.mjs",
+        "export": "planRun"
+      },
+      "PreflightSerial": {
+        "module": "packages/feat-runner/fixtures/probe.mjs",
+        "export": "preflightSerial"
       }
     }
   },

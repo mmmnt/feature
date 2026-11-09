@@ -55,3 +55,15 @@ describe("generation is the same in every tier (ADR-0024)", () => {
     expect(readFileSync(path.join(ROOT, "feat.integration.config.json"), "utf8")).toContain("eventual");
   });
 });
+
+describe("the run is told which files arm which faults (SPEC-RT-005)", () => {
+  it("a generated file lists the Operation.Fault pairs its scenarios arm, from the IR", async () => {
+    const files = await generateAll(path.join(PKG, "../../corpus/given-fault"), "feat.config.json");
+    expect(files).toHaveLength(1);
+    expect(files[0]!.faults).toEqual(["AppendToStream.AccessDenied", "AppendToStream.NotLeader", "AppendToStream.WrongExpectedVersion"]);
+  });
+  it("a file that arms no fault lists none", async () => {
+    const files = await generateAll(ROOT, "feat.config.json");
+    expect(files[0]!.faults).toEqual([]);
+  });
+});

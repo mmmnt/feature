@@ -1,0 +1,16 @@
+{
+  "featVersion": "1.0",
+  "schemas": { "adapter": "@mmmnt/feat-schema-json" },
+  "response": { "adapter": "../../feat-runtime/fixtures/harness/stub.mjs", "commands": { "Ping": {} } },
+  "services": {
+    "store": {
+      "adapter": "../../feat-runtime/fixtures/harness/stub.mjs",
+      "consistency": "strong",
+      "options": {
+        "faults": { "Connection": { "BrokerLoss": ["reset"], "Partition": ["reset"], "Timeout": ["reset"] } },
+        "observed": false
+      }
+    }
+  },
+  "specs": { "dir": ".", "pattern": "**/*.feat", "contractPattern": "**/*.contract.json", "outputPattern": "{name}.test.ts" }
+}

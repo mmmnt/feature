@@ -19,6 +19,8 @@ const EXCLUDED_DIRS = new Set(["node_modules", "dist", ".turbo", ".git", "covera
 
 export interface GeneratedFile {
   specPath: string;
+  /** Every fault any scenario arms, as `Operation.Fault` — the runner sweeps these for exclusive ones (SPEC-RT-005). */
+  faults: string[];
   outputPath: string;
   content: string;
 }
@@ -276,7 +278,8 @@ export async function generateAll(
       specDir,
       config.specs.outputPattern.replace("{name}", path.basename(specAbs, ".feat")),
     );
-    results.push({ specPath: specRel, outputPath, content });
+    const faults = [...new Set(topology.cases.flatMap((c) => (c.given?.faults ?? []).map((f) => `${f.operation}.${f.fault}`)))].sort();
+    results.push({ specPath: specRel, faults, outputPath, content });
   }
   return results;
 }

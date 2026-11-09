@@ -235,7 +235,10 @@ the count) fails the case with `FAULT_NOT_CONSUMED`, unless the adapter cannot o
 An adapter declares a catalog of the faults it can produce and the counts each accepts (`once`,
 `times`, `reset`; an array of fault names declares all three); a fault outside it, or armed with an
 undeclared count, or against an adapter with no `fault()`, is `FAULT_UNSUPPORTED` before the case has
-any effect. An adapter's own capture, `read()` and `seed()` are never faulted.
+any effect. An adapter's own capture, `read()` and `seed()` are never faulted. A fault named in
+`EXCLUSIVE_FAULTS` (`BrokerLoss`: it pauses a container every spec file shares) runs only in a
+serial pass: `feat run` sweeps the IR for the files that arm one, runs them after the parallel pass
+with one worker and `FEAT_SERIAL=1`, and the harness refuses one elsewhere (`FAULT_REQUIRES_SERIAL`).
 At generate time (SPEC-GEN-001) every seed record is checked: a `seed ... from "<path>"` fixture is
 resolved against the directory of the spec, must be a JSON array of `{ type, schemaName?, values }`
 records, and each record's `schemaName` must be declared in `contract:` (ADR-0007) with `values` valid

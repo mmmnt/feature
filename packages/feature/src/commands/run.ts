@@ -8,7 +8,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { Command, Flags } from "@oclif/core";
 import type { FeatConfig } from "@mmmnt/feat-types";
-import { runTests } from "@mmmnt/feat-runner";
+import { plan, runTests } from "@mmmnt/feat-runner";
 import { resolveEnvironment, variablesSidecarPath } from "@mmmnt/feat-runtime";
 import { rmSync } from "node:fs";
 import { generateAll } from "../pipeline.js";
@@ -39,6 +39,7 @@ export default class Run extends Command {
     let prepared: Prepared | undefined;
     let files = (await generateAll(root, flags.config, { onPrepared: (p) => (prepared = p) })).map((f) => ({
       specId: f.specPath,
+      faults: f.faults,
       out: f.outputPath,
       content: f.content,
     }));
@@ -79,6 +80,9 @@ export default class Run extends Command {
       root,
       configPath: path.resolve(root, flags.config),
     };
+    // SPEC-RT-005: files that arm an exclusive fault run last, alone (swept from the IR, never named).
+    const split = plan(files.map((f) => ({ path: path.relative(root, f.out), faults: f.faults })));
+    if (split.serial.length > 0) runOpts.serialFiles = split.serial;
     if (prepared) {
       const t = runTimeouts(prepared);
       runOpts.testTimeoutMs = t.testTimeoutMs;
