@@ -2,6 +2,7 @@
 // lifecycle) plus the filesystem-bound checks that belong to the CLI:
 // paired contract + generated test existence.
 
+import { readConfigOrExit } from "../config.js";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { Command, Flags } from "@oclif/core";
@@ -20,7 +21,7 @@ export default class Audit extends Command {
   public async run(): Promise<void> {
     const { flags } = await this.parse(Audit);
     const root = process.cwd();
-    const config = JSON.parse(readFileSync(path.resolve(root, flags.config), "utf8")) as FeatConfig;
+    const config = await readConfigOrExit(this, root, flags.config);
     const specs = discoverSpecs(root, config.specs.dir);
     let errors = 0;
     let warnings = 0;

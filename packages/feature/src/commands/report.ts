@@ -1,6 +1,7 @@
 // `feat report` — summarize the last run from the JUnit output (per-scenario,
 // anchors included in test names). --junit prints the raw XML path.
 
+import { readConfigOrExit } from "../config.js";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { resolveEnvironment } from "@mmmnt/feat-runtime";
@@ -27,7 +28,7 @@ export default class Report extends Command {
     const root = process.cwd();
 
     if (flags.evidence) {
-      const cfg = JSON.parse(readFileSync(path.resolve(root, flags.config), "utf8")) as FeatConfig;
+      const cfg = await readConfigOrExit(this, root, flags.config);
       const environment = resolveEnvironment(cfg);
       if (environment === "local" && !flags.force) {
         this.log("evidence: skipped — the local environment records no compliance evidence (--force to override).");
@@ -58,7 +59,7 @@ export default class Report extends Command {
       return;
     }
 
-    const config = JSON.parse(readFileSync(path.resolve(root, flags.config), "utf8")) as FeatConfig;
+    const config = await readConfigOrExit(this, root, flags.config);
     const junitPath = config.report?.junitOutput;
     if (!junitPath || !existsSync(path.resolve(root, junitPath))) {
       this.logToStderr('ERROR [NO_REPORT] No JUnit output found — run "feat run" first (report.format must include "junit").');

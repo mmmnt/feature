@@ -2,6 +2,7 @@
 // --spec filters to a single spec ID; --shard i/n runs one disjoint slice (for N isolated jobs).
 // JUnit output per the config report block, suffixed per shard.
 
+import { readConfigOrExit } from "../config.js";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { Command, Flags } from "@oclif/core";
@@ -28,7 +29,7 @@ export default class Run extends Command {
   public async run(): Promise<void> {
     const { flags } = await this.parse(Run);
     const root = process.cwd();
-    const config = JSON.parse(readFileSync(path.resolve(root, flags.config), "utf8")) as FeatConfig;
+    const config = await readConfigOrExit(this, root, flags.config);
     // Environment must be resolvable BEFORE any work (fail fast + notify).
     resolveEnvironment(config);
     // ADR-0017: fresh sidecar per run — staleness structurally impossible.

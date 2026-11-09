@@ -1,6 +1,6 @@
 {
   "featVersion": "1.0",
   "schemas": { "adapter": "@example/feat-schema-nowhere" },
-  "services": {},
+  "services": { "projectionStore": { "adapter": "@mmmnt/feat-adapter-memory", "consistency": "strong" } },
   "specs": { "dir": ".", "pattern": "*.feat", "contractPattern": "*.contract.json", "outputPattern": "{name}.test.ts" }
 }

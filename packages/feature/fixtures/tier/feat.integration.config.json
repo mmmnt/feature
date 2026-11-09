@@ -1,0 +1,5 @@
+{
+  "extends": "feat.config.json",
+  "environment": "integration",
+  "services": { "store": { "adapter": "@mmmnt/feat-adapter-memory", "consistency": "eventual", "convergenceTimeout": 100 } }
+}

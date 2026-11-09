@@ -2,6 +2,7 @@
 // optionally run affected suites (--run), optionally emit NDJSON events for
 // machine consumption (--json, implies --run) — the IDE-integration surface.
 
+import { readConfigOrExit } from "../config.js";
 import { watch as fsWatch, existsSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
@@ -35,7 +36,7 @@ export default class Watch extends Command {
     const { flags } = await this.parse(Watch);
     const doRun = flags.run || flags.json;
     const root = process.cwd();
-    const config = JSON.parse(readFileSync(path.resolve(root, flags.config), "utf8")) as FeatConfig;
+    const config = await readConfigOrExit(this, root, flags.config);
     const lastHash = new Map<string, string>();
 
     const emit = (event: Record<string, unknown>) => {

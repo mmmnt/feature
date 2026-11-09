@@ -1,0 +1,8 @@
+{
+  "extends": "feat.config.json",
+  "environment": "integration",
+  "response": {
+    "adapter": "@mmmnt/feat-adapter-handler",
+    "commands": { "Ping": { "module": "ping.mjs", "export": "ping" }, "Extra": { "module": "x.mjs", "export": "x" } }
+  }
+}

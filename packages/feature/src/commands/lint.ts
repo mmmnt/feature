@@ -2,6 +2,7 @@
 // Exit 1 only on ERROR-level findings (currently none beyond parse failures —
 // the B-rules live in `feat audit`).
 
+import { readConfigOrExit } from "../config.js";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { Command, Flags } from "@oclif/core";
@@ -20,7 +21,7 @@ export default class Lint extends Command {
   public async run(): Promise<void> {
     const { flags } = await this.parse(Lint);
     const root = process.cwd();
-    const config = JSON.parse(readFileSync(path.resolve(root, flags.config), "utf8")) as FeatConfig;
+    const config = await readConfigOrExit(this, root, flags.config);
     const specs = discoverSpecs(root, config.specs.dir);
     let errors = 0;
     let warnings = 0;

@@ -1,0 +1,8 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-TIER-001",
+  "schemas": {
+    "PingInput": { "type": "object" },
+    "PingResult": { "type": "object", "required": ["ok"], "properties": { "ok": { "type": "boolean" } } }
+  }
+}

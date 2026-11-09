@@ -3,6 +3,7 @@
 // upfront (GAP-S10, CLI-mediated) → emit (feat-emit-ts). Used by `feat generate` (write)
 // and `feat verify` (compare, byte-equality per ADR-0006).
 
+import { readConfig } from "./config.js";
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import path from "node:path";
 import type { BuiltSpec, FeatConfig, FeatSchemaAdapter } from "@mmmnt/feat-types";
@@ -167,7 +168,7 @@ export interface Prepared {
 // Writes nothing; a seed violation is collected, never thrown, so all are reported together.
 export async function prepareAll(root: string, configPath: string): Promise<Prepared> {
   const configAbs = path.resolve(root, configPath);
-  const config = JSON.parse(readFileSync(configAbs, "utf8")) as FeatConfig;
+  const config = await readConfig(root, configPath);
   const specs = discoverSpecs(root, config.specs.dir);
   // The project root is where the config lives — adapter resolution anchors there, so
   // generate behaves identically regardless of the invoking cwd (as the harness does).

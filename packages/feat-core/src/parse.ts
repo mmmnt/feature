@@ -3,6 +3,7 @@
 // The corpus at corpus/ is ground truth: every exemplar parses to its .ir.json exactly.
 // The response body is the IR WITHOUT loc (ADR-0013 companion ruling).
 
+import { loadConfig } from "@mmmnt/feat-runtime";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
@@ -889,7 +890,13 @@ export async function parse(input: ParseInput): Promise<CapturedResponse> {
   const specPath = path.resolve(process.cwd(), input.spec);
   const configPath = path.resolve(process.cwd(), input.config);
   const source = readFileSync(specPath, "utf8");
-  const configDoc = JSON.parse(readFileSync(configPath, "utf8")) as {
+  // Through loadConfig (ADR-0024), so a tier overlay's closed spaces are the merged ones.
+  const loaded = await loadConfig({ path: configPath });
+  if (loaded.status === "ERR") {
+    const b = loaded.body as { code: string; message: string };
+    throw new Error(`Configuration error [${b.code}] ${b.message}`);
+  }
+  const configDoc = loaded.body as {
     services?: Record<string, unknown>;
     response?: { commands?: Record<string, unknown>; actors?: Record<string, unknown> };
   };

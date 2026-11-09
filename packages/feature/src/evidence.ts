@@ -8,6 +8,7 @@
 // JUnit artifact (stage 1). Stage 2 replaces the JUnit parse with a
 // structured run sidecar written by the harness itself.
 
+import { readConfig } from "./config.js";
 import { execSync } from "node:child_process";
 import { resolveEnvironment, variablesSidecarPath } from "@mmmnt/feat-runtime";
 import { createHash } from "node:crypto";
@@ -125,7 +126,7 @@ export function excerptLines(source: string): Array<{ n: number; zone: string; t
 
 export async function produceEvidence(root: string, configPath: string): Promise<Record<string, unknown>> {
   const configText = readFileSync(path.resolve(root, configPath), "utf8");
-  const config = JSON.parse(configText) as FeatConfig;
+  const config = await readConfig(root, configPath);
 
   // Spec inventory
   const specs: Record<string, unknown>[] = [];
