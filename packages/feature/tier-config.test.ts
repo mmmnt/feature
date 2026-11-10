@@ -44,6 +44,29 @@ describe("every command reads the config through loadConfig", { timeout: 30_000 
   });
 });
 
+// The README contract: exit 2 is a configuration error, 1 a validation failure — on generate and verify too.
+describe("a configuration error exits 2 on generate and verify", { timeout: 30_000 }, () => {
+  const refusals: [string, string, string][] = [
+    ["a drifting overlay", "feat.drifting.config.json", "TIER_SPACE_MISMATCH"],
+    ["an overlay whose base is missing", "feat.orphan.config.json", "EXTENDS_NOT_FOUND"],
+    ["a config that does not exist", "feat.nowhere.config.json", "CONFIG_NOT_FOUND"],
+  ];
+  for (const cmd of ["generate", "verify"]) {
+    for (const [what, config, code] of refusals) {
+      it(`feat ${cmd} exits 2 with ${code} for ${what}`, () => {
+        const r = feat([cmd, "--config", config]);
+        expect(r.code).toBe(2);
+        expect(r.out).toContain(`[${code}]`);
+      });
+    }
+  }
+  it("feat verify still exits 1 for generated files that are not there (a validation failure)", () => {
+    const r = feat(["verify", "--config", "feat.config.json"]);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("VERIFY_FAILED");
+  });
+});
+
 describe("generation is the same in every tier (ADR-0024)", () => {
   it("a base and its overlay generate byte-identical files, whatever the tiers' services say", async () => {
     const spec = await generateAll(ROOT, "feat.config.json");

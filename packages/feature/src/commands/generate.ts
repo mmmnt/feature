@@ -3,6 +3,7 @@
 import { writeFileSync } from "node:fs";
 import path from "node:path";
 import { Command, Flags } from "@oclif/core";
+import { ConfigLoadError } from "../config.js";
 import { generateAll } from "../pipeline.js";
 
 export default class Generate extends Command {
@@ -24,7 +25,7 @@ export default class Generate extends Command {
       this.log(`${files.length} test file(s) generated.`);
     } catch (e) {
       this.logToStderr(`ERROR ${String((e as Error).message)}`);
-      this.exit(1);
+      this.exit(e instanceof ConfigLoadError ? 2 : 1); // a refused config is a configuration error (README: exit 2)
     }
   }
 }
