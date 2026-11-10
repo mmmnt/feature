@@ -1,0 +1,24 @@
+{
+  "extends": "./feat.config.json",
+  "specs": {
+    "dir": "adapters",
+    "pattern": "**/*.feat",
+    "contractPattern": "**/*.contract.json",
+    "outputPattern": "{name}.test.ts",
+    "exclude": [
+      "**/fixtures/**",
+      "stdio-jsonrpc/**",
+      "memory/**",
+      "fs/**",
+      "stripe/**",
+      "handler/**",
+      "fault-proxy/**",
+      "http/**",
+      "playwright/**",
+      "schema-json/**",
+      "*/observe.feat",
+      "dynamodb/query-mode.feat"
+    ]
+  },
+  "environment": "integration"
+}

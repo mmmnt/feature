@@ -110,7 +110,14 @@
       "reports/**",
       "coverage/**",
       "editor/**",
-      "editors/**"
+      "editors/**",
+      "adapters/dynamodb/transport.feat",
+      "adapters/kafka/transport.feat",
+      "adapters/kms/transport.feat",
+      "adapters/kurrent/transport.feat",
+      "adapters/neo4j/transport.feat",
+      "adapters/kafka/broker-loss.feat",
+      "adapters/kurrent/broker-loss.feat"
     ]
   },
   "report": {
