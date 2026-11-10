@@ -134,6 +134,28 @@ importers:
         specifier: ^3.2.0
         version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)
 
+  adapters/kms:
+    dependencies:
+      '@aws-sdk/client-kms':
+        specifier: 3.1164.0
+        version: 3.1164.0
+      '@mmmnt/feat-fault-proxy':
+        specifier: workspace:^
+        version: link:../fault-proxy
+      '@mmmnt/feat-types':
+        specifier: workspace:^
+        version: link:../../packages/feat-types
+    devDependencies:
+      '@mmmnt/feat-runtime':
+        specifier: workspace:^
+        version: link:../../packages/feat-runtime
+      typescript:
+        specifier: ^5.8.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)
+
   adapters/kurrent:
     dependencies:
       '@kurrent/kurrentdb-client':
@@ -158,28 +180,6 @@ importers:
       vitest:
         specifier: ^3.2.0
         version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)
-
-  adapters/kms:
-    dependencies:
-      '@aws-sdk/client-kms':
-        specifier: 3.1164.0
-        version: 3.1164.0
-      '@mmmnt/feat-fault-proxy':
-        specifier: workspace:^
-        version: link:../fault-proxy
-      '@mmmnt/feat-types':
-        specifier: workspace:^
-        version: link:../../packages/feat-types
-    devDependencies:
-      '@mmmnt/feat-runtime':
-        specifier: workspace:^
-        version: link:../../packages/feat-runtime
-      typescript:
-        specifier: ^5.8.0
-        version: 5.9.3
-      vitest:
-        specifier: ^3.2.0
-        version: 3.2.7(@types/node@24.13.3)
 
   adapters/memory:
     dependencies:
