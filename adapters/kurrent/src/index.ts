@@ -1,4 +1,4 @@
-// @mmmnt/feat-adapter-kurrent (SPEC-ADPKUR-001, -002, -003) — KurrentDB as a Feat service.
+// @mmmnt/feat-adapter-kurrent (SPEC-ADPKUR-001, -002, -003, -004) — KurrentDB as a Feat service.
 //
 // The `$all` log is the change feed: it is totally ordered by log position, and the position of an
 // append (AppendResult.position) is a position in that same log. That is the whole of settle: append a
@@ -16,6 +16,7 @@ import {
   jsonEvent,
   streamNameFilter,
 } from "@kurrent/kurrentdb-client";
+import { isIP } from "node:net";
 import { createFaultProxy } from "@mmmnt/feat-fault-proxy";
 import type { FaultProxy, OpenProxy } from "@mmmnt/feat-fault-proxy";
 import type { ReadPosition } from "@kurrent/kurrentdb-client";
@@ -28,7 +29,7 @@ import type {
   SeedRecord,
 } from "@mmmnt/feat-types";
 
-export type KurrentAdapterErrorCode = "NAMESPACE_INVALID" | "ALL_READ_DENIED" | "FAULT_UNSUPPORTED";
+export type KurrentAdapterErrorCode = "NAMESPACE_INVALID" | "ALL_READ_DENIED" | "FAULT_UNSUPPORTED" | "TLS_HOST_UNSUPPORTED";
 
 export class KurrentAdapterError extends Error {
   constructor(
@@ -61,6 +62,8 @@ export interface KurrentOptions {
   system?: { username: string; password: string };
   settleTimeoutMs?: number;
   proxy?: KurrentProxyOptions;
+  /** The Node major the TLS host rule judges by (SPEC-ADPKUR-004). Default: the running Node's. */
+  nodeMajor?: number;
 }
 
 interface KurrentConfig {
@@ -80,6 +83,8 @@ const KEPT_SYSTEM_TYPES = new Set(["$streamDeleted", "$metadata"]);
 /** 9223372036854775807 as the JSON number a JS client delivers: 2^63. */
 const INT64_MAX_AS_NUMBER = 2 ** 63;
 const CONNECTION_FAULTS = ["Timeout", "ConnectionReset", "Partition"] as const;
+/** Node refuses an IP address as the TLS servername from this major on (SPEC-ADPKUR-004). */
+const IP_SERVERNAME_REFUSED_FROM = 26;
 
 function after(a: Position, b: Position): boolean {
   return a.commit > b.commit || (a.commit === b.commit && a.prepare > b.prepare);
@@ -96,6 +101,41 @@ function isServerTruncateBefore(type: string, data: unknown): boolean {
   if (keys.length !== 1 || keys[0] !== "$tb") return false;
   const n = (data as { $tb: unknown }).$tb;
   return typeof n === "number" && Number.isInteger(n) && n >= 0 && n < INT64_MAX_AS_NUMBER;
+}
+
+/** The WHATWG form of an IP literal, so `[0:0:0:0:0:0:0:1]` and `[::1]` are one host; the literal as written when it does not parse. */
+function canonicalIp(literal: string): string {
+  try {
+    return new URL(`http://${literal.includes(":") ? `[${literal}]` : literal}`).hostname.replace(/^\[|\]$/g, "");
+  } catch {
+    return literal;
+  }
+}
+
+/** The authority of a connection string split so each host can be judged and replaced on its own. */
+function splitAuthority(raw: string): { head: string; hosts: string[]; tail: string } | undefined {
+  const m = /^([a-z][a-z0-9+.-]*:\/\/)([^/?#]*)(.*)$/is.exec(raw);
+  if (m === null) return undefined;
+  const authority = m[2]!;
+  const at = authority.lastIndexOf("@");
+  return { head: m[1]! + authority.slice(0, at + 1), hosts: authority.slice(at + 1).split(","), tail: m[3]! };
+}
+
+/** One `host[:port]` entry of the host list: the host without its brackets, and the port with its colon. */
+function splitHost(entry: string): { host: string; port: string } {
+  if (entry.startsWith("[")) {
+    const end = entry.indexOf("]");
+    if (end > 0) return { host: entry.slice(1, end), port: entry.slice(end + 1) };
+  }
+  const colon = entry.lastIndexOf(":");
+  return colon < 0 ? { host: entry, port: "" } : { host: entry.slice(0, colon), port: entry.slice(colon) };
+}
+
+/** The client's default is tls=true, so only an explicit false turns it off. */
+function tlsOn(raw: string): boolean {
+  const query = raw.split("#")[0]!.split("?")[1] ?? "";
+  for (const [k, v] of new URLSearchParams(query)) if (k.toLowerCase() === "tls") return v.toLowerCase() !== "false";
+  return true;
 }
 
 function errorType(e: unknown): string | undefined {
@@ -197,12 +237,54 @@ class KurrentAdapter implements FeatServiceAdapter {
 
   // ── the instrument connection ─────────────────────────────────────────────
 
-  private connectionString(): string {
+  /**
+   * SPEC-ADPKUR-004: with tls on, a host that is exactly 127.0.0.1 or ::1 is replaced by `localhost` (only the host),
+   * and any other IP literal is refused on a Node that refuses an IP servername. A `+discover` string is left as written.
+   */
+  private tlsHostRule(raw: string): { target: string; refusal?: KurrentAdapterError } {
+    const parts = splitAuthority(raw);
+    if (parts === undefined || /^kurrentdb\+discover:/i.test(raw) || !tlsOn(raw)) return { target: raw };
+    const major = this.options.nodeMajor ?? Number(process.versions.node.split(".")[0]);
+    let refusal: KurrentAdapterError | undefined;
+    const hosts = parts.hosts.map((entry) => {
+      const { host, port } = splitHost(entry);
+      if (isIP(host) === 0) return entry;
+      const ip = canonicalIp(host);
+      if (ip === "127.0.0.1" || ip === "::1") return `localhost${port}`;
+      if (major >= IP_SERVERNAME_REFUSED_FROM) {
+        refusal ??= new KurrentAdapterError(
+          "TLS_HOST_UNSUPPORTED",
+          `the host ${ip} is an IP address and the connection string has tls=true: Node ${major} refuses an IP address as the TLS server name; use a hostname the certificate names, or tls=false`,
+        );
+      }
+      return entry;
+    });
+    return { target: parts.head + hosts.join(",") + parts.tail, ...(refusal !== undefined ? { refusal } : {}) };
+  }
+
+  private resolveConnection(): { target: string; refusal?: KurrentAdapterError } {
     const o = this.options;
     const raw = o.connectionString ?? (o.connectionStringEnv !== undefined ? process.env[o.connectionStringEnv] : undefined);
     if (raw === undefined || raw === "") {
       throw new Error(`the kurrent service '${"key"}' has no connectionString (or connectionStringEnv naming a set variable)`);
     }
+    const { target, refusal } = this.tlsHostRule(raw);
+    return { target: this.withCredentials(target), ...(refusal !== undefined ? { refusal } : {}) };
+  }
+
+  /** The string the client is created from, no network; a refused host stays as written (setup() throws for it). */
+  connectionTarget(): string {
+    return this.resolveConnection().target;
+  }
+
+  private connectionString(): string {
+    const { target, refusal } = this.resolveConnection();
+    if (refusal !== undefined) throw refusal;
+    return target;
+  }
+
+  private withCredentials(raw: string): string {
+    const o = this.options;
     if (o.system === undefined) return raw;
     const user = process.env[o.system.username];
     const pass = process.env[o.system.password];

@@ -1,10 +1,11 @@
-// The probe behind `ObserveKurrent`, `ObserveKurrentTransport` and `ObserveKurrentBrokerLoss`
-// (SPEC-ADPKUR-001, -002, -003). Part of the build, inside touches, not shipped.
+// The probe behind `ObserveKurrent`, `ObserveKurrentTransport`, `ObserveKurrentBrokerLoss` and `ObserveKurrentTlsHost`
+// (SPEC-ADPKUR-001, -002, -003, -004). Part of the build, inside touches, not shipped.
 //
 // It starts, once per process, the throwaway containers the scenarios need and removes them on exit:
 //   feat-kurrent-test-kdb-<id>   KurrentDB (pinned image), single node, dev certificate (secure: ACLs and
 //                                users exist only on a secure node), projections off, in-memory database,
-//                                its HTTP/gRPC port published on a random loopback port
+//                                its HTTP/gRPC port published on a random loopback port, the same number on 127.0.0.1 and on [::1]
+//                                (SPEC-ADPKUR-004), or on 127.0.0.1 alone where Docker cannot publish on the IPv6 loopback
 //   feat-kurrent-test-tox-<id>   Toxiproxy (pinned image), API and control port published (transport only)
 //   feat-kurrent-test-peer-<id>  shares the Toxiproxy network namespace: the system's client (peer-agent.cjs).
 //                                A client of a proxied path must run there: Docker Desktop's host proxy
@@ -115,21 +116,45 @@ function createUser(port, [login, password], groups) {
 const connectionString = (port, user, host = "127.0.0.1", extra = "") =>
   `kurrentdb://${encodeURIComponent(user[0])}:${encodeURIComponent(user[1])}@${host}:${port}?tls=true&tlsVerifyCert=false${extra}`;
 
+function freePort() {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const { port } = server.address();
+      server.close(() => resolve(port));
+    });
+  });
+}
+
 let kdbPromise;
 function kurrent() {
   kdbPromise ??= (async () => {
     const id = randomBytes(4).toString("hex");
     const name = `feat-kurrent-test-kdb-${id}`;
-    start(name, [
-      "--rm",
-      "-p", "127.0.0.1:0:2113",
-      "-e", "KURRENTDB_DEV=true",
-      "-e", "KURRENTDB_RUN_PROJECTIONS=None",
-      "-e", "KURRENTDB_START_STANDARD_PROJECTIONS=false",
-      "-e", "KURRENTDB_MEM_DB=true",
-      "-e", "KURRENTDB_ENABLE_ATOM_PUB_OVER_HTTP=true",
-      KURRENTDB_IMAGE,
-    ]);
+    const run = (publish) =>
+      start(name, [
+        "--rm",
+        ...publish,
+        "-e", "KURRENTDB_DEV=true",
+        "-e", "KURRENTDB_RUN_PROJECTIONS=None",
+        "-e", "KURRENTDB_START_STANDARD_PROJECTIONS=false",
+        "-e", "KURRENTDB_MEM_DB=true",
+        "-e", "KURRENTDB_ENABLE_ATOM_PUB_OVER_HTTP=true",
+        KURRENTDB_IMAGE,
+      ]);
+    // One port number on both loopbacks, so a connection string naming `localhost` reaches the node whichever address it resolves to.
+    let published = false;
+    for (let attempt = 0; attempt < 3 && !published; attempt++) {
+      const free = await freePort();
+      try {
+        run(["-p", `127.0.0.1:${free}:2113`, "-p", `[::1]:${free}:2113`]);
+        published = true;
+      } catch {
+        spawnSync("docker", ["rm", "-f", name], { stdio: "ignore" });
+      }
+    }
+    if (!published) run(["-p", "127.0.0.1:0:2113"]);
     const port = hostPort(name, 2113);
     // A fresh client per attempt: one that failed while the node was starting keeps its failed channel.
     await until("KurrentDB", async () => {
@@ -225,19 +250,22 @@ async function containerState(name) {
 
 async function run(input, mode) {
   const kdb = await kurrent();
-  const env = mode === "observe" ? undefined : await proxyEnvironment();
+  const env = mode === "observe" || mode === "tls-host" ? undefined : await proxyEnvironment();
   if ((await containerState(kdb.name)) === "paused") docker(["unpause", kdb.name]);
   if (env !== undefined) {
     const all = await (await fetch(`${env.api}/proxies`)).json();
     for (const n of Object.keys(all)) await fetch(`${env.api}/proxies/${n}`, { method: "DELETE" });
   }
 
-  const steps = input.script.trim().split(/\s+/);
+  const steps = (input.script ?? "setup:a").trim().split(/\s+/);
 
   const credentials = input.credentials === "reader" ? USERS.reader : USERS.admin;
   process.env.FEAT_KURRENT_TEST_USER = credentials[0];
   process.env.FEAT_KURRENT_TEST_PASSWORD = credentials[1];
-  process.env.FEAT_KURRENT_TEST_CONNECTION = connectionString(kdb.port, USERS.admin).replace(/\/\/[^@]*@/, "//");
+  process.env.FEAT_KURRENT_TEST_CONNECTION =
+    mode === "tls-host"
+      ? `kurrentdb://${input.host}:${kdb.port}?tls=${input.tls ?? true}&tlsVerifyCert=false`
+      : connectionString(kdb.port, USERS.admin).replace(/\/\/[^@]*@/, "//");
   process.env.AWS_EC2_METADATA_DISABLED = "true";
 
   const adapters = new Map();
@@ -254,6 +282,7 @@ async function run(input, mode) {
       connectionStringEnv: "FEAT_KURRENT_TEST_CONNECTION",
       system: { username: "FEAT_KURRENT_TEST_USER", password: "FEAT_KURRENT_TEST_PASSWORD" },
       ...(input.settleTimeoutMs !== undefined ? { settleTimeoutMs: input.settleTimeoutMs } : {}),
+      ...(input.nodeMajor !== undefined ? { nodeMajor: input.nodeMajor } : {}),
       ...(env !== undefined
         ? {
             proxy: {
@@ -288,6 +317,20 @@ async function run(input, mode) {
           await adapter(l).setup();
                     trace.push(`setup:${l}`);
           break;
+        case "target": {
+          // The host(s) the client is handed: the authority without credentials and ports.
+          const authority = /^[^:]+:\/\/([^/?#]*)/.exec(adapter(l).connectionTarget())[1];
+          const hosts = authority.slice(authority.lastIndexOf("@") + 1).split(",").map((h) => (h.startsWith("[") ? h.slice(0, h.indexOf("]") + 1) : h.replace(/:\d*$/, "")));
+          trace.push(`target:${l}=${hosts.join(",")}`);
+          break;
+        }
+        case "params": {
+          // The user name and the query string; the secret, the host and the port are removed.
+          const target = adapter(l).connectionTarget();
+          const user = /^[^:]+:\/\/([^:@/?#]*)/.exec(target)[1];
+          trace.push(`params:${l}=${user}${target.includes("?") ? target.slice(target.indexOf("?")) : ""}`);
+          break;
+        }
         case "seed":
           dirty.add(adapter(l));
           await adapter(l).seed([{ type: b, values: { stream: a } }]);
@@ -400,3 +443,4 @@ async function run(input, mode) {
 export const observe = (input) => run(input, "observe");
 export const observeTransport = (input) => run(input, "transport");
 export const observeBrokerLoss = (input) => run(input, "broker-loss");
+export const observeTlsHost = (input) => run(input, "tls-host");

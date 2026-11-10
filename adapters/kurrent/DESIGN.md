@@ -72,3 +72,18 @@ works by `connectionString`; nothing here needs AWS.
 A KurrentDB container (image `kurrentplatform/kurrentdb`, 26.x line seen locally) started per run on a
 free port; fixture users: `admin` (default) and a non-admin `writer` and `reader` (created through the
 users API); a Toxiproxy container for SPEC-ADPKUR-002; `fixtures/probe.mjs`.
+
+## The TLS host on Node 26 (SPEC-ADPKUR-004, founder ruling 2026-11-10)
+Node 26 refuses an IP address as the TLS servername (`ERR_INVALID_ARG_VALUE`). `@grpc/grpc-js` 1.14.7 sets
+`connectionOptions.servername` to the remote host unconditionally and `@kurrent/kurrentdb-client` 1.3.2 has no channel option, so a
+`kurrentdb://` string with `tls=true` (the default) and an IP host cannot connect on Node 26; `tlsVerifyCert=false` does not help.
+Upstream: grpc/grpc-node#3131. The rule can go when grpc-js stops sending an IP as the servername.
+- Host exactly `127.0.0.1` or `::1` with tls=true: the client is created with `localhost`, only the host changes, on every Node major.
+  Exact, not 127.0.0.0/8: `localhost` never resolves to 127.0.0.2.
+- Any other IP literal with tls=true on Node >= 26 (`options.nodeMajor`, default the running major): `setup()` throws
+  `TLS_HOST_UNSUPPORTED` before connecting. Remedy in the detail: a hostname the certificate names, or tls=false.
+- Hostnames, `kurrentdb+discover://`, tls=false, and a non-loopback IP on Node < 26 are untouched. Multi-host strings are judged host by host.
+- `connectionTarget()` returns the string the client is created from (no network, never throws for a refusal).
+- Certificate note: a user who verifies the certificate and relied on an IP SAN for 127.0.0.1 now needs the certificate to name `localhost`
+  (the test node uses tlsVerifyCert=false, so it does not matter there).
+- Fixture: the node's port is published on `[::1]` too, on the same port number as on 127.0.0.1.
