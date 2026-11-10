@@ -14,12 +14,12 @@
 // Only containers this probe created, by name, are ever touched.
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { existsSync, mkdirSync } from "node:fs";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import neo4j from "neo4j-driver";
 import { createAdapter, Neo4jAdapterError } from "../src/index.ts";
+import { ensurePeerInstall } from "../../fault-proxy/fixtures/peer-install.mjs";
 
 export const NEO4J_IMAGE = "neo4j:2026.01.4-community";
 export const TOXIPROXY_IMAGE = "ghcr.io/shopify/toxiproxy:2.12.0";
@@ -130,17 +130,25 @@ function neo4jServer() {
   return dbPromise;
 }
 
+// The peer's client install is made when the probe loads, not inside the first case, so a cold install (npm in a
+// container, while the other spec files do the same) is not charged to a case's timeout.
+// The host's install carries only the host's binding: the peer needs the linux build of the pinned client.
+await ensurePeerInstall({
+  dir: PEER_DEPS,
+  pkg: "neo4j-driver",
+  version: DRIVER_VERSION,
+  image: NODE_IMAGE,
+  name: `feat-neo4j-test-install-${randomBytes(4).toString("hex")}`,
+  track: (n) => {
+    hook();
+    created.push(n);
+  },
+});
+
 let proxyPromise;
 function proxyEnvironment() {
   proxyPromise ??= (async () => {
     const db = await neo4jServer();
-    if (!existsSync(path.join(PEER_DEPS, "node_modules", "neo4j-driver", "package.json"))) {
-      mkdirSync(PEER_DEPS, { recursive: true });
-      const install = `feat-neo4j-test-install-${db.id}`;
-      hook();
-      created.push(install);
-      docker(["run", "--rm", "--name", install, "-v", `${PEER_DEPS}:/work`, "-w", "/work", NODE_IMAGE, "npm", "install", "--no-audit", "--no-fund", "--prefix", "/work", `neo4j-driver@${DRIVER_VERSION}`]);
-    }
     const tox = `feat-neo4j-test-tox-${db.id}`;
     const peer = `feat-neo4j-test-peer-${db.id}`;
     start(tox, ["--rm", "-p", "127.0.0.1:0:8474", "-p", `127.0.0.1:0:${CONTROL_PORT}`, TOXIPROXY_IMAGE, "-host=0.0.0.0", "-proxy-metrics"]);

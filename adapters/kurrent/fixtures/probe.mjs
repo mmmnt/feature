@@ -15,13 +15,13 @@
 // the system's default), `writer` (non-admin: the system that an ACL can deny) and `reader` (cannot read $all).
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { existsSync, mkdirSync } from "node:fs";
 import https from "node:https";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ANY, jsonEvent, KurrentDBClient, NO_STREAM, START, streamNameFilter } from "@kurrent/kurrentdb-client";
 import { createAdapter, KurrentAdapterError } from "../src/index.ts";
+import { ensurePeerInstall } from "../../fault-proxy/fixtures/peer-install.mjs";
 
 export const KURRENTDB_IMAGE = "kurrentplatform/kurrentdb:26.2.3";
 export const TOXIPROXY_IMAGE = "ghcr.io/shopify/toxiproxy:2.12.0";
@@ -152,17 +152,25 @@ function kurrent() {
 
 const AGENT_FILE = path.join(HERE, "peer-agent.cjs");
 
+// The peer's client install is made when the probe loads, not inside the first case, so a cold install (npm in a
+// container, while the other spec files do the same) is not charged to a case's timeout.
+// The host's install carries only the host's binding: the peer needs the linux build of the pinned client.
+await ensurePeerInstall({
+  dir: PEER_DEPS,
+  pkg: "@kurrent/kurrentdb-client",
+  version: CLIENT_VERSION,
+  image: NODE_IMAGE,
+  name: `feat-kurrent-test-install-${randomBytes(4).toString("hex")}`,
+  track: (n) => {
+    hook();
+    created.push(n);
+  },
+});
+
 let proxyPromise;
 function proxyEnvironment() {
   proxyPromise ??= (async () => {
     const kdb = await kurrent();
-    if (!existsSync(path.join(PEER_DEPS, "node_modules", "@kurrent", "kurrentdb-client", "package.json"))) {
-      mkdirSync(PEER_DEPS, { recursive: true });
-      const install = `feat-kurrent-test-install-${kdb.id}`;
-      hook();
-      created.push(install);
-      docker(["run", "--rm", "--name", install, "-v", `${PEER_DEPS}:/work`, "-w", "/work", NODE_IMAGE, "npm", "install", "--no-audit", "--no-fund", "--prefix", "/work", `@kurrent/kurrentdb-client@${CLIENT_VERSION}`]);
-    }
     const tox = `feat-kurrent-test-tox-${kdb.id}`;
     const peer = `feat-kurrent-test-peer-${kdb.id}`;
     start(tox, ["--rm", "-p", "127.0.0.1:0:8474", "-p", `127.0.0.1:0:${CONTROL_PORT}`, TOXIPROXY_IMAGE, "-host=0.0.0.0", "-proxy-metrics"]);

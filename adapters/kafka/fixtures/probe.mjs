@@ -15,13 +15,13 @@
 // delete the topic, and returns to the baseline in which broker 2 is down (so that no topic of any other scenario is
 // ever placed on a broker the instrument has no listener on).
 import { createHash, randomBytes } from "node:crypto";
-import { existsSync, mkdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { RdKafka } from "@confluentinc/kafka-javascript";
 import { createAdapter, KafkaAdapterError } from "../src/index.ts";
+import { ensurePeerInstall } from "../../fault-proxy/fixtures/peer-install.mjs";
 import { cluster, containerState, docker, NODE_IMAGE, PORTS, start, track, until } from "./cluster.mjs";
 
 export { KAFKA_IMAGE, NODE_IMAGE, TOXIPROXY_IMAGE } from "./cluster.mjs";
@@ -35,17 +35,22 @@ const require = createRequire(import.meta.url);
 const { makeClient } = require("./system-client.cjs");
 const hostSystem = makeClient(RdKafka);
 
+// The peer's client install is made when the probe loads, not inside the first case, so a cold install (npm in a
+// container, while the other spec files do the same) is not charged to a case's timeout.
+// The host's install carries only the host's binding: the peer needs the linux build of the pinned client.
+await ensurePeerInstall({
+  dir: PEER_DEPS,
+  pkg: "@confluentinc/kafka-javascript",
+  version: CLIENT_VERSION,
+  image: NODE_IMAGE,
+  name: `feat-kafka-test-install-${randomBytes(4).toString("hex")}`,
+  track,
+});
+
 let proxyPromise;
 function proxyEnvironment() {
   proxyPromise ??= (async () => {
     const c = await cluster();
-    if (!existsSync(path.join(PEER_DEPS, "node_modules", "@confluentinc", "kafka-javascript", "package.json"))) {
-      // The host's install carries only the host's binding: the peer needs the linux build of the pinned client.
-      mkdirSync(PEER_DEPS, { recursive: true });
-      const install = `feat-kafka-test-install-${c.id}`;
-      track(install);
-      docker(["run", "--rm", "--name", install, "-v", `${PEER_DEPS}:/work`, "-w", "/work", NODE_IMAGE, "npm", "install", "--no-audit", "--no-fund", "--prefix", "/work", `@confluentinc/kafka-javascript@${CLIENT_VERSION}`]);
-    }
     const peer = `feat-kafka-test-peer-${c.id}`;
     start(peer, [
       `--network=container:${c.tox}`,
