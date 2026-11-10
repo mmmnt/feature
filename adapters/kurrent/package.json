@@ -1,0 +1,43 @@
+{
+  "name": "@mmmnt/feat-adapter-kurrent",
+  "version": "0.1.0",
+  "description": "KurrentDB service adapter for Feat: the $all log is the capture window, a fence marker read back through it makes settle truthful, and the namespace's streams are the state",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --exclude '**/observe.test.ts' --exclude '**/transport.test.ts' --exclude '**/broker-loss.test.ts' --passWithNoTests"
+  },
+  "dependencies": {
+    "@kurrent/kurrentdb-client": "1.3.2",
+    "@mmmnt/feat-fault-proxy": "workspace:^",
+    "@mmmnt/feat-types": "workspace:^"
+  },
+  "devDependencies": {
+    "@mmmnt/feat-adapter-kit": "workspace:^",
+    "@mmmnt/feat-runtime": "workspace:^",
+    "typescript": "^5.8.0",
+    "vitest": "^3.2.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mmmnt/feature.git",
+    "directory": "adapters/kurrent"
+  },
+  "homepage": "https://github.com/mmmnt/feature#readme",
+  "bugs": {
+    "url": "https://github.com/mmmnt/feature/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

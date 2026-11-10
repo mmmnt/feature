@@ -1,0 +1,263 @@
+feat 1.0
+
+# SPEC-ADPKUR-001 — the KurrentDB service adapter (@mmmnt/feat-adapter-kurrent, built on the
+# official @kurrent/kurrentdb-client). Agreed by founder ruling 58a4ac88 ("flip them, queue in that order"); rulings c7af7871 applied.
+#
+# Driven through adapters/kurrent/fixtures/probe.mjs (part of the build, inside touches, not
+# shipped). `ObserveKurrent { script, credentials?, settleTimeoutMs? }` creates one adapter per
+# namespace named in the script against a KurrentDB container the TEST starts (a private
+# single-node, insecure, projections off; see DESIGN.md) and runs a space-separated script. Every
+# step but `setup` names its namespace first. Steps:
+#   setup:<ns>                       create the adapter for namespace <ns> and call setup()
+#   seed:<ns>:<stream>:<Type>        adapter.seed() one record into <stream> of <ns>
+#   write:<ns>:<stream>:<Type>       the SYSTEM writes: its own admin client appends, stream state ANY
+#   writenew:<ns>:<stream>:<Type>    the SYSTEM appends expecting the stream NOT to exist
+#   writeuser:<ns>:<stream>:<Type>   the SYSTEM writes as the fixture's non-admin user `writer`
+#   writeraw:<stream>:<Type>         the SYSTEM writes to a stream outside every namespace
+#   start / peek / stop / settle / reset : <ns>      the adapter's window methods
+#   read:<ns>[:<stream>]             adapter.read({}) or read({expect:[{type:"*", key:{stream}}]})
+#   fault:<ns>:<Operation>.<FAULT>:<stream>[:once|:times2|:reset]   adapter.fault() (count default reset)
+#   fired:<ns>                       adapter.firedFaults()
+# `<stream>` is relative: the probe prefixes it with the namespace the way the system under test
+# would (`<ns>.<stream>`). The trace shows each step: window steps carry the record count
+# (`peek:a=2`), settle true/false, read the record count, a refused write `write:a!CODE`
+# (CODE is the UPPER_SNAKE form of the client's error type), fired `fired:a=unobserved` when the
+# adapter has no firedFaults. `last` is the comma-joined `stream/Type` list of the last peek or
+# stop, in order; `peekEqualsStop` as in SPEC-ADPMEM-001.
+#
+# What is verified here (see DESIGN.md for sources): `$all` is read in transaction-log order;
+# AppendResult.position of an append gives its log position, so a sentinel appended after the
+# system's writes and read back through `$all` PROVES every earlier write is visible. That is the
+# whole of settle. It is truthful only when the append and the read go to the node that holds the
+# log the position refers to (single node, or the leader with requiresLeader); anything else
+# answers false.
+#
+# Namespace (derived per spec file by the runner, SPEC-RT-006; the probe maps each script label (a, b) to `s` + 12 hex of sha256(label), and passes `raw=<value>` as is, as
+# the config's `namespace`): every stream the system writes is named `<ns>.<stream>`; capture, read, reset and
+# the fence stream `feat-fence.<ns>` are all scoped to that prefix. A namespace is exactly
+# `^s[0-9a-f]{12}$` (SPEC-RT-006), so none is a prefix of another.
+
+spec SPEC-ADPKUR-001 "Kurrent adapter: namespaced capture, state, settle, reset and faults"
+context Toolchain
+aggregate Adapters
+type infrastructure
+status agreed
+
+construct:
+  handler at adapters/kurrent/src/index.ts
+  touches adapters/kurrent/**
+  needs SPEC-RT-002
+  needs SPEC-FPX-001
+  Declare `observes = { diff: "native", state: true }` and the fault catalog
+  `{ AppendToStream: { WRONG_EXPECTED_VERSION: ["reset"], ACCESS_DENIED: ["reset"] } }` (the
+  Connection entries are in transport.feat and broker-loss.feat).
+  Options: `connectionString` (or `connectionStringEnv`), `system`
+  (`{ username, password }` as env-var NAMES, for the instrument), `settleTimeoutMs` (default 5000),
+  `proxy` (SPEC-FPX-001). Namespace: received from the runner (SPEC-RT-006) as the config's top-level `namespace`, never an option; the probe maps each script label (a, b) to the namespace `s` + 12 hex of sha256(label), and `raw=<value>` passes a value as is.
+  setup(): connect the instrument client directly to the product (never through a proxy), verify
+  the credentials can read `$all` (else ALL_READ_DENIED), append nothing.
+  startCapture(): append a window-start marker to `feat-fence.<ns>` (metadata
+  `{ feat: "instrument" }`) and keep its commit position as the exclusive cursor.
+  peekCapture()/stopCapture(): readAll forwards from the cursor with a server-side stream-name
+  prefix filter on `<ns>.` and `$$<ns>.`; drop events whose metadata marks them instrument; drop
+  system events except `$streamDeleted` and `$metadata`; return in commit-position order as
+  CapturedRecord { type: eventType, key: stream name without the namespace prefix, payload: the
+  JSON data, timestamp: the event's created time in ms, metadata: { revision, commitPosition } }.
+  peek advances the in-adapter cursor and accumulates; stop returns the accumulation and closes.
+  settle(): false with no window open; otherwise append a fence marker to `feat-fence.<ns>`,
+  read `$all` from the cursor with prefixes `<ns>.`, `$$<ns>.`, `feat-fence.<ns>` until an event at
+  or beyond the marker's position is seen, and resolve true; resolve false if it is not seen
+  within settleTimeoutMs or the append or read fails. The fence marker is never in a capture.
+  read(query): for each stream in the namespace (named by `query.expect[].key.stream` when given,
+  else every stream the namespace has ever held, found with an `$all` prefix scan) read the stream
+  forwards; skip instrument events; a soft-deleted stream reads as empty.
+  seed(records): append each record to `<ns>.<stream>` with stream state ANY, before the window.
+  reset(): disarm every fault, soft-delete every stream of the namespace, close the window.
+
+enforce:
+  rejects NAMESPACE_INVALID when the namespace does not match ^s[0-9a-f]{12}$, the pattern the runner derives (SPEC-RT-006); defensive, the runner never passes another
+  rejects ALL_READ_DENIED when the instrument credentials cannot read the $all stream
+  capture is restricted to streams whose name starts with the namespace prefix
+  the instrument's own markers are never in a capture, a peek or a read
+  peekCapture returns the in-window records in commit-position order without consuming them
+  settle resolves true only when a marker appended after the system's writes was read back through $all
+  settle resolves false when no window is open, or when the marker was not seen in time
+  rejects FAULT_UNSUPPORTED when a fault is not in the catalog, or when its count is not one the fault declares
+  firedFaults is not implemented because the product reports no refusal it issued
+  reset disarms every armed fault and soft-deletes the namespace's streams
+
+contract:
+  input ObserveInput
+  response ObserveResult
+  error ObserveError
+
+scenario outline "a namespace that does not match the runner's pattern is refused":
+  when: ObserveKurrent { script: <script> }
+  predict rejection NAMESPACE_INVALID:
+    response ERR ObserveError { code: "NAMESPACE_INVALID", detail: matching <detail> }
+    filesystem has []
+  examples:
+    | script                   | detail    |
+    | "setup:raw=Orders"           | "Orders"  |
+    | "setup:raw=a.b"              | "a.b"     |
+    | "setup:raw=9lives"           | "9lives"  |
+    | "setup:raw=S0599e33863c1" | "S0599e33863c1" |
+    | "setup:raw=s0599e33863c"  | "s0599e33863c" |
+
+scenario "credentials that cannot read $all are a configuration error at setup":
+  when: ObserveKurrent { script: "setup:a", credentials: "reader" }
+  predict rejection ALL_READ_DENIED:
+    response ERR ObserveError { code: "ALL_READ_DENIED", detail: matching "\\$all" }
+    filesystem has []
+
+scenario "writes made in the window are captured in commit order, seeds are not":
+  when: ObserveKurrent { script: "setup:a seed:a:orders:Seeded start:a write:a:orders:Placed write:a:billing:Charged write:a:orders:Shipped stop:a" }
+  predict success:
+    response OK ObserveResult {
+      trace: "setup:a seed:a start:a write:a write:a write:a stop:a=3",
+      last: "orders/Placed,billing/Charged,orders/Shipped"
+    }
+    filesystem has []
+
+scenario "the order is the log's even across streams":
+  when: ObserveKurrent { script: "setup:a start:a write:a:s1:One write:a:s2:Two write:a:s1:Three write:a:s2:Four stop:a" }
+  predict success:
+    response OK ObserveResult {
+      trace: "setup:a start:a write:a write:a write:a write:a stop:a=4",
+      last: "s1/One,s2/Two,s1/Three,s2/Four"
+    }
+    filesystem has []
+
+scenario "two namespaces never see each other's records":
+  when: ObserveKurrent { script: "setup:a setup:b start:a start:b write:a:orders:PlacedA write:b:orders:PlacedB write:b:orders:ShippedB stop:a stop:b" }
+  predict success:
+    response OK ObserveResult {
+      trace: "setup:a setup:b start:a start:b write:a write:b write:b stop:a=1 stop:b=2",
+      last: "orders/PlacedB,orders/ShippedB"
+    }
+    filesystem has []
+
+scenario "a write outside every namespace is nobody's effect":
+  when: ObserveKurrent { script: "setup:a start:a writeraw:elsewhere:Stray stop:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a start:a writeraw stop:a=0" }
+    filesystem has []
+
+scenario "a peek reports the window's records and consumes nothing":
+  when: ObserveKurrent { script: "setup:a start:a write:a:orders:Placed peek:a peek:a stop:a" }
+  predict success:
+    response OK ObserveResult {
+      trace: "setup:a start:a write:a peek:a=1 peek:a=1 stop:a=1",
+      last: "orders/Placed",
+      peekEqualsStop: true
+    }
+    filesystem has []
+
+scenario "a peek sees records written between peeks exactly once":
+  when: ObserveKurrent { script: "setup:a start:a write:a:s:One peek:a write:a:s:Two peek:a stop:a" }
+  predict success:
+    response OK ObserveResult {
+      trace: "setup:a start:a write:a peek:a=1 write:a peek:a=2 stop:a=2",
+      last: "s/One,s/Two",
+      peekEqualsStop: true
+    }
+    filesystem has []
+
+scenario "a peek with no window open is empty":
+  when: ObserveKurrent { script: "setup:a write:a:orders:Placed peek:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a write:a peek:a=0" }
+    filesystem has []
+
+scenario "settle vouches once the system's writes are readable, and the fence is not a record":
+  when: ObserveKurrent { script: "setup:a start:a write:a:orders:Placed settle:a stop:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a start:a write:a settle:a=true stop:a=1", last: "orders/Placed" }
+    filesystem has []
+
+scenario "settle vouches on an empty window, which is how an absence is proven":
+  when: ObserveKurrent { script: "setup:a start:a settle:a stop:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a start:a settle:a=true stop:a=0" }
+    filesystem has []
+
+scenario "settle declines when no window is open":
+  when: ObserveKurrent { script: "setup:a settle:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a settle:a=false" }
+    filesystem has []
+
+scenario "settle declines when the marker cannot be read back in time, and says so by being false":
+  when: ObserveKurrent { script: "setup:a start:a write:a:orders:Placed settle:a stop:a", settleTimeoutMs: 0 }
+  predict success:
+    response OK ObserveResult { trace: "setup:a start:a write:a settle:a=false stop:a=1" }
+    filesystem has []
+
+scenario "read reports the namespace's streams and not the instrument's markers":
+  when: ObserveKurrent { script: "setup:a setup:b seed:a:orders:Seeded write:a:orders:Placed start:a stop:a read:a read:b" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a setup:b seed:a write:a start:a stop:a=0 read:a=2 read:b=0" }
+    filesystem has []
+
+scenario "read with a stream hint returns that stream and may return no other":
+  when: ObserveKurrent { script: "setup:a seed:a:orders:One seed:a:billing:Two read:a:orders" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a seed:a seed:a read:a:orders=1" }
+    filesystem has []
+
+scenario "reset clears the namespace and leaves the other one alone":
+  when: ObserveKurrent { script: "setup:a setup:b seed:a:orders:One seed:b:orders:Two reset:a read:a read:b" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a setup:b seed:a seed:b reset:a read:a=0 read:b=1" }
+    filesystem has []
+
+scenario "a window left open by the previous case is closed by reset":
+  when: ObserveKurrent { script: "setup:a start:a write:a:orders:Placed reset:a peek:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a start:a write:a reset:a peek:a=0" }
+    filesystem has []
+
+scenario "an append that expects a new stream is refused when WRONG_EXPECTED_VERSION is armed":
+  when: ObserveKurrent { script: "setup:a fault:a:AppendToStream.WRONG_EXPECTED_VERSION:orders start:a writenew:a:orders:Placed stop:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a fault:a:AppendToStream.WRONG_EXPECTED_VERSION start:a writenew:a!WRONG_EXPECTED_VERSION stop:a=0" }
+    filesystem has []
+
+scenario "the fault's placeholder is not a record of the system":
+  when: ObserveKurrent { script: "setup:a fault:a:AppendToStream.WRONG_EXPECTED_VERSION:orders start:a stop:a read:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a fault:a:AppendToStream.WRONG_EXPECTED_VERSION start:a stop:a=0 read:a=0" }
+    filesystem has []
+
+scenario "a write to a stream whose ACL denies writers is refused when ACCESS_DENIED is armed":
+  when: ObserveKurrent { script: "setup:a fault:a:AppendToStream.ACCESS_DENIED:orders start:a writeuser:a:orders:Placed stop:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a fault:a:AppendToStream.ACCESS_DENIED start:a writeuser:a!ACCESS_DENIED stop:a=0" }
+    filesystem has []
+
+scenario "reset disarms the fault, so the same write then succeeds":
+  when: ObserveKurrent { script: "setup:a fault:a:AppendToStream.ACCESS_DENIED:orders reset:a start:a writeuser:a:orders:Placed stop:a" }
+  predict success:
+    response OK ObserveResult {
+      trace: "setup:a fault:a:AppendToStream.ACCESS_DENIED reset:a start:a writeuser:a stop:a=1",
+      last: "orders/Placed"
+    }
+    filesystem has []
+
+scenario "the product reports no refusal it issued, so firedFaults is not offered":
+  when: ObserveKurrent { script: "setup:a fault:a:AppendToStream.WRONG_EXPECTED_VERSION:orders fired:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a fault:a:AppendToStream.WRONG_EXPECTED_VERSION fired:a=unobserved" }
+    filesystem has []
+
+scenario outline "a fault the binding cannot produce faithfully is refused before it does anything":
+  when: ObserveKurrent { script: <script> }
+  predict rejection FAULT_UNSUPPORTED:
+    response ERR ObserveError { code: "FAULT_UNSUPPORTED", detail: matching <detail> }
+    filesystem has []
+  examples:
+    | script                                                              | detail             |
+    | "setup:a fault:a:AppendToStream.WRONG_EXPECTED_VERSION:orders:once" | "once"             |
+    | "setup:a fault:a:AppendToStream.WRONG_EXPECTED_VERSION:orders:times2" | "times"          |
+    | "setup:a fault:a:AppendToStream.STREAM_DELETED:orders"              | "STREAM_DELETED"   |
+    | "setup:a fault:a:ReadStream.ACCESS_DENIED:orders"                   | "ReadStream"       |

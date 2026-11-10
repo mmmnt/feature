@@ -73,6 +73,18 @@
       "ObserveDynamoTransport": {
         "module": "adapters/dynamodb/fixtures/query-probe.mjs",
         "export": "observeTransport"
+      },
+      "ObserveKurrent": {
+        "module": "adapters/kurrent/fixtures/probe.mjs",
+        "export": "observe"
+      },
+      "ObserveKurrentTransport": {
+        "module": "adapters/kurrent/fixtures/probe.mjs",
+        "export": "observeTransport"
+      },
+      "ObserveKurrentBrokerLoss": {
+        "module": "adapters/kurrent/fixtures/probe.mjs",
+        "export": "observeBrokerLoss"
       }
     }
   },
