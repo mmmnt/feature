@@ -85,6 +85,10 @@
       "ObserveKurrentBrokerLoss": {
         "module": "adapters/kurrent/fixtures/probe.mjs",
         "export": "observeBrokerLoss"
+      },
+      "ObserveKms": {
+        "module": "adapters/kms/fixtures/probe.mjs",
+        "export": "observe"
       }
     }
   },

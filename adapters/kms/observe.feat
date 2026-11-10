@@ -1,0 +1,272 @@
+feat 1.0
+
+# SPEC-ADPKMS-001 — the KMS service adapter (@mmmnt/feat-adapter-kms, built on the official
+# @aws-sdk/client-kms). Agreed by founder ruling 58a4ac88; fault counts (every integration catalog
+# entry declares ["reset"], unobserved is accepted evidence, firedFaults is not implemented) by
+# founder ruling c7af7871.
+#
+# Driven through adapters/kms/fixtures/probe.mjs (part of the build, inside touches, not shipped)
+# against a local-kms container (nsmithuk/local-kms) the TEST starts, with dummy credentials and
+# its dummy account and region; nothing here needs AWS. `ObserveKms { script, emulator?,
+# settleTimeoutMs? }` creates one adapter per namespace named in the script and runs a
+# space-separated script. `<alias>` is relative: the namespace's alias is `alias/<ns>/<alias>`.
+# Steps:
+#   setup:<ns> / observes:<ns>
+#   seed:<ns>:<alias>                adapter.seed(): a symmetric key with that alias, before the window
+#   createkey:<ns>:<alias>           the SYSTEM creates a symmetric key and the alias
+#   createkeyraw:<name>              the SYSTEM creates a key with no namespace tag and no namespaced alias
+#   disable / schedule / rotate : <ns>:<alias>   the SYSTEM disables the key, schedules its deletion, enables rotation
+#   tag:<ns>:<alias>:<k>:<v>         the SYSTEM tags the key
+#   deletealias:<ns>:<alias>         the SYSTEM deletes the alias
+#   encrypt:<ns>:<alias>             the SYSTEM encrypts with the key (a cryptographic use)
+#   start / peek / stop / settle / reset : <ns>
+#   read:<ns>[:<alias>]              adapter.read() with or without an expect hint
+#   fault:<ns>:UseKey.<FAULT>:<alias>[:once|:times2|:reset]
+#   fired:<ns>
+# The trace carries the record count for window and read steps, settle true/false,
+# `observes:a=<diff>/<state>`, a refused use `encrypt:a!DISABLED` (DISABLED, KMS_INVALID_STATE,
+# NOT_FOUND). `last` is the last peek or stop as `TYPE:key` joined by comma, sorted by key;
+# a key's identity is its first namespaced alias (relative), else its Name tag, else its KeyId.
+# `readVia` is DescribeKey (a hint with an alias) or ListKeys.
+#
+# Verified (DESIGN.md has the sources): local-kms documents no change feed or audit stream, and
+# AWS KMS state is read with ListKeys, DescribeKey, ListAliases, ListResourceTags and
+# GetKeyRotationStatus, all of which the SDK and local-kms offer. So the diff is a snapshot of
+# key state; `observes` says `snapshot`. A snapshot sees what changed key STATE, tags, aliases or
+# rotation; it cannot see a cryptographic use (Encrypt, Decrypt, Sign, GenerateDataKey), which
+# leaves nothing behind. AWS documents KMS as eventually consistent, so settle vouches only for the
+# emulator, which the options must declare.
+
+spec SPEC-ADPKMS-001 "KMS adapter: snapshot diff of key state, namespace, settle, reset and faults"
+context Toolchain
+aggregate Adapters
+type infrastructure
+status agreed
+
+construct:
+  handler at adapters/kms/src/index.ts
+  touches adapters/kms/**
+  needs SPEC-RT-002
+  needs SPEC-FPX-001
+  Declare `observes = { diff: "snapshot", state: true }` and the fault catalog `{ UseKey:
+  { DISABLED: ["reset"], PENDING_DELETION: ["reset"], ALIAS_NOT_FOUND: ["reset"] }, Connection:
+  { Timeout: ["reset"], ConnectionReset: ["reset"], Partition: ["reset"] } }` (Connection only with `options.proxy`).
+  Options: `endpoint` (or `endpointEnv`; absent = the SDK default, which this draft does not
+  exercise), `region`, `auth` (env-var NAMES), `emulator`
+  ("local-kms" or absent), `settleTimeoutMs`, `proxy`.
+  Namespace: received from the runner (SPEC-RT-006) as the config's top-level `namespace`, never an option; the probe maps each script label (a, b) to the namespace `s` + 12 hex of sha256(label), and `raw=<value>` passes a value as is.
+  Namespace use: a key is in the namespace when it carries the tag `feat:namespace` = `<ns>` or any
+  alias starting `alias/<ns>/`; an alias is in it when it starts so. Reported aliases and the
+  identity drop that prefix; `feat:*` tags are never reported.
+  startCapture(): snapshot the namespace. peekCapture()/stopCapture(): snapshot again and diff by
+  identity: INSERT, MODIFY (key state, enabled, description, rotation, user tags, aliases),
+  REMOVE; CapturedRecord { type, key, payload: { keyState, enabled, keySpec, keyUsage,
+  description, rotationEnabled, tags, aliases }, timestamp: the capture time }, sorted by key.
+  settle(): false with no window open, false unless `options.emulator` is "local-kms"; otherwise
+  true (the emulator answers reads from the state its writes already changed). It writes nothing.
+  read(query): the snapshot's records; with `query.expect` entries that give an alias, DescribeKey
+  on that alias instead of listing; fault effects (a disabled key) are reported as they are.
+  seed(records): CreateKey with the namespace tag and CreateAlias, before the window.
+  reset(): for every key in the namespace delete its aliases, remove the namespace tag, then
+  ScheduleKeyDeletion (7 days, the minimum), disarm faults first (EnableKey, CancelKeyDeletion
+  then EnableKey, CreateAlias); close the window.
+  fault(UseKey.*, alias): DISABLED = DisableKey on the aliased key; PENDING_DELETION =
+  ScheduleKeyDeletion; ALIAS_NOT_FOUND = DeleteAlias (remembering the key). The alias must exist.
+
+enforce:
+  rejects NAMESPACE_INVALID when the namespace does not match ^s[0-9a-f]{12}$, the pattern the runner derives (SPEC-RT-006); defensive, the runner never passes another
+  rejects KMS_UNREACHABLE when the endpoint does not answer at setup
+  rejects FAULT_TARGET_MISSING when a fault names an alias that does not exist
+  rejects FAULT_UNSUPPORTED when a fault is not in the catalog, or when its count is not one the fault declares
+  capture and read are restricted to keys tagged with, or aliased under, the namespace
+  the namespace tag and prefix are never reported
+  the diff is a snapshot of key state and cannot see a cryptographic use of a key
+  settle resolves true only for a declared emulator, whose reads follow its writes
+  settle resolves false when no window is open or the endpoint is not a declared emulator
+  firedFaults is not implemented because KMS reports no request it refused
+  reset removes the namespace from every key, schedules their deletion and restores every faulted key first
+
+contract:
+  input ObserveInput
+  response ObserveResult
+  error ObserveError
+
+scenario outline "a namespace that does not match the runner's pattern is refused":
+  when: ObserveKms { script: <script> }
+  predict rejection NAMESPACE_INVALID:
+    response ERR ObserveError { code: "NAMESPACE_INVALID", detail: matching <detail> }
+    filesystem has []
+  examples:
+    | script         | detail   |
+    | "setup:raw=Orders" | "Orders" |
+    | "setup:raw=a/b"    | "a/b"    |
+    | "setup:raw=S0599e33863c1" | "S0599e33863c1" |
+    | "setup:raw=s0599e33863c"  | "s0599e33863c" |
+
+scenario "an endpoint that does not answer is a configuration error at setup":
+  when: ObserveKms { script: "setup:a", emulator: "unreachable" }
+  predict rejection KMS_UNREACHABLE:
+    response ERR ObserveError { code: "KMS_UNREACHABLE", detail: matching "endpoint" }
+    filesystem has []
+
+scenario "the adapter declares snapshot diff and state":
+  when: ObserveKms { script: "setup:a observes:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a observes:a=snapshot/true" }
+    filesystem has []
+
+scenario "a window reports keys created and changed, seeds excluded":
+  when: ObserveKms { script: "setup:a seed:a:signing start:a createkey:a:orders disable:a:signing stop:a" }
+  predict success:
+    response OK ObserveResult {
+      trace: "setup:a seed:a start:a createkey:a disable:a stop:a=2",
+      last: "INSERT:orders,MODIFY:signing"
+    }
+    filesystem has []
+
+scenario "rotation and tags are changes of state":
+  when: ObserveKms { script: "setup:a seed:a:one seed:a:two start:a rotate:a:one tag:a:two:team:core stop:a" }
+  predict success:
+    response OK ObserveResult {
+      trace: "setup:a seed:a seed:a start:a rotate:a tag:a stop:a=2",
+      last: "MODIFY:one,MODIFY:two"
+    }
+    filesystem has []
+
+scenario "deleting a key's only alias changes its identity, so it reads as one removal and one insertion":
+  when: ObserveKms { script: "setup:a seed:a:three start:a deletealias:a:three stop:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a seed:a start:a deletealias:a stop:a=2" }
+    filesystem has []
+
+scenario "a key scheduled for deletion is a change, not a removal":
+  when: ObserveKms { script: "setup:a seed:a:one start:a schedule:a:one stop:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a seed:a start:a schedule:a stop:a=1", last: "MODIFY:one" }
+    filesystem has []
+
+scenario "two namespaces never see each other's keys":
+  when: ObserveKms { script: "setup:a setup:b start:a start:b createkey:a:orders createkey:b:orders createkey:b:billing stop:a stop:b" }
+  predict success:
+    response OK ObserveResult {
+      trace: "setup:a setup:b start:a start:b createkey:a createkey:b createkey:b stop:a=1 stop:b=2",
+      last: "INSERT:billing,INSERT:orders"
+    }
+    filesystem has []
+
+scenario "a key with no namespace tag and no namespaced alias is nobody's effect":
+  when: ObserveKms { script: "setup:a start:a createkeyraw:stray stop:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a start:a createkeyraw stop:a=0" }
+    filesystem has []
+
+scenario "a cryptographic use of a key leaves nothing for a snapshot to see":
+  when: ObserveKms { script: "setup:a seed:a:signing start:a encrypt:a:signing stop:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a seed:a start:a encrypt:a stop:a=0" }
+    filesystem has []
+
+scenario "a peek reports the window's records and consumes nothing":
+  when: ObserveKms { script: "setup:a start:a createkey:a:orders peek:a peek:a stop:a" }
+  predict success:
+    response OK ObserveResult {
+      trace: "setup:a start:a createkey:a peek:a=1 peek:a=1 stop:a=1",
+      last: "INSERT:orders",
+      peekEqualsStop: true
+    }
+    filesystem has []
+
+scenario "a peek with no window open is empty":
+  when: ObserveKms { script: "setup:a createkey:a:orders peek:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a createkey:a peek:a=0" }
+    filesystem has []
+
+scenario "settle vouches for the emulator, whose reads follow its writes":
+  when: ObserveKms { script: "setup:a start:a createkey:a:orders settle:a stop:a", emulator: "local-kms" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a start:a createkey:a settle:a=true stop:a=1", last: "INSERT:orders" }
+    filesystem has []
+
+scenario "settle vouches on an empty window, which is how an absence is proven":
+  when: ObserveKms { script: "setup:a start:a settle:a stop:a", emulator: "local-kms" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a start:a settle:a=true stop:a=0" }
+    filesystem has []
+
+scenario "settle declines when the endpoint is not a declared emulator, because KMS is eventually consistent":
+  when: ObserveKms { script: "setup:a start:a createkey:a:orders settle:a stop:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a start:a createkey:a settle:a=false stop:a=1", last: "INSERT:orders" }
+    filesystem has []
+
+scenario "settle declines when no window is open":
+  when: ObserveKms { script: "setup:a settle:a", emulator: "local-kms" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a settle:a=false" }
+    filesystem has []
+
+scenario "a read given an alias describes that key":
+  when: ObserveKms { script: "setup:a seed:a:orders seed:a:billing read:a:orders" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a seed:a seed:a read:a:orders=1", readVia: "DescribeKey" }
+    filesystem has []
+
+scenario "a read given no hint lists the namespace and no other":
+  when: ObserveKms { script: "setup:a setup:b seed:a:orders seed:b:orders read:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a setup:b seed:a seed:b read:a=1", readVia: "ListKeys" }
+    filesystem has []
+
+scenario "reset takes the namespace's keys out of the namespace and leaves the other one alone":
+  when: ObserveKms { script: "setup:a setup:b seed:a:orders seed:b:orders reset:a read:a read:b" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a setup:b seed:a seed:b reset:a read:a=0 read:b=1" }
+    filesystem has []
+
+scenario "a use of a disabled key is refused when DISABLED is armed":
+  when: ObserveKms { script: "setup:a seed:a:signing fault:a:UseKey.DISABLED:signing start:a encrypt:a:signing stop:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a seed:a fault:a:UseKey.DISABLED start:a encrypt:a!DISABLED stop:a=0" }
+    filesystem has []
+
+scenario "a use of a key pending deletion is refused when PENDING_DELETION is armed":
+  when: ObserveKms { script: "setup:a seed:a:signing fault:a:UseKey.PENDING_DELETION:signing start:a encrypt:a:signing stop:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a seed:a fault:a:UseKey.PENDING_DELETION start:a encrypt:a!KMS_INVALID_STATE stop:a=0" }
+    filesystem has []
+
+scenario "a use through a missing alias is refused when ALIAS_NOT_FOUND is armed":
+  when: ObserveKms { script: "setup:a seed:a:signing fault:a:UseKey.ALIAS_NOT_FOUND:signing start:a encrypt:a:signing stop:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a seed:a fault:a:UseKey.ALIAS_NOT_FOUND start:a encrypt:a!NOT_FOUND stop:a=0" }
+    filesystem has []
+
+scenario "reset leaves no fault behind, so a fresh key under the same alias is usable":
+  when: ObserveKms { script: "setup:a seed:a:signing fault:a:UseKey.PENDING_DELETION:signing reset:a seed:a:signing start:a encrypt:a:signing stop:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a seed:a fault:a:UseKey.PENDING_DELETION reset:a seed:a start:a encrypt:a stop:a=0" }
+    filesystem has []
+
+scenario "a fault cannot be armed on an alias that does not exist":
+  when: ObserveKms { script: "setup:a fault:a:UseKey.DISABLED:ghost" }
+  predict rejection FAULT_TARGET_MISSING:
+    response ERR ObserveError { code: "FAULT_TARGET_MISSING", detail: matching "ghost" }
+    filesystem has []
+
+scenario "KMS reports no request it refused, so firedFaults is not offered":
+  when: ObserveKms { script: "setup:a seed:a:signing fault:a:UseKey.DISABLED:signing fired:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a seed:a fault:a:UseKey.DISABLED fired:a=unobserved" }
+    filesystem has []
+
+scenario outline "a fault the binding cannot produce faithfully is refused before it does anything":
+  when: ObserveKms { script: <script> }
+  predict rejection FAULT_UNSUPPORTED:
+    response ERR ObserveError { code: "FAULT_UNSUPPORTED", detail: matching <detail> }
+    filesystem has []
+  examples:
+    | script                                                         | detail       |
+    | "setup:a seed:a:signing fault:a:UseKey.DISABLED:signing:once"  | "once"       |
+    | "setup:a seed:a:signing fault:a:UseKey.THROTTLED:signing"      | "THROTTLED"  |
+    | "setup:a seed:a:signing fault:a:Sign.DISABLED:signing"         | "Sign"       |
