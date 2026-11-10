@@ -1,0 +1,203 @@
+feat 1.0
+
+# SPEC-RPC-002 — the host sharing of @mmmnt/feat-adapter-stdio-jsonrpc: ONE spec host per
+# spec file, shared by the file's response role and every service role (Feat Host Protocol,
+# schemas/feat-host-protocol.schema.json). Rationale: Feature's runner spawns `vitest run`;
+# vitest runs files in parallel workers and a file's tests in order, and the harness builds
+# adapters once per file (packages/feat-runtime/src/harness.ts), so scenarios in a host never overlap.
+# Agreed and ordered built by Sift decision 58a4ac88 (2026-11-09). AMENDED by founder ruling
+# 2026-11-09, RPC-002 A: the answer's per-file facts are an object KEYED BY FILE NAME
+# (`files: { a: { ... } }`), not an array — nested value blocks match partially, so a scenario asserts
+# only the facts it lists; array elements compare exactly, which made two scenarios with one input
+# unsatisfiable. No language change.
+#
+# Scope: the lifecycle (who spawns, who ends, what a crash does, what a mismatch does) and
+# the protocol semantics the adapter relies on: settle (ADR-0021), peekCapture (ADR-0020),
+# the clock through setClock, and the runner namespace (SPEC-RT-006). The exchange itself is SPEC-RPC-001.
+# RunFiles drives the real adapter classes against the fake host of
+# adapters/stdio-jsonrpc/fixtures/fake-host.mjs, one simulated spec file per entry of `files`
+# (each file gets its own module registry, as a vitest worker gives it). Per file it runs:
+# per case (one per entry of `clocks`, default one case with null): reset every service role, then
+# setClock(clock) on the response role first and then on each service role in listed order, then for
+# every service role startCapture, settle, peekCapture twice, stopCapture, and one invoke from the
+# response role; teardown every role in order. The fake host --mode picks canned, echo, crash-on-invoke, spawn-task (invoke returns
+# at once and a spawned task writes a record 200 ms later; settle waits for it),
+# spawn-task-failed (that task aborts), unvouched (settle cannot vouch). It is part of the
+# build and sits inside touches.
+# Every setup carries the file's `namespace`; the fake host keeps the first namespace it is given,
+# echoes it, and answers -32602 to a later setup that names another; FEAT_NAMESPACE is placed in the
+# host's environment at spawn and the host reports it.
+#
+# The clock reaches the adapters through the optional setClock(clock: string | null) of
+# drafts/adapter-interface/DESIGN.md section c, called by the harness every case after the resets.
+
+spec SPEC-RPC-002 "Share one spec host per spec file"
+context Toolchain
+aggregate Host
+type command
+status agreed
+
+construct:
+  handler at adapters/stdio-jsonrpc/src/run-files.ts
+  touches adapters/stdio-jsonrpc/**
+  touches feat.config.json
+  needs SPEC-RPC-001
+  The adapter is created with the runner's namespace (config.namespace, SPEC-RT-006). The adapter keeps a module-scoped registry of open hosts keyed by the canonical host
+  configuration (command, cwd, env; never the namespace: one host per file already means one namespace per host). A role's setup looks its key up: the first role to set up
+  spawns the host and sends the Feat Host Protocol setup for its own services; later roles join the
+  open host and send setup for theirs. Setup is additive: it opens the named services and never
+  closes or clears another role's. Each role's teardown sends teardown for its own services and
+  leaves; the last role to leave ends the host (close stdin, then kill after a grace period). A
+  role whose host configuration differs from the open host's is refused. When the host process
+  exits, every pending and every later call of every role of that file fails with HOST_CRASHED;
+  the registry entry is dropped so no other file is affected. The scenario clock travels by setClock on each role, after the resets (an ISO-8601 time with a zone designator freezes it, null unfreezes it).
+  settle returns the host's answer: true only when the host proves every task the scenario spawned
+  has finished and written; false whenever it cannot vouch. peekCapture reads the captured
+  records without consuming them; stopCapture returns them and closes the window.
+
+enforce:
+  one registry entry per host configuration within a spec file; separate files never share one
+  rejects PROTOCOL_MISMATCH when the host's setup result names a protocol version other than 2, before any case runs
+  rejects NAMESPACE_NOT_HONOURED when the host's setup result names a namespace other than the one sent, before any case runs
+  rejects PROTOCOL_VIOLATION when the host's setup answer lacks the namespace echo or violates the protocol schema (the SPEC-RPC-001 exchange rule, surfaced for the file)
+  rejects HOST_ERROR when the host refuses a role's setup, for instance with -32602 for a namespace other than the file's
+  rejects INVALID_CLOCK when setClock is given a time without a zone designator, refused before any setClock reaches the host
+  rejects HOST_CONFIG_MISMATCH when a role's host configuration differs from the host already open for its file
+  on every outcome leave no host process running
+
+contract:
+  input RunFilesInput
+  response RunFilesResult
+  error SharingError
+
+scenario "one host serves the response role and every service role of a spec file":
+  when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, roles: ["response", "log", "kv"] }] }
+  predict success:
+    response OK RunFilesResult { files: { a: { hostsSpawned: 1, spawnedBy: "response", endedBy: "kv", hostsAlive: 0, roleOutcomes: { response: "ok", log: "ok", kv: "ok" } } } }
+    filesystem has []
+
+scenario "the first role to set up spawns the host, whichever role it is":
+  when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, roles: ["log", "response", "kv"] }] }
+  predict success:
+    response OK RunFilesResult { files: { a: { hostsSpawned: 1, spawnedBy: "log", endedBy: "kv", hostsAlive: 0 } } }
+    filesystem has []
+
+scenario "the host stays up until the last role tears down":
+  when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, roles: ["response", "log", "kv"] }] }
+  predict success:
+    response OK RunFilesResult { files: { a: { aliveAfterTeardown: [true, true, false], hostsAlive: 0 } } }
+    filesystem has []
+
+scenario "a file whose roles all tore down and set up again gets a fresh host":
+  when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, roles: ["response", "log", "kv"], cycles: 2 }] }
+  predict success:
+    response OK RunFilesResult { files: { a: { hostsSpawned: 2, hostsAlive: 0 } } }
+    filesystem has []
+
+scenario "two spec files get two hosts":
+  when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, roles: ["response", "log"] }, { name: "b", namespace: "s3b04e21257fd", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, roles: ["response", "log"] }] }
+  predict success:
+    response OK RunFilesResult { files: { a: { hostsSpawned: 1, hostsAlive: 0 }, b: { hostsSpawned: 1, hostsAlive: 0 } }, distinctHosts: 2 }
+    filesystem has []
+
+scenario "each role opens only its own service and no setup closes another role's":
+  when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, roles: ["response", "log", "kv"] }, { name: "b", namespace: "s3b04e21257fd", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, roles: ["response", "log"] }] }
+  predict success:
+    response OK RunFilesResult { files: { a: { hostsSpawned: 1, hostsAlive: 0, setups: [[], ["log"], ["kv"]] }, b: { hostsSpawned: 1, hostsAlive: 0, setups: [[], ["log"]] } } }
+    filesystem has []
+
+scenario "a host crash fails every role of that file and no other file":
+  when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "crash-on-invoke"] }, roles: ["response", "log", "kv"] }, { name: "b", namespace: "s3b04e21257fd", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, roles: ["response", "log"] }] }
+  predict success:
+    response OK RunFilesResult { files: { a: { roleOutcomes: { response: "HOST_CRASHED", log: "HOST_CRASHED", kv: "HOST_CRASHED" }, hostsAlive: 0 }, b: { roleOutcomes: { response: "ok", log: "ok" }, hostsAlive: 0 } } }
+    filesystem has []
+
+scenario "a role configured with another host command than its file's host is refused":
+  when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, roles: ["response"], secondHost: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "echo"] } }] }
+  predict rejection HOST_CONFIG_MISMATCH:
+    response ERR SharingError { code: "HOST_CONFIG_MISMATCH", hostsSpawned: 1, hostsAlive: 0 }
+    filesystem has []
+
+scenario "settle vouches only after every task the scenario spawned has finished":
+  when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "spawn-task"] }, roles: ["response", "log"] }] }
+  predict success:
+    response OK RunFilesResult { files: { a: { settled: { log: true }, recordsVisibleAfterSettle: 1, hostsAlive: 0 } } }
+    filesystem has []
+
+scenario "settle answers false when a spawned task did not finish cleanly":
+  when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "spawn-task-failed"] }, roles: ["response", "log"] }] }
+  predict success:
+    response OK RunFilesResult { files: { a: { settled: { log: false }, hostsAlive: 0 } } }
+    filesystem has []
+
+scenario "settle answers false when the host cannot vouch, so the harness keeps the ceiling":
+  when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "unvouched"] }, roles: ["response", "log"] }] }
+  predict success:
+    response OK RunFilesResult { files: { a: { settled: { log: false }, hostsAlive: 0 } } }
+    filesystem has []
+
+scenario "peekCapture is non-destructive: repeated peeks and the stop all see the same records":
+  when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, roles: ["response", "log"] }] }
+  predict success:
+    response OK RunFilesResult { files: { a: { peeks: [2, 2], stopped: 2, hostsAlive: 0 } } }
+    filesystem has []
+
+scenario "every role of a file sets up with the same namespace and the host reports it in its environment":
+  when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, roles: ["response", "log", "kv"] }] }
+  predict success:
+    response OK RunFilesResult { files: { a: { setupNamespaces: ["s0599e33863c1", "s0599e33863c1", "s0599e33863c1"], hostEnvNamespace: "s0599e33863c1", hostsAlive: 0 } } }
+    filesystem has []
+
+scenario "two files get two namespaces and each host sees only its own":
+  when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, roles: ["response", "log"] }, { name: "b", namespace: "s3b04e21257fd", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, roles: ["response", "log"] }] }
+  predict success:
+    response OK RunFilesResult { files: { a: { setupNamespaces: ["s0599e33863c1", "s0599e33863c1"], hostEnvNamespace: "s0599e33863c1", hostsAlive: 0 }, b: { setupNamespaces: ["s3b04e21257fd", "s3b04e21257fd"], hostEnvNamespace: "s3b04e21257fd", hostsAlive: 0 } } }
+    filesystem has []
+
+scenario "a host that echoes another namespace stops the file before any case runs":
+  when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "other-ns"] }, roles: ["response", "log"] }] }
+  predict rejection NAMESPACE_NOT_HONOURED:
+    response ERR SharingError { code: "NAMESPACE_NOT_HONOURED", detail: matching "s0599e33863c1", casesRun: 0, hostsSpawned: 1, hostsAlive: 0 }
+    filesystem has []
+
+scenario "a host that answers another protocol version stops the file before any case runs":
+  when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "other-protocol"] }, roles: ["response", "log"] }] }
+  predict rejection PROTOCOL_MISMATCH:
+    response ERR SharingError { code: "PROTOCOL_MISMATCH", detail: matching "1", casesRun: 0, hostsSpawned: 1, hostsAlive: 0 }
+    filesystem has []
+
+scenario "a host that gives no protocol version fails the setup exchange as a protocol violation":
+  when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "bad-setup-no-protocol"] }, roles: ["response", "log"] }] }
+  predict rejection PROTOCOL_VIOLATION:
+    response ERR SharingError { code: "PROTOCOL_VIOLATION", detail: matching "protocol", casesRun: 0, hostsSpawned: 1, hostsAlive: 0 }
+    filesystem has []
+
+scenario "a host that gives no echo fails the setup exchange as a protocol violation":
+  when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "bad-setup-none"] }, roles: ["response", "log"] }] }
+  predict rejection PROTOCOL_VIOLATION:
+    response ERR SharingError { code: "PROTOCOL_VIOLATION", detail: matching "namespace", casesRun: 0, hostsSpawned: 1, hostsAlive: 0 }
+    filesystem has []
+
+scenario "a role that sets up under another namespace is refused by the host":
+  when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", roleNamespaces: { log: "s3b04e21257fd" }, host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, roles: ["response", "log"] }] }
+  predict rejection HOST_ERROR:
+    response ERR SharingError { code: "HOST_ERROR", rpcCode: -32602, hostsSpawned: 1, hostsAlive: 0 }
+    filesystem has []
+
+scenario "the scenario clock reaches the host through setClock on every role, response first, in every case":
+  when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, roles: ["response", "log", "kv"], clocks: ["2026-07-16T00:00:00Z", "2026-07-17T12:00:00Z"] }] }
+  predict success:
+    response OK RunFilesResult { files: { a: { clocks: ["2026-07-16T00:00:00Z", "2026-07-16T00:00:00Z", "2026-07-16T00:00:00Z", "2026-07-17T12:00:00Z", "2026-07-17T12:00:00Z", "2026-07-17T12:00:00Z"], clockRoles: ["response", "log", "kv", "response", "log", "kv"], resetsBeforeClock: true, hostsAlive: 0 } } }
+    filesystem has []
+
+scenario "a case without a clock sends null so the previous case's freeze does not leak":
+  when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, roles: ["response", "log"], clocks: ["2026-07-16T00:00:00Z", null] }] }
+  predict success:
+    response OK RunFilesResult { files: { a: { clocks: ["2026-07-16T00:00:00Z", "2026-07-16T00:00:00Z", null, null], hostsAlive: 0 } } }
+    filesystem has []
+
+scenario "a clock without a zone designator is refused INVALID_CLOCK before any host call":
+  when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, roles: ["response", "log"], clocks: ["2026-07-16T00:00:00"] }] }
+  predict rejection INVALID_CLOCK:
+    response ERR SharingError { code: "INVALID_CLOCK", hostsSpawned: 1, hostsAlive: 0 }
+    filesystem has []

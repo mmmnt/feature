@@ -53,6 +53,10 @@
       "ProbeHandlerClock": {
         "module": "adapters/handler/fixtures/probe.mjs",
         "export": "probe"
+      },
+      "RunFiles": {
+        "module": "adapters/stdio-jsonrpc/src/run-files.ts",
+        "export": "runFiles"
       }
     }
   },

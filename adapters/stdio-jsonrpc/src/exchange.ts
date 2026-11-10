@@ -4,31 +4,9 @@
 // fail precisely, and leave nothing running.
 
 import { spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { createRequire } from "node:module";
-import type { ErrorObject } from "ajv";
+import { checkAnswer, checkRequest, ExchangeError } from "./protocol.js";
 
-const require = createRequire(import.meta.url);
-const Ajv: typeof import("ajv").default = require("ajv");
-const addFormats: typeof import("ajv-formats").default = require("ajv-formats");
-
-const PKG_DIR = path.dirname(fileURLToPath(import.meta.url));
-const SCHEMA = JSON.parse(readFileSync(path.resolve(PKG_DIR, "../schemas/feat-host-protocol.schema.json"), "utf8")) as {
-  definitions: { requests: Record<string, unknown>; results: Record<string, unknown> };
-};
-
-// The schema is draft-07, compiled strict.
-const ajv = new Ajv({ strict: true, allErrors: true });
-addFormats(ajv);
-ajv.addSchema(SCHEMA, "protocol");
-const ref = (p: string) => {
-  const v = ajv.getSchema(`protocol#/definitions/${p}`);
-  if (!v) throw new Error(`feat-host-protocol: no definition '${p}'`);
-  return v;
-};
-
+export { ExchangeError } from "./protocol.js";
 export const DEFAULT_TIMEOUT_MS = 30_000;
 
 export interface ExchangeInput {
@@ -38,42 +16,13 @@ export interface ExchangeInput {
   timeoutMs?: number;
 }
 
-export type ExchangeFailure =
-  | "INVALID_REQUEST" | "HOST_SPAWN_FAILED" | "HOST_EXITED" | "HOST_TIMEOUT" | "PROTOCOL_VIOLATION" | "HOST_ERROR";
-
-/** What an exchange raises, as data: code, detail, and where the host stood. */
-export class ExchangeError extends Error {
-  constructor(
-    public code: ExchangeFailure,
-    public detail: string,
-    public hostSpawned: boolean,
-    public extra: { rpcCode?: number; message?: string } = {},
-  ) {
-    super(`${code}: ${detail}`);
-  }
-}
-
-function describe(errors: ErrorObject[] | null | undefined, scope: string): string {
-  return (errors ?? [])
-    .map((e) => {
-      const key = e.params && "missingProperty" in e.params ? ` '${String(e.params.missingProperty)}'` : e.params && "additionalProperty" in e.params ? ` '${String(e.params.additionalProperty)}'` : "";
-      return `${scope}${e.instancePath} ${e.message ?? "is invalid"}${key}`;
-    })
-    .join("; ");
-}
-
 let nextId = 1;
 
 /** Run one exchange; resolves with the host's result or rejects with an ExchangeError. */
 export async function exchangeOnce(input: ExchangeInput): Promise<{ method: string; sent: { method: string; params: Record<string, unknown> }; hostSpawned: true; hostAlive: false; result: unknown }> {
   const { method, params } = input;
-  // 1. The request is checked against the protocol BEFORE any host is spawned.
-  if (!(method in SCHEMA.definitions.requests))
-    throw new ExchangeError("INVALID_REQUEST", `method '${method}' is not in the protocol (methods: ${Object.keys(SCHEMA.definitions.requests).join(", ")})`, false);
   const id = nextId++;
-  const request = { jsonrpc: "2.0", id, method, params };
-  const check = ref(`requests/${method}`);
-  if (!check(request)) throw new ExchangeError("INVALID_REQUEST", describe(check.errors, "request"), false);
+  const request = checkRequest(id, method, params);
 
   // 2. Spawn, write one line, read one line.
   const [cmd, ...args] = input.host.command;
@@ -107,25 +56,8 @@ export async function exchangeOnce(input: ExchangeInput): Promise<{ method: stri
     });
 
     // 3. The answer.
-    let answer: Record<string, unknown>;
-    try {
-      answer = JSON.parse(line) as Record<string, unknown>;
-    } catch {
-      throw new ExchangeError("PROTOCOL_VIOLATION", `the host's line is not JSON: ${line.slice(0, 80)}`, true);
-    }
-    const whole = ajv.getSchema("protocol")!;
-    if (!whole(answer)) throw new ExchangeError("PROTOCOL_VIOLATION", `the answer violates the protocol schema: ${describe(whole.errors, "answer")}`, true);
-    const rpcError = answer.error as { code: number; message: string } | undefined;
-    if (answer.id === null) {
-      if (!rpcError || (rpcError.code !== -32700 && rpcError.code !== -32600))
-        throw new ExchangeError("PROTOCOL_VIOLATION", "a null id is accepted only on an error of code -32700 or -32600", true);
-    } else if (answer.id !== id) {
-      throw new ExchangeError("PROTOCOL_VIOLATION", `the answer carries id ${String(answer.id)}, the request carried ${id}`, true);
-    }
-    if (rpcError) throw new ExchangeError("HOST_ERROR", rpcError.message, true, { rpcCode: rpcError.code, message: rpcError.message });
-    const shape = ref(`results/${method}`);
-    if (!shape(answer.result)) throw new ExchangeError("PROTOCOL_VIOLATION", `the ${method} result violates its closed shape: ${describe(shape.errors, "result")}`, true);
-    return { method, sent: { method, params }, hostSpawned: true, hostAlive: false, result: answer.result };
+    const result = checkAnswer(line, id, method);
+    return { method, sent: { method, params }, hostSpawned: true, hostAlive: false, result };
   } finally {
     await stop();
   }
