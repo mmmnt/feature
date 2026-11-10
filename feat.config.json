@@ -89,6 +89,10 @@
       "ObserveKms": {
         "module": "adapters/kms/fixtures/probe.mjs",
         "export": "observe"
+      },
+      "ObserveKmsTransport": {
+        "module": "adapters/kms/fixtures/probe.mjs",
+        "export": "observeTransport"
       }
     }
   },

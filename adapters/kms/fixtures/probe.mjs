@@ -6,6 +6,9 @@
 // Only containers this probe created, by name, are ever touched.
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
+import net from "node:net";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   CreateAliasCommand,
   CreateKeyCommand,
@@ -295,5 +298,143 @@ export async function observe(input) {
       await adapter.teardown().catch(() => {});
     }
     system.destroy();
+  }
+}
+
+// ── SPEC-ADPKMS-002: transport faults on the system's path ───────────────────
+// Adds, once per process, beside the local-kms container:
+//   feat-kms-test-tox-<id>    Toxiproxy (pinned), API and the agent's control port published on loopback
+//   feat-kms-test-peer-<id>   shares the Toxiproxy network namespace: system-agent.mjs, the real SDK as "the system"
+// The proxy's upstream is local-kms's container address, which Toxiproxy reaches on the bridge network.
+export const TOXIPROXY_IMAGE = "ghcr.io/shopify/toxiproxy:2.12.0";
+export const NODE_IMAGE = "node:22.12.0-slim";
+const CONTROL_PORT = 19002;
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
+
+let transportPromise;
+
+function transportEnvironment() {
+  transportPromise ??= (async () => {
+    const kms = await kmsEnvironment();
+    const id = randomBytes(4).toString("hex");
+    const tox = `feat-kms-test-tox-${id}`;
+    const peer = `feat-kms-test-peer-${id}`;
+    start(tox, ["--rm", "-p", "127.0.0.1:0:8474", "-p", `127.0.0.1:0:${CONTROL_PORT}`, TOXIPROXY_IMAGE, "-host=0.0.0.0", "-proxy-metrics"]);
+    start(peer, ["--rm", `--network=container:${tox}`, "-v", `${ROOT}:${ROOT}:ro`, "-e", `FEAT_KMS_CONTROL_PORT=${CONTROL_PORT}`, NODE_IMAGE, "node", `${ROOT}/adapters/kms/fixtures/system-agent.mjs`]);
+    const api = `http://127.0.0.1:${hostPort(tox, 8474)}`;
+    const controlPort = hostPort(tox, CONTROL_PORT);
+    await until("the Toxiproxy API", async () => {
+      const r = await fetch(`${api}/version`);
+      if (!r.ok) throw new Error(String(r.status));
+    });
+    await until("the system agent", () => control(controlPort, "ping"));
+    return { api, controlPort, upstream: `${containerIp(kms.name)}:8080`, endpoint: kms.endpoint };
+  })();
+  return transportPromise;
+}
+
+function control(port, line) {
+  return new Promise((resolve, reject) => {
+    const s = net.connect(port, "127.0.0.1");
+    let buf = "";
+    s.on("connect", () => s.write(`${line}\n`));
+    s.on("data", (d) => {
+      buf += d;
+      if (buf.includes("\n")) {
+        s.destroy();
+        resolve(buf.trim());
+      }
+    });
+    s.on("error", reject);
+    s.on("close", () => buf.includes("\n") || reject(new Error("control connection closed")));
+  });
+}
+
+export async function observeTransport(input) {
+  const env = await transportEnvironment();
+  const adapters = new Map();
+  const trace = [];
+  let last;
+  const adapterOf = (label) => {
+    const a = adapters.get(label);
+    if (a === undefined) throw new Error(`the script uses '${label}' before setup:${label}`);
+    return a;
+  };
+  try {
+    for (const step of input.script.trim().split(/\s+/)) {
+      const [kind, a, b, c] = step.split(":");
+      switch (kind) {
+        case "setup": {
+          const adapter = createAdapter({
+            key: "kms",
+            namespace: namespaceOf(a),
+            options: {
+              endpoint: env.endpoint,
+              region: REGION,
+              auth: AUTH,
+              emulator: "local-kms",
+              ...(input.settleTimeoutMs !== undefined ? { settleTimeoutMs: input.settleTimeoutMs } : {}),
+              proxy: { api: env.api, upstream: env.upstream },
+            },
+          });
+          adapters.set(a, adapter);
+          await adapter.setup();
+          await adapter.reset();
+          trace.push(`setup:${a}`);
+          break;
+        }
+        case "start":
+          await adapterOf(a).startCapture();
+          trace.push(`start:${a}`);
+          break;
+        case "stop": {
+          const records = await adapterOf(a).stopCapture();
+          last = summarize(records);
+          trace.push(`stop:${a}=${records.length}`);
+          break;
+        }
+        case "settle":
+          trace.push(`settle:${a}=${await adapterOf(a).settle()}`);
+          break;
+        case "reset":
+          await adapterOf(a).reset();
+          trace.push(`reset:${a}`);
+          break;
+        case "fired": {
+          const adapter = adapterOf(a);
+          trace.push(typeof adapter.firedFaults === "function" ? `fired:${a}=${JSON.stringify(await adapter.firedFaults())}` : `fired:${a}=unobserved`);
+          break;
+        }
+        case "fault": {
+          // fault:<ns>:Connection.<Fault>[:once|:times<n>]
+          const [operation, fault] = b.split(".");
+          const times = c === "once" ? 1 : /^times\d+$/.test(c ?? "") ? Number(c.slice(5)) : "reset";
+          const problem = faultProblem(adapterOf(a), { service: "kms", operation, fault, times });
+          if (problem !== undefined) throw new KmsAdapterError("FAULT_UNSUPPORTED", problem);
+          await adapterOf(a).fault({ operation, fault, times });
+          trace.push(`fault:${a}:${b}`);
+          break;
+        }
+        case "createkey": {
+          const listen = await adapterOf(a).proxyListen();
+          const outcome = await control(env.controlPort, `createkey ${listen.slice(listen.lastIndexOf(":") + 1)} ${namespaceOf(a)} ${b}`);
+          trace.push(outcome === "ok" ? `createkey:${a}` : `createkey:${a}!${outcome === "transport" ? "TRANSPORT_FAILURE" : outcome}`);
+          break;
+        }
+        default:
+          throw new Error(`unknown probe step '${step}'`);
+      }
+    }
+    const body = { trace: trace.join(" ") };
+    if (last) body.last = last;
+    return { status: "OK", body };
+  } catch (e) {
+    if (e instanceof KmsAdapterError) return { status: "ERR", body: { code: e.code, detail: e.detail } };
+    throw e;
+  } finally {
+    for (const adapter of adapters.values()) {
+      await adapter.reset().catch(() => {});
+      await adapter.teardown().catch(() => {});
+    }
   }
 }
