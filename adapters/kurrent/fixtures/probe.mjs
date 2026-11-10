@@ -328,6 +328,9 @@ async function run(input, mode) {
           trace.push(`target:${l}=${hosts.join(",")}`);
           break;
         }
+        case "rule":
+          trace.push(`rule:${l}=${adapter(l).connectionRefusal() ?? "none"}`);
+          break;
         case "params": {
           // The user name and the query string; the secret, the host and the port are removed.
           const target = adapter(l).connectionTarget();

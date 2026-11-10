@@ -28,15 +28,18 @@ feat 1.0
 # with the fixture node's port (the test's private secure dev node of SPEC-ADPKUR-001) and the admin identity, creates the adapter for
 # namespace `a` with `options.nodeMajor` set when `nodeMajor` is given, and runs `script` (default `setup:a`; setup() runs only where the script says so,
 # so a scenario that never needs the node never connects). The script
-# uses the steps of SPEC-ADPKUR-001 plus two that never touch the network:
+# uses the steps of SPEC-ADPKUR-001 plus three that never touch the network:
 #   target:<ns>   the host the adapter hands the client, as the client sees it: `target:a=localhost`
 #   params:<ns>   the connection string the adapter hands the client with the secret, the host and the port removed:
 #                 `params:a=admin?tls=true&tlsVerifyCert=false` (user name, then the query string exactly as given)
-# Both read an adapter method `connectionTarget()` that returns the string the client is created from; the probe redacts it.
+#   rule:<ns>     the code setup() would refuse with for this connection string, or `none`: `rule:a=TLS_HOST_UNSUPPORTED`, `rule:a=none`
+# target and params read an adapter method `connectionTarget()` that returns the string the client is created from; the probe redacts it.
+# rule reads `connectionRefusal()`, which returns the code setup() would refuse with, or undefined; it does no network and never throws, and it is
+# the same rule as the one setup() applies (one tlsHostRule), so the Node major is observable without a second Node or a connection.
 # A refused setup is a rejection, so nothing else is traced.
 # The fixture hosts: 127.0.0.1 and `[::1]` reach the fixture node (its port is published on both loopbacks; TLS names are not verified,
 # tlsVerifyCert=false); 192.0.2.10 and 2001:db8::1 are documentation addresses nothing listens on, which is the point of a refusal that
-# happens before any connection. 0.0.0.0 is a non-loopback IP host that reaches the local node on Linux and macOS (the connecting scenario below Node 26 uses it).
+# happens before any connection. 0.0.0.0 is a non-loopback IP host that reaches the local node on Linux and macOS, but it is a rule-only row: it is never connected to, because Node 26 refuses it as a servername.
 # @kurrent/kurrentdb-client 1.3.2 cannot parse a bracketed IPv6 host, so only ::1, which is rewritten to localhost, can reach a node over IPv6. `[::ffff:127.0.0.1]` is an IPv4-mapped IPv6 literal: it is an IP host but not a loopback host (rule 1 is exactly
 # 127.0.0.1 and ::1), so it is left as written below Node 26 and refused on Node 26. The connecting scenarios need the fixture node.
 
@@ -57,6 +60,8 @@ construct:
   otherwise, when `options.nodeMajor` (default: the major of `process.versions.node`) is 26 or more, refuse setup() with
   TLS_HOST_UNSUPPORTED before the first connection. A connection string with several hosts is judged host by host, in order, and
   the first refused host is the one the detail names. A hostname, a `kurrentdb+discover://` string, or tls=false is passed through unchanged.
+  Add `connectionRefusal()` to the adapter: the code setup() would refuse with (TLS_HOST_UNSUPPORTED) or undefined, from the same tlsHostRule as
+  connectionString(), no network, never throws.
   Add `connectionTarget()` to the adapter: the string the client is created from, with the credentials of `options.system` applied;
   it does no network and never throws for a refusal (setup() throws). Add `nodeMajor` to the adapter's options (integer, 1 or more).
   The detail of TLS_HOST_UNSUPPORTED names the host and the cause: the IP literal, "tls=true", "Node 26" (the running major) and the remedy
@@ -147,11 +152,18 @@ scenario outline "an IP host is left as written where the name is allowed, so no
     | "192.0.2.10"   | true  | 24        | "target:a=192.0.2.10"  |
     | "127.0.0.1"    | false | 26        | "target:a=127.0.0.1"   |
 
-scenario "an IP host other than a loopback address connects as written below Node 26":
-  when: ObserveKurrentTlsHost { host: "0.0.0.0", nodeMajor: 24, script: "setup:a target:a start:a write:a:orders:Placed settle:a stop:a" }
+scenario outline "the TLS host rule judges an IP host by the Node major, so below Node 26 nothing is refused":
+  when: ObserveKurrentTlsHost { host: <host>, nodeMajor: <nodeMajor>, script: "rule:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a target:a=0.0.0.0 start:a write:a settle:a=true stop:a=1", last: "orders/Placed" }
+    response OK ObserveResult { trace: <trace> }
     filesystem has []
+  examples:
+    | host         | nodeMajor | trace                         |
+    | "0.0.0.0"    | 24        | "rule:a=none"                 |
+    | "0.0.0.0"    | 25        | "rule:a=none"                 |
+    | "192.0.2.10" | 24        | "rule:a=none"                 |
+    | "192.0.2.10" | 25        | "rule:a=none"                 |
+    | "0.0.0.0"    | 26        | "rule:a=TLS_HOST_UNSUPPORTED" |
 
 scenario "an IPv4-mapped loopback is not a loopback host, so it is refused on Node 26":
   when: ObserveKurrentTlsHost { host: "[::ffff:127.0.0.1]", nodeMajor: 26, script: "setup:a" }

@@ -277,6 +277,11 @@ class KurrentAdapter implements FeatServiceAdapter {
     return this.resolveConnection().target;
   }
 
+  /** The code setup() would refuse with for the connection string (SPEC-ADPKUR-004), or undefined; no network, never throws. */
+  connectionRefusal(): KurrentAdapterErrorCode | undefined {
+    return this.resolveConnection().refusal?.code;
+  }
+
   private connectionString(): string {
     const { target, refusal } = this.resolveConnection();
     if (refusal !== undefined) throw refusal;

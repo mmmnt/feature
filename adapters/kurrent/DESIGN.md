@@ -82,8 +82,9 @@ Upstream: grpc/grpc-node#3131. The rule can go when grpc-js stops sending an IP 
   Exact, not 127.0.0.0/8: `localhost` never resolves to 127.0.0.2.
 - Any other IP literal with tls=true on Node >= 26 (`options.nodeMajor`, default the running major): `setup()` throws
   `TLS_HOST_UNSUPPORTED` before connecting. Remedy in the detail: a hostname the certificate names, or tls=false.
-- `@kurrent/kurrentdb-client` 1.3.2 cannot parse a bracketed IPv6 host, so only `::1`, which is rewritten to `localhost`, can reach a node over IPv6; the connecting scenario for a non-loopback IP uses `0.0.0.0`, which reaches the local node on Linux and macOS.
+- `@kurrent/kurrentdb-client` 1.3.2 cannot parse a bracketed IPv6 host, so only `::1`, which is rewritten to `localhost`, can reach a node over IPv6; `0.0.0.0` reaches the local node on Linux and macOS but is only judged by the rule, never connected to.
 - Hostnames, `kurrentdb+discover://`, tls=false, and a non-loopback IP on Node < 26 are untouched. Multi-host strings are judged host by host.
+- `connectionRefusal()` returns the code `setup()` would refuse with, or undefined, from the same `tlsHostRule` (no network, never throws); the probe step `rule:<ns>` traces it as `rule:a=none` or `rule:a=TLS_HOST_UNSUPPORTED`, so the Node-major threshold is tested without connecting. `0.0.0.0` is a rule-only row: Node 26 refuses it as a servername, so it is never connected to.
 - `connectionTarget()` returns the string the client is created from (no network, never throws for a refusal).
 - Certificate note: a user who verifies the certificate and relied on an IP SAN for 127.0.0.1 now needs the certificate to name `localhost`
   (the test node uses tlsVerifyCert=false, so it does not matter there).
