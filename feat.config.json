@@ -61,6 +61,10 @@
       "ArmFault": {
         "module": "adapters/stdio-jsonrpc/fixtures/arm-fault.mjs",
         "export": "armFault"
+      },
+      "ProbeFaultProxy": {
+        "module": "adapters/fault-proxy/fixtures/probe.mjs",
+        "export": "probe"
       }
     }
   },

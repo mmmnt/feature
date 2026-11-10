@@ -1,0 +1,217 @@
+feat 1.0
+
+# SPEC-FPX-001 — the shared fault-proxy library (@mmmnt/feat-fault-proxy). Not an adapter and not a
+# service: a package the product adapters (kurrent, kafka, dynamodb, neo4j, kms) use to implement
+# the `Connection` pseudo-operation of the fault catalog. Agreed by founder ruling 58a4ac88;
+# the toxiproxy-node-client dependency by ruling c7af7871; amended by founder rulings 2026-11-09
+# (FPX reset upstream; listen= follows the traces).
+#
+# It wraps Toxiproxy through the existing npm client toxiproxy-node-client (4.1.0) and, for
+# broker loss, the container runtime's own CLI (docker or podman, run without a shell). Neither is
+# reinvented. One proxy per namespace and product, named `feat-<ns>-<product>`, listening on a port
+# the library asks Toxiproxy to pick, with the product as upstream; the host points the system
+# under test at that listen address, and the adapter's own instrument connection never goes
+# through it.
+#
+# Driven through adapters/fault-proxy/fixtures/probe.mjs (part of the build, inside touches, not
+# shipped) against a Toxiproxy container the TEST starts, a tiny TCP echo server the probe starts
+# (it counts the messages it received), and, for the loss scenarios, a throwaway `sleep` container
+# the probe starts and removes. `ProbeFaultProxy { script, api?, runtime? }` runs a space-separated
+# script. Steps:
+#   open:<ns>                        library.open(): create or fetch the proxy for <ns>
+#   send:<ns>:<text>                 a client connects to <ns>'s listen address, sends <text>, waits 300 ms for the echo
+#   arm:<ns>:<Fault>[:upstream|:downstream]   library.arm() (default stream: downstream for Timeout, upstream for ConnectionReset; BrokerLoss takes :pause, the default, or :stop)
+#   disarm:<ns>                      library.disarm()
+#   armed:<ns> / toxics:<ns> / enabled:<ns>   what the library and Toxiproxy say now
+#   container:<state>                the throwaway container's state: running, paused or stopped
+#   traffic:<ns>                     library.traffic(): bytes seen since the last arm, or unobserved
+# The trace shows each step: a send is `send:a=echo` (the text came back), `send:a=timeout` (nothing
+# came back in 300 ms), `send:a=reset`, `send:a=refused`; a trailing `listen=distinct` or `listen=same`
+# is appended only when the last step is an open that follows an earlier open, comparing the two; armed, toxics and enabled print their value. `upstreamSaw` is the
+# number of messages the echo server received since the script began.
+#
+# BrokerLoss is shared-fate across every namespace using the container; founder ruling c7af7871
+# makes it run serially (SPEC-RT-005).
+#
+# Semantics worth the founder's eye: downstream is the direction of the product's answer, so a
+# downstream Timeout lets the product receive AND apply the request while the system never hears
+# the answer (the ambiguous write); upstream drops the request before the product sees it. The
+# two are different faults for atomicity and they are both reachable. Disarm is scoped to the
+# namespace's own proxy: Toxiproxy's global reset (POST /reset) would clear other hosts' faults,
+# so the library never calls it.
+
+spec SPEC-FPX-001 "Fault-proxy library: transport faults for the product adapters"
+context Toolchain
+aggregate Adapters
+type infrastructure
+status agreed
+
+construct:
+  handler at adapters/fault-proxy/src/index.ts
+  touches adapters/fault-proxy/**
+  needs SPEC-RT-002
+  needs SPEC-RT-006
+  Package @mmmnt/feat-fault-proxy, dependency toxiproxy-node-client (approved as a new
+  dependency of this package, ruling c7af7871). Export
+  createFaultProxy({ api, product, upstream, namespace, container?, metrics? }) returning
+  { catalog, open(), arm(fault, detail?), disarm(), armed(), traffic(), close() }.
+  `catalog` is ["Timeout", "ConnectionReset", "Partition", "BrokerLoss"], the last only when
+  `container` is given. open(): get or create `feat-<ns>-<product>` (listen ":0" -> the address
+  Toxiproxy reports, upstream as given), idempotent; PROXY_UNREACHABLE when the API does not
+  answer. arm(): Timeout = toxic `timeout` {timeout: 0} on the stream (downstream by default),
+  ConnectionReset = toxic `reset_peer` {timeout: 0} on the stream (upstream by default), Partition = update the proxy to enabled
+  false, BrokerLoss = `<runtime> pause <container>` (detail.mode "stop" = `stop`). Toxics are
+  named `feat-<fault>`. Several arms stack until disarm. disarm(): remove this proxy's toxics,
+  enable the proxy, unpause or start the container if the library paused or stopped it; never
+  POST /reset. traffic(): with `metrics` set to the Toxiproxy /metrics URL (the server runs with
+  -proxy-metrics) the byte counters of this proxy since the last arm, else "unobserved".
+  Counts are not the library's business: every fault holds until disarm, so an adapter
+  declares each Connection fault as ["reset"] in its catalog and the harness refuses once or
+  times n (SPEC-RT-003 as amended). BrokerLoss is exclusive: SPEC-RT-005 runs the files that arm it
+  in a serial pass.
+
+enforce:
+  rejects PROXY_UNREACHABLE when the Toxiproxy API does not answer
+  rejects PROXY_NOT_OPEN when a fault is armed before the namespace's proxy is opened
+  rejects FAULT_UNSUPPORTED when the fault is not in the catalog
+  rejects CONTAINER_NOT_FOUND when BrokerLoss names a container the runtime does not know
+  rejects CONTAINER_RUNTIME_UNAVAILABLE when the container runtime cannot be run
+  one proxy per namespace and product, so a fault never reaches another namespace
+  disarm never uses Toxiproxy's global reset
+  disarm leaves the proxy enabled with no toxic and restores a paused or stopped container
+  a transport fault applies to the system's path only because the adapter never connects through the proxy
+
+contract:
+  input ProbeInput
+  response ProbeResult
+  error ProbeError
+
+scenario "each namespace gets its own proxy with its own address":
+  when: ProbeFaultProxy { script: "open:a open:b" }
+  predict success:
+    response OK ProbeResult { trace: "open:a open:b listen=distinct" }
+    filesystem has []
+
+scenario "opening the same namespace again returns the same proxy":
+  when: ProbeFaultProxy { script: "open:a open:a" }
+  predict success:
+    response OK ProbeResult { trace: "open:a open:a listen=same" }
+    filesystem has []
+
+scenario "an unarmed proxy passes the system's traffic untouched":
+  when: ProbeFaultProxy { script: "open:a send:a:hello" }
+  predict success:
+    response OK ProbeResult { trace: "open:a send:a=echo", upstreamSaw: 1 }
+    filesystem has []
+
+scenario "a downstream timeout lets the product receive the request and hides the answer":
+  when: ProbeFaultProxy { script: "open:a arm:a:Timeout:downstream send:a:hello" }
+  predict success:
+    response OK ProbeResult { trace: "open:a arm:a send:a=timeout", upstreamSaw: 1 }
+    filesystem has []
+
+scenario "an upstream timeout drops the request before the product sees it":
+  when: ProbeFaultProxy { script: "open:a arm:a:Timeout:upstream send:a:hello" }
+  predict success:
+    response OK ProbeResult { trace: "open:a arm:a send:a=timeout", upstreamSaw: 0 }
+    filesystem has []
+
+scenario "a connection reset cuts the system's connection":
+  when: ProbeFaultProxy { script: "open:a arm:a:ConnectionReset send:a:hello" }
+  predict success:
+    response OK ProbeResult { trace: "open:a arm:a send:a=reset", upstreamSaw: 0 }
+    filesystem has []
+
+scenario "a partition refuses new connections":
+  when: ProbeFaultProxy { script: "open:a arm:a:Partition send:a:hello enabled:a" }
+  predict success:
+    response OK ProbeResult { trace: "open:a arm:a send:a=refused enabled:a=false", upstreamSaw: 0 }
+    filesystem has []
+
+scenario "disarm heals the path: no toxic, proxy enabled, traffic flows":
+  when: ProbeFaultProxy { script: "open:a arm:a:Timeout arm:a:Partition disarm:a toxics:a enabled:a send:a:hello" }
+  predict success:
+    response OK ProbeResult { trace: "open:a arm:a arm:a disarm:a toxics:a=0 enabled:a=true send:a=echo", upstreamSaw: 1 }
+    filesystem has []
+
+scenario "faults stack until disarm and are listed":
+  when: ProbeFaultProxy { script: "open:a arm:a:Timeout arm:a:Partition armed:a" }
+  predict success:
+    response OK ProbeResult { trace: "open:a arm:a arm:a armed:a=Timeout,Partition" }
+    filesystem has []
+
+scenario "a fault on one namespace does not reach another":
+  when: ProbeFaultProxy { script: "open:a open:b arm:a:Partition send:b:hello" }
+  predict success:
+    response OK ProbeResult { trace: "open:a open:b arm:a send:b=echo", upstreamSaw: 1 }
+    filesystem has []
+
+scenario "disarming one namespace leaves another's fault in place, because the global reset is never used":
+  when: ProbeFaultProxy { script: "open:a open:b arm:a:Partition arm:b:Partition disarm:b send:a:hello send:b:hello" }
+  predict success:
+    response OK ProbeResult { trace: "open:a open:b arm:a arm:b disarm:b send:a=refused send:b=echo", upstreamSaw: 1 }
+    filesystem has []
+
+scenario "traffic is reported when the metrics endpoint is configured":
+  when: ProbeFaultProxy { script: "open:a arm:a:Timeout:downstream send:a:hello traffic:a", metrics: "on" }
+  predict success:
+    response OK ProbeResult { trace: "open:a arm:a send:a=timeout traffic:a=seen", upstreamSaw: 1 }
+    filesystem has []
+
+scenario "traffic is unobserved without the metrics endpoint, so no activation is claimed":
+  when: ProbeFaultProxy { script: "open:a arm:a:Timeout:downstream send:a:hello traffic:a" }
+  predict success:
+    response OK ProbeResult { trace: "open:a arm:a send:a=timeout traffic:a=unobserved", upstreamSaw: 1 }
+    filesystem has []
+
+scenario "broker loss pauses the container and disarm restores it":
+  when: ProbeFaultProxy { script: "open:a container:running arm:a:BrokerLoss container:paused disarm:a container:running" }
+  predict success:
+    response OK ProbeResult { trace: "open:a container=running arm:a container=paused disarm:a container=running" }
+    filesystem has []
+
+scenario "broker loss in stop mode stops the container and disarm starts it again":
+  when: ProbeFaultProxy { script: "open:a arm:a:BrokerLoss:stop container:stopped disarm:a container:running" }
+  predict success:
+    response OK ProbeResult { trace: "open:a arm:a container=stopped disarm:a container=running" }
+    filesystem has []
+
+scenario "broker loss is not in the catalog when no container is named":
+  when: ProbeFaultProxy { script: "open:a arm:a:BrokerLoss", container: "none" }
+  predict rejection FAULT_UNSUPPORTED:
+    response ERR ProbeError { code: "FAULT_UNSUPPORTED", detail: matching "BrokerLoss" }
+    filesystem has []
+
+scenario "a container the runtime does not know is a configuration error":
+  when: ProbeFaultProxy { script: "open:a arm:a:BrokerLoss", container: "missing" }
+  predict rejection CONTAINER_NOT_FOUND:
+    response ERR ProbeError { code: "CONTAINER_NOT_FOUND", detail: matching "feat-missing" }
+    filesystem has []
+
+scenario "a container runtime that cannot be run is a configuration error":
+  when: ProbeFaultProxy { script: "open:a arm:a:BrokerLoss", runtime: "missing" }
+  predict rejection CONTAINER_RUNTIME_UNAVAILABLE:
+    response ERR ProbeError { code: "CONTAINER_RUNTIME_UNAVAILABLE", detail: matching "runtime" }
+    filesystem has []
+
+scenario "arming before the proxy is opened is refused":
+  when: ProbeFaultProxy { script: "arm:a:Partition" }
+  predict rejection PROXY_NOT_OPEN:
+    response ERR ProbeError { code: "PROXY_NOT_OPEN", detail: matching "a" }
+    filesystem has []
+
+scenario "a Toxiproxy API that does not answer is a configuration error":
+  when: ProbeFaultProxy { script: "open:a", api: "unreachable" }
+  predict rejection PROXY_UNREACHABLE:
+    response ERR ProbeError { code: "PROXY_UNREACHABLE", detail: matching "api" }
+    filesystem has []
+
+scenario outline "a fault outside the catalog is refused":
+  when: ProbeFaultProxy { script: <script> }
+  predict rejection FAULT_UNSUPPORTED:
+    response ERR ProbeError { code: "FAULT_UNSUPPORTED", detail: matching <detail> }
+    filesystem has []
+  examples:
+    | script                     | detail      |
+    | "open:a arm:a:Latency"     | "Latency"   |
+    | "open:a arm:a:DiskFull"    | "DiskFull"  |

@@ -1,0 +1,43 @@
+{
+  "name": "@mmmnt/feat-fault-proxy",
+  "version": "0.1.0",
+  "description": "Feat fault-proxy library: transport faults (timeout, connection reset, partition, broker loss) for the product adapters, through Toxiproxy",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --exclude '**/fault-proxy.test.ts' --passWithNoTests"
+  },
+  "dependencies": {
+    "toxiproxy-node-client": "4.1.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mmmnt/feature.git",
+    "directory": "adapters/fault-proxy"
+  },
+  "homepage": "https://github.com/mmmnt/feature#readme",
+  "bugs": {
+    "url": "https://github.com/mmmnt/feature/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "@mmmnt/feat-runtime": "workspace:^",
+    "vitest": "^3.2.0"
+  }
+}

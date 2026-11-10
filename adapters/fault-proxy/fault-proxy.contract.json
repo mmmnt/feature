@@ -1,0 +1,81 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-FPX-001",
+  "schemas": {
+    "ProbeInput": {
+      "type": "object",
+      "required": [
+        "script"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "script": {
+          "type": "string",
+          "minLength": 1
+        },
+        "api": {
+          "enum": [
+            "default",
+            "unreachable"
+          ]
+        },
+        "runtime": {
+          "enum": [
+            "docker",
+            "podman",
+            "missing"
+          ]
+        },
+        "container": {
+          "enum": [
+            "default",
+            "none",
+            "missing"
+          ]
+        },
+        "metrics": {
+          "enum": [
+            "on",
+            "off"
+          ]
+        }
+      }
+    },
+    "ProbeResult": {
+      "type": "object",
+      "required": [
+        "trace"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "trace": {
+          "type": "string"
+        },
+        "upstreamSaw": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "ProbeError": {
+      "type": "object",
+      "required": [
+        "code"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "PROXY_UNREACHABLE",
+            "PROXY_NOT_OPEN",
+            "FAULT_UNSUPPORTED",
+            "CONTAINER_NOT_FOUND",
+            "CONTAINER_RUNTIME_UNAVAILABLE"
+          ]
+        },
+        "detail": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
