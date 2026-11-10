@@ -23,7 +23,7 @@ import { fileURLToPath } from "node:url";
 import { ANY, jsonEvent, KurrentDBClient, NO_STREAM, START, streamNameFilter } from "@kurrent/kurrentdb-client";
 import { createAdapter, KurrentAdapterError } from "../src/index.ts";
 import { ensurePeerInstall } from "../../fault-proxy/fixtures/peer-install.mjs";
-import { dockerAsync } from "./docker-async.mjs";
+import { dockerAsync } from "../../fault-proxy/fixtures/docker-async.mjs";
 
 export const KURRENTDB_IMAGE = "kurrentplatform/kurrentdb:26.2.3";
 export const TOXIPROXY_IMAGE = "ghcr.io/shopify/toxiproxy:2.12.0";
