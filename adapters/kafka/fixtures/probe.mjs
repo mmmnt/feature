@@ -126,8 +126,14 @@ async function run(input, mode) {
   }
 
   const steps = input.script.trim().split(/\s+/);
-  const bootstrap = input.bootstrap === "unreachable" ? "127.0.0.1:1" : c.bootstrap;
+  // `auth` points the INSTRUMENT at the SASL listener with the cluster's throwaway credentials ("correct") or the same
+  // user with another password ("wrong"). They travel only through process.env, named by options.auth, as in production.
+  const bootstrap = input.bootstrap === "unreachable" ? "127.0.0.1:1" : input.auth !== undefined ? c.saslBootstrap : c.bootstrap;
   process.env.FEAT_KAFKA_TEST_BOOTSTRAP = bootstrap;
+  if (input.auth !== undefined) {
+    process.env.FEAT_KAFKA_TEST_USER = c.sasl.username;
+    process.env.FEAT_KAFKA_TEST_PASSWORD = input.auth === "correct" ? c.sasl.password : `x${randomBytes(9).toString("hex")}`;
+  }
 
   const call = ++calls;
   const nsOf = (l) => (l.startsWith("raw=") ? l.slice(4) : namespaceOf(l, call));
@@ -136,6 +142,9 @@ async function run(input, mode) {
     const options = {
       bootstrapServersEnv: "FEAT_KAFKA_TEST_BOOTSTRAP",
       ...(input.settleTimeoutMs !== undefined ? { settleTimeoutMs: input.settleTimeoutMs } : {}),
+      ...(input.auth !== undefined
+        ? { auth: { mechanism: "plain", username: "FEAT_KAFKA_TEST_USER", password: "FEAT_KAFKA_TEST_PASSWORD", ssl: false } }
+        : {}),
       ...(env !== undefined
         ? {
             proxy: {

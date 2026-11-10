@@ -19,6 +19,12 @@
             "unreachable"
           ]
         },
+        "auth": {
+          "enum": [
+            "correct",
+            "wrong"
+          ]
+        },
         "settleTimeoutMs": {
           "type": "integer",
           "minimum": 0

@@ -8,7 +8,8 @@
 //         loopback. Its API, the instrument's direct port and the peer's control port are published on loopback.
 //   b1    broker + controller (node 1, the only voter of the quorum, so stopping broker 2 never costs the quorum).
 //         Listeners: INTERNAL (inter-broker), CONTROLLER, DIRECT (advertised at the published host port: the
-//         instrument and the observe-mode system), PROXY (advertised at the fixed Toxiproxy listen port: the system
+//         instrument and the observe-mode system), SASL (SASL_PLAINTEXT with PLAIN, advertised at its published host
+//         port: the instrument's authenticated path, founder ruling 2026-11-09, spec-gap amendment), PROXY (advertised at the fixed Toxiproxy listen port: the system
 //         of the transport and broker-loss specs). Pausing b1 is the loss of the broker (SPEC-ADPKFK-003).
 //   b2    broker only (node 2): INTERNAL and DIRECT listeners (no PROXY: the system never talks to it). It is created,
 //         and started, the first time a NOT_ENOUGH_REPLICAS fault is armed, and stopped otherwise, so that no topic of
@@ -41,6 +42,8 @@ export const PORTS = {
   proxyUpstream: 19095,
   /** The Toxiproxy listen port the PROXY listener advertises: what the system bootstraps at. */
   proxyListen: 19096,
+  /** The SASL listener of broker 1 (SASL_PLAINTEXT, PLAIN): the instrument's authenticated path (SPEC-ADPKFK-001, auth). */
+  sasl1: 19097,
   internal2: 29092,
   direct2: 29094,
   api: 8474,
@@ -118,7 +121,7 @@ const COMMON_ENV = [
   "-e", `CLUSTER_ID=${CLUSTER_ID}`,
   "-e", "KAFKA_INTER_BROKER_LISTENER_NAME=INTERNAL",
   "-e", "KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER",
-  "-e", "KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT,DIRECT:PLAINTEXT,PROXY:PLAINTEXT",
+  "-e", "KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT,DIRECT:PLAINTEXT,PROXY:PLAINTEXT,SASL:SASL_PLAINTEXT",
   "-e", `KAFKA_CONTROLLER_QUORUM_VOTERS=1@127.0.0.1:${PORTS.controller}`,
   "-e", "KAFKA_AUTO_CREATE_TOPICS_ENABLE=true",
   "-e", "KAFKA_NUM_PARTITIONS=1",
@@ -157,6 +160,7 @@ export function cluster() {
       "-p", `127.0.0.1:0:${PORTS.api}`,
       "-p", `127.0.0.1:0:${PORTS.direct1}`,
       "-p", `127.0.0.1:0:${PORTS.direct2}`,
+      "-p", `127.0.0.1:0:${PORTS.sasl1}`,
       "-p", `127.0.0.1:0:${PORTS.control}`,
       TOXIPROXY_IMAGE,
       "-host=0.0.0.0",
@@ -165,14 +169,20 @@ export function cluster() {
     const api = `http://127.0.0.1:${hostPort(tox, PORTS.api)}`;
     const directPort = hostPort(tox, PORTS.direct1);
     const directPort2 = hostPort(tox, PORTS.direct2);
+    const saslPort = hostPort(tox, PORTS.sasl1);
+    // Throwaway credentials of this cluster only: generated here, held in memory, handed to the broker's environment and
+    // to the probe, never printed and never written to a file.
+    const sasl = { username: `u${randomBytes(6).toString("hex")}`, password: randomBytes(18).toString("hex") };
     const controlPort = hostPort(tox, PORTS.control);
     start(b1, [
       `--network=container:${tox}`,
       ...COMMON_ENV,
       "-e", "KAFKA_NODE_ID=1",
       "-e", "KAFKA_PROCESS_ROLES=broker,controller",
-      "-e", `KAFKA_LISTENERS=INTERNAL://127.0.0.1:${PORTS.internal1},CONTROLLER://127.0.0.1:${PORTS.controller},DIRECT://0.0.0.0:${PORTS.direct1},PROXY://0.0.0.0:${PORTS.proxyUpstream}`,
-      "-e", `KAFKA_ADVERTISED_LISTENERS=INTERNAL://127.0.0.1:${PORTS.internal1},DIRECT://127.0.0.1:${directPort},PROXY://127.0.0.1:${PORTS.proxyListen}`,
+      "-e", `KAFKA_LISTENERS=INTERNAL://127.0.0.1:${PORTS.internal1},CONTROLLER://127.0.0.1:${PORTS.controller},DIRECT://0.0.0.0:${PORTS.direct1},PROXY://0.0.0.0:${PORTS.proxyUpstream},SASL://0.0.0.0:${PORTS.sasl1}`,
+      "-e", `KAFKA_ADVERTISED_LISTENERS=INTERNAL://127.0.0.1:${PORTS.internal1},DIRECT://127.0.0.1:${directPort},PROXY://127.0.0.1:${PORTS.proxyListen},SASL://127.0.0.1:${saslPort}`,
+      "-e", "KAFKA_LISTENER_NAME_SASL_SASL_ENABLED_MECHANISMS=PLAIN",
+      "-e", `KAFKA_LISTENER_NAME_SASL_PLAIN_SASL_JAAS_CONFIG=org.apache.kafka.common.security.plain.PlainLoginModule required user_${sasl.username}="${sasl.password}";`,
       KAFKA_IMAGE,
     ]);
     const bootstrap = `127.0.0.1:${directPort}`;
@@ -186,6 +196,9 @@ export function cluster() {
 
     const self = {
       id, tox, b1, b2, api, directPort, controlPort, bootstrap,
+      /** The authenticated listener: its bootstrap address and the throwaway credentials (never printed). */
+      saslBootstrap: `127.0.0.1:${saslPort}`,
+      sasl,
       admin,
       secondCreated: false,
       /**
