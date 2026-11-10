@@ -3,7 +3,8 @@ feat 1.0
 # SPEC-ADPNEO-001 — the Neo4j service adapter (@mmmnt/feat-adapter-neo4j, built on the official
 # neo4j-driver). Agreed by founder ruling 58a4ac88; fault counts per ruling c7af7871 (every catalog
 # entry declares ["reset"]; unobserved is accepted evidence; firedFaults is not implemented);
-# amended by founder ruling 2026-11-09, Neo4j both A (the unique-constraint fault detail carries the value), firedFaults orderId=zz.
+# amended by founder ruling 2026-11-09, Neo4j both A (the unique-constraint fault detail carries the value), firedFaults orderId=zz;
+# founder ruling 2026-11-09, spec-gap amendment (a unique-constraint fault without a value is refused).
 #
 # Driven through adapters/neo4j/fixtures/probe.mjs (part of the build, inside touches, not
 # shipped) against a Neo4j COMMUNITY container the TEST starts (the single user database, bolt://
@@ -269,3 +270,9 @@ scenario outline "a fault the binding cannot produce faithfully is refused befor
     | "setup:a fault:a:Write.UNIQUE_CONSTRAINT_VIOLATION:orderId:once" | "once"         |
     | "setup:a fault:a:Write.DEADLOCK_DETECTED:orderId"                | "DEADLOCK_DETECTED" |
     | "setup:a fault:a:Read.UNIQUE_CONSTRAINT_VIOLATION:orderId"       | "Read"         |
+
+scenario "a unique-constraint fault that names no value is refused before it does anything":
+  when: ObserveNeo4j { script: "setup:a fault:a:Write.UNIQUE_CONSTRAINT_VIOLATION:orderId" }
+  predict rejection FAULT_UNSUPPORTED:
+    response ERR ObserveError { code: "FAULT_UNSUPPORTED", detail: matching "detail[.]value is missing" }
+    filesystem has []
