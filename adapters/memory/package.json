@@ -1,6 +1,6 @@
 {
   "name": "@mmmnt/feat-adapter-memory",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "In-memory event service adapter for Feat: deliver-triggered specs (projection/policy/saga) without infrastructure",
   "type": "module",
   "main": "dist/index.js",

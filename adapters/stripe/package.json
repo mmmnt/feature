@@ -1,6 +1,6 @@
 {
   "name": "@mmmnt/feat-adapter-stripe",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Stripe service adapter for Feat: the Events API becomes a capture window — unpredicted Stripe activity fails the suite",
   "type": "module",
   "main": "dist/index.js",
