@@ -1,0 +1,66 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-ADPKFK-001",
+  "schemas": {
+    "ObserveInput": {
+      "type": "object",
+      "required": [
+        "script"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "script": {
+          "type": "string",
+          "minLength": 1
+        },
+        "bootstrap": {
+          "enum": [
+            "default",
+            "unreachable"
+          ]
+        },
+        "settleTimeoutMs": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "ObserveResult": {
+      "type": "object",
+      "required": [
+        "trace"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "trace": {
+          "type": "string"
+        },
+        "last": {
+          "type": "string"
+        },
+        "peekEqualsStop": {
+          "type": "boolean"
+        }
+      }
+    },
+    "ObserveError": {
+      "type": "object",
+      "required": [
+        "code"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "NAMESPACE_INVALID",
+            "BROKER_UNREACHABLE",
+            "FAULT_TARGET_EXISTS",
+            "FAULT_UNSUPPORTED"
+          ]
+        },
+        "detail": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
