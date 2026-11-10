@@ -26,6 +26,10 @@
         "module": "packages/feat-runtime/src/load-config.ts",
         "export": "loadConfig"
       },
+      "DeriveSeeds": {
+        "module": "packages/feat-derive/fixtures/probe.mjs",
+        "export": "deriveSeeds"
+      },
       "InlineSeedFixtures": {
         "module": "packages/feature/src/seed-fixtures.ts",
         "export": "inlineSeedFixtures"

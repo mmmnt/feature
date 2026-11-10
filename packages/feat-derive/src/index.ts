@@ -5,7 +5,7 @@
 
 import type {
   BuiltSpec, FeatConfig, Given, Invocation, Delivery, Matcher, Prediction,
-  PredictedRecord, Scenario, ServicePrediction, SpecVariable, ValueBlock,
+  PredictedRecord, Scenario, Seed, ServicePrediction, SpecVariable, ValueBlock,
 } from "@mmmnt/feat-types";
 
 export interface ResolvedServiceAssertion {
@@ -153,7 +153,20 @@ function resolvePrediction(
   return out;
 }
 
-function substituteGiven(given: Given | undefined, row: Row): Given | undefined {
+// SPEC-DRV-001: an outline row's values go into its own copy of every inline seed record; a fixture seed
+// is carried as written, and a scenario that is not an outline keeps its seeds as parsed.
+function substituteSeeds(seeds: Seed[], row: Row): Seed[] {
+  return seeds.map((seed) =>
+    "fixture" in seed
+      ? { ...seed }
+      : {
+          ...seed,
+          records: seed.records.map((r) => ({ ...r, values: substituteValue(r.values, row) as Record<string, unknown> })),
+        },
+  );
+}
+
+function substituteGiven(given: Given | undefined, row: Row, isOutline: boolean): Given | undefined {
   if (!given) return undefined;
   const out: Given = {};
   if (given.clock !== undefined) out.clock = given.clock;
@@ -163,7 +176,7 @@ function substituteGiven(given: Given | undefined, row: Row): Given | undefined 
       ...e,
       payload: substituteValue(e.payload, row) as Record<string, unknown>,
     }));
-  if (given.seeds) out.seeds = given.seeds;
+  if (given.seeds) out.seeds = isOutline ? substituteSeeds(given.seeds, row) : given.seeds;
   if (given.faults)
     out.faults = given.faults.map((f) =>
       f.detail === undefined ? f : { ...f, detail: substituteValue(f.detail, row) as Record<string, unknown> },
@@ -191,7 +204,7 @@ export function derive(spec: BuiltSpec, config: FeatConfig): TestTopology {
         prediction: resolvePrediction(scenario, config, spec.identity.type, row),
       };
       if (spec.variables && spec.variables.length > 0) testCase.variables = spec.variables;
-      const given = substituteGiven(scenario.given, row);
+      const given = substituteGiven(scenario.given, row, isOutline);
       if (given) testCase.given = given;
       if (scenario.when) {
         const when: Invocation = {

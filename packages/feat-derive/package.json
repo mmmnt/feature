@@ -26,6 +26,7 @@
   },
   "devDependencies": {
     "@mmmnt/feat-core": "workspace:^",
+    "@mmmnt/feat-runtime": "workspace:^",
     "vitest": "^3.2.0"
   },
   "repository": {
