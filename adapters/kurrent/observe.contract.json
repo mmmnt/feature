@@ -53,7 +53,8 @@
           "enum": [
             "NAMESPACE_INVALID",
             "ALL_READ_DENIED",
-            "FAULT_UNSUPPORTED"
+            "FAULT_UNSUPPORTED",
+            "TLS_HOST_UNSUPPORTED"
           ]
         },
         "detail": {

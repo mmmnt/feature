@@ -4,7 +4,8 @@ feat 1.0
 # official @kurrent/kurrentdb-client). Agreed by founder ruling 58a4ac88 ("flip them, queue in that order"); rulings c7af7871 applied.
 # Amended by founder ruling 2026-11-09, Kurrent $tb A ("A: capture drops it"): the capture drops the `$metadata` record the
 # server writes on the first append after a soft delete; and by founder ruling 2026-11-09, Kurrent secure dev node
-# (the test node is secure, not insecure).
+# (the test node is secure, not insecure). Amended by founder ruling 2026-11-10 ("Flip it (Recommended)"): the connection string's loopback
+# IP host is connected to as localhost and another IP host with tls=true is refused on Node 26, see SPEC-ADPKUR-004.
 #
 # Driven through adapters/kurrent/fixtures/probe.mjs (part of the build, inside touches, not
 # shipped). `ObserveKurrent { script, credentials?, settleTimeoutMs? }` creates one adapter per
@@ -63,9 +64,10 @@ construct:
   Connection entries are in transport.feat and broker-loss.feat).
   Options: `connectionString` (or `connectionStringEnv`), `system`
   (`{ username, password }` as env-var NAMES, for the instrument), `settleTimeoutMs` (default 5000),
-  `proxy` (SPEC-FPX-001). Namespace: received from the runner (SPEC-RT-006) as the config's top-level `namespace`, never an option; the probe maps each script label (a, b) to the namespace `s` + 12 hex of sha256(label), and `raw=<value>` passes a value as is.
+  `proxy` (SPEC-FPX-001), `nodeMajor` (SPEC-ADPKUR-004). Namespace: received from the runner (SPEC-RT-006) as the config's top-level `namespace`, never an option; the probe maps each script label (a, b) to the namespace `s` + 12 hex of sha256(label), and `raw=<value>` passes a value as is.
   setup(): connect the instrument client directly to the product (never through a proxy), verify
-  the credentials can read `$all` (else ALL_READ_DENIED), append nothing.
+  the credentials can read `$all` (else ALL_READ_DENIED), append nothing. The connection string's loopback IP host is connected to as
+  localhost and another IP host with tls=true is refused on Node 26 with TLS_HOST_UNSUPPORTED (SPEC-ADPKUR-004).
   startCapture(): append a window-start marker to `feat-fence.<ns>` (metadata
   `{ feat: "instrument" }`) and keep its commit position as the exclusive cursor.
   peekCapture()/stopCapture(): readAll forwards from the cursor with a server-side stream-name

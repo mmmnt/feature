@@ -45,7 +45,8 @@
       "properties": {
         "code": {
           "enum": [
-            "FAULT_UNSUPPORTED"
+            "FAULT_UNSUPPORTED",
+            "TLS_HOST_UNSUPPORTED"
           ]
         },
         "detail": {

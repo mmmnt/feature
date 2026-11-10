@@ -1,9 +1,10 @@
 feat 1.0
 
-# SPEC-ADPKUR-004 — Kurrent adapter: the TLS server name on Node 26 (an amendment to SPEC-ADPKUR-001, in a spec of its own so the agreed
-# file is untouched until the founder flips this one). DRAFT: status draft until the founder flips it. Founder ruling 2026-11-10,
-# chosen verbatim: "A: loopback→localhost (Recommended)". DESIGN.md beside this file holds the rule's rationale, the rejected
-# alternatives, the open choices and the upstream issue text.
+# SPEC-ADPKUR-004 — Kurrent adapter: the TLS server name on Node 26 (an amendment to SPEC-ADPKUR-001, in a spec of its own). Agreed by founder ruling 2026-11-10, chosen verbatim: "Flip it (Recommended)",
+# with the open choices accepted as "Exact loopback only, New code TLS_HOST_UNSUPPORTED, nodeMajor seam, File the grpc-js issue"
+# (the issue is grpc/grpc-node#3131; the rule can go when grpc-js stops sending an IP as the servername). Earlier ruling,
+# chosen verbatim: "A: loopback→localhost (Recommended)". DESIGN.md beside this file holds the rule's rationale and the open choices.
+# Integration tier only: this file is excluded from the spec tier (specs.exclude) like transport.feat and broker-loss.feat.
 #
 # The fault: on Node 26, Node refuses an IP address as the TLS server name (ERR_INVALID_ARG_VALUE, "Setting the TLS ServerName to an IP
 # address is not permitted"). @grpc/grpc-js 1.14.7 sets connectionOptions.servername from the remote host unconditionally, and
@@ -34,13 +35,13 @@ feat 1.0
 # A refused setup is a rejection, so nothing else is traced.
 # The fixture hosts: 127.0.0.1 and `[::1]` reach the fixture node (its port is published on both loopbacks; TLS names are not verified,
 # tlsVerifyCert=false); 192.0.2.10 and 2001:db8::1 are documentation addresses nothing listens on, which is the point of a refusal that
-# happens before any connection. Integration tier only: the connecting scenarios need the fixture node.
+# happens before any connection. The connecting scenarios need the fixture node.
 
 spec SPEC-ADPKUR-004 "Kurrent adapter: a loopback IP host is connected to as localhost and any other IP host is refused on Node 26"
 context Toolchain
 aggregate Adapters
 type infrastructure
-status draft
+status agreed
 
 construct:
   handler at adapters/kurrent/src/index.ts
