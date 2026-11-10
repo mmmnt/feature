@@ -151,7 +151,6 @@
       "adapters/kafka/transport.feat",
       "adapters/kms/transport.feat",
       "adapters/kurrent/transport.feat",
-      "adapters/kurrent/node26-tls-host.feat",
       "adapters/neo4j/transport.feat",
       "adapters/kafka/broker-loss.feat",
       "adapters/kurrent/broker-loss.feat"

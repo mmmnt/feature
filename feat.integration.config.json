@@ -17,7 +17,8 @@
       "playwright/**",
       "schema-json/**",
       "*/observe.feat",
-      "dynamodb/query-mode.feat"
+      "dynamodb/query-mode.feat",
+      "kurrent/node26-tls-host.feat"
     ]
   },
   "environment": "integration"
