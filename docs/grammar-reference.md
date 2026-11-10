@@ -469,6 +469,10 @@ that per-spec `.contract.json` registries `$ref` into.
   gets vitest's default timeout).
 - **Command routing (ADR-0009)**: `response.commands` maps every command name to an
   adapter-specific invocation shape (HTTP: `{method, path}`; handler: `{module, export}`).
+  A handler route may add `"namespace": true` (SPEC-ADPHND-002, founder ruling 2026-11-09, opt-in B)
+  to declare that its handler reads `ctx.namespace`; only such a route is refused
+  (`NAMESPACE_NOT_HONOURED`, after the invoke) when its handler never read it. A route without the
+  marker is never checked.
 - **Actors (ADR-0012)**: `response.actors` registers named actors with adapter-specific auth
   material (HTTP: headers/token; handler: context object); `default` names the implicit actor;
   `anonymous` is reserved and never declared.

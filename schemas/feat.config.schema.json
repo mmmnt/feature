@@ -46,7 +46,13 @@
           "type": "object",
           "description": "Command routing (ADR-0009): CommandName -> adapter-specific invocation shape (HTTP: {method, path}; handler: {module, export}). Closed command space: every command used in when:/execute must exist here — validated at parse time.",
           "minProperties": 1,
-          "additionalProperties": { "type": "object", "additionalProperties": true }
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "namespace": { "type": "boolean", "description": "Handler routes (SPEC-ADPHND-002): true declares that the handler reads ctx.namespace, so the harness refuses the route with NAMESPACE_NOT_HONOURED when it never does. Absent: never checked." }
+            },
+            "additionalProperties": true
+          }
         },
         "actors": {
           "type": "object",

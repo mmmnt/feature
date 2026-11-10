@@ -50,6 +50,10 @@
         "module": "adapters/stdio-jsonrpc/src/exchange.ts",
         "export": "exchange"
       },
+      "ProbeHandlerNamespace": {
+        "module": "adapters/handler/fixtures/probe.mjs",
+        "export": "probeNamespace"
+      },
       "ProbeHandlerClock": {
         "module": "adapters/handler/fixtures/probe.mjs",
         "export": "probe"

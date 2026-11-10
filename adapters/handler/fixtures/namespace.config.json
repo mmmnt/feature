@@ -1,0 +1,22 @@
+{
+  "featVersion": "1.0",
+  "schemas": {
+    "adapter": "@mmmnt/feat-schema-json"
+  },
+  "response": {
+    "adapter": "../src/index.ts",
+    "commands": {
+      "Ping": { "module": "handlers.mjs", "export": "ping", "namespace": true },
+      "PingPlain": { "module": "handlers.mjs", "export": "ping" }
+    }
+  },
+  "services": {
+    "store": { "adapter": "../../memory/src/index.ts", "consistency": "strong" }
+  },
+  "specs": {
+    "dir": ".",
+    "pattern": "**/*.feat",
+    "contractPattern": "**/*.contract.json",
+    "outputPattern": "{name}.test.ts"
+  }
+}

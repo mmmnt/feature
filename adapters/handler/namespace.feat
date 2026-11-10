@@ -1,0 +1,151 @@
+feat 1.0
+
+# SPEC-ADPHND-002 — the handler adapter carries the runner's namespace. SPEC-RT-006 (agreed, ruling
+# 58a4ac88) delivers one namespace per spec file to every adapter as a top-level key of the config
+# createAdapter receives ({ ...config, namespace }), says the in-process handler's context carries
+# `ctx.namespace`, and says the handler adapter "reports the value its context handed out and none
+# when the handler never read it" through the optional reportedNamespace(), after which the
+# harness refuses the file with NAMESPACE_NOT_HONOURED when the report is not the delivered value.
+# SPEC-RT-006 left the handler side unbuilt because it lies outside that spec's touches; this spec
+# is that side. The founder ruled "New spec ADPHND-002" (2026-11-09) and approved this draft
+# (founder 2026-11-09: approvd). Agreed; status agreed.
+#
+# Opt-in per route (founder ruling 2026-11-09, ADPHND-002 opt-in B). A handler route declares that
+# its handler uses the namespace with a marker in feat.config.json: `response.commands.<Name>`
+# carries `"namespace": true` beside `module` and `export`. Only an opted-in route is held to the
+# rule below. A route without the marker is never checked: its handler may ignore the namespace, so
+# every handler written before the namespace existed keeps working. Without this, SPEC-RT-006 would
+# refuse every handler-backed spec whose handlers never read ctx.namespace.
+#
+# Why the report is a read, not a delivery: a handler that ignores ctx.namespace writes where it
+# likes, outside the namespace, and an absence proof (`records []`) would pass while the system does
+# the wrong thing (RT-006's worst failure). Reporting what the handler actually read is the only
+# signal the adapter has that the handler honoured it.
+#
+# Driven through adapters/handler/fixtures/probe.mjs (part of the build, inside touches), command
+# `ProbeHandlerNamespace { script?, namespace?, harness?, spec? }`:
+#  - Script mode (script given): create the adapter as the harness would, with
+#    { ...config, namespace } when `namespace` is given and without the key when it is not (an
+#    adapter used outside a runner), its routes Namespace, Quiet and Legacy opted in
+#    (`namespace: true`) and Plain not, then run a space-separated script: `invoke:Namespace` (a
+#    three-argument handler that returns ctx.namespace), `invoke:Quiet` (a three-argument handler
+#    that never touches ctx.namespace), `invoke:Legacy` (the two-argument handler of SPEC-ADPHND-001), `invoke:Plain` (a three-argument
+#    handler on the route WITHOUT the marker, which never reads ctx.namespace),
+#    `clock:<iso>` (as in SPEC-ADPHND-001), `report` (calls reportedNamespace()). The trace shows each
+#    step; `invoke:Namespace` adds ns=<value|none>; `report` adds report=<value|none>.
+#  - Harness mode (harness: Namespace | Quiet | Legacy | Plain, with spec when a namespace is wanted): build a REAL harness (createHarness
+#    with specPath = spec) over fixtures/namespace.config.json, whose response is this adapter with
+#    the opted-in route `Ping` (the handler chosen by `harness`; Plain runs `PingPlain`, the same
+#    route without the marker), and run one case. The answer is the trace `case:<harness> passed`,
+#    or the harness's refusal as the ERR below.
+#
+# Settled decisions. (Citations: SPEC-RT-006, ruling 58a4ac88, "New spec ADPHND-002", founder ruling 2026-11-09 ADPHND-002 opt-in B.)
+#  D1. TIMING (SPEC-RT-006 amendment "namespace timing A", main 59acb9d): the harness checks a
+#      response adapter's reportedNamespace() after the case's invoke() returns and before the
+#      predictions are compared, so a real handler adapter has had the chance to hand the namespace
+#      out. A refusal therefore fails the case with NAMESPACE_NOT_HONOURED (after the handler ran).
+#  D2. A handler run with no namespace in the config (outside a runner): ctx.namespace is absent and
+#      reportedNamespace() answers none, which the harness never checks (it only checks when it
+#      delivered one). Scenario "outside a runner" pins that.
+
+spec SPEC-ADPHND-002 "Handler adapter: the runner's namespace"
+context Toolchain
+aggregate Adapters
+type infrastructure
+status agreed
+
+construct:
+  handler at adapters/handler/src/index.ts
+  touches adapters/handler/**
+  needs SPEC-RT-006
+  needs SPEC-ADPHND-001
+  createAdapter keeps config.namespace. invoke(command, input, actor) calls the handler as
+  handler(input, actorContext, ctx) where ctx = { clock, namespace } and namespace is a getter:
+  reading it records that the handler read it and answers config.namespace (undefined when the
+  config carries none). A route is opted in when its entry in the config's response.commands has
+  `namespace: true`. reportedNamespace() answers: the delivered namespace when the most recently
+  invoked route is NOT opted in (nothing to honour); otherwise the value read by a handler since
+  the adapter was created or last torn down, and undefined when none was read (or the config
+  carried none).
+  teardown() forgets what was read. Everything else in ctx and invoke is unchanged.
+
+enforce:
+  the handler context carries namespace as the value the config delivered
+  reportedNamespace answers the value a handler read and none when no handler read it
+  a two-argument handler never reads the namespace and so reports none
+  a route without the namespace marker is never held to the namespace, whatever its handler reads
+  rejects NAMESPACE_NOT_HONOURED when a real harness runs an opted-in route whose handler never read the namespace it was delivered
+
+contract:
+  input ProbeInput
+  response ProbeResult
+  error NamespaceError
+
+scenario "the handler context carries the delivered namespace":
+  when: ProbeHandlerNamespace { script: "invoke:Namespace", namespace: "s0599e33863c1" }
+  predict success:
+    response OK ProbeResult { trace: "invoke:Namespace ns=s0599e33863c1" }
+    filesystem has []
+
+scenario "the namespace is the same on every invocation and beside a frozen clock":
+  when: ProbeHandlerNamespace { script: "invoke:Namespace clock:2026-07-16T00:00:00Z invoke:Namespace", namespace: "s0599e33863c1" }
+  predict success:
+    response OK ProbeResult { trace: "invoke:Namespace ns=s0599e33863c1 clock:2026-07-16T00:00:00Z invoke:Namespace ns=s0599e33863c1" }
+    filesystem has []
+
+scenario "outside a runner the context has no namespace and nothing is reported":
+  when: ProbeHandlerNamespace { script: "invoke:Namespace report" }
+  predict success:
+    response OK ProbeResult { trace: "invoke:Namespace ns=none report=none" }
+    filesystem has []
+
+scenario "the adapter reports the namespace a handler read":
+  when: ProbeHandlerNamespace { script: "invoke:Namespace report", namespace: "s0599e33863c1" }
+  predict success:
+    response OK ProbeResult { trace: "invoke:Namespace ns=s0599e33863c1 report=s0599e33863c1" }
+    filesystem has []
+
+scenario outline "the adapter reports none when no handler read the namespace":
+  when: ProbeHandlerNamespace { script: <script>, namespace: "s0599e33863c1" }
+  predict success:
+    response OK ProbeResult { trace: <trace> }
+    filesystem has []
+  examples:
+    | script                | trace                       |
+    | "report"              | "report=none"               |
+    | "invoke:Quiet report" | "invoke:Quiet report=none"  |
+    | "invoke:Legacy report" | "invoke:Legacy role=operator report=none" |
+
+scenario "a route without the marker is reported as honoured whatever its handler reads":
+  when: ProbeHandlerNamespace { script: "invoke:Plain report", namespace: "s0599e33863c1" }
+  predict success:
+    response OK ProbeResult { trace: "invoke:Plain report=s0599e33863c1" }
+    filesystem has []
+
+scenario "a harness runs an opted-in route whose handler reads the namespace":
+  when: ProbeHandlerNamespace { harness: "Namespace", spec: "adapters/handler/namespace.feat" }
+  predict success:
+    response OK ProbeResult { trace: "case:Namespace passed" }
+    filesystem has []
+
+scenario "a harness runs a route without the marker whose handler never reads the namespace, and does not check it":
+  when: ProbeHandlerNamespace { harness: "Plain", spec: "adapters/handler/namespace.feat" }
+  predict success:
+    response OK ProbeResult { trace: "case:Plain passed" }
+    filesystem has []
+
+scenario "an opted-in route is not refused when no namespace is configured":
+  when: ProbeHandlerNamespace { harness: "Quiet" }
+  predict success:
+    response OK ProbeResult { trace: "case:Quiet passed" }
+    filesystem has []
+
+scenario outline "a harness refuses an opted-in route whose handler never read the namespace it was delivered":
+  when: ProbeHandlerNamespace { harness: <handler>, spec: "adapters/handler/namespace.feat" }
+  predict rejection NAMESPACE_NOT_HONOURED:
+    response ERR NamespaceError { code: "NAMESPACE_NOT_HONOURED", detail: matching <detail> }
+    filesystem has []
+  examples:
+    | handler  | detail                                         |
+    | "Quiet"  | "no namespace"                                 |
+    | "Legacy" | "no namespace"                                 |

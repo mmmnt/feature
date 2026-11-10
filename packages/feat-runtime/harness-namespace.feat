@@ -54,7 +54,11 @@ feat 1.0
 #   - "none" (nothing reported) is meaningful only for hosts that do not speak the protocol: the
 #     in-process handler adapter, whose handler reads `ctx.namespace`, and any response or service
 #     adapter that implements the optional reportedNamespace(). The handler adapter reports the
-#     value its context handed out and none when the handler never read it. For these, none is
+#     value its context handed out and none when the handler never read it, but only for a route
+#     that OPTS IN: founder ruling 2026-11-09, ADPHND-002 opt-in B, a route in
+#     feat.config.json `response.commands.<Name>` declares `"namespace": true` when its handler
+#     uses the namespace; a route without the marker is never checked (the adapter reports the
+#     delivered value for it), so handlers that predate the namespace keep working. For these, none is
 #     NAMESPACE_NOT_HONOURED (response adapter: after the invoke; service adapter: at setup). An
 #     adapter with no reportedNamespace() is not checked.
 #

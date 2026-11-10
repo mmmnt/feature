@@ -10,12 +10,15 @@ import type { CapturedResponse, FeatResponseAdapter } from "@mmmnt/feat-types";
 interface HandlerRoute {
   module: string;
   export: string;
+  /** The route's handler uses ctx.namespace; only then is it held to it (SPEC-ADPHND-002). */
+  namespace?: boolean;
 }
 
 interface HandlerAdapterConfig {
   commands: Record<string, HandlerRoute>;
   actors?: { default?: string } & Record<string, unknown>;
   projectRoot?: string;
+  namespace?: string;
 }
 
 /** What a handler reads the time from (SPEC-ADPHND-001): its third argument, never a patched Date. */
@@ -27,6 +30,8 @@ export interface HandlerClock {
 
 export interface HandlerContext {
   clock: HandlerClock;
+  /** The runner's namespace for this spec file (SPEC-RT-006); reading it is what reportedNamespace() reports. */
+  readonly namespace: string | undefined;
 }
 
 // ISO-8601 instant WITH a zone designator (Z or +hh:mm); the parsed time must also be finite.
@@ -44,6 +49,8 @@ type Handler = (payload: Record<string, unknown>, actor?: unknown, ctx?: Handler
 class HandlerAdapter implements FeatResponseAdapter {
   private handlers = new Map<string, Handler>();
   private frozenAt: number | null = null;
+  private namespaceRead = false;
+  private lastRouteOptedIn: boolean | undefined;
 
   async setClock(clock: string | null): Promise<void> {
     if (clock === null) {
@@ -58,7 +65,20 @@ class HandlerAdapter implements FeatResponseAdapter {
   private context(): HandlerContext {
     const frozenAt = this.frozenAt;
     const now = () => (frozenAt ?? Date.now());
-    return { clock: { now, iso: () => new Date(now()).toISOString(), frozen: frozenAt !== null } };
+    const adapter = this;
+    return {
+      clock: { now, iso: () => new Date(now()).toISOString(), frozen: frozenAt !== null },
+      get namespace() {
+        adapter.namespaceRead = true;
+        return adapter.config.namespace;
+      },
+    };
+  }
+
+  /** SPEC-ADPHND-002: the namespace a handler read since the adapter was created or last torn down; none otherwise. */
+  async reportedNamespace(): Promise<string | undefined> {
+    if (this.lastRouteOptedIn === false) return this.config.namespace; // not opted in: nothing to honour
+    return this.namespaceRead ? this.config.namespace : undefined;
   }
 
   constructor(private config: HandlerAdapterConfig) {}
@@ -69,10 +89,13 @@ class HandlerAdapter implements FeatResponseAdapter {
 
   async teardown(): Promise<void> {
     this.frozenAt = null;
+    this.namespaceRead = false;
+    this.lastRouteOptedIn = undefined;
     this.handlers.clear();
   }
 
   async invoke(command: string, input: Record<string, unknown>, actor?: string): Promise<CapturedResponse> {
+    this.lastRouteOptedIn = this.config.commands[command]?.namespace === true;
     let handler: Handler | undefined = this.handlers.get(command);
     if (!handler) {
       const route = this.config.commands[command];
