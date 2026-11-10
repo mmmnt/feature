@@ -23,6 +23,7 @@ import { fileURLToPath } from "node:url";
 import { ANY, jsonEvent, KurrentDBClient, NO_STREAM, START, streamNameFilter } from "@kurrent/kurrentdb-client";
 import { createAdapter, KurrentAdapterError } from "../src/index.ts";
 import { ensurePeerInstall } from "../../fault-proxy/fixtures/peer-install.mjs";
+import { dockerAsync } from "./docker-async.mjs";
 
 export const KURRENTDB_IMAGE = "kurrentplatform/kurrentdb:26.2.3";
 export const TOXIPROXY_IMAGE = "ghcr.io/shopify/toxiproxy:2.12.0";
@@ -247,15 +248,16 @@ function peerAppend(env, request) {
 const namespaceOf = (label) => `s${createHash("sha256").update(label).digest("hex").slice(0, 12)}`;
 const upperSnake = (type) => type.toUpperCase().replace(/-/g, "_");
 
+// Per case, so asynchronous: a blocking call here, twice a case, starves the worker's event loop (docker-async.mjs).
 async function containerState(name) {
-  const state = docker(["inspect", "--format", "{{.State.Status}}", name]);
+  const state = await dockerAsync(["inspect", "--format", "{{.State.Status}}", name]);
   return state === "exited" ? "stopped" : state;
 }
 
 async function run(input, mode) {
   const kdb = await kurrent();
   const env = mode === "observe" || mode === "tls-host" ? undefined : await proxyEnvironment();
-  if ((await containerState(kdb.name)) === "paused") docker(["unpause", kdb.name]);
+  if ((await containerState(kdb.name)) === "paused") await dockerAsync(["unpause", kdb.name]);
   if (env !== undefined) {
     const all = await (await fetch(`${env.api}/proxies`)).json();
     for (const n of Object.keys(all)) await fetch(`${env.api}/proxies/${n}`, { method: "DELETE" });
@@ -438,7 +440,7 @@ async function run(input, mode) {
     throw e;
   } finally {
     // Put the product back before anything else touches it, then let each adapter close what it opened.
-    if ((await containerState(kdb.name).catch(() => "")) === "paused") docker(["unpause", kdb.name]);
+    if ((await containerState(kdb.name).catch(() => "")) === "paused") await dockerAsync(["unpause", kdb.name]);
     for (const a of adapters.values()) {
       if (dirty.has(a)) await a.reset().catch(() => {});
       await a.teardown().catch(() => {});
