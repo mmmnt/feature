@@ -1,29 +1,44 @@
 // The serial pass (SPEC-RT-005): files named serial run second, in their own vitest invocation with
 // FEAT_SERIAL=1; a failing parallel pass does not skip them; one merged JUnit report.
+import { execFile } from "node:child_process";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { mergeJunit, runTests } from "./src/index.js";
+import { promisify } from "node:util";
+import { mergeJunit } from "./src/index.js";
+
+const exec = promisify(execFile);
+const RUNNER = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures/run-passes.mjs");
+
+/** runTests, in its own process (see fixtures/run-passes.mjs): resolves with its exit code. */
+async function runTests(opts: object): Promise<{ exitCode: number }> {
+  try {
+    await exec("node", [RUNNER, JSON.stringify(opts)], { encoding: "utf8" });
+    return { exitCode: 0 };
+  } catch (e) {
+    return { exitCode: (e as { code?: number }).code ?? 1 };
+  }
+}
 
 const PKG = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(PKG, "../..");
 const f = (n: string) => path.relative(ROOT, path.join(PKG, "fixtures/passes", n));
 
 describe("runTests with a serial set", { timeout: 120_000 }, () => {
-  it("runs the serial files second with FEAT_SERIAL=1 and the rest without it", () => {
-    const r = runTests({ files: [f("parallel.probe.ts"), f("serial.probe.ts")], serialFiles: [f("serial.probe.ts")], root: ROOT, quiet: true });
+  it("runs the serial files second with FEAT_SERIAL=1 and the rest without it", async () => {
+    const r = await runTests({ files: [f("parallel.probe.ts"), f("serial.probe.ts")], serialFiles: [f("serial.probe.ts")], root: ROOT, quiet: true });
     expect(r.exitCode).toBe(0);
   });
-  it("a serial file in the parallel pass would fail (the env is the proof)", () => {
-    const r = runTests({ files: [f("serial.probe.ts")], root: ROOT, quiet: true });
+  it("a serial file in the parallel pass would fail (the env is the proof)", async () => {
+    const r = await runTests({ files: [f("serial.probe.ts")], root: ROOT, quiet: true });
     expect(r.exitCode).not.toBe(0);
   });
-  it("a failing parallel pass does not skip the serial pass, and the run fails; the report holds both", () => {
+  it("a failing parallel pass does not skip the serial pass, and the run fails; the report holds both", async () => {
     const dir = mkdtempSync(path.join(tmpdir(), "feat-pass-"));
     const junit = path.join(dir, "junit.xml");
-    const r = runTests({
+    const r = await runTests({
       files: [f("failing.probe.ts"), f("serial.probe.ts")],
       serialFiles: [f("serial.probe.ts")],
       root: ROOT,

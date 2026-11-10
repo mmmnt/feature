@@ -231,7 +231,8 @@ export async function createHarness(opts: { configPath: string; specPath?: strin
       const mod = await importAdapter(config.response.adapter, projectRoot);
       response = mod.createAdapter({ ...config.response, projectRoot, ...(namespace !== undefined ? { namespace } : {}) }) as FeatResponseAdapter;
       await response.setup(config.response.invoke ?? {});
-      await honoured("the response adapter", response);
+      // The response adapter is checked after the case's invoke(), not here (namespace timing A): an
+      // in-process handler reports the namespace only once its handler has read it.
     }
 
     for (const [key, svc] of Object.entries(config.services)) {
@@ -348,6 +349,8 @@ export async function createHarness(opts: { configPath: string; specPath?: strin
       if (!response) throw new Error(`${c.anchor}: when: requires a response adapter`);
       sentWhen = resolveGivenRefs(c.when.payload, givenResponse, c.anchor) as Record<string, unknown>;
       captured = await response.invoke(c.when.command, sentWhen, c.when.actor);
+      // SPEC-RT-006 (timing A): after the invoke returns and before any prediction is compared.
+      await honoured("the response adapter", response);
     }
     // deliver-triggered stimulus (ADR-0011): events delivered in order, inside the
     // window; the delivered stimuli themselves are excluded from capture by the adapter.

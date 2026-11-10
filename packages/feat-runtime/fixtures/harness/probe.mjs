@@ -44,7 +44,7 @@ export async function runCases(input) {
 import { assertNoNamespaceCollision, deriveNamespace, normalizeSpecPath, NAMESPACE_PATTERN } from "../../src/index.ts";
 
 export async function runNamespace(input) {
-  const st = (globalThis.__featNamespaceProbe = { trace: [], hostKind: input.hostKind, hostEcho: input.hostEcho ?? "ok" });
+  const st = (globalThis.__featNamespaceProbe = { trace: [], hostKind: input.hostKind, hostEcho: input.hostEcho ?? "ok", serviceEcho: input.serviceEcho });
   const configName = { configured: "namespace-configured", "configured-overlay": "namespace-configured-overlay" }[input.config ?? ""] ?? "namespace";
   const configPath = path.resolve(process.cwd(), `packages/feat-runtime/fixtures/harness/${configName}.config.json`);
   const configDir = path.dirname(configPath);
@@ -64,8 +64,8 @@ export async function runNamespace(input) {
       for (let i = 1; i <= (input.cases ?? 0); i++) {
         st.trace.push(`case:c${i}`);
         await h.runCase(
-          { anchor: `c${i}`, name: `c${i}`, when: { command: "Ping", payload: {} }, prediction: { type: "success", services: { store: { records: [] } } } },
-          { schemas: {}, goldens: {} },
+          { anchor: `c${i}`, name: `c${i}`, when: { command: "Ping", payload: {} }, prediction: { type: "success", services: { store: { records: input.wrongPrediction ? [{ type: "Never", schemaName: "S" }] : [] } } } },
+          { schemas: { S: { type: "object" } }, goldens: {} },
         );
         if (envName) st.trace.push(`env=${process.env[envName]}`);
       }

@@ -42,7 +42,11 @@ feat 1.0
 # adapter's capture filters them out and an absence (`records []`) passes while the system is
 # doing the wrong thing, which is the worst failure an isolation layer has. So honouring is
 # checked, not assumed: the host must report the namespace it is running under, and the harness
-# refuses the file when what it reports differs (NAMESPACE_NOT_HONOURED). Who answers what:
+# refuses the case when what it reports differs (NAMESPACE_NOT_HONOURED). AMENDED by founder ruling
+# 2026-11-09, namespace timing A: for the RESPONSE adapter the check runs AFTER the case's invoke() returns
+# and BEFORE any prediction is compared, not right after setup — an in-process handler can only report the
+# namespace once it has read it, which it does inside invoke(). A SERVICE adapter keeps the earlier check, at
+# its setup, before any case runs. Who answers what:
 #   - A stdio spec host speaks the Feat Host Protocol, whose `setup` result REQUIRES the echo and
 #     fixes its pattern. A missing or malformed echo is PROTOCOL_VIOLATION, raised by the stdio
 #     adapter at the transport layer (SPEC-RPC-001/002 own that case, not this spec; the harness
@@ -51,7 +55,8 @@ feat 1.0
 #     in-process handler adapter, whose handler reads `ctx.namespace`, and any response or service
 #     adapter that implements the optional reportedNamespace(). The handler adapter reports the
 #     value its context handed out and none when the handler never read it. For these, none is
-#     NAMESPACE_NOT_HONOURED. An adapter with no reportedNamespace() is not checked.
+#     NAMESPACE_NOT_HONOURED (response adapter: after the invoke; service adapter: at setup). An
+#     adapter with no reportedNamespace() is not checked.
 #
 # Driven through packages/feat-runtime/fixtures/harness/probe.mjs (the same probe
 # as SPEC-RT-002; part of the build). `RunHarnessNamespace { specs, hostEcho?, digest?, config? }`
@@ -83,7 +88,8 @@ construct:
   once per file, then creates the response adapter and every service adapter with
   createAdapter({ ...config, namespace }), sets process.env.FEAT_NAMESPACE (restoring the prior
   value on teardown), passes it as ctx.namespace to the handler adapter, and, for an adapter
-  whose setup reports a namespace (a spec host), compares it with the derived one.
+  that can report one (reportedNamespace()), compares it with the derived one: a service adapter's at its
+  setup, the response adapter's after the case's invoke() returns and before the predictions are compared.
   The runner (feat run) derives the namespace of every spec file in the run before starting vitest
   and refuses two files with one value. Loading a config whose response config or any service
   options has a `namespace` key is refused.
@@ -91,7 +97,7 @@ construct:
 
 enforce:
   rejects NAMESPACE_COLLISION when two spec files of one run derive the same namespace
-  rejects NAMESPACE_NOT_HONOURED when a host reports a well-formed namespace other than the one delivered, or, for a host that does not speak the Feat Host Protocol and implements reportedNamespace(), none
+  rejects NAMESPACE_NOT_HONOURED when a host reports a well-formed namespace other than the one delivered, or, for a host that does not speak the Feat Host Protocol and implements reportedNamespace(), none; the response adapter is checked after the case's invoke and before its predictions are compared, a service adapter at setup
   rejects PROTOCOL_VIOLATION when a stdio host's setup result lacks the namespace or malforms it (raised by the stdio adapter per SPEC-RPC-001/002 and surfaced unchanged)
   rejects NAMESPACE_CONFIGURED when a loaded config (base or overlay, after the SPEC-RT-004 checks) carries a namespace key in response config or service options
   add the namespace to the in-memory config after loadConfig, never to a file, so it cannot affect the tier spaces or the derivation hash
@@ -155,16 +161,28 @@ scenario "a host that echoes the delivered namespace is accepted":
     response OK RunResult { namespaces: "adapters/kurrent/observe.feat=s0599e33863c1" }
     filesystem has []
 
-scenario "an in-process host that reports no namespace is refused before any case runs":
+scenario "an in-process host that reports no namespace is refused after the invoke":
   when: RunHarnessNamespace { specs: ["adapters/kurrent/observe.feat"], hostKind: "in-process", hostEcho: "none", cases: 1 }
   predict rejection NAMESPACE_NOT_HONOURED:
-    response ERR NamespaceError { code: "NAMESPACE_NOT_HONOURED", trace: "create:response ns=s0599e33863c1", detail: matching "s0599e33863c1" }
+    response ERR NamespaceError { code: "NAMESPACE_NOT_HONOURED", trace: "create:response ns=s0599e33863c1 create:store ns=s0599e33863c1 case:c1", detail: matching "s0599e33863c1" }
     filesystem has []
 
-scenario "a protocol host that reports another well-formed namespace is refused before any case runs":
+scenario "a protocol host that reports another well-formed namespace is refused after the invoke":
   when: RunHarnessNamespace { specs: ["adapters/kurrent/observe.feat"], hostKind: "protocol", hostEcho: "other", cases: 1 }
   predict rejection NAMESPACE_NOT_HONOURED:
-    response ERR NamespaceError { code: "NAMESPACE_NOT_HONOURED", trace: "create:response ns=s0599e33863c1", detail: matching "s000000000000" }
+    response ERR NamespaceError { code: "NAMESPACE_NOT_HONOURED", trace: "create:response ns=s0599e33863c1 create:store ns=s0599e33863c1 case:c1", detail: matching "s000000000000" }
+    filesystem has []
+
+scenario "the response check comes before the predictions: a refused namespace is reported, not the violation behind it":
+  when: RunHarnessNamespace { specs: ["adapters/kurrent/observe.feat"], hostKind: "in-process", hostEcho: "none", cases: 1, wrongPrediction: true }
+  predict rejection NAMESPACE_NOT_HONOURED:
+    response ERR NamespaceError { code: "NAMESPACE_NOT_HONOURED", trace: "create:response ns=s0599e33863c1 create:store ns=s0599e33863c1 case:c1" }
+    filesystem has []
+
+scenario "a service adapter that reports another namespace is still refused at its setup, before any case runs":
+  when: RunHarnessNamespace { specs: ["adapters/kurrent/observe.feat"], serviceEcho: "other", cases: 1 }
+  predict rejection NAMESPACE_NOT_HONOURED:
+    response ERR NamespaceError { code: "NAMESPACE_NOT_HONOURED", trace: "create:response ns=s0599e33863c1 create:store ns=s0599e33863c1", detail: matching "s000000000000" }
     filesystem has []
 
 scenario "a protocol host whose setup result has no namespace is a protocol violation, not this spec's refusal":

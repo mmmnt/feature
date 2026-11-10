@@ -17,6 +17,7 @@ export function createAdapter(config) {
     read: async () => [],
     invoke: async () => ({ status: "OK", body: {} }),
   };
+  if (role !== "response" && st.serviceEcho === "other") a.reportedNamespace = () => "s000000000000";
   if (role !== "response" || st.hostKind === undefined) return a;
   const echoed = () =>
     ({ ok: config.namespace, other: "s000000000000", malformed: "NOT-A-NAMESPACE", none: undefined })[st.hostEcho];
