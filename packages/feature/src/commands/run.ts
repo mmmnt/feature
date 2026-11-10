@@ -100,6 +100,7 @@ export default class Run extends Command {
     if (flags.coverage) runOpts.coverage = true;
     const result = runTests(runOpts);
     if (result.junitPath) this.log(`junit: ${path.relative(root, result.junitPath)}`);
+    if (result.configurationError) this.exit(2); // the harness refused its configuration (README: exit 2)
     if (result.exitCode !== 0) this.exit(1);
   }
 }

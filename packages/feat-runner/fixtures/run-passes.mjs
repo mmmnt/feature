@@ -3,4 +3,5 @@
 // loses its RPC channel to the parent ("Timeout calling onTaskUpdate").
 import { runTests } from "../dist/index.js";
 const r = runTests(JSON.parse(process.argv[2]));
-process.exit(r.exitCode === 0 ? 0 : 1);
+// 2 stands for a harness configuration error (RunResult.configurationError), 1 for any other failure
+process.exit(r.exitCode === 0 ? 0 : r.configurationError ? 2 : 1);

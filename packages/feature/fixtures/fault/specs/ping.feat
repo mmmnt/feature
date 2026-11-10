@@ -1,0 +1,26 @@
+feat 1.0
+
+spec SPEC-FLT-001 "Ping"
+context Fault
+aggregate Thing
+type command
+status agreed
+
+construct:
+  handler at ping.mjs
+  touches ping.mjs
+
+enforce:
+  answer ok
+
+contract:
+  input PingInput
+  response PingResult
+
+scenario "pings":
+  given:
+    fault store Append Nonsense
+  when: Ping { n: 1 }
+  predict success:
+    response OK PingResult { ok: true }
+    store has []

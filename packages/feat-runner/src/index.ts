@@ -43,6 +43,8 @@ export interface RunOptions {
 
 export interface RunResult {
   exitCode: number;
+  /** True when a failure was a harness configuration error (message "Configuration error (exit 2): …"): the caller exits 2. */
+  configurationError?: boolean;
   junitPath?: string;
   jsonPath?: string;
 }
@@ -111,24 +113,42 @@ export function runTests(opts: RunOptions): RunResult {
   };
   const junitMain = opts.junitOutput !== undefined ? path.resolve(opts.root, opts.junitOutput) : undefined;
   const first: { ran?: boolean } = {};
+  const seen = { configurationError: false };
   const result = runPlan(p, (files, pass) => {
     // The serial pass writes beside the main report when a parallel pass already wrote it; merged below.
     const writesSeparately = pass.serial && first.ran === true && junitMain !== undefined;
     const junit = junitMain === undefined ? undefined : writesSeparately ? `${junitMain}.serial` : junitMain;
     first.ran = true;
-    return runOnce(opts, files, pass.serial, junit);
+    return runOnce(opts, files, pass.serial, junit, seen);
   });
   if (junitMain !== undefined && existsSync(`${junitMain}.serial`)) {
     writeFileSync(junitMain, mergeJunit(readFileSync(junitMain, "utf8"), readFileSync(`${junitMain}.serial`, "utf8")));
     rmSync(`${junitMain}.serial`, { force: true });
   }
   const out: RunResult = { exitCode: result.exitCode };
+  if (seen.configurationError) out.configurationError = true;
   if (junitMain !== undefined) out.junitPath = junitMain;
   if (opts.jsonOutput !== undefined) out.jsonPath = path.resolve(opts.root, opts.jsonOutput);
   return out;
 }
 
-function runOnce(opts: RunOptions, files: string[], serial: boolean, junitAbs: string | undefined): number {
+/**
+ * A vitest reporter that records a harness configuration error. The JSON reporter drops a failed hook's
+ * error (a suite whose createHarness threw has only skipped tests), so the reporter reads the task tree:
+ * file, suite and test errors alike. It writes the marker named by FEAT_CONFIG_ERROR_MARKER.
+ */
+export const CONFIG_ERROR_REPORTER_SOURCE = [
+  'import { writeFileSync } from "node:fs";',
+  "const hit = (t) => (t.result?.errors ?? []).some((e) => /Configuration error \\(exit 2\\):/.test(String(e?.message))) || (t.tasks ?? []).some(hit);",
+  "export default class FeatConfigErrorReporter {",
+  "  onFinished(files = []) {",
+  '    if (files.some(hit)) writeFileSync(process.env.FEAT_CONFIG_ERROR_MARKER, "1");',
+  "  }",
+  "}",
+  "",
+].join("\n");
+
+function runOnce(opts: RunOptions, files: string[], serial: boolean, junitAbs: string | undefined, seen: { configurationError: boolean }): number {
   const absFiles = files.map((f) => path.resolve(opts.root, f));
   // Lives under node_modules/.cache so `vitest/config` and the consumer's own
   // imports resolve exactly as they would from the project root.
@@ -142,7 +162,13 @@ function runOnce(opts: RunOptions, files: string[], serial: boolean, junitAbs: s
     }),
   );
 
-  const args = ["vitest", "run", "--config", configPath];
+  // A configuration error is told from a failed test by a reporter that marks it (see above).
+  const reporterPath = path.join(path.dirname(configPath), "feat-run.config-error-reporter.mjs");
+  const markerPath = path.join(path.dirname(configPath), serial ? "feat-run.serial.config-error" : "feat-run.config-error");
+  writeFileSync(reporterPath, CONFIG_ERROR_REPORTER_SOURCE);
+  rmSync(markerPath, { force: true });
+
+  const args = ["vitest", "run", "--config", configPath, `--reporter=${reporterPath}`];
   if (serial) args.push("--no-file-parallelism", "--maxWorkers=1");
   if (!opts.quiet) args.push("--reporter=default");
   if (opts.coverage) args.push("--coverage");
@@ -164,11 +190,13 @@ function runOnce(opts: RunOptions, files: string[], serial: boolean, junitAbs: s
     stdio: opts.quiet ? "ignore" : "inherit",
     env: {
       ...process.env,
+      FEAT_CONFIG_ERROR_MARKER: markerPath,
       ...(opts.configPath !== undefined ? { FEAT_CONFIG: opts.configPath } : {}),
       // The serial pass is the only place an exclusive fault may be armed (SPEC-RT-005).
       ...(serial ? { FEAT_SERIAL: "1" } : {}),
     },
     shell: win,
   });
+  if (existsSync(markerPath)) seen.configurationError = true;
   return result.status ?? 1;
 }

@@ -52,6 +52,18 @@ describe("runTests with a serial set", { timeout: 120_000 }, () => {
   });
 });
 
+describe("a harness configuration error", { timeout: 120_000 }, () => {
+  it("is told apart from a test failure: the run fails and says it was a configuration error", async () => {
+    const r = await runTests({ files: [f("misconfigured.probe.ts")], root: ROOT, quiet: true });
+    expect(r.exitCode).toBe(2);
+  });
+  it("is found in the serial pass too, and a plain failure beside it stays a plain failure", async () => {
+    const r = await runTests({ files: [f("failing.probe.ts"), f("misconfigured.probe.ts")], serialFiles: [f("misconfigured.probe.ts")], root: ROOT, quiet: true });
+    expect(r.exitCode).toBe(2);
+    expect((await runTests({ files: [f("failing.probe.ts")], root: ROOT, quiet: true })).exitCode).toBe(1);
+  });
+});
+
 describe("mergeJunit", () => {
   const a = '<?xml version="1.0"?>\n<testsuites name="vitest tests" tests="2" failures="1" errors="0" time="1.5">\n<testsuite name="a"></testsuite>\n</testsuites>\n';
   const b = '<?xml version="1.0"?>\n<testsuites name="vitest tests" tests="3" failures="0" errors="1" time="0.5">\n<testsuite name="b"></testsuite>\n</testsuites>\n';
