@@ -16,7 +16,8 @@ export type SeedViolationCode =
   | "SEED_FIXTURE_NOT_RECORDS"
   | "SEED_FIXTURE_SCHEMA_UNDECLARED"
   | "SEED_FIXTURE_VALUES_INVALID"
-  | "SEED_VALUES_INVALID";
+  | "SEED_VALUES_INVALID"
+  | "SEED_ROW_VALUES_INVALID";
 
 export interface SeedViolation {
   code: SeedViolationCode;
@@ -60,7 +61,8 @@ function valuesProblem(
 
 /**
  * Check every seed of a spec's topology and replace each fixture seed by its checked records.
- * A seeds array shared by outline rows is processed once.
+ * An outline row holds its own substituted seeds (SPEC-DRV-001) and is checked on its own; a fixture seed,
+ * which derive carries into every row as the same object, is read, checked and counted once.
  */
 export function checkSeeds(
   topology: TestTopology,
@@ -69,17 +71,69 @@ export function checkSeeds(
   adapter: FeatSchemaAdapter,
 ): SeedCheck {
   const out: SeedCheck = { violations: [], fixtures: 0, records: 0, recordTypes: [] };
-  const done = new Map<Seed[], Seed[]>();
+  const fixtures = new Map<Seed, Seed>();
   const violate = (code: SeedViolationCode, detail: string) => out.violations.push({ code, detail });
+
+  // Read, check and count one fixture seed; a refused fixture stays as written.
+  const checkFixture = (seed: Extract<Seed, { fixture: string }>): Seed => {
+    out.fixtures++;
+    const where = seed.fixture;
+    const file = path.resolve(specDir, seed.fixture);
+    let text: string;
+    try {
+      text = readFileSync(file, "utf8");
+    } catch (e) {
+      violate("SEED_FIXTURE_NOT_FOUND", `${where}: cannot read ${file} (${(e as NodeJS.ErrnoException).code ?? "error"})`);
+      return seed;
+    }
+    let json: unknown;
+    try {
+      json = JSON.parse(text);
+    } catch (e) {
+      violate("SEED_FIXTURE_NOT_JSON", `${where}: not valid JSON (${(e as Error).message})`);
+      return seed;
+    }
+    if (!Array.isArray(json)) {
+      violate("SEED_FIXTURE_NOT_RECORDS", `${where}: not an array of { type, schemaName?, values } records`);
+      return seed;
+    }
+    const records: SeedRecord[] = [];
+    let ok = true;
+    json.forEach((r: unknown, j) => {
+      const shape = recordShapeProblem(r);
+      if (shape) {
+        ok = false;
+        violate("SEED_FIXTURE_NOT_RECORDS", `${where} record ${j}: ${shape} (expected { type, schemaName?, values })`);
+        return;
+      }
+      const rec = r as SeedRecord;
+      out.records++;
+      out.recordTypes.push(rec.type);
+      if (rec.schemaName !== undefined) {
+        if (registry[rec.schemaName] === undefined) {
+          ok = false;
+          violate(
+            "SEED_FIXTURE_SCHEMA_UNDECLARED",
+            `${where} record ${j}: schema '${rec.schemaName}' is not declared in the contract (declared: ${Object.keys(registry).join(", ")})`,
+          );
+          return;
+        }
+        const problem = valuesProblem(rec, registry, adapter);
+        if (problem) {
+          ok = false;
+          violate("SEED_FIXTURE_VALUES_INVALID", `${where} record ${j}: ${problem}`);
+          return;
+        }
+      }
+      records.push(rec);
+    });
+    return ok ? { service: seed.service, records } : seed;
+  };
 
   for (const c of topology.cases) {
     const seeds = c.given?.seeds;
     if (!seeds) continue;
-    const prior = done.get(seeds);
-    if (prior) {
-      c.given!.seeds = prior;
-      continue;
-    }
+    const row = / › row\[(\d+)\]$/.exec(c.name)?.[1];
     const scenario = c.name.replace(/ › row\[\d+\]$/, "");
     const checked = seeds.map((seed, i): Seed => {
       if (!("fixture" in seed)) {
@@ -89,64 +143,18 @@ export function checkSeeds(
           const problem = rec.schemaName === undefined ? undefined : registry[rec.schemaName] === undefined
             ? undefined // undeclared inline names are the parser's UNDECLARED_SCHEMA, never reached here
             : valuesProblem(rec, registry, adapter);
-          if (problem) violate("SEED_VALUES_INVALID", `scenario "${scenario}" given › seed[${i}] record ${j}: ${problem}`);
+          if (problem && row !== undefined)
+            violate("SEED_ROW_VALUES_INVALID", `scenario "${scenario}" given › seed[${i}] record ${j} › row[${row}]: ${problem}`);
+          else if (problem) violate("SEED_VALUES_INVALID", `scenario "${scenario}" given › seed[${i}] record ${j}: ${problem}`);
         });
         return seed;
       }
-      out.fixtures++;
-      const where = seed.fixture;
-      const file = path.resolve(specDir, seed.fixture);
-      let text: string;
-      try {
-        text = readFileSync(file, "utf8");
-      } catch (e) {
-        violate("SEED_FIXTURE_NOT_FOUND", `${where}: cannot read ${file} (${(e as NodeJS.ErrnoException).code ?? "error"})`);
-        return seed;
-      }
-      let json: unknown;
-      try {
-        json = JSON.parse(text);
-      } catch (e) {
-        violate("SEED_FIXTURE_NOT_JSON", `${where}: not valid JSON (${(e as Error).message})`);
-        return seed;
-      }
-      if (!Array.isArray(json)) {
-        violate("SEED_FIXTURE_NOT_RECORDS", `${where}: not an array of { type, schemaName?, values } records`);
-        return seed;
-      }
-      const records: SeedRecord[] = [];
-      let ok = true;
-      json.forEach((r: unknown, j) => {
-        const shape = recordShapeProblem(r);
-        if (shape) {
-          ok = false;
-          violate("SEED_FIXTURE_NOT_RECORDS", `${where} record ${j}: ${shape} (expected { type, schemaName?, values })`);
-          return;
-        }
-        const rec = r as SeedRecord;
-        out.records++;
-        out.recordTypes.push(rec.type);
-        if (rec.schemaName !== undefined) {
-          if (registry[rec.schemaName] === undefined) {
-            ok = false;
-            violate(
-              "SEED_FIXTURE_SCHEMA_UNDECLARED",
-              `${where} record ${j}: schema '${rec.schemaName}' is not declared in the contract (declared: ${Object.keys(registry).join(", ")})`,
-            );
-            return;
-          }
-          const problem = valuesProblem(rec, registry, adapter);
-          if (problem) {
-            ok = false;
-            violate("SEED_FIXTURE_VALUES_INVALID", `${where} record ${j}: ${problem}`);
-            return;
-          }
-        }
-        records.push(rec);
-      });
-      return ok ? { service: seed.service, records } : seed;
+      const prior = fixtures.get(seed);
+      if (prior) return prior;
+      const result = checkFixture(seed);
+      fixtures.set(seed, result);
+      return result;
     });
-    done.set(seeds, checked);
     c.given!.seeds = checked;
   }
   return out;

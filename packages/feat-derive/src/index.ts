@@ -158,7 +158,7 @@ function resolvePrediction(
 function substituteSeeds(seeds: Seed[], row: Row): Seed[] {
   return seeds.map((seed) =>
     "fixture" in seed
-      ? { ...seed }
+      ? seed
       : {
           ...seed,
           records: seed.records.map((r) => ({ ...r, values: substituteValue(r.values, row) as Record<string, unknown> })),

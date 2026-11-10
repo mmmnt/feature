@@ -1,0 +1,9 @@
+[
+  {
+    "type": "ItemAdded",
+    "schemaName": "ItemEvent",
+    "values": {
+      "itemId": 7
+    }
+  }
+]

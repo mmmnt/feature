@@ -33,7 +33,8 @@
             "SEED_FIXTURE_NOT_RECORDS",
             "SEED_FIXTURE_SCHEMA_UNDECLARED",
             "SEED_FIXTURE_VALUES_INVALID",
-            "SEED_VALUES_INVALID"
+            "SEED_VALUES_INVALID",
+            "SEED_ROW_VALUES_INVALID"
           ]
         },
         "count": { "type": "integer", "minimum": 1 },

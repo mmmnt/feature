@@ -247,6 +247,10 @@ against that schema; inline `with <Schema>` values get the same values check. A 
 together with the fixture path (or `given › seed[i]`) and record index (0-based), under the codes
 `SEED_FIXTURE_NOT_FOUND`, `SEED_FIXTURE_NOT_JSON`, `SEED_FIXTURE_NOT_RECORDS`,
 `SEED_FIXTURE_SCHEMA_UNDECLARED`, `SEED_FIXTURE_VALUES_INVALID` and `SEED_VALUES_INVALID` (inline).
+In a scenario outline each example row's whole-value `<placeholder>`s are substituted into that row's own
+inline seed records (SPEC-DRV-001; `"Item-<n>"` inside a string stays literal, a fixture seed is never
+substituted) and each row is checked on its own: a failing record is `SEED_ROW_VALUES_INVALID`, anchored
+`given › seed[i] record j › row[n]` (n 1-based), in place of `SEED_VALUES_INVALID`; a fixture is checked once.
 
 ### 5.1b Spec variables — `variables:` (ADR-0017)
 
