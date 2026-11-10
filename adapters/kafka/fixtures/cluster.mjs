@@ -10,9 +10,11 @@
 //         Listeners: INTERNAL (inter-broker), CONTROLLER, DIRECT (advertised at the published host port: the
 //         instrument and the observe-mode system), PROXY (advertised at the fixed Toxiproxy listen port: the system
 //         of the transport and broker-loss specs). Pausing b1 is the loss of the broker (SPEC-ADPKFK-003).
-//   b2    broker only (node 2), INTERNAL listener only. It is created, and started, the first time a
-//         NOT_ENOUGH_REPLICAS fault is armed: it is stopped otherwise, so that no topic of any other scenario is ever
-//         placed on a broker the instrument has no listener on.
+//   b2    broker only (node 2): INTERNAL and DIRECT listeners (no PROXY: the system never talks to it). It is created,
+//         and started, the first time a NOT_ENOUGH_REPLICAS fault is armed, and stopped otherwise, so that no topic of
+//         any other scenario is placed on it. It has a DIRECT listener because a Metadata response in KRaft names a
+//         RANDOM live broker as "the controller", and the admin client sends CreateTopics to that id: with only broker
+//         1 reachable, a client told "2" waits for a broker it cannot see until its timeout (ERR__TIMED_OUT -185).
 //   peer  (transport specs) shares the Toxiproxy namespace: the system's producer, which must run there on Docker
 //         Desktop because a client reaching a published port goes through the runtime's host proxy, which accepts a
 //         connection the proxy refused and hides a reset (adapters/fault-proxy/fixtures/probe.mjs says why).
@@ -40,6 +42,7 @@ export const PORTS = {
   /** The Toxiproxy listen port the PROXY listener advertises: what the system bootstraps at. */
   proxyListen: 19096,
   internal2: 29092,
+  direct2: 29094,
   api: 8474,
   control: 19002,
 };
@@ -153,6 +156,7 @@ export function cluster() {
       "--rm",
       "-p", `127.0.0.1:0:${PORTS.api}`,
       "-p", `127.0.0.1:0:${PORTS.direct1}`,
+      "-p", `127.0.0.1:0:${PORTS.direct2}`,
       "-p", `127.0.0.1:0:${PORTS.control}`,
       TOXIPROXY_IMAGE,
       "-host=0.0.0.0",
@@ -160,6 +164,7 @@ export function cluster() {
     ]);
     const api = `http://127.0.0.1:${hostPort(tox, PORTS.api)}`;
     const directPort = hostPort(tox, PORTS.direct1);
+    const directPort2 = hostPort(tox, PORTS.direct2);
     const controlPort = hostPort(tox, PORTS.control);
     start(b1, [
       `--network=container:${tox}`,
@@ -185,8 +190,8 @@ export function cluster() {
       secondCreated: false,
       /**
        * The partitions of one topic as the cluster has them: [{ partition, leader, replicas, isr }]. Read through the
-       * INTERNAL listener by the broker's own tool, not through the instrument: the instrument sees the DIRECT listener,
-       * which broker 2 does not have, so a partition led by broker 2 is leaderless to it and its metadata call hangs.
+       * INTERNAL listener by the broker's own tool, not through the instrument, so that it reads the same while broker 2
+       * is going up or down.
        */
       async partitions(topic) {
         const out = docker(["exec", b1, "/opt/kafka/bin/kafka-topics.sh", "--bootstrap-server", `127.0.0.1:${PORTS.internal1}`, "--describe", "--topic", topic]);
@@ -205,8 +210,8 @@ export function cluster() {
             ...COMMON_ENV,
             "-e", "KAFKA_NODE_ID=2",
             "-e", "KAFKA_PROCESS_ROLES=broker",
-            "-e", `KAFKA_LISTENERS=INTERNAL://127.0.0.1:${PORTS.internal2}`,
-            "-e", `KAFKA_ADVERTISED_LISTENERS=INTERNAL://127.0.0.1:${PORTS.internal2}`,
+            "-e", `KAFKA_LISTENERS=INTERNAL://127.0.0.1:${PORTS.internal2},DIRECT://0.0.0.0:${PORTS.direct2}`,
+            "-e", `KAFKA_ADVERTISED_LISTENERS=INTERNAL://127.0.0.1:${PORTS.internal2},DIRECT://127.0.0.1:${directPort2}`,
             KAFKA_IMAGE,
           ]);
           self.secondCreated = true;

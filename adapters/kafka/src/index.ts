@@ -123,6 +123,17 @@ function within<T>(promise: Promise<T>, ms: number): Promise<T> {
 
 const keyOf = (topic: string, partition: number): string => `${topic}\u0000${partition}`;
 
+/** The per-topic errors of a failed createTopics, by librdkafka type and code, so a refusal is read, not guessed. */
+function creationErrors(e: unknown): string {
+  const inner = (e as { errors?: unknown[] }).errors ?? [e];
+  return inner
+    .map((x) => {
+      const r = x as { message?: string; type?: string; code?: number };
+      return `${r.type ?? "?"} (${r.code ?? "?"}) ${r.message ?? ""}`;
+    })
+    .join("; ");
+}
+
 function describe(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
@@ -562,19 +573,24 @@ class KafkaAdapter implements FeatServiceAdapter {
     if ((await admin.listTopics({ timeout: REQUEST_TIMEOUT_MS })).includes(name)) {
       throw new KafkaAdapterError("FAULT_TARGET_EXISTS", `the topic '${topic}' (${name}) already exists; a ${where} fault needs it created by the fault`);
     }
-    const created = await admin.createTopics({
-      timeout: CHANGE_TIMEOUT_MS,
-      topics: [
-        arm.fault === "MESSAGE_TOO_LARGE"
-          ? { topic: name, numPartitions: 1, configEntries: [{ name: "max.message.bytes", value: MESSAGE_TOO_LARGE_BYTES }] }
-          : {
-              topic: name,
-              numPartitions: 1,
-              replicationFactor: FAULT_REPLICATION_FACTOR,
-              configEntries: [{ name: "min.insync.replicas", value: FAULT_MIN_INSYNC_REPLICAS }],
-            },
-      ],
-    });
+    let created: boolean;
+    try {
+      created = await admin.createTopics({
+        timeout: CHANGE_TIMEOUT_MS,
+        topics: [
+          arm.fault === "MESSAGE_TOO_LARGE"
+            ? { topic: name, numPartitions: 1, configEntries: [{ name: "max.message.bytes", value: MESSAGE_TOO_LARGE_BYTES }] }
+            : {
+                topic: name,
+                numPartitions: 1,
+                replicationFactor: FAULT_REPLICATION_FACTOR,
+                configEntries: [{ name: "min.insync.replicas", value: FAULT_MIN_INSYNC_REPLICAS }],
+              },
+        ],
+      });
+    } catch (e) {
+      throw new Error(`creating the topic ${name} for ${where} was refused: ${creationErrors(e)}`, { cause: e });
+    }
     if (!created) {
       throw new KafkaAdapterError("FAULT_TARGET_EXISTS", `the topic '${topic}' (${name}) already exists; a ${where} fault needs it created by the fault`);
     }
