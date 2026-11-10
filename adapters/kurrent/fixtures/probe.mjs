@@ -34,7 +34,11 @@ const PEER_DEPS = path.join(ROOT, ".feature", "kurrent-peer");
 const CONTROL_PORT = 19002;
 const SYSTEM_DEADLINE_MS = 2000;
 const USERS = { admin: ["admin", "changeit"], writer: ["writer", "Writer-pw-1"], reader: ["reader", "Reader-pw-1"] };
+// UNAVAILABLE, DEADLINE_EXCEEDED and CANCELLED from the client. A broken connection arrives from this client as an
+// error of type "unknown" carrying the gRPC status (14 UNAVAILABLE, 4 DEADLINE_EXCEEDED, 1 CANCELLED), so both count.
 const TRANSPORT_TYPES = new Set(["unavailable", "deadline-exceeded", "cancelled"]);
+const TRANSPORT_CODES = new Set([14, 4, 1]);
+const isTransport = (o) => TRANSPORT_TYPES.has(o.type) || TRANSPORT_CODES.has(o.code);
 
 const created = [];
 let hooked = false;
@@ -192,7 +196,7 @@ function peerAppend(env, request) {
         clearTimeout(timer);
         s.destroy();
         const r = JSON.parse(buf.trim());
-        resolve(r.ok ? "ok" : r.err);
+        resolve(r.ok ? "ok" : { type: r.err, code: r.code });
       }
     });
     s.on("error", (e) => { clearTimeout(timer); reject(e); });
@@ -296,11 +300,11 @@ async function run(input, mode) {
               await writerFor(kind === "writeuser" ? "writer" : "admin").appendToStream(stream, jsonEvent({ type: b, data: {} }), { streamState: state === "nostream" ? NO_STREAM : ANY });
               outcome = "ok";
             } catch (e) {
-              outcome = e.type ?? "unknown";
+              outcome = { type: e.type ?? "unknown", code: e.code };
             }
           }
           if (outcome === "ok") trace.push(`${kind}:${l}`);
-          else trace.push(`${kind}:${l}!${TRANSPORT_TYPES.has(outcome) ? "TRANSPORT_FAILURE" : upperSnake(outcome)}`);
+          else trace.push(`${kind}:${l}!${isTransport(outcome) ? "TRANSPORT_FAILURE" : upperSnake(outcome.type)}`);
           break;
         }
         case "writeraw":

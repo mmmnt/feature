@@ -2,7 +2,7 @@
 // (adapters/kurrent/fixtures/probe.mjs starts it; part of the build, not shipped). A client of a proxied
 // path must run in that namespace on Docker Desktop (adapters/fault-proxy/fixtures/probe.mjs says why).
 // Line protocol on the control port: a JSON request per line, a JSON answer per line.
-//   { cs, stream, type, state: "any" | "nostream" }  ->  { ok: true } | { err: "<client error type>" }
+//   { cs, stream, type, state: "any" | "nostream" }  ->  { ok: true } | { err: "<client error type>", code: <gRPC status code>, message }
 const net = require("net");
 const { KurrentDBClient, jsonEvent, ANY, NO_STREAM } = require("/deps/node_modules/@kurrent/kurrentdb-client");
 
@@ -14,7 +14,7 @@ async function append(req) {
     });
     return { ok: true };
   } catch (e) {
-    return { err: (e && e.type) || "unknown:" + (e && e.message) };
+    return { err: (e && e.type) || "unknown", code: e && e.code, message: String((e && e.message) || "") };
   } finally {
     await client.dispose().catch(() => {});
   }

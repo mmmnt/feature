@@ -1,0 +1,62 @@
+feat 1.0
+
+# SPEC-ADPKUR-003 — Kurrent adapter: broker loss. Agreed by founder ruling 58a4ac88 ("flip them, queue in that order"); rulings c7af7871 applied. Integration
+# tier only, and SERIAL: BrokerLoss pauses the KurrentDB container, which every namespace and every spec file
+# shares, so the runner runs any file that arms it in a second pass with one worker
+# (SPEC-RT-005, founder ruling c7af7871 item 4). Keep these scenarios in this file and nowhere
+# else, so that only this file waits.
+#
+# `ObserveKurrentBrokerLoss { script, settleTimeoutMs? }` runs a space-separated script against the adapter of
+# SPEC-ADPKUR-001 with `options.proxy` carrying `container`; steps as in SPEC-ADPKUR-001 plus
+# `fault:<ns>:Connection.BrokerLoss`, and `container:<state>` (running or paused). Mechanism: the
+# fault-proxy library (SPEC-FPX-001) pauses the container with the runtime's CLI. The adapter's
+# instrument connection goes to the product directly, so while the product is paused it cannot
+# fence: settle must say false, not true.
+
+spec SPEC-ADPKUR-003 "Kurrent adapter: broker loss, serial"
+context Toolchain
+aggregate Adapters
+type infrastructure
+status agreed
+
+construct:
+  handler at adapters/kurrent/src/index.ts
+  touches adapters/kurrent/**
+  needs SPEC-FPX-001
+  needs SPEC-RT-005
+  needs SPEC-ADPKUR-001
+  Add `Connection: { BrokerLoss: ["reset"] }` to the fault catalog when `options.proxy.container`
+  is configured. BrokerLoss is in feat-types EXCLUSIVE_FAULTS, so the harness refuses it outside
+  the serial worker.
+
+enforce:
+  rejects FAULT_UNSUPPORTED when BrokerLoss is armed with a count it does not declare, or without options.proxy.container
+  settle resolves false while the product container is paused
+  reset unpauses the container and the product serves the next case
+
+contract:
+  input ObserveInput
+  response ObserveResult
+  error ObserveError
+
+scenario "losing the broker makes the fence decline, and restoring it makes the fence vouch again":
+  when: ObserveKurrentBrokerLoss { script: "setup:a start:a fault:a:Connection.BrokerLoss settle:a reset:a start:a settle:a stop:a", settleTimeoutMs: 500 }
+  predict success:
+    response OK ObserveResult { trace: "setup:a start:a fault:a:Connection.BrokerLoss settle:a=false reset:a start:a settle:a=true stop:a=0" }
+    filesystem has []
+
+scenario "reset unpauses the container, so the system's next write is captured":
+  when: ObserveKurrentBrokerLoss { script: "setup:a fault:a:Connection.BrokerLoss container:paused reset:a container:running start:a write:a:orders:Placed settle:a stop:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a fault:a:Connection.BrokerLoss container=paused reset:a container=running start:a write:a settle:a=true stop:a=1", last: "orders/Placed" }
+    filesystem has []
+
+scenario outline "a count the fault does not declare is refused before it does anything":
+  when: ObserveKurrentBrokerLoss { script: <script> }
+  predict rejection FAULT_UNSUPPORTED:
+    response ERR ObserveError { code: "FAULT_UNSUPPORTED", detail: matching <detail> }
+    filesystem has []
+  examples:
+    | script                                          | detail  |
+    | "setup:a fault:a:Connection.BrokerLoss:once"    | "once"  |
+    | "setup:a fault:a:Connection.BrokerLoss:times2"  | "times" |
