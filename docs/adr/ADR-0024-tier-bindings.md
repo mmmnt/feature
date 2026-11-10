@@ -64,8 +64,13 @@ command names and actor names.
 
 - **Ruling 0026e0ea and RT-004 "004 - a"**: per-key services merge. Built in d6315a4 (SPEC-RT-004,
   `loadConfig` resolves the overlay, refuses a missing base, a chain and a changed closed space).
-  The decision text above (whole replacement of each `services.<key>`) is read with this ruling;
-  the ruling's own words are in Sift and are not in the repository.
+  The founder's words (Sift workspace, 2026-11-09) were "004 - a", choosing option A: an overlay's
+  `services` merges per key. Each `services.<key>` the overlay names replaces the base's entry whole,
+  and every key it does not name is inherited from the base. That is decision 2 as written. Because an
+  omitted key is inherited, an overlay cannot remove a service, so the draft's outline row expecting
+  `filesystem` to be removed (`overlay-removes-service.config.json`) contradicted decision 2 and was
+  deleted. Rejected: option B, under which a present `services` block is the tier's complete set and
+  must equal the base's keys.
 - **"Tier split A"**: the integration tier runs the container-heavy transport and broker-loss specs
   as its own pass through `feat.integration.config.json`, and the spec tier excludes them. Built in
   6212f3e.
