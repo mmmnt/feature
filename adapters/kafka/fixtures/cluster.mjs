@@ -29,6 +29,7 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { KafkaJS } from "@confluentinc/kafka-javascript";
+import { dockerAsync } from "../../fault-proxy/fixtures/docker-async.mjs";
 
 export const KAFKA_IMAGE = "apache/kafka:3.9.0";
 export const TOXIPROXY_IMAGE = "ghcr.io/shopify/toxiproxy:2.12.0";
@@ -111,8 +112,9 @@ export async function until(what, fn, ms = WAIT_MS, every = 200) {
   throw new Error(`${what} did not come up: ${last}`);
 }
 
-export function containerState(name) {
-  const state = docker(["inspect", "--format", "{{.State.Status}}", name]);
+// Asynchronous, like every docker call a case makes: a blocking one starves the worker's event loop (docker-async.mjs).
+export async function containerState(name) {
+  const state = await dockerAsync(["inspect", "--format", "{{.State.Status}}", name]);
   return state === "exited" ? "stopped" : state;
 }
 
@@ -137,7 +139,7 @@ const COMMON_ENV = [
   "-e", "KAFKA_HEAP_OPTS=-Xmx384m -Xms128m",
 ];
 
-const startedCount = (name) => (docker(["logs", name]).match(/Kafka Server started/g) ?? []).length;
+const startedCount = async (name) => ((await dockerAsync(["logs", name])).match(/Kafka Server started/g) ?? []).length;
 
 function logs(name) {
   const r = spawnSync("docker", ["logs", name], { encoding: "utf8" });
@@ -207,7 +209,7 @@ export function cluster() {
        * is going up or down.
        */
       async partitions(topic) {
-        const out = docker(["exec", b1, "/opt/kafka/bin/kafka-topics.sh", "--bootstrap-server", `127.0.0.1:${PORTS.internal1}`, "--describe", "--topic", topic]);
+        const out = await dockerAsync(["exec", b1, "/opt/kafka/bin/kafka-topics.sh", "--bootstrap-server", `127.0.0.1:${PORTS.internal1}`, "--describe", "--topic", topic]);
         const list = (v) => (v === undefined || v === "" || v === "none" ? [] : v.split(",").map(Number));
         return out
           .split("\n")
@@ -228,20 +230,20 @@ export function cluster() {
             KAFKA_IMAGE,
           ]);
           self.secondCreated = true;
-          await until("broker 2", () => {
-            if (startedCount(b2) >= 1) return true;
-            if (containerState(b2) !== "running") throw new Error(`broker 2 exited: ${logs(b2).slice(-1500)}`);
+          await until("broker 2", async () => {
+            if ((await startedCount(b2)) >= 1) return true;
+            if ((await containerState(b2)) !== "running") throw new Error(`broker 2 exited: ${logs(b2).slice(-1500)}`);
             return false;
           });
           return;
         }
-        const before = startedCount(b2);
-        docker(["start", b2]);
-        await until("broker 2", () => startedCount(b2) > before);
+        const before = await startedCount(b2);
+        await dockerAsync(["start", b2]);
+        await until("broker 2", async () => (await startedCount(b2)) > before);
       },
       /** A stop is a controlled shutdown: the broker leaves the ISRs before it exits. */
-      stopSecond() {
-        if (self.secondCreated && containerState(b2) === "running") docker(["stop", "--time", "30", b2]);
+      async stopSecond() {
+        if (self.secondCreated && (await containerState(b2)) === "running") await dockerAsync(["stop", "--time", "30", b2]);
       },
       async waitIsr(topic, size) {
         return until(`the ISR of ${topic} to hold ${size} replica(s)`, async () => {
@@ -250,7 +252,7 @@ export function cluster() {
         });
       },
       /** Whether a NOT_ENOUGH_REPLICAS fault is armed (broker 2 stopped under a topic that needs it). */
-      secondRunning: () => self.secondCreated && containerState(b2) === "running",
+      secondRunning: async () => self.secondCreated && (await containerState(b2)) === "running",
       async close() {
         await admin.disconnect().catch(() => {});
       },

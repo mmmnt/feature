@@ -22,7 +22,8 @@ import { fileURLToPath } from "node:url";
 import { RdKafka } from "@confluentinc/kafka-javascript";
 import { createAdapter, KafkaAdapterError } from "../src/index.ts";
 import { ensurePeerInstall } from "../../fault-proxy/fixtures/peer-install.mjs";
-import { cluster, containerState, docker, NODE_IMAGE, PORTS, start, track, until } from "./cluster.mjs";
+import { dockerAsync } from "../../fault-proxy/fixtures/docker-async.mjs";
+import { cluster, containerState, NODE_IMAGE, PORTS, start, track, until } from "./cluster.mjs";
 
 export { KAFKA_IMAGE, NODE_IMAGE, TOXIPROXY_IMAGE } from "./cluster.mjs";
 export const CLIENT_VERSION = "1.11.0";
@@ -124,7 +125,7 @@ function transactional(bootstrap) {
 async function run(input, mode) {
   const c = await cluster();
   const env = mode === "observe" ? undefined : await proxyEnvironment();
-  if (containerState(c.b1) === "paused") docker(["unpause", c.b1]);
+  if ((await containerState(c.b1)) === "paused") await dockerAsync(["unpause", c.b1]);
   if (env !== undefined) {
     const all = await (await fetch(`${c.api}/proxies`)).json();
     for (const n of Object.keys(all)) await fetch(`${c.api}/proxies/${n}`, { method: "DELETE" });
@@ -299,7 +300,7 @@ async function run(input, mode) {
           }
           await adapter(l).reset();
           if (armedReplicas) {
-            c.stopSecond();
+            await c.stopSecond();
             armedReplicas = false;
             faultTopics.length = 0;
           }
@@ -324,7 +325,7 @@ async function run(input, mode) {
             const name = `${nsOf(l)}.${topic}`;
             faultTopics.push(name);
             await until(`the ISR of ${name}`, async () => (await c.partitions(name)).every((p) => p.isr.length === 2));
-            c.stopSecond();
+            await c.stopSecond();
             await c.waitIsr(name, 1);
             armedReplicas = true;
           }
@@ -336,9 +337,11 @@ async function run(input, mode) {
           trace.push(`fired:${l}=${fired}`);
           break;
         }
-        case "container":
-          trace.push(`container=${STATE_NAMES[containerState(c.b1)] ?? containerState(c.b1)}`);
+        case "container": {
+          const state = await containerState(c.b1);
+          trace.push(`container=${STATE_NAMES[state] ?? state}`);
           break;
+        }
         default:
           throw new Error(`unknown probe step '${step}'`);
       }
@@ -352,9 +355,9 @@ async function run(input, mode) {
     throw e;
   } finally {
     // Put the product back before anything else touches it, then let each adapter close what it opened.
-    if (containerState(c.b1) === "paused") docker(["unpause", c.b1]);
+    if ((await containerState(c.b1)) === "paused") await dockerAsync(["unpause", c.b1]);
     // Baseline after any case: broker 2 down, so that no topic of the next case is placed on it.
-    c.stopSecond();
+    await c.stopSecond();
     for (const tx of open.values()) await tx.close().catch(() => {});
     for (const adapterInstance of adapters.values()) await adapterInstance.teardown().catch(() => {});
   }

@@ -14,6 +14,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import net from "node:net";
 import { createFaultProxy, FaultProxyError } from "../src/index.ts";
+import { dockerAsync } from "./docker-async.mjs";
 
 export const TOXIPROXY_IMAGE = "ghcr.io/shopify/toxiproxy:2.12.0";
 export const NODE_IMAGE = "node:22.12.0-slim";
@@ -146,9 +147,9 @@ function environment() {
 }
 
 async function restoreBroker(env) {
-  const state = docker(["inspect", "--format", "{{.State.Status}}", env.broker]);
-  if (state === "paused") docker(["unpause", env.broker]);
-  else if (state !== "running") docker(["start", env.broker]);
+  const state = await dockerAsync(["inspect", "--format", "{{.State.Status}}", env.broker]);
+  if (state === "paused") await dockerAsync(["unpause", env.broker]);
+  else if (state !== "running") await dockerAsync(["start", env.broker]);
 }
 
 async function wipeProxies(env) {
@@ -169,9 +170,8 @@ export async function probe(input) {
   else if (input.container === "missing") {
     container = "feat-missing";
     // The scenario names a container that must not exist; refuse to run it against one that does.
-    if (spawnSync("docker", ["inspect", container], { stdio: "ignore" }).status === 0) {
-      throw new Error(`the container '${container}' exists, so the CONTAINER_NOT_FOUND scenario cannot run`);
-    }
+    const exists = await dockerAsync(["inspect", container]).then(() => true, () => false);
+    if (exists) throw new Error(`the container '${container}' exists, so the CONTAINER_NOT_FOUND scenario cannot run`);
   }
   const runtime = input.runtime === "missing" ? "feat-fpx-test-no-such-runtime" : (input.runtime ?? "docker");
   const metrics = input.metrics === "on" ? `${env.api}/metrics` : undefined;
@@ -249,7 +249,7 @@ export async function probe(input) {
           break;
         }
         case "container": {
-          const state = docker(["inspect", "--format", "{{.State.Status}}", env.broker]);
+          const state = await dockerAsync(["inspect", "--format", "{{.State.Status}}", env.broker]);
           trace.push(`container=${state === "exited" ? "stopped" : state}`);
           break;
         }
