@@ -1,0 +1,35 @@
+feat 1.0
+
+# Fixture workspace for SPEC-GEN-001 (outline amendment): row 1 valid, row 2 not
+
+spec SPEC-ITM-001 "Add an item"
+context Catalog
+aggregate Item
+type command
+status agreed
+
+construct:
+  handler at src/add-item.ts
+  touches src/**
+
+enforce:
+  rejects ITEM_EXISTS when the item id is already present
+
+contract:
+  input AddItemInput
+  event ItemEvent
+  record ItemRow
+  error ItemError
+
+scenario outline "seed per row":
+  given:
+    The store already holds seeded state.
+    seed store [ ItemAdded with ItemEvent { itemId: <id>, name: "Item-<n>" } ]
+  when: AddItem { itemId: "22222222-0000-4000-8000-000000000009" }
+  predict rejection ITEM_EXISTS:
+    response 409 ItemError
+    store has []
+  examples:
+    | id | n |
+    | "11111111-0000-4000-8000-000000000001" | 1 |
+    | 7 | 2 |

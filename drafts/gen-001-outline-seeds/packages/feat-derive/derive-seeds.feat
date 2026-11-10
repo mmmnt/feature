@@ -1,0 +1,97 @@
+feat 1.0
+
+# SPEC-DRV-001 (DRAFT) — what derive does with the seeds of a scenario outline (founder ruling 2026-11-10,
+# "New spec + GEN-001 (Recommended)"; open choices accepted "Whole-value only, Fixture seeds literal").
+# Today derive substitutes an outline row's values into `when`, `delivers`, `given.executes`, `given.faults` and
+# the predictions, but hands every row the SAME seeds array with its `{ $placeholder }` objects intact; the
+# generated suite then seeds the adapters with literal `{ "$placeholder": "id" }` objects, identical in every row
+# (proved 2026-11-10 against the memory adapter). This spec closes that, and SPEC-GEN-001 (amended) then checks
+# each row's seeds. DRAFT: status draft until the founder flips it. Builds first; SPEC-GEN-001's amendment needs it.
+#
+# Driven through packages/feat-derive/fixtures/probe.mjs (part of the build, inside touches):
+# `DeriveSeeds { spec, config }` parses the spec against the config, derives it, and answers
+# { cases: [{ name, seeds }], seedsShared } where seedsShared is true when two cases hold the very same seeds
+# array. A derive that throws is answered as ERR code DERIVE_THREW (the probe's label: derive's own error is a
+# plain Error today, so the detail carries its message).
+
+spec SPEC-DRV-001 "Derive substitutes each outline row into its own seeds"
+context Toolchain
+aggregate Derivation
+type command
+status draft
+
+construct:
+  handler at packages/feat-derive/src/index.ts
+  touches packages/feat-derive/src/index.ts
+  touches packages/feat-derive/derive-seeds.feat
+  touches packages/feat-derive/derive-seeds.contract.json
+  touches packages/feat-derive/fixtures/**
+  touches feat.config.json
+  imports parse from @mmmnt/feat-core
+  needs SPEC-CORE-001
+  An example row's values are substituted into the values of every inline seed record of the scenario,
+  exactly as they are into a given.executes payload (substituteValue): a value that is a whole `<name>` takes
+  the row's value for that column as written, whatever its kind (string, number, boolean, null, object, array),
+  at any depth of the record's values, in an object or in an array. A `<name>` that is only part of a string
+  (`"Item-<n>"`) is not a placeholder and stays as written, as it does in every other field today.
+  Each row's case holds its own seeds array, own records and own values, so a row's substitution can never reach
+  another row's seeds and two cases never share a seeds array. The seed's service, a record's type and its
+  schemaName are copied unchanged.
+  A fixture seed (`seed <service> from "<path>"`) is never substituted, its path included, and is carried
+  into every row as written; reading and checking it is SPEC-GEN-001's.
+  A placeholder whose column the row does not have is refused as every other field refuses it: derive throws
+  an Error whose message is `Outline row is missing a value for placeholder '<name>'` (an uncoded Error today,
+  see DESIGN). A scenario that is not an outline is not substituted at all: its seeds are the parsed seeds, a
+  `<name>` in them is left as the parser made it, and nothing else about its case changes.
+
+enforce:
+  substitute an outline row's values into every inline seed record's values, whole-value placeholders only
+  give every outline row its own seeds array
+  carry a fixture seed into every row unchanged
+  refuse a placeholder with no column in the row, with derive's existing message
+  leave the seeds of a scenario that is not an outline untouched
+
+contract:
+  input DeriveSeedsInput
+  response DerivedSeeds
+  error DeriveSeedsError
+
+scenario "each row gets its own seeds with its values in every whole-value placeholder, at any depth, and a placeholder inside a string stays as written":
+  when: DeriveSeeds { spec: "packages/feat-derive/fixtures/seed-outline/values/add-item.feat", config: "packages/feat-derive/fixtures/seed-outline/values/feat.config.json" }
+  predict success:
+    response OK DerivedSeeds {
+      cases: [
+        { name: "seed per row › row[1]", seeds: [ { service: "store", records: [ { type: "ItemAdded", schemaName: "ItemEvent", values: { itemId: "u-1", name: "Item-<n>", data: { owner: "u-1" }, tags: ["u-1", "fixed"] } } ] } ] },
+        { name: "seed per row › row[2]", seeds: [ { service: "store", records: [ { type: "ItemAdded", schemaName: "ItemEvent", values: { itemId: 7, name: "Item-<n>", data: { owner: 7 }, tags: [7, "fixed"] } } ] } ] },
+        { name: "seed per row › row[3]", seeds: [ { service: "store", records: [ { type: "ItemAdded", schemaName: "ItemEvent", values: { itemId: { k: "v" }, name: "Item-<n>", data: { owner: { k: "v" } }, tags: [{ k: "v" }, "fixed"] } } ] } ] }
+      ]
+      seedsShared: false
+    }
+    filesystem has []
+
+scenario "a fixture seed is carried into every row unchanged, beside a substituted inline seed":
+  when: DeriveSeeds { spec: "packages/feat-derive/fixtures/seed-outline/fixture/add-item.feat", config: "packages/feat-derive/fixtures/seed-outline/fixture/feat.config.json" }
+  predict success:
+    response OK DerivedSeeds {
+      cases: [
+        { name: "seed per row › row[1]", seeds: [ { service: "store", fixture: "data/items.json" }, { service: "store", records: [ { type: "ItemAdded", schemaName: "ItemEvent", values: { itemId: "u-1", name: "Item-<n>", data: { owner: "u-1" }, tags: ["u-1", "fixed"] } } ] } ] },
+        { name: "seed per row › row[2]", seeds: [ { service: "store", fixture: "data/items.json" }, { service: "store", records: [ { type: "ItemAdded", schemaName: "ItemEvent", values: { itemId: 7, name: "Item-<n>", data: { owner: 7 }, tags: [7, "fixed"] } } ] } ] }
+      ]
+      seedsShared: false
+    }
+    filesystem has []
+
+scenario "a placeholder with no column in the row is refused with derive's message":
+  when: DeriveSeeds { spec: "packages/feat-derive/fixtures/seed-outline/missing/add-item.feat", config: "packages/feat-derive/fixtures/seed-outline/missing/feat.config.json" }
+  predict rejection DERIVE_THREW:
+    response ERR DeriveSeedsError { code: "DERIVE_THREW", detail: matching "^Outline row is missing a value for placeholder '<nom>'$" }
+    filesystem has []
+
+scenario "a scenario that is not an outline keeps its seeds as parsed":
+  when: DeriveSeeds { spec: "packages/feat-derive/fixtures/seed-outline/plain/add-item.feat", config: "packages/feat-derive/fixtures/seed-outline/plain/feat.config.json" }
+  predict success:
+    response OK DerivedSeeds {
+      cases: [ { name: "plain", seeds: [ { service: "store", records: [ { type: "ItemAdded", schemaName: "ItemEvent", values: { itemId: "u-9", name: "Item-<n>" } } ] } ] } ]
+      seedsShared: false
+    }
+    filesystem has []

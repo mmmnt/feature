@@ -1,0 +1,31 @@
+feat 1.0
+
+# Fixture workspace for SPEC-DRV-001: a scenario that is not an outline
+
+spec SPEC-ITM-001 "Add an item"
+context Catalog
+aggregate Item
+type command
+status agreed
+
+construct:
+  handler at src/add-item.ts
+  touches src/**
+
+enforce:
+  rejects ITEM_EXISTS when the item id is already present
+
+contract:
+  input AddItemInput
+  event ItemEvent
+  record ItemRow
+  error ItemError
+
+scenario "plain":
+  given:
+    The store already holds seeded state.
+    seed store [ ItemAdded with ItemEvent { itemId: "u-9", name: "Item-<n>" } ]
+  when: AddItem { itemId: "22222222-0000-4000-8000-000000000009" }
+  predict rejection ITEM_EXISTS:
+    response 409 ItemError
+    store has []
