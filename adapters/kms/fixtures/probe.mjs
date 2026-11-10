@@ -374,7 +374,7 @@ export async function observeTransport(input) {
               auth: AUTH,
               emulator: "local-kms",
               ...(input.settleTimeoutMs !== undefined ? { settleTimeoutMs: input.settleTimeoutMs } : {}),
-              proxy: { api: env.api, upstream: env.upstream },
+              ...(b === "noproxy" ? {} : { proxy: { api: env.api, upstream: env.upstream } }),
             },
           });
           adapters.set(a, adapter);

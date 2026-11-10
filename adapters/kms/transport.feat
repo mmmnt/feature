@@ -1,7 +1,8 @@
 feat 1.0
 
 # SPEC-ADPKMS-002 — KMS adapter: transport faults on the system's path. Agreed by founder ruling 58a4ac88; fault counts by
-# founder ruling c7af7871; founder ruling 2026-11-09, KMS INSERT:k1 (the `last` token). Integration tier only:
+# founder ruling c7af7871; founder ruling 2026-11-09, KMS INSERT:k1 (the `last` token);
+# founder ruling 2026-11-09, spec-gap amendment (a Connection fault is refused without options.proxy). Integration tier only:
 # this file is excluded from the spec tier (specs.exclude: **/transport.feat) because the
 # in-process spec host has no wire to cut. The mechanism is SPEC-FPX-001; this spec states what
 # the product adapter promises on top of it.
@@ -9,7 +10,7 @@ feat 1.0
 # Topology: the system's KMS client uses the proxy's listen address as its endpoint; the adapter's instrument client uses options.endpoint directly.
 # Fixture: a local-kms container the TEST starts and a Toxiproxy container in front of it.
 # `ObserveKmsTransport { script }` runs a space-separated script against the adapter of SPEC-ADPKMS-001
-# with `options.proxy` set. Steps: `setup:<ns>`, `start:<ns>`, `stop:<ns>`, `settle:<ns>`,
+# with `options.proxy` set. Steps: `setup:<ns>` (`setup:<ns>:noproxy` configures no `options.proxy`), `start:<ns>`, `stop:<ns>`, `settle:<ns>`,
 # `reset:<ns>`, `fired:<ns>`, `fault:<ns>:Connection.<Fault>[:once]`, and `createkey:<ns>:...`
 # (the SYSTEM writes through the proxy); a Connection fault has no stream or topic segment, only an optional count. timeouts and connection errors from the SDK (retries disabled for the probe) are all reported as TRANSPORT_FAILURE. Trace and counts as in SPEC-ADPKMS-001.
 #
@@ -83,3 +84,9 @@ scenario outline "a transport fault that the proxy cannot scope to one call is r
     | script                                        | detail |
     | "setup:a fault:a:Connection.Timeout:once"     | "once" |
     | "setup:a fault:a:Connection.Partition:times2" | "times" |
+
+scenario "without options.proxy the catalog offers no Connection fault and arming one is refused":
+  when: ObserveKmsTransport { script: "setup:a:noproxy fault:a:Connection.Partition" }
+  predict rejection FAULT_UNSUPPORTED:
+    response ERR ObserveError { code: "FAULT_UNSUPPORTED", detail: matching "offers no operation 'Connection' [(]offers: UseKey[)]" }
+    filesystem has []
