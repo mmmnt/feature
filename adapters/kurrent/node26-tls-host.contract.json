@@ -14,7 +14,16 @@
           "minLength": 1
         },
         "tls": {
-          "type": "boolean"
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "enum": [
+                "omit"
+              ]
+            }
+          ]
         },
         "nodeMajor": {
           "type": "integer",

@@ -268,7 +268,7 @@ async function run(input, mode) {
   process.env.FEAT_KURRENT_TEST_PASSWORD = credentials[1];
   process.env.FEAT_KURRENT_TEST_CONNECTION =
     mode === "tls-host"
-      ? `kurrentdb://${input.host}:${kdb.port}?tls=${input.tls ?? true}&tlsVerifyCert=false`
+      ? `kurrentdb://${input.host}:${kdb.port}?${input.tls === "omit" ? "" : `tls=${input.tls ?? true}&`}tlsVerifyCert=false`
       : connectionString(kdb.port, USERS.admin).replace(/\/\/[^@]*@/, "//");
   process.env.AWS_EC2_METADATA_DISABLED = "true";
 

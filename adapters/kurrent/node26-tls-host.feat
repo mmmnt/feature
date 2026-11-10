@@ -4,7 +4,8 @@ feat 1.0
 # with the open choices accepted as "Exact loopback only, New code TLS_HOST_UNSUPPORTED, nodeMajor seam, File the grpc-js issue"
 # (the issue is grpc/grpc-node#3131; the rule can go when grpc-js stops sending an IP as the servername). Earlier ruling,
 # chosen verbatim: "A: loopback→localhost (Recommended)". DESIGN.md beside this file holds the rule's rationale and the open choices.
-# Integration tier only: this file is excluded from the spec tier (specs.exclude) like transport.feat and broker-loss.feat.
+# Spec tier (founder ruling 2026-11-10, chosen verbatim: "Move to spec tier (Recommended)"): this file is not excluded from feat.config.json, and the integration
+# config leaves it out so it runs once.
 #
 # The fault: on Node 26, Node refuses an IP address as the TLS server name (ERR_INVALID_ARG_VALUE, "Setting the TLS ServerName to an IP
 # address is not permitted"). @grpc/grpc-js 1.14.7 sets connectionOptions.servername from the remote host unconditionally, and
@@ -22,8 +23,8 @@ feat 1.0
 # `process.versions.node` major), the seam by which a scenario puts the adapter on Node 24 or 26 without a second Node.
 #
 # Driven through the probe of SPEC-ADPKUR-001 (adapters/kurrent/fixtures/probe.mjs, inside touches, not shipped).
-# `ObserveKurrentTlsHost { host, tls?, nodeMajor?, script? }` builds the connection string
-#   kurrentdb://admin:<password>@<host>:<port>?tls=<tls>&tlsVerifyCert=false     (tls default true; a v6 host is written in brackets)
+# `ObserveKurrentTlsHost { host, tls?, nodeMajor?, script? }` (tls: true, false, or "omit", which leaves the tls parameter out of the string entirely) builds the connection string
+#   kurrentdb://admin:<password>@<host>:<port>?tls=<tls>&tlsVerifyCert=false     (tls default true; "omit" drops `tls=<tls>&`; a v6 host is written in brackets)
 # with the fixture node's port (the test's private secure dev node of SPEC-ADPKUR-001) and the admin identity, creates the adapter for
 # namespace `a` with `options.nodeMajor` set when `nodeMajor` is given, and runs `script` (default `setup:a`; setup() runs only where the script says so,
 # so a scenario that never needs the node never connects). The script
@@ -35,7 +36,9 @@ feat 1.0
 # A refused setup is a rejection, so nothing else is traced.
 # The fixture hosts: 127.0.0.1 and `[::1]` reach the fixture node (its port is published on both loopbacks; TLS names are not verified,
 # tlsVerifyCert=false); 192.0.2.10 and 2001:db8::1 are documentation addresses nothing listens on, which is the point of a refusal that
-# happens before any connection. The connecting scenarios need the fixture node.
+# happens before any connection. 0.0.0.0 is a non-loopback IP host that reaches the local node on Linux and macOS (the connecting scenario below Node 26 uses it).
+# @kurrent/kurrentdb-client 1.3.2 cannot parse a bracketed IPv6 host, so only ::1, which is rewritten to localhost, can reach a node over IPv6. `[::ffff:127.0.0.1]` is an IPv4-mapped IPv6 literal: it is an IP host but not a loopback host (rule 1 is exactly
+# 127.0.0.1 and ::1), so it is left as written below Node 26 and refused on Node 26. The connecting scenarios need the fixture node.
 
 spec SPEC-ADPKUR-004 "Kurrent adapter: a loopback IP host is connected to as localhost and any other IP host is refused on Node 26"
 context Toolchain
@@ -119,6 +122,7 @@ scenario outline "an IP host other than the two loopback addresses is refused on
     | "192.0.2.10"   | "192.0.2.10"   |
     | "[2001:db8::1]" | "2001:db8::1" |
     | "127.0.0.2"    | "127.0.0.2"    |
+    | "0.0.0.0"      | "0.0.0.0"      |
 
 scenario "the refusal names the cause and the remedy":
   when: ObserveKurrentTlsHost { host: "192.0.2.10", nodeMajor: 26, script: "setup:a" }
@@ -142,3 +146,21 @@ scenario outline "an IP host is left as written where the name is allowed, so no
     | "192.0.2.10"   | false | 26        | "target:a=192.0.2.10"  |
     | "192.0.2.10"   | true  | 24        | "target:a=192.0.2.10"  |
     | "127.0.0.1"    | false | 26        | "target:a=127.0.0.1"   |
+
+scenario "an IP host other than a loopback address connects as written below Node 26":
+  when: ObserveKurrentTlsHost { host: "0.0.0.0", nodeMajor: 24, script: "setup:a target:a start:a write:a:orders:Placed settle:a stop:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a target:a=0.0.0.0 start:a write:a settle:a=true stop:a=1", last: "orders/Placed" }
+    filesystem has []
+
+scenario "an IPv4-mapped loopback is not a loopback host, so it is refused on Node 26":
+  when: ObserveKurrentTlsHost { host: "[::ffff:127.0.0.1]", nodeMajor: 26, script: "setup:a" }
+  predict rejection TLS_HOST_UNSUPPORTED:
+    response ERR ObserveError { code: "TLS_HOST_UNSUPPORTED", detail: matching "::ffff" }
+    filesystem has []
+
+scenario "tls absent is tls on, so a loopback host is still rewritten":
+  when: ObserveKurrentTlsHost { host: "127.0.0.1", tls: "omit", script: "target:a params:a" }
+  predict success:
+    response OK ObserveResult { trace: "target:a=localhost params:a=admin?tlsVerifyCert=false" }
+    filesystem has []
