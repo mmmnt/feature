@@ -2,11 +2,15 @@ feat 1.0
 
 # SPEC-ADPKUR-001 — the KurrentDB service adapter (@mmmnt/feat-adapter-kurrent, built on the
 # official @kurrent/kurrentdb-client). Agreed by founder ruling 58a4ac88 ("flip them, queue in that order"); rulings c7af7871 applied.
+# Amended by founder ruling 2026-11-09, Kurrent $tb A ("A: capture drops it"): the capture drops the `$metadata` record the
+# server writes on the first append after a soft delete; and by founder ruling 2026-11-09, Kurrent secure dev node
+# (the test node is secure, not insecure).
 #
 # Driven through adapters/kurrent/fixtures/probe.mjs (part of the build, inside touches, not
 # shipped). `ObserveKurrent { script, credentials?, settleTimeoutMs? }` creates one adapter per
 # namespace named in the script against a KurrentDB container the TEST starts (a private
-# single-node, insecure, projections off; see DESIGN.md) and runs a space-separated script. Every
+# single-node, secure dev node: KURRENTDB_DEV=true, the dev certificate, tlsVerifyCert=false, users created over
+# HTTP, projections off; see DESIGN.md) and runs a space-separated script. Every
 # step but `setup` names its namespace first. Steps:
 #   setup:<ns>                       create the adapter for namespace <ns> and call setup()
 #   seed:<ns>:<stream>:<Type>        adapter.seed() one record into <stream> of <ns>
@@ -14,6 +18,7 @@ feat 1.0
 #   writenew:<ns>:<stream>:<Type>    the SYSTEM appends expecting the stream NOT to exist
 #   writeuser:<ns>:<stream>:<Type>   the SYSTEM writes as the fixture's non-admin user `writer`
 #   writeraw:<stream>:<Type>         the SYSTEM writes to a stream outside every namespace
+#   delete:<ns>:<stream>             the SYSTEM soft-deletes <ns>.<stream> with its own admin client
 #   start / peek / stop / settle / reset : <ns>      the adapter's window methods
 #   read:<ns>[:<stream>]             adapter.read({}) or read({expect:[{type:"*", key:{stream}}]})
 #   fault:<ns>:<Operation>.<FAULT>:<stream>[:once|:times2|:reset]   adapter.fault() (count default reset)
@@ -36,6 +41,11 @@ feat 1.0
 # the config's `namespace`): every stream the system writes is named `<ns>.<stream>`; capture, read, reset and
 # the fence stream `feat-fence.<ns>` are all scoped to that prefix. A namespace is exactly
 # `^s[0-9a-f]{12}$` (SPEC-RT-006), so none is a prefix of another.
+#
+# The `$tb` rule (founder ruling 2026-11-09, Kurrent $tb A): on KurrentDB 26.2.3 the first append to a stream after a soft
+# delete makes the server write `$$<stream>/$metadata` with the body `{"$tb": n}` (n below the Int64 maximum). That record is
+# the server's, not the system's, and the capture drops it. A soft delete by the system writes the same body with n equal to
+# the Int64 maximum; that is the system's effect and is still captured. n is the JSON number the client delivers.
 
 spec SPEC-ADPKUR-001 "Kurrent adapter: namespaced capture, state, settle, reset and faults"
 context Toolchain
@@ -60,7 +70,8 @@ construct:
   `{ feat: "instrument" }`) and keep its commit position as the exclusive cursor.
   peekCapture()/stopCapture(): readAll forwards from the cursor with a server-side stream-name
   prefix filter on `<ns>.` and `$$<ns>.`; drop events whose metadata marks them instrument; drop
-  system events except `$streamDeleted` and `$metadata`; return in commit-position order as
+  system events except `$streamDeleted` and `$metadata`; drop a `$metadata` record whose body is exactly `{ $tb: n }` with n
+  below the Int64 maximum (the server's own write after a soft delete); return in commit-position order as
   CapturedRecord { type: eventType, key: stream name without the namespace prefix, payload: the
   JSON data, timestamp: the event's created time in ms, metadata: { revision, commitPosition } }.
   peek advances the in-adapter cursor and accumulates; stop returns the accumulation and closes.
@@ -79,6 +90,8 @@ enforce:
   rejects ALL_READ_DENIED when the instrument credentials cannot read the $all stream
   capture is restricted to streams whose name starts with the namespace prefix
   the instrument's own markers are never in a capture, a peek or a read
+  a `$metadata` record whose body is exactly `{ $tb: n }` with n below the Int64 maximum is the server's, and is never in a capture
+  a `$metadata` record with n equal to the Int64 maximum (a soft delete by the system) is captured
   peekCapture returns the in-window records in commit-position order without consuming them
   settle resolves true only when a marker appended after the system's writes was read back through $all
   settle resolves false when no window is open, or when the marker was not seen in time
@@ -141,6 +154,24 @@ scenario "a write outside every namespace is nobody's effect":
   when: ObserveKurrent { script: "setup:a start:a writeraw:elsewhere:Stray stop:a" }
   predict success:
     response OK ObserveResult { trace: "setup:a start:a writeraw stop:a=0" }
+    filesystem has []
+
+scenario "rewriting a stream that held events before a reset captures only the system's write, not the server's $tb record":
+  when: ObserveKurrent { script: "setup:a seed:a:orders:One reset:a start:a write:a:orders:Placed stop:a read:a" }
+  predict success:
+    response OK ObserveResult {
+      trace: "setup:a seed:a reset:a start:a write:a stop:a=1 read:a=1",
+      last: "orders/Placed"
+    }
+    filesystem has []
+
+scenario "a soft delete by the system is its own effect and is captured":
+  when: ObserveKurrent { script: "setup:a seed:a:orders:One start:a delete:a:orders stop:a" }
+  predict success:
+    response OK ObserveResult {
+      trace: "setup:a seed:a start:a delete:a stop:a=1",
+      last: "$$orders/$metadata"
+    }
     filesystem has []
 
 scenario "a peek reports the window's records and consumes nothing":

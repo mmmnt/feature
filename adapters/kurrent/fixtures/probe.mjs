@@ -203,13 +203,11 @@ function peerAppend(env, request) {
   });
 }
 
-// A script label (a, b) is mapped to `s` + 12 hex of a sha256 that also covers a per-call salt. The containers are
-// shared by every scenario of a test file, and a namespace reused after a reset is not clean on this product: a
-// stream that was soft-deleted gets a server-written `$metadata` event ({"$tb": n}) from its next append, which a
-// capture keeps (see the report on SPEC-ADPKUR-001). A fresh namespace per call isolates the scenarios from each other.
-const SALT = randomBytes(4).toString("hex");
-let calls = 0;
-const namespaceOf = (label, call) => `s${createHash("sha256").update(`${label}:${SALT}:${call}`).digest("hex").slice(0, 12)}`;
+// A script label (a, b) is mapped to the namespace the spec states: `s` + 12 hex of sha256(label). The containers are
+// shared by every scenario of a test file, so each run ends the way the runner's case ends, with reset() on every adapter
+// it created (a soft delete of its streams). A namespace reused after that gets the server's own `$metadata` {"$tb": n}
+// from its next append, which the capture drops (founder ruling 2026-11-09, Kurrent $tb A).
+const namespaceOf = (label) => `s${createHash("sha256").update(label).digest("hex").slice(0, 12)}`;
 const upperSnake = (type) => type.toUpperCase().replace(/-/g, "_");
 
 async function containerState(name) {
@@ -235,13 +233,13 @@ async function run(input, mode) {
   process.env.AWS_EC2_METADATA_DISABLED = "true";
 
   const adapters = new Map();
+  const ended = new Set();
   const writers = new Map();
   const writerFor = (user) => {
     if (!writers.has(user)) writers.set(user, KurrentDBClient.connectionString(connectionString(kdb.port, USERS[user])));
     return writers.get(user);
   };
-  const call = ++calls;
-  const nsOf = (l) => (l.startsWith("raw=") ? l.slice(4) : namespaceOf(l, call));
+  const nsOf = (l) => (l.startsWith("raw=") ? l.slice(4) : namespaceOf(l));
   const make = (l) => {
     const options = {
       connectionStringEnv: "FEAT_KURRENT_TEST_CONNECTION",
@@ -279,6 +277,7 @@ async function run(input, mode) {
       switch (kind) {
         case "setup":
           await adapter(l).setup();
+          ended.add(adapter(l));
           trace.push(`setup:${l}`);
           break;
         case "seed":
@@ -307,6 +306,10 @@ async function run(input, mode) {
           else trace.push(`${kind}:${l}!${isTransport(outcome) ? "TRANSPORT_FAILURE" : upperSnake(outcome.type)}`);
           break;
         }
+        case "delete":
+          await kdb.admin.deleteStream(`${nsOf(l)}.${a}`);
+          trace.push(`delete:${l}`);
+          break;
         case "writeraw":
           await kdb.admin.appendToStream(`elsewhere.${l}`, jsonEvent({ type: a, data: {} }), { streamState: ANY });
           trace.push("writeraw");
@@ -373,7 +376,10 @@ async function run(input, mode) {
   } finally {
     // Put the product back before anything else touches it, then let each adapter close what it opened.
     if ((await containerState(kdb.name).catch(() => "")) === "paused") docker(["unpause", kdb.name]);
-    for (const a of adapters.values()) await a.teardown().catch(() => {});
+    for (const a of adapters.values()) {
+      if (ended.has(a)) await a.reset().catch(() => {});
+      await a.teardown().catch(() => {});
+    }
     for (const w of writers.values()) await w.dispose().catch(() => {});
   }
 }

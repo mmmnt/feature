@@ -5,7 +5,7 @@ feat 1.0
 # in-process spec host has no wire to cut. The mechanism is SPEC-FPX-001; this spec states what
 # the product adapter promises on top of it.
 #
-# Topology: the system's KurrentDB client (gRPC over HTTP/2) is pointed at the proxy's listen address; the adapter's instrument client at the product directly (connectionString vs proxy.upstream). TLS: the product's certificate must name the proxy host or the system's client must run with tlsVerifyCert=false (insecure single node in the test fixture, DESIGN.md).
+# Topology: the system's KurrentDB client (gRPC over HTTP/2) is pointed at the proxy's listen address; the adapter's instrument client at the product directly (connectionString vs proxy.upstream). TLS: the product's certificate must name the proxy host or the system's client must run with tlsVerifyCert=false (secure dev node in the test fixture, DESIGN.md; founder ruling 2026-11-09, Kurrent secure dev node).
 # BrokerLoss is not here: it is exclusive and lives in broker-loss.feat (serial pass, SPEC-RT-005).
 # Fixture: a KurrentDB container the TEST starts and a Toxiproxy container in front of it.
 # `ObserveKurrentTransport { script }` runs a space-separated script against the adapter of SPEC-ADPKUR-001

@@ -77,10 +77,25 @@ const WHOLE_LOG = Number.MAX_SAFE_INTEGER;
 const POLL_MS = 25;
 /** Event types a capture keeps from the system's own stream-level events. */
 const KEPT_SYSTEM_TYPES = new Set(["$streamDeleted", "$metadata"]);
+/** 9223372036854775807 as the JSON number a JS client delivers: 2^63. */
+const INT64_MAX_AS_NUMBER = 2 ** 63;
 const CONNECTION_FAULTS = ["Timeout", "ConnectionReset", "Partition"] as const;
 
 function after(a: Position, b: Position): boolean {
   return a.commit > b.commit || (a.commit === b.commit && a.prepare > b.prepare);
+}
+
+/**
+ * The `$metadata` record the server writes on the first append after a soft delete: a body that is exactly
+ * `{ $tb: n }` with n below the Int64 maximum (founder ruling 2026-11-09, Kurrent $tb A). A soft delete by the
+ * system writes the maximum, which the client delivers as the JSON number 2^63, and is the system's effect.
+ */
+function isServerTruncateBefore(type: string, data: unknown): boolean {
+  if (type !== "$metadata" || typeof data !== "object" || data === null || Array.isArray(data)) return false;
+  const keys = Object.keys(data);
+  if (keys.length !== 1 || keys[0] !== "$tb") return false;
+  const n = (data as { $tb: unknown }).$tb;
+  return typeof n === "number" && Number.isInteger(n) && n >= 0 && n < INT64_MAX_AS_NUMBER;
 }
 
 function errorType(e: unknown): string | undefined {
@@ -263,6 +278,7 @@ class KurrentAdapter implements FeatServiceAdapter {
       if (key === undefined) continue;
       if (this.isInstrument(event.metadata)) continue;
       if (event.type.startsWith("$") && !KEPT_SYSTEM_TYPES.has(event.type)) continue;
+      if (isServerTruncateBefore(event.type, event.data)) continue;
       if (event.isJson === false) continue;
       this.captured.push({
         type: event.type,
@@ -426,25 +442,11 @@ class KurrentAdapter implements FeatServiceAdapter {
       .join(", ");
   }
 
-  private async holdsEvents(name: string): Promise<boolean> {
-    try {
-      for await (const _ of this.db().readStream(name, { maxCount: 1 })) return true;
-      return false;
-    } catch (e) {
-      const t = errorType(e);
-      if (t === "stream-not-found" || t === "stream-deleted") return false;
-      throw e;
-    }
-  }
-
   async reset(): Promise<void> {
     if (this.proxy !== undefined && this.opened !== undefined) await this.proxy.disarm();
     const { streams, withMetadata } = await this.namespaceStreams();
     for (const name of streams) {
       if (withMetadata.has(name)) await this.db().setStreamMetadata(name, {});
-      // A stream that holds no event (an ACL placed on a name nobody wrote) has nothing to delete: deleting it
-      // would make the server write a `$metadata` event into the next append to that name.
-      if (!(await this.holdsEvents(name))) continue;
       try {
         await this.db().deleteStream(name);
       } catch (e) {

@@ -18,7 +18,8 @@ Note 1.3.2 names the option `streamState` (not `expectedRevision`).
   the adapter appends to `feat-fence.<ns>` (exclusive cursor, so no inclusive/exclusive ambiguity at the
   boundary). Capture = `readAll` forwards from the cursor with a server-side stream-name prefix filter
   (`<ns>.`, `$$<ns>.`, `feat-fence.<ns>`), instrument events (metadata `feat: "instrument"`) dropped,
-  system events dropped except `$streamDeleted`/`$metadata`. Order = commit position = the log: total.
+  system events dropped except `$streamDeleted`/`$metadata`; a `$metadata` body exactly `{"$tb": n}` with n below the Int64
+  maximum (the server's write after a soft delete) is dropped, the Int64 maximum (the system's own soft delete) is kept. Order = commit position = the log: total.
 - **state = true.** `read` = the namespace's streams read forwards. Streams are found by an `$all`
   prefix scan (the local container runs with projections off, so `$streams` does not exist), or named
   directly by `expect[].key.stream`. A soft-deleted stream reads empty, so state is not resurrected
@@ -59,11 +60,12 @@ prefix-scoped. The fence stream is `feat-fence.<ns>`, outside the user prefix. R
 - Transport: `Connection.*` via SPEC-FPX-001. The client is gRPC over HTTP/2 and Toxiproxy is TCP-level, so
   it works unchanged; use a single-node connection string (no gossip discovery, which would hand the client
   the node's advertised address and bypass the proxy) and either a certificate naming the proxy host or
-  `tlsVerifyCert=false` for the insecure test node. BrokerLoss pauses the container.
+  `tlsVerifyCert=false` for the secure dev test node. BrokerLoss pauses the container.
 
 ## Endpoints
 Local: a KurrentDB container the test starts (the machine already has Sift's; the test must NOT use
-it): single node, `KURRENTDB_RUN_PROJECTIONS=None`, insecure or dev certificate. Cloud/Kurrent Cloud
+it): single node, `KURRENTDB_RUN_PROJECTIONS=None`, a secure dev node (`KURRENTDB_DEV=true`, the dev certificate,
+`tlsVerifyCert=false`, users created over HTTP). Cloud/Kurrent Cloud
 works by `connectionString`; nothing here needs AWS.
 
 ## What a test of the spec needs
