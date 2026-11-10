@@ -1,6 +1,7 @@
 feat 1.0
 
-# SPEC-ADPDDB-002 — DynamoDB adapter: transport faults on the system's path. Agreed by founder ruling 58a4ac88; fault counts per ruling c7af7871
+# SPEC-ADPDDB-002 — DynamoDB adapter: transport faults on the system's path. Agreed by founder ruling 58a4ac88; fault counts per ruling c7af7871;
+# amended by founder ruling 2026-11-09, spec-gap amendment (the Connection catalog needs options.proxy)
 # (every catalog entry declares ["reset"]; unobserved is accepted evidence). Integration tier only:
 # this file is excluded from the spec tier (specs.exclude: **/transport.feat) because the
 # in-process spec host has no wire to cut. The mechanism is SPEC-FPX-001; this spec states what
@@ -9,7 +10,7 @@ feat 1.0
 # Topology: the system's DynamoDB client uses the proxy's listen address as its endpoint; the adapter's instrument clients (table and streams) use options.endpoint directly.
 # Fixture: a DynamoDB Local container the TEST starts (or the ephemeral instrument) and a Toxiproxy container in front of it.
 # `ObserveDynamoTransport { script }` runs a space-separated script against the adapter of SPEC-ADPDDB-001
-# with `options.proxy` set. Steps: `setup:<ns>`, `start:<ns>`, `stop:<ns>`, `settle:<ns>`,
+# with `options.proxy` set. Steps: `setup:<ns>` (`setup:<ns>:noproxy` configures no `options.proxy`), `start:<ns>`, `stop:<ns>`, `settle:<ns>`,
 # `reset:<ns>`, `fired:<ns>`, `fault:<ns>:Connection.<Fault>[:once]`, and `put:<ns>:...`
 # (the SYSTEM writes through the proxy); a Connection fault has no stream or topic segment, only an optional count. timeouts and connection errors from the SDK (after its own retries are disabled for the probe) are all reported as TRANSPORT_FAILURE. Trace and counts as in SPEC-ADPDDB-001.
 #
@@ -83,3 +84,9 @@ scenario outline "a transport fault that the proxy cannot scope to one call is r
     | script                                        | detail |
     | "setup:a fault:a:Connection.Timeout:once"     | "once" |
     | "setup:a fault:a:Connection.Partition:times2" | "times" |
+
+scenario "without options.proxy the catalog offers no Connection fault and arming one is refused":
+  when: ObserveDynamoTransport { script: "setup:a:noproxy fault:a:Connection.Partition" }
+  predict rejection FAULT_UNSUPPORTED:
+    response ERR ObserveError { code: "FAULT_UNSUPPORTED", detail: matching "not in the catalog [(]PutItem[.]CONDITIONAL_CHECK_FAILED[)]$" }
+    filesystem has []

@@ -255,12 +255,13 @@ async function run(input, { transport }) {
       const ns = namespaceOf(label ?? "");
       switch (kind) {
         case "setup": {
+          const proxied = transport && rest[0] !== "noproxy";
           const options = {
             table: tableName,
             region: REGION,
             endpoint: env.endpoint,
             auth: { accessKeyIdEnv: "FEAT_DDB_TEST_KEY", secretAccessKeyEnv: "FEAT_DDB_TEST_SECRET" },
-            ...(transport
+            ...(proxied
               ? { fence: true, proxy: { api: env.api, name: PRODUCT, upstream: "127.0.0.1:8000" } }
               : { ...(input.fence === true ? { fence: true } : {}), ...(input.stream === "off" ? { stream: false } : {}) }),
           };
