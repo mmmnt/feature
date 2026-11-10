@@ -105,6 +105,14 @@
       "ObserveKafka": {
         "module": "adapters/kafka/fixtures/probe.mjs",
         "export": "observe"
+      },
+      "ObserveKafkaTransport": {
+        "module": "adapters/kafka/fixtures/probe.mjs",
+        "export": "observeTransport"
+      },
+      "ObserveKafkaBrokerLoss": {
+        "module": "adapters/kafka/fixtures/probe.mjs",
+        "export": "observeBrokerLoss"
       }
     }
   },
