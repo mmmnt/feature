@@ -31,6 +31,9 @@ import {
   ListTablesCommand,
   PutItemCommand,
   ScanCommand,
+  GetItemCommand,
+  QueryCommand,
+  DeleteItemCommand,
   type AttributeValue,
 } from "@aws-sdk/client-dynamodb";
 import {
@@ -42,7 +45,16 @@ import {
 import { fromIni, fromTemporaryCredentials } from "@aws-sdk/credential-providers";
 import { marshall, unmarshall } from "@aws-sdk/util-dynamodb";
 import type { AwsCredentialIdentityProvider } from "@aws-sdk/types";
-import type { CapturedRecord, FeatServiceAdapter, SeedRecord } from "@mmmnt/feat-types";
+import type {
+  CapturedRecord,
+  FaultArm,
+  FaultCatalog,
+  FeatServiceAdapter,
+  ObservationSupport,
+  ReadQuery,
+  SeedRecord,
+} from "@mmmnt/feat-types";
+import type { FaultProxy } from "@mmmnt/feat-fault-proxy";
 
 const execFile = promisify(execFileCb);
 
@@ -101,8 +113,44 @@ interface DynamoAdapterConfig {
      * than one open shard settle() declines to vouch even when on.
      */
     fence?: boolean;
+    /**
+     * SPEC-ADPDDB-001: false = snapshot diff (two consistent reads of the namespace compared by primary key; no
+     * Streams permission needed). Default true = native diff from the stream.
+     */
+    stream?: boolean;
+    /** SPEC-ADPDDB-001: how a namespace is carried. Only "keyPrefix" (stored partition key `<ns>#<pk>`). */
+    namespaceMode?: "keyPrefix";
+    /**
+     * SPEC-ADPDDB-002: Toxiproxy in front of the product, for the `Connection` faults. `api` is the Toxiproxy API,
+     * `name` the product label of the proxy (default "dynamodb"; the proxy is `feat-<ns>-<name>`), `upstream` the
+     * host:port of DynamoDB as Toxiproxy reaches it (default: the host of `endpoint`). The adapter's own clients never
+     * use the proxy; the system under test is pointed at the proxy's listen address.
+     */
+    proxy?: { api: string; name?: string; upstream?: string; container?: string; metrics?: string; runtime?: string };
   };
+  /** SPEC-RT-006: the runner's namespace, handed to every adapter as the config's top-level `namespace`. */
+  namespace?: string;
 }
+
+export type DynamoAdapterErrorCode =
+  | "NAMESPACE_INVALID"
+  | "NAMESPACE_KEY_NOT_STRING"
+  | "STREAM_NOT_ENABLED"
+  | "FAULT_UNSUPPORTED";
+
+/** A refusal the adapter makes by name (SPEC-ADPDDB-001): `code` is stable, `detail` names the offender. */
+export class DynamoAdapterError extends Error {
+  constructor(
+    readonly code: DynamoAdapterErrorCode,
+    readonly detail: string,
+  ) {
+    super(`@mmmnt/feat-adapter-dynamodb: ${code}: ${detail}`);
+    this.name = "DynamoAdapterError";
+  }
+}
+
+/** The pattern the runner derives namespaces to (SPEC-RT-006). */
+const NAMESPACE_PATTERN = /^s[0-9a-f]{12}$/;
 
 /**
  * Resolve the API origin: literal `endpoint`, or the value of the env var
@@ -232,14 +280,36 @@ class DynamoAdapter implements FeatServiceAdapter {
   private keySchema: { name: string; type: string }[] = [];
   private container: string | null = null;
   private exposedEnv: { name: string; prior: string | undefined }[] = [];
+  private hashKey = "";
+  private rangeKey: string | null = null;
+  private baseline: Map<string, SnapshotItem> | null = null;
+  private proxy: FaultProxy | null = null;
+  private readonly namespace: string | undefined;
+  private readonly snapshotMode: boolean;
+  readonly observes: ObservationSupport;
+  readonly faults: FaultCatalog;
+  /** The DynamoDB operation the last read() used (SPEC-ADPDDB-001); a probe reads it, the harness does not. */
+  lastReadVia: "GetItem" | "Query" | "Scan" | null = null;
 
   constructor(config: DynamoAdapterConfig) {
     this.opts = config.options ?? {};
     const { table, tableEnv, endpoint, endpointEnv, auth, ephemeral } = this.opts;
+    // SPEC-RT-006: the namespace is the runner's, never an option; a value off the pattern is refused before anything runs.
+    if (config.namespace !== undefined && !NAMESPACE_PATTERN.test(config.namespace))
+      throw new DynamoAdapterError("NAMESPACE_INVALID", config.namespace);
+    this.namespace = config.namespace;
+    this.snapshotMode = this.opts.stream === false;
+    this.observes = { diff: this.snapshotMode ? "snapshot" : "native", state: true };
+    this.faults = {
+      PutItem: { CONDITIONAL_CHECK_FAILED: ["reset"] },
+      ...(this.opts.proxy !== undefined
+        ? { Connection: { Timeout: ["reset"], ConnectionReset: ["reset"], Partition: ["reset"] } }
+        : {}),
+    };
     if (ephemeral) {
-      if (table || tableEnv || endpoint || endpointEnv || auth)
+      if (table || tableEnv || endpoint || endpointEnv || auth || this.opts.proxy)
         throw new Error(
-          "@mmmnt/feat-adapter-dynamodb: options.ephemeral is mutually exclusive with table/tableEnv/endpoint/auth " +
+          "@mmmnt/feat-adapter-dynamodb: options.ephemeral is mutually exclusive with table/tableEnv/endpoint/auth/proxy " +
             "(the scaffolded instrument is private and credential-free) — configuration error.",
         );
       this.table = ephemeral.table ?? "feat-ephemeral";
@@ -352,25 +422,176 @@ class DynamoAdapter implements FeatServiceAdapter {
     const arn = out.Table?.LatestStreamArn;
     const enabled = out.Table?.StreamSpecification?.StreamEnabled;
     const view = out.Table?.StreamSpecification?.StreamViewType;
-    if (!arn || !enabled)
-      throw new Error(
-        `@mmmnt/feat-adapter-dynamodb: table '${this.table}' has no active stream — enable Streams ` +
-          "(StreamViewType NEW_AND_OLD_IMAGES) so writes are observable — configuration error.",
-      );
-    if (view === "KEYS_ONLY")
-      throw new Error(
-        `@mmmnt/feat-adapter-dynamodb: table '${this.table}' stream is KEYS_ONLY — predictions need images; ` +
-          "use NEW_AND_OLD_IMAGES (or NEW_IMAGE) — configuration error.",
-      );
-    this.streamArn = arn;
+    // Snapshot diff reads the base table and needs no stream (SPEC-ADPDDB-001).
+    if (!this.snapshotMode) {
+      if (!arn || !enabled)
+        throw new DynamoAdapterError(
+          "STREAM_NOT_ENABLED",
+          `table '${this.table}' has no active stream — enable Streams ` +
+            "(StreamViewType NEW_AND_OLD_IMAGES) so writes are observable — configuration error.",
+        );
+      if (view === "KEYS_ONLY")
+        throw new Error(
+          `@mmmnt/feat-adapter-dynamodb: table '${this.table}' stream is KEYS_ONLY — predictions need images; ` +
+            "use NEW_AND_OLD_IMAGES (or NEW_IMAGE) — configuration error.",
+        );
+      this.streamArn = arn ?? null;
+    }
     const types = new Map((out.Table?.AttributeDefinitions ?? []).map((d) => [d.AttributeName, d.AttributeType]));
     this.keySchema = (out.Table?.KeySchema ?? []).map((k) => ({
       name: String(k.AttributeName),
       type: String(types.get(k.AttributeName) ?? "")
     }));
+    const hash = (out.Table?.KeySchema ?? []).find((k) => k.KeyType === "HASH");
+    const range = (out.Table?.KeySchema ?? []).find((k) => k.KeyType === "RANGE");
+    this.hashKey = String(hash?.AttributeName ?? "");
+    this.rangeKey = range?.AttributeName !== undefined ? String(range.AttributeName) : null;
+    if (this.namespace !== undefined) {
+      const hashType = this.keySchema.find((k) => k.name === this.hashKey)?.type;
+      if (hashType !== "S")
+        throw new DynamoAdapterError(
+          "NAMESPACE_KEY_NOT_STRING",
+          `the partition key '${this.hashKey}' of table '${this.table}' is not a string, so a key-prefix namespace cannot be carried`,
+        );
+    }
+    const proxy = this.opts.proxy;
+    if (proxy !== undefined) {
+      if (this.namespace === undefined)
+        throw new Error("@mmmnt/feat-adapter-dynamodb: options.proxy needs the runner's namespace (SPEC-RT-006) — configuration error.");
+      const upstream = proxy.upstream ?? (this.opts.endpoint !== undefined ? new URL(this.opts.endpoint).host : undefined);
+      if (upstream === undefined)
+        throw new Error("@mmmnt/feat-adapter-dynamodb: options.proxy needs an upstream (or an options.endpoint to derive it from) — configuration error.");
+      const { createFaultProxy } = await import("@mmmnt/feat-fault-proxy");
+      this.proxy = createFaultProxy({
+        api: proxy.api,
+        product: proxy.name ?? "dynamodb",
+        upstream,
+        namespace: this.namespace,
+        ...(proxy.container !== undefined ? { container: proxy.container } : {}),
+        ...(proxy.metrics !== undefined ? { metrics: proxy.metrics } : {}),
+        ...(proxy.runtime !== undefined ? { runtime: proxy.runtime } : {}),
+      });
+      await this.proxy.open();
+    }
+  }
+
+  private prefix(): string {
+    return this.namespace !== undefined ? `${this.namespace}#` : "";
+  }
+
+  /** Is this attribute map one of the instrument's own rows (fence sentinel or fault placeholder)? */
+  private static isInstrumentRow(img: Record<string, unknown> | undefined): boolean {
+    return img !== undefined && (FENCE_ATTR in img || FAULT_ATTR in img);
+  }
+
+  /** A stream record restricted to the namespace, its partition key stripped; null when it is nobody's effect here. */
+  private scopeStreamRecord(r: StreamImageRecord): StreamImageRecord | null {
+    if (this.namespace === undefined) return r;
+    const pre = this.prefix();
+    const keyValue = (r.dynamodb?.Keys?.[this.hashKey] as { S?: string } | undefined)?.S;
+    if (keyValue === undefined || !keyValue.startsWith(pre)) return null;
+    const strip = (img: Record<string, unknown>): Record<string, unknown> => {
+      const v = img[this.hashKey] as { S?: string } | undefined;
+      return v?.S !== undefined ? { ...img, [this.hashKey]: { S: v.S.slice(pre.length) } } : img;
+    };
+    const d = r.dynamodb ?? {};
+    return {
+      ...r,
+      dynamodb: {
+        ...d,
+        ...(d.Keys !== undefined ? { Keys: strip(d.Keys) } : {}),
+        ...(d.NewImage !== undefined ? { NewImage: strip(d.NewImage) } : {}),
+        ...(d.OldImage !== undefined ? { OldImage: strip(d.OldImage) } : {}),
+      },
+    };
+  }
+
+  /** An item as stored -> the item as the spec names it (prefix stripped); null for the instrument's rows. */
+  private scopeItem(item: Record<string, AttributeValue>): Record<string, AttributeValue> | null {
+    if (DynamoAdapter.isInstrumentRow(item)) return null;
+    const pre = this.prefix();
+    if (pre === "") return item;
+    const v = item[this.hashKey];
+    if (v?.S === undefined || !v.S.startsWith(pre)) return null;
+    return { ...item, [this.hashKey]: { S: v.S.slice(pre.length) } };
+  }
+
+  private canonicalKey(item: Record<string, AttributeValue>): string {
+    const keyObj = unmarshall(
+      Object.fromEntries(Object.entries(item).filter(([k]) => k === this.hashKey || k === this.rangeKey)),
+    );
+    return Object.keys(keyObj)
+      .sort()
+      .map((k) => `${k}=${String(keyObj[k])}`)
+      .join("|");
+  }
+
+  /** Every stored item of the namespace (or of the table, with no namespace), read consistently, as stored. */
+  private async scanStored(): Promise<Record<string, AttributeValue>[]> {
+    const { ddb } = this.clients();
+    const out: Record<string, AttributeValue>[] = [];
+    let startKey: Record<string, AttributeValue> | undefined;
+    do {
+      const resp = await ddb.send(
+        new ScanCommand({
+          TableName: this.table,
+          ConsistentRead: true,
+          ExclusiveStartKey: startKey,
+          ...(this.namespace !== undefined
+            ? {
+                FilterExpression: "begins_with(#h, :p)",
+                ExpressionAttributeNames: { "#h": this.hashKey },
+                ExpressionAttributeValues: { ":p": { S: this.prefix() } },
+              }
+            : {}),
+        }),
+      );
+      out.push(...(resp.Items ?? []));
+      startKey = resp.LastEvaluatedKey;
+    } while (startKey);
+    return out;
+  }
+
+  private async snapshot(): Promise<Map<string, SnapshotItem>> {
+    const map = new Map<string, SnapshotItem>();
+    for (const stored of await this.scanStored()) {
+      const item = this.scopeItem(stored);
+      if (item === null) continue;
+      const payload = unmarshall(item);
+      map.set(this.canonicalKey(item), { payload, signature: stableStringify(payload) });
+    }
+    return map;
+  }
+
+  private async diffSnapshot(): Promise<CapturedRecord[]> {
+    const before = this.baseline;
+    if (before === null) return [];
+    const now = await this.snapshot();
+    const at = Date.now();
+    const rows: CapturedRecord[] = [];
+    for (const [key, item] of now) {
+      const old = before.get(key);
+      if (old === undefined) rows.push({ type: "INSERT", key, payload: item.payload, timestamp: at });
+      else if (old.signature !== item.signature) rows.push({ type: "MODIFY", key, payload: item.payload, timestamp: at });
+    }
+    for (const [key, item] of before) if (!now.has(key)) rows.push({ type: "REMOVE", key, payload: item.payload, timestamp: at });
+    rows.sort((a, b) => (a.key! < b.key! ? -1 : a.key! > b.key! ? 1 : 0));
+    return rows;
+  }
+
+  private async clearNamespace(): Promise<void> {
+    const { ddb } = this.clients();
+    for (const stored of await this.scanStored()) {
+      const Key = Object.fromEntries(Object.entries(stored).filter(([k]) => k === this.hashKey || k === this.rangeKey));
+      await ddb.send(new DeleteItemCommand({ TableName: this.table, Key }));
+    }
   }
 
   async teardown(): Promise<void> {
+    if (this.proxy !== null) {
+      await this.proxy.close().catch(() => {});
+      this.proxy = null;
+    }
     this.ddb?.destroy();
     this.streams?.destroy();
     this.ddb = null;
@@ -392,9 +613,19 @@ class DynamoAdapter implements FeatServiceAdapter {
 
   async reset(): Promise<void> {
     this.iterators = null;
+    this.baseline = null;
+    this.captured = [];
+    // A namespace owns its items: every case starts from none of them (fault placeholders included).
+    if (this.namespace !== undefined && this.ddb !== null) await this.clearNamespace();
+    if (this.proxy !== null) await this.proxy.disarm();
   }
 
   async startCapture(): Promise<void> {
+    if (this.snapshotMode) {
+      this.baseline = await this.snapshot();
+      this.captured = [];
+      return;
+    }
     if (!this.streamArn) throw new Error("Adapter used before setup() — configuration error.");
     const { streams } = this.clients();
     const desc = await streams.send(new DescribeStreamCommand({ StreamArn: this.streamArn }));
@@ -435,7 +666,10 @@ class DynamoAdapter implements FeatServiceAdapter {
             this.fenceSeen.add(fenceToken(r as StreamImageRecord));
             continue;
           }
-          this.captured.push(mapStreamRecord(r as StreamImageRecord));
+          if (DynamoAdapter.isInstrumentRow(fenceImage(r as StreamImageRecord))) continue; // a fault placeholder
+          const scoped = this.scopeStreamRecord(r as StreamImageRecord);
+          if (scoped === null) continue; // nobody's effect in this namespace
+          this.captured.push(mapStreamRecord(scoped));
         }
         if (records.length === 0) emptyBatches++;
         else emptyBatches = 0;
@@ -455,6 +689,8 @@ class DynamoAdapter implements FeatServiceAdapter {
    * string-keyed — the harness then keeps the ceiling, exactly as before.
    */
   async settle(): Promise<boolean> {
+    // Snapshot diff: a consistent read of the base table sees every acknowledged write (SPEC-ADPDDB-001).
+    if (this.snapshotMode) return this.baseline !== null;
     if (!this.opts.fence || !this.iterators) return false;
     if (this.iterators.length !== 1) return false;
     if (this.keySchema.length === 0 || this.keySchema.some((k) => k.type !== "S")) return false;
@@ -479,12 +715,18 @@ class DynamoAdapter implements FeatServiceAdapter {
 
   /** ADR-0020: the harness's early-exit window peeks without consuming. */
   async peekCapture(): Promise<CapturedRecord[]> {
+    if (this.snapshotMode) return this.diffSnapshot();
     if (!this.iterators) return [...this.captured];
     await this.drainOnce();
     return [...this.captured];
   }
 
   async stopCapture(): Promise<CapturedRecord[]> {
+    if (this.snapshotMode) {
+      const rows = await this.diffSnapshot();
+      this.baseline = null;
+      return rows;
+    }
     if (!this.iterators) return [];
     await this.drainOnce();
     this.iterators = null;
@@ -494,26 +736,76 @@ class DynamoAdapter implements FeatServiceAdapter {
     return out;
   }
 
-  async read(_query: Record<string, unknown>): Promise<unknown | null> {
+  /**
+   * SPEC-ADPDDB-001: a full primary key given as literals -> GetItem, the partition key alone -> Query, anything else
+   * (or no hint) -> a Scan of the namespace; every read consistent. The hint may return a superset, never fewer.
+   */
+  async read(query: ReadQuery): Promise<unknown | null> {
     const { ddb } = this.clients();
-    const items: CapturedRecord[] = [];
-    let startKey: Record<string, AttributeValue> | undefined;
-    do {
-      const resp = await ddb.send(new ScanCommand({ TableName: this.table, ExclusiveStartKey: startKey }));
-      for (const item of resp.Items ?? []) {
-        if (FENCE_ATTR in item) continue; // ADR-0021: sentinels are the instrument's, not the system's
-        items.push({ type: "ITEM", payload: unmarshall(item), timestamp: 0 });
+    const pre = this.prefix();
+    const typeOf = (name: string) => this.keySchema.find((k) => k.name === name)?.type ?? "S";
+    const keyAttr = (name: string, v: unknown): AttributeValue =>
+      typeOf(name) === "N" ? { N: String(v) } : { S: name === this.hashKey ? `${pre}${String(v)}` : String(v) };
+    const given = (key: Record<string, unknown> | undefined, name: string | null): boolean =>
+      name !== null && key !== undefined && key[name] !== undefined && key[name] !== null;
+    const expect = query?.expect ?? [];
+    const plans = expect.map((e) =>
+      !given(e.key, this.hashKey) ? "Scan" : this.rangeKey === null || given(e.key, this.rangeKey) ? "GetItem" : "Query",
+    );
+    const stored: Record<string, AttributeValue>[] = [];
+    if (expect.length === 0 || plans.includes("Scan")) {
+      this.lastReadVia = "Scan";
+      stored.push(...(await this.scanStored()));
+    } else {
+      this.lastReadVia = plans.includes("Query") ? "Query" : "GetItem";
+      for (let n = 0; n < expect.length; n++) {
+        const key = expect[n]!.key as Record<string, unknown>;
+        if (plans[n] === "GetItem") {
+          const Key: Record<string, AttributeValue> = { [this.hashKey]: keyAttr(this.hashKey, key[this.hashKey]) };
+          if (this.rangeKey !== null) Key[this.rangeKey] = keyAttr(this.rangeKey, key[this.rangeKey]);
+          const got = await ddb.send(new GetItemCommand({ TableName: this.table, Key, ConsistentRead: true }));
+          if (got.Item) stored.push(got.Item);
+        } else {
+          let startKey: Record<string, AttributeValue> | undefined;
+          do {
+            const resp = await ddb.send(
+              new QueryCommand({
+                TableName: this.table,
+                ConsistentRead: true,
+                KeyConditionExpression: "#h = :h",
+                ExpressionAttributeNames: { "#h": this.hashKey },
+                ExpressionAttributeValues: { ":h": keyAttr(this.hashKey, key[this.hashKey]) },
+                ExclusiveStartKey: startKey,
+              }),
+            );
+            stored.push(...(resp.Items ?? []));
+            startKey = resp.LastEvaluatedKey;
+          } while (startKey);
+        }
       }
-      startKey = resp.LastEvaluatedKey;
-    } while (startKey);
+    }
+    const seen = new Set<string>();
+    const items: CapturedRecord[] = [];
+    for (const raw of stored) {
+      const item = this.scopeItem(raw); // the fence and fault rows are the instrument's, never the system's state
+      if (item === null) continue;
+      const id = this.keySchema.length > 0 ? this.canonicalKey(item) : JSON.stringify(item);
+      if (seen.has(id)) continue;
+      seen.add(id);
+      items.push({ type: "ITEM", payload: unmarshall(item), timestamp: 0 });
+    }
     return items;
   }
 
   async seed(records: SeedRecord[]): Promise<void> {
     const { ddb } = this.clients();
+    const pre = this.prefix();
     for (const r of records) {
       try {
-        await ddb.send(new PutItemCommand({ TableName: this.table, Item: marshall(r.values) }));
+        const values = { ...r.values };
+        const k = values[this.hashKey];
+        if (pre !== "" && typeof k === "string") values[this.hashKey] = `${pre}${k}`;
+        await ddb.send(new PutItemCommand({ TableName: this.table, Item: marshall(values) }));
       } catch (e) {
         throw new Error(
           `@mmmnt/feat-adapter-dynamodb: seeding '${r.type}' failed (${(e as Error).message}) — ` +
@@ -522,7 +814,75 @@ class DynamoAdapter implements FeatServiceAdapter {
       }
     }
   }
+
+  /**
+   * SPEC-ADPDDB-001/002. PutItem.CONDITIONAL_CHECK_FAILED {pk, sk}: an instrument item at the key, so DynamoDB itself
+   * refuses the system's attribute_not_exists put. Connection.*: the shared fault-proxy library, on the system's path
+   * only. Both until reset; nothing reports a refusal, so there is no firedFaults.
+   */
+  async fault(arm: FaultArm): Promise<void> {
+    const entry = Object.hasOwn(this.faults, arm.operation)
+      ? (this.faults[arm.operation] as Record<string, readonly string[]>)
+      : undefined;
+    const counts = entry !== undefined && Object.hasOwn(entry, arm.fault) ? entry[arm.fault] : undefined;
+    const offered = Object.entries(this.faults).flatMap(([op, f]) => Object.keys(f).map((n) => `${op}.${n}`));
+    if (counts === undefined)
+      throw new DynamoAdapterError("FAULT_UNSUPPORTED", `the fault '${arm.operation}.${arm.fault}' is not in the catalog (${offered.join(", ")})`);
+    if (arm.times !== "reset")
+      throw new DynamoAdapterError(
+        "FAULT_UNSUPPORTED",
+        `the fault '${arm.operation}.${arm.fault}' declares only until reset, not ${arm.times === 1 ? "once" : `times ${arm.times}`}`,
+      );
+    if (arm.operation === "Connection") {
+      // Timeout drops the request on its way up, so the product never applies it: the write is absent and provably so.
+      await this.proxy!.arm(arm.fault, arm.fault === "Timeout" ? { stream: "upstream" } : {});
+      return;
+    }
+    const { ddb } = this.clients();
+    const pk = arm.detail?.pk;
+    const sk = arm.detail?.sk;
+    if (typeof pk !== "string" || (this.rangeKey !== null && typeof sk !== "string"))
+      throw new DynamoAdapterError("FAULT_UNSUPPORTED", `the fault '${arm.operation}.${arm.fault}' needs a detail { pk, sk } of strings`);
+    const item: Record<string, AttributeValue> = {
+      [this.hashKey]: { S: `${this.prefix()}${pk}` },
+      [FAULT_ATTR]: { S: "1" },
+    };
+    if (this.rangeKey !== null) item[this.rangeKey] = this.keySchema.find((k) => k.name === this.rangeKey)?.type === "N" ? { N: String(sk) } : { S: String(sk) };
+    try {
+      // Never over a real item: when the key is taken the system's own conditional put is refused anyway.
+      await ddb.send(
+        new PutItemCommand({
+          TableName: this.table,
+          Item: item,
+          ConditionExpression: "attribute_not_exists(#h)",
+          ExpressionAttributeNames: { "#h": this.hashKey },
+        }),
+      );
+    } catch (e) {
+      if ((e as Error).name !== "ConditionalCheckFailedException") throw e;
+    }
+  }
 }
+
+/** One item of a snapshot: the unmarshalled payload (namespace stripped) and a stable signature to compare. */
+interface SnapshotItem {
+  payload: Record<string, unknown>;
+  signature: string;
+}
+
+function stableStringify(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(stableStringify).join(",")}]`;
+  if (v instanceof Set) return `set(${[...v].map(stableStringify).sort().join(",")})`;
+  if (v !== null && typeof v === "object" && !(v instanceof Uint8Array))
+    return `{${Object.keys(v as object)
+      .sort()
+      .map((k) => `${JSON.stringify(k)}:${stableStringify((v as Record<string, unknown>)[k])}`)
+      .join(",")}}`;
+  return typeof v === "bigint" ? `${v}n` : JSON.stringify(v) ?? String(v);
+}
+
+/** SPEC-ADPDDB-001: the attribute that marks a fault placeholder row (the instrument's, never the system's). */
+export const FAULT_ATTR = "__feat_fault";
 
 /** ADR-0021: the attribute that marks a fence sentinel row. */
 export const FENCE_ATTR = "__feat_fence";

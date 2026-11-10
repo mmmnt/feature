@@ -65,6 +65,14 @@
       "ProbeFaultProxy": {
         "module": "adapters/fault-proxy/fixtures/probe.mjs",
         "export": "probe"
+      },
+      "ObserveDynamoQuery": {
+        "module": "adapters/dynamodb/fixtures/query-probe.mjs",
+        "export": "observe"
+      },
+      "ObserveDynamoTransport": {
+        "module": "adapters/dynamodb/fixtures/query-probe.mjs",
+        "export": "observeTransport"
       }
     }
   },

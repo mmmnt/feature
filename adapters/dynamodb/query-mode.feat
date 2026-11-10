@@ -1,0 +1,261 @@
+feat 1.0
+
+# SPEC-ADPDDB-001 — an amendment to the existing DynamoDB adapter (@mmmnt/feat-adapter-dynamodb,
+# adapters/dynamodb, which already does Streams capture, the ADR-0021 sentinel settle and
+# ADR-0020 peek): it adds the QUERY mode, a snapshot-diff fallback for tables without a stream,
+# a namespace, the logical-fault catalog and the Connection hook. Agreed by founder ruling 58a4ac88;
+# fault counts per ruling c7af7871 (every catalog entry declares ["reset"]; unobserved is accepted evidence;
+# firedFaults is not implemented). It reuses the AWS SDK v3 clients the adapter already depends on; it adds no
+# dependency.
+#
+# Driven through adapters/dynamodb/fixtures/query-probe.mjs (part of the build, inside touches,
+# not shipped) against a DynamoDB Local container the TEST starts (or the adapter's own
+# `ephemeral` instrument), table PK/SK (strings), stream NEW_AND_OLD_IMAGES.
+# `ObserveDynamoQuery { script, stream?, fence?, table?, settleTimeoutMs? }` creates one adapter
+# per namespace named in the script and runs a space-separated script. Steps:
+#   setup:<ns> / observes:<ns>
+#   seed:<ns>:<pk>:<sk>:<val>        adapter.seed(): a put with attribute v = <val>, before the window
+#   put / update :<ns>:<pk>:<sk>:<val>   the SYSTEM puts or updates (attribute v)
+#   delete:<ns>:<pk>:<sk>            the SYSTEM deletes
+#   putcond:<ns>:<pk>:<sk>:<val>     the SYSTEM puts with ConditionExpression attribute_not_exists(PK)
+#   putraw:<pk>:<sk>:<val>           the SYSTEM puts a key that carries no namespace prefix
+#   start / peek / stop / settle / reset : <ns>
+#   read:<ns>[:<pk>[:<sk>]]          adapter.read() with expect hints built from the given key parts
+#   fault:<ns>:<Operation>.<FAULT>:<pk>:<sk>[:once|:times2|:reset]   adapter.fault()
+#   fired:<ns>
+# `<pk>` is the key the SPEC writes; the namespace is applied by the adapter, never by the spec:
+# the stored partition key is `<ns>#<pk>` (the system under test builds the same key from the
+# namespace its host gives it), and the adapter strips the prefix from every captured or read key
+# so one spec runs against the in-memory spec host and against the product. The trace carries the
+# record count for window and read steps, settle true/false, `observes:a=<diff>/<state>`, a
+# refused put `putcond:a!CONDITIONAL_CHECK_FAILED`. `last` is the last peek or stop as
+# `TYPE:pk/sk` joined by comma, in stream order (native) or key order (snapshot); `readVia` is the
+# DynamoDB operation the last read used.
+
+spec SPEC-ADPDDB-001 "DynamoDB adapter: query mode, snapshot diff, namespace and faults"
+context Toolchain
+aggregate Adapters
+type infrastructure
+status agreed
+
+construct:
+  handler at adapters/dynamodb/src/index.ts
+  touches adapters/dynamodb/**
+  needs SPEC-RT-002
+  needs SPEC-FPX-001
+  Declare `observes = { diff: options.stream === false ? "snapshot" : "native", state: true }`
+  and the fault catalog `{ PutItem: { CONDITIONAL_CHECK_FAILED: ["reset"] }, Connection: {
+  Timeout: ["reset"], ConnectionReset: ["reset"], Partition: ["reset"] } }` (the Connection entry only with `options.proxy`).
+  New options: `stream` (default true;
+  false = snapshot diff, no Streams permission needed), `namespaceMode` ("keyPrefix", default). Namespace: received from the runner (SPEC-RT-006) as the config's top-level `namespace`, never an option; the probe maps each script label (a, b) to the namespace `s` + 12 hex of sha256(label), and `raw=<value>` passes a value as is.
+  Everything else (auth, endpoint, ephemeral, fence) is unchanged.
+  Namespace: stored partition keys are `<ns>#<pk>`. setup() verifies the partition key is a
+  string (else NAMESPACE_KEY_NOT_STRING). seed() prefixes; capture and read drop what is not
+  prefixed and strip the prefix from the partition key attribute of key and payload.
+  Native diff: unchanged (ADR-0020/0021), plus the namespace filter. The fence sentinel's key is
+  never prefixed, so it is never in a capture.
+  Snapshot diff: startCapture reads the namespace with ConsistentRead; peekCapture and stopCapture
+  read it again and report items added (INSERT), changed (MODIFY, old image dropped) and gone
+  (REMOVE) by primary key, sorted by key. Its limit, stated in the DESIGN: a put-then-delete or
+  an overwrite with an identical image inside the window is invisible.
+  settle(): native: unchanged (needs `fence: true`, one open shard). Snapshot: false with no
+  window; otherwise true (a consistent read after the system's acknowledged writes sees them).
+  read(query): for each `query.expect` entry: the full primary key given as literals ->
+  GetItem (ConsistentRead); only the partition key -> Query (ConsistentRead); otherwise a
+  Scan of the namespace with a begins_with filter. Fault markers and fence rows are never
+  returned. No `expect` -> the Scan. Report the operation used.
+  reset(): delete every item of the namespace (including fault placeholders), disarm faults,
+  clear the stream iterators.
+
+enforce:
+  rejects NAMESPACE_INVALID when the namespace does not match ^s[0-9a-f]{12}$, the pattern the runner derives (SPEC-RT-006); defensive, the runner never passes another
+  rejects NAMESPACE_KEY_NOT_STRING when the table's partition key is not a string
+  rejects STREAM_NOT_ENABLED when native diff is configured and the table has no usable stream
+  rejects FAULT_UNSUPPORTED when a fault is not in the catalog, or when its count is not one the fault declares
+  capture and read are restricted to partition keys that start with the namespace prefix
+  the namespace prefix is stripped from every key the adapter reports, so a spec never names it
+  a read that is given a full primary key uses GetItem and one given a partition key uses Query, both consistent
+  snapshot diff cannot see a write undone inside the window and declares itself snapshot
+  firedFaults is not implemented because DynamoDB reports no request it refused
+  reset deletes the namespace's items and disarms every armed fault
+
+contract:
+  input ObserveInput
+  response ObserveResult
+  error ObserveError
+
+scenario outline "a namespace that does not match the runner's pattern is refused":
+  when: ObserveDynamoQuery { script: <script> }
+  predict rejection NAMESPACE_INVALID:
+    response ERR ObserveError { code: "NAMESPACE_INVALID", detail: matching <detail> }
+    filesystem has []
+  examples:
+    | script         | detail   |
+    | "setup:raw=Orders" | "Orders" |
+    | "setup:raw=a#b"    | "a#b"    |
+    | "setup:raw=S0599e33863c1" | "S0599e33863c1" |
+    | "setup:raw=s0599e33863c"  | "s0599e33863c" |
+
+scenario "a table whose partition key is not a string cannot carry a key-prefix namespace":
+  when: ObserveDynamoQuery { script: "setup:a", table: "numeric" }
+  predict rejection NAMESPACE_KEY_NOT_STRING:
+    response ERR ObserveError { code: "NAMESPACE_KEY_NOT_STRING", detail: matching "PK" }
+    filesystem has []
+
+scenario "a table without a stream cannot serve native diff":
+  when: ObserveDynamoQuery { script: "setup:a", table: "nostream" }
+  predict rejection STREAM_NOT_ENABLED:
+    response ERR ObserveError { code: "STREAM_NOT_ENABLED", detail: matching "stream" }
+    filesystem has []
+
+scenario "the adapter declares which diff it serves":
+  when: ObserveDynamoQuery { script: "setup:a observes:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a observes:a=native/true" }
+    filesystem has []
+
+scenario "with no stream the adapter declares snapshot":
+  when: ObserveDynamoQuery { script: "setup:a observes:a", stream: "off" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a observes:a=snapshot/true" }
+    filesystem has []
+
+scenario "native capture reports insert, modify and remove in stream order without the namespace prefix, seeds excluded":
+  when: ObserveDynamoQuery { script: "setup:a seed:a:o9:1:x start:a put:a:o1:1:x update:a:o1:1:y delete:a:o1:1 stop:a" }
+  predict success:
+    response OK ObserveResult {
+      trace: "setup:a seed:a start:a put:a update:a delete:a stop:a=3",
+      last: "INSERT:o1/1,MODIFY:o1/1,REMOVE:o1/1"
+    }
+    filesystem has []
+
+scenario "two namespaces never see each other's items":
+  when: ObserveDynamoQuery { script: "setup:a setup:b start:a start:b put:a:o1:1:x put:b:o1:1:y put:b:o2:1:z stop:a stop:b" }
+  predict success:
+    response OK ObserveResult {
+      trace: "setup:a setup:b start:a start:b put:a put:b put:b stop:a=1 stop:b=2",
+      last: "INSERT:o1/1,INSERT:o2/1"
+    }
+    filesystem has []
+
+scenario "an item whose key carries no namespace prefix is nobody's effect":
+  when: ObserveDynamoQuery { script: "setup:a start:a putraw:o1:1:x stop:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a start:a putraw stop:a=0" }
+    filesystem has []
+
+scenario "a peek reports the window's records and consumes nothing":
+  when: ObserveDynamoQuery { script: "setup:a start:a put:a:o1:1:x peek:a peek:a stop:a" }
+  predict success:
+    response OK ObserveResult {
+      trace: "setup:a start:a put:a peek:a=1 peek:a=1 stop:a=1",
+      last: "INSERT:o1/1",
+      peekEqualsStop: true
+    }
+    filesystem has []
+
+scenario "a peek with no window open is empty":
+  when: ObserveDynamoQuery { script: "setup:a put:a:o1:1:x peek:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a put:a peek:a=0" }
+    filesystem has []
+
+scenario "with the fence on, settle vouches once the stream has caught up, and the sentinel is not a record":
+  when: ObserveDynamoQuery { script: "setup:a start:a put:a:o1:1:x settle:a stop:a", fence: true }
+  predict success:
+    response OK ObserveResult { trace: "setup:a start:a put:a settle:a=true stop:a=1", last: "INSERT:o1/1" }
+    filesystem has []
+
+scenario "with the fence off, native settle declines, so the harness keeps its ceiling":
+  when: ObserveDynamoQuery { script: "setup:a start:a put:a:o1:1:x settle:a stop:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a start:a put:a settle:a=false stop:a=1", last: "INSERT:o1/1" }
+    filesystem has []
+
+scenario "settle declines when no window is open":
+  when: ObserveDynamoQuery { script: "setup:a settle:a", fence: true }
+  predict success:
+    response OK ObserveResult { trace: "setup:a settle:a=false" }
+    filesystem has []
+
+scenario "snapshot capture reports insert, modify and remove by key":
+  when: ObserveDynamoQuery { script: "setup:a seed:a:o1:1:x seed:a:o2:1:x start:a put:a:o3:1:x update:a:o1:1:y delete:a:o2:1 stop:a", stream: "off" }
+  predict success:
+    response OK ObserveResult {
+      trace: "setup:a seed:a seed:a start:a put:a update:a delete:a stop:a=3",
+      last: "MODIFY:o1/1,REMOVE:o2/1,INSERT:o3/1"
+    }
+    filesystem has []
+
+scenario "snapshot diff cannot see an item written and deleted inside the window":
+  when: ObserveDynamoQuery { script: "setup:a start:a put:a:o1:1:x delete:a:o1:1 stop:a", stream: "off" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a start:a put:a delete:a stop:a=0" }
+    filesystem has []
+
+scenario "snapshot settle vouches because a consistent read sees every acknowledged write":
+  when: ObserveDynamoQuery { script: "setup:a start:a put:a:o1:1:x settle:a stop:a", stream: "off" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a start:a put:a settle:a=true stop:a=1", last: "INSERT:o1/1" }
+    filesystem has []
+
+scenario "a read given a full key uses GetItem":
+  when: ObserveDynamoQuery { script: "setup:a seed:a:o1:1:x seed:a:o1:2:y read:a:o1:1" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a seed:a seed:a read:a:o1:1=1", readVia: "GetItem" }
+    filesystem has []
+
+scenario "a read given a partition key uses Query":
+  when: ObserveDynamoQuery { script: "setup:a seed:a:o1:1:x seed:a:o1:2:y seed:a:o2:1:z read:a:o1" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a seed:a seed:a seed:a read:a:o1=2", readVia: "Query" }
+    filesystem has []
+
+scenario "a read given no key scans the namespace only and hides the instrument's rows":
+  when: ObserveDynamoQuery { script: "setup:a setup:b seed:a:o1:1:x seed:b:o1:1:y fault:a:PutItem.CONDITIONAL_CHECK_FAILED:o5:1 read:a" }
+  predict success:
+    response OK ObserveResult {
+      trace: "setup:a setup:b seed:a seed:b fault:a:PutItem.CONDITIONAL_CHECK_FAILED read:a=1",
+      readVia: "Scan"
+    }
+    filesystem has []
+
+scenario "reset deletes the namespace's items and leaves the other namespace alone":
+  when: ObserveDynamoQuery { script: "setup:a setup:b seed:a:o1:1:x seed:b:o1:1:y reset:a read:a read:b" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a setup:b seed:a seed:b reset:a read:a=0 read:b=1" }
+    filesystem has []
+
+scenario "a conditional put on a key that already exists is refused when CONDITIONAL_CHECK_FAILED is armed":
+  when: ObserveDynamoQuery { script: "setup:a fault:a:PutItem.CONDITIONAL_CHECK_FAILED:o1:1 start:a putcond:a:o1:1:x stop:a read:a" }
+  predict success:
+    response OK ObserveResult {
+      trace: "setup:a fault:a:PutItem.CONDITIONAL_CHECK_FAILED start:a putcond:a!CONDITIONAL_CHECK_FAILED stop:a=0 read:a=0"
+    }
+    filesystem has []
+
+scenario "reset disarms the fault, so the same conditional put then succeeds":
+  when: ObserveDynamoQuery { script: "setup:a fault:a:PutItem.CONDITIONAL_CHECK_FAILED:o1:1 reset:a start:a putcond:a:o1:1:x stop:a" }
+  predict success:
+    response OK ObserveResult {
+      trace: "setup:a fault:a:PutItem.CONDITIONAL_CHECK_FAILED reset:a start:a putcond:a stop:a=1",
+      last: "INSERT:o1/1"
+    }
+    filesystem has []
+
+scenario "DynamoDB reports no request it refused, so firedFaults is not offered":
+  when: ObserveDynamoQuery { script: "setup:a fault:a:PutItem.CONDITIONAL_CHECK_FAILED:o1:1 fired:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a fault:a:PutItem.CONDITIONAL_CHECK_FAILED fired:a=unobserved" }
+    filesystem has []
+
+scenario outline "a fault the binding cannot produce faithfully is refused before it does anything":
+  when: ObserveDynamoQuery { script: <script> }
+  predict rejection FAULT_UNSUPPORTED:
+    response ERR ObserveError { code: "FAULT_UNSUPPORTED", detail: matching <detail> }
+    filesystem has []
+  examples:
+    | script                                                         | detail                                |
+    | "setup:a fault:a:PutItem.CONDITIONAL_CHECK_FAILED:o1:1:once"   | "once"                                |
+    | "setup:a fault:a:PutItem.PROVISIONED_THROUGHPUT_EXCEEDED:o1:1" | "PROVISIONED_THROUGHPUT_EXCEEDED"     |
+    | "setup:a fault:a:GetItem.CONDITIONAL_CHECK_FAILED:o1:1"        | "GetItem"                             |

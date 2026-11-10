@@ -93,3 +93,28 @@ Part of [Feature](https://github.com/mmmnt/feature) — the `.feat` execution
 specification language. Docs: https://github.com/mmmnt/feature/wiki
 
 MIT
+
+## Query mode, snapshot diff, namespace and faults (SPEC-ADPDDB-001, -002)
+
+- **Query mode.** `contains` hands `read()` the predicted records' literal keys: a full primary key reads with
+  `GetItem`, a partition key alone with `Query`, anything else with a `Scan` of the namespace, all with
+  `ConsistentRead`. A hint may return a superset, never fewer.
+- **Snapshot diff.** `options.stream: false` serves the diff from two consistent reads of the namespace compared by
+  primary key; no Streams permission is needed. It cannot see an item written and deleted (or overwritten with an
+  identical image) inside the window, and declares itself `snapshot`. `settle()` vouches inside a window.
+  Native diff (the default) is unchanged and vouches only with `fence: true` and one open shard.
+- **Namespace.** The runner hands the adapter its namespace (`^s[0-9a-f]{12}$`); stored partition keys are
+  `<ns>#<pk>`, the prefix is added to seeds and read hints and stripped from every reported key, and capture and read
+  ignore keys outside the prefix. The partition key must be a string (`NAMESPACE_KEY_NOT_STRING`). Without a
+  namespace the adapter behaves as before.
+- **Faults.** `PutItem.CONDITIONAL_CHECK_FAILED {pk, sk}` (until reset) writes an instrument item at the key, so
+  DynamoDB itself refuses the system's `attribute_not_exists` put. `Connection.Timeout | ConnectionReset |
+  Partition` (until reset) need `options.proxy: { api, name?, upstream?, container?, metrics?, runtime? }`: a Toxiproxy
+  in front of DynamoDB through `@mmmnt/feat-fault-proxy`; the adapter's own clients never use it. `Timeout` is armed on
+  the request path, so the product never applies the write. Nothing reports a refused request, so there is no
+  `firedFaults` (evidence `unobserved`). Throttling cannot be produced by DynamoDB Local and is not offered.
+- **Tests.** `query-mode.test.ts` and `transport.test.ts` are generated; their probe
+  (`fixtures/query-probe.mjs`) starts throwaway `amazon/dynamodb-local:2.6.1`, `ghcr.io/shopify/toxiproxy:2.12.0` and
+  `node:22.12.0-slim` containers named `feat-dynamodb-test-*` with fake credentials, and removes them on exit. They run
+  under `feat run`, not under the package's `test` script. On Docker Desktop the system's client must run inside the
+  Toxiproxy container's network namespace, which the probe does.

@@ -1,0 +1,57 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-ADPDDB-002",
+  "schemas": {
+    "ObserveInput": {
+      "type": "object",
+      "required": [
+        "script"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "script": {
+          "type": "string",
+          "minLength": 1
+        },
+        "settleTimeoutMs": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "ObserveResult": {
+      "type": "object",
+      "required": [
+        "trace"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "trace": {
+          "type": "string"
+        },
+        "last": {
+          "type": "string"
+        },
+        "peekEqualsStop": {
+          "type": "boolean"
+        }
+      }
+    },
+    "ObserveError": {
+      "type": "object",
+      "required": [
+        "code"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "FAULT_UNSUPPORTED"
+          ]
+        },
+        "detail": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
