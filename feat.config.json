@@ -57,6 +57,10 @@
       "RunFiles": {
         "module": "adapters/stdio-jsonrpc/src/run-files.ts",
         "export": "runFiles"
+      },
+      "ArmFault": {
+        "module": "adapters/stdio-jsonrpc/fixtures/arm-fault.mjs",
+        "export": "armFault"
       }
     }
   },

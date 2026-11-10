@@ -150,9 +150,11 @@ export { HarnessConfigurationError } from "./errors.js";
 const COUNT_WORDS: Record<FaultCount, string> = { once: "once", times: "times n", reset: "until reset" };
 
 /** Why an adapter cannot arm this fault (ADR-0023), or undefined when it can. */
-function faultProblem(adapter: FeatServiceAdapter | undefined, f: Fault): string | undefined {
+export function faultProblem(adapter: FeatServiceAdapter | undefined, f: Fault): string | undefined {
   if (!adapter) return `service '${f.service}' is not configured`;
   if (typeof adapter.fault !== "function") return `the adapter for '${f.service}' has no fault() method`;
+  if (f.detail !== undefined && adapter.acceptsFaultDetail === false)
+    return `the adapter for '${f.service}' cannot carry a fault detail to the product`;
   const catalog: FaultCatalog = adapter.faults ?? {};
   const entry = catalog[f.operation];
   if (entry === undefined)

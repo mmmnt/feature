@@ -40,6 +40,9 @@ async function canned(req) {
       if (mode === "bad-setup-pattern") return { result: { protocol: 2, namespace: "sABCDEF012345" } };
       return { result: { protocol: 2, namespace: p.namespace } };
     }
+    case "fault":
+      log(`fault ${p.kind} ${p.times ?? ""}`);
+      return { result: {} };
     case "setClock":
       log(`clock ${JSON.stringify(p.clock)}`);
       return { result: {} };

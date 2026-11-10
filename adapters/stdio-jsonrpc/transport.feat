@@ -3,7 +3,15 @@ feat 1.0
 # SPEC-RPC-001 — the transport of @mmmnt/feat-adapter-stdio-jsonrpc: one request, one
 # answer, over the Feat Host Protocol (JSON-RPC 2.0 over stdio; contract
 # schemas/feat-host-protocol.schema.json). Successor of the draft SPEC-WIRE-001.
-# Agreed and ordered built by Sift decision 58a4ac88 (2026-11-09).
+# Agreed and ordered built by Sift decision 58a4ac88 (2026-11-09). AMENDED by founder ruling 2026-11-09,
+# fault shape B: the protocol's `fault` request stays { service, kind, times }; the stdio adapter's
+# fault() MAPS the harness arm onto it as kind = "<operation>.<fault>", and its fault catalog declares
+# only `once` and `times n` (the protocol has no `until reset` and no detail), so the harness refuses
+# an arm with either as FAULT_UNSUPPORTED before the case has any effect. `ArmFault` (fixtures/arm-fault.mjs,
+# part of the build) creates the service adapter against the fake host with a configured catalog
+# (options.faults: operation -> fault -> counts; whatever the config declares, `reset` is dropped),
+# asks the harness's own check (faultProblem) whether the arm is offered, arms it when it is, and answers
+# what the HOST received (the fake host logs `fault <kind> <times>`).
 #
 # Scope: the client side of one exchange (validate, spawn, frame, correlate, check the
 # answer against the CLOSED shape of its method, fail precisely, leave nothing running).
@@ -54,12 +62,16 @@ enforce:
   rejects HOST_TIMEOUT when the host does not answer within timeoutMs (default 30000)
   rejects PROTOCOL_VIOLATION when the host's line is not valid JSON, does not validate against the protocol schema, carries another id, or carries a result that violates the closed shape of the method sent
   rejects HOST_ERROR when the host answers with a JSON-RPC error, relaying its code and message verbatim
+  rejects FAULT_UNSUPPORTED when an arm asks the stdio adapter for a fault outside its configured catalog, for until reset, or with a detail, none of which the protocol can carry
   on every outcome leave no host process running
 
 contract:
   input ExchangeInput
+  input ArmInput
   response ExchangeResult
+  response ArmResult
   error ExchangeError
+  error ArmError
 
 scenario "an invoke round-trips and relays status and body":
   when: Exchange { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "echo"] }, method: "invoke", params: { command: "Ping", input: { n: 1 }, actor: "admin" } }
@@ -305,4 +317,46 @@ scenario "a null id with any other code is a protocol violation":
   when: Exchange { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "null-id-other"] }, method: "reset", params: {} }
   predict rejection PROTOCOL_VIOLATION:
     response ERR ExchangeError { code: "PROTOCOL_VIOLATION", hostSpawned: true, hostAlive: false }
+    filesystem has []
+
+scenario "a mapped arm reaches the host as kind operation.fault with its count":
+  when: ArmFault { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, catalog: { AppendToStream: { NotLeader: ["once", "times", "reset"], AccessDenied: ["reset"] } }, arm: { operation: "AppendToStream", fault: "NotLeader", times: 2 } }
+  predict success:
+    response OK ArmResult { armed: true, hostSawKind: "AppendToStream.NotLeader", hostSawTimes: 2 }
+    filesystem has []
+
+scenario "once is a count of one":
+  when: ArmFault { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, catalog: { AppendToStream: { NotLeader: ["once", "times", "reset"], AccessDenied: ["reset"] } }, arm: { operation: "AppendToStream", fault: "NotLeader", times: 1 } }
+  predict success:
+    response OK ArmResult { armed: true, hostSawKind: "AppendToStream.NotLeader", hostSawTimes: 1 }
+    filesystem has []
+
+scenario "an until-reset arm is refused as unsupported and never reaches the host":
+  when: ArmFault { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, catalog: { AppendToStream: { NotLeader: ["once", "times", "reset"], AccessDenied: ["reset"] } }, arm: { operation: "AppendToStream", fault: "NotLeader", times: "reset" } }
+  predict rejection FAULT_UNSUPPORTED:
+    response ERR ArmError { code: "FAULT_UNSUPPORTED", detail: matching "until reset", hostSawFault: false }
+    filesystem has []
+
+scenario "a fault the catalog declares only until reset is refused for any count":
+  when: ArmFault { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, catalog: { AppendToStream: { NotLeader: ["once", "times", "reset"], AccessDenied: ["reset"] } }, arm: { operation: "AppendToStream", fault: "AccessDenied", times: 1 } }
+  predict rejection FAULT_UNSUPPORTED:
+    response ERR ArmError { code: "FAULT_UNSUPPORTED", detail: matching "AccessDenied", hostSawFault: false }
+    filesystem has []
+
+scenario "an arm with a detail is refused as unsupported and never reaches the host":
+  when: ArmFault { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, catalog: { AppendToStream: { NotLeader: ["once", "times", "reset"], AccessDenied: ["reset"] } }, arm: { operation: "AppendToStream", fault: "NotLeader", times: 1, detail: { node: "n2" } } }
+  predict rejection FAULT_UNSUPPORTED:
+    response ERR ArmError { code: "FAULT_UNSUPPORTED", detail: matching "detail", hostSawFault: false }
+    filesystem has []
+
+scenario "a fault outside the configured catalog is refused naming what is offered":
+  when: ArmFault { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, catalog: { AppendToStream: { NotLeader: ["once", "times", "reset"], AccessDenied: ["reset"] } }, arm: { operation: "DeleteStream", fault: "NotLeader", times: 1 } }
+  predict rejection FAULT_UNSUPPORTED:
+    response ERR ArmError { code: "FAULT_UNSUPPORTED", detail: matching "AppendToStream", hostSawFault: false }
+    filesystem has []
+
+scenario "an adapter configured with no catalog offers no faults":
+  when: ArmFault { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, arm: { operation: "AppendToStream", fault: "NotLeader", times: 1 } }
+  predict rejection FAULT_UNSUPPORTED:
+    response ERR ArmError { code: "FAULT_UNSUPPORTED", detail: matching "offers", hostSawFault: false }
     filesystem has []

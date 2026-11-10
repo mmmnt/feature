@@ -267,6 +267,8 @@ export interface FaultFiring {
 export interface FeatServiceAdapter extends ReportsNamespace {
   /** What this binding can inject (ADR-0023); a fault outside it, or with an undeclared count, is FAULT_UNSUPPORTED. */
   readonly faults?: FaultCatalog;
+  /** False when the adapter cannot carry a fault's detail to the product; the harness then refuses an arm that has one. Default true. */
+  readonly acceptsFaultDetail?: boolean;
   /** Arm a fault as a precondition; reset() MUST disarm everything. The adapter's own capture, read and seed are never faulted. */
   fault?(arm: FaultArm): Promise<void>;
   /** Optional: how often each armed fault was consumed. Absent = consumption is not observed (not checked). */

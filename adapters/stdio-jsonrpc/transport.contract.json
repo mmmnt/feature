@@ -4,49 +4,205 @@
   "schemas": {
     "ExchangeInput": {
       "type": "object",
-      "required": ["host", "method", "params"],
+      "required": [
+        "host",
+        "method",
+        "params"
+      ],
       "additionalProperties": false,
       "properties": {
         "host": {
           "type": "object",
-          "required": ["command"],
+          "required": [
+            "command"
+          ],
           "additionalProperties": false,
           "properties": {
-            "command": { "type": "array", "minItems": 1, "items": { "type": "string" } }
+            "command": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string"
+              }
+            }
           }
         },
-        "method": { "type": "string" },
-        "params": { "type": "object" },
-        "timeoutMs": { "type": "integer", "minimum": 1 }
+        "method": {
+          "type": "string"
+        },
+        "params": {
+          "type": "object"
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 1
+        }
       }
     },
     "ExchangeResult": {
       "type": "object",
-      "required": ["method", "sent", "hostSpawned", "hostAlive"],
+      "required": [
+        "method",
+        "sent",
+        "hostSpawned",
+        "hostAlive"
+      ],
       "properties": {
-        "method": { "type": "string" },
+        "method": {
+          "type": "string"
+        },
         "sent": {
           "type": "object",
-          "required": ["method", "params"],
-          "properties": { "method": { "type": "string" }, "params": { "type": "object" } }
+          "required": [
+            "method",
+            "params"
+          ],
+          "properties": {
+            "method": {
+              "type": "string"
+            },
+            "params": {
+              "type": "object"
+            }
+          }
         },
-        "hostSpawned": { "type": "boolean" },
-        "hostAlive": { "const": false },
+        "hostSpawned": {
+          "type": "boolean"
+        },
+        "hostAlive": {
+          "const": false
+        },
         "result": {}
       }
     },
     "ExchangeError": {
       "type": "object",
-      "required": ["code", "hostSpawned", "hostAlive"],
+      "required": [
+        "code",
+        "hostSpawned",
+        "hostAlive"
+      ],
       "properties": {
         "code": {
-          "enum": ["INVALID_REQUEST", "HOST_SPAWN_FAILED", "HOST_EXITED", "HOST_TIMEOUT", "PROTOCOL_VIOLATION", "HOST_ERROR"]
+          "enum": [
+            "INVALID_REQUEST",
+            "HOST_SPAWN_FAILED",
+            "HOST_EXITED",
+            "HOST_TIMEOUT",
+            "PROTOCOL_VIOLATION",
+            "HOST_ERROR"
+          ]
         },
-        "detail": { "type": "string" },
-        "rpcCode": { "type": "integer" },
-        "message": { "type": "string" },
-        "hostSpawned": { "type": "boolean" },
-        "hostAlive": { "const": false }
+        "detail": {
+          "type": "string"
+        },
+        "rpcCode": {
+          "type": "integer"
+        },
+        "message": {
+          "type": "string"
+        },
+        "hostSpawned": {
+          "type": "boolean"
+        },
+        "hostAlive": {
+          "const": false
+        }
+      }
+    },
+    "ArmInput": {
+      "type": "object",
+      "required": [
+        "host",
+        "arm"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "type": "object",
+          "required": [
+            "command"
+          ],
+          "properties": {
+            "command": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "catalog": {
+          "type": "object"
+        },
+        "arm": {
+          "type": "object",
+          "required": [
+            "operation",
+            "fault",
+            "times"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "operation": {
+              "type": "string"
+            },
+            "fault": {
+              "type": "string"
+            },
+            "times": {
+              "oneOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "const": "reset"
+                }
+              ]
+            },
+            "detail": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+    "ArmResult": {
+      "type": "object",
+      "required": [
+        "armed"
+      ],
+      "properties": {
+        "armed": {
+          "type": "boolean"
+        },
+        "hostSawKind": {
+          "type": "string"
+        },
+        "hostSawTimes": {
+          "type": "integer"
+        }
+      }
+    },
+    "ArmError": {
+      "type": "object",
+      "required": [
+        "code",
+        "hostSawFault"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "FAULT_UNSUPPORTED"
+          ]
+        },
+        "detail": {
+          "type": "string"
+        },
+        "hostSawFault": {
+          "type": "boolean"
+        }
       }
     }
   }

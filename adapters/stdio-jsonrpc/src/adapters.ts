@@ -3,7 +3,7 @@
 // host; later roles join it; each role's teardown leaves; the last one out ends the host.
 
 import type {
-  CapturedRecord, CapturedResponse, FeatResponseAdapter, FeatServiceAdapter, ObservationSupport, ReadQuery, SeedRecord,
+  CapturedRecord, CapturedResponse, FaultArm, FaultCatalog, FaultCount, FeatResponseAdapter, FeatServiceAdapter, ObservationSupport, ReadQuery, SeedRecord,
 } from "@mmmnt/feat-types";
 import { ExchangeError } from "./protocol.js";
 import { defaultRegistry, type HostConfig, type HostConnection, type HostRegistry } from "./host.js";
@@ -93,8 +93,31 @@ export class StdioResponseAdapter extends Role implements FeatResponseAdapter {
 export class StdioServiceAdapter extends Role implements FeatServiceAdapter {
   readonly observes: ObservationSupport = { diff: "native", state: true };
 
-  constructor(config: RoleConfig, hostConfig: HostConfig, private readonly key: string) {
+  /**
+   * Fault shape B: the protocol's fault request is { service, kind, times }, so this adapter offers only
+   * what it can carry — the configured catalog (options.faults) with `until reset` dropped — and no detail.
+   */
+  readonly faults: FaultCatalog;
+  readonly acceptsFaultDetail = false;
+
+  constructor(config: RoleConfig, hostConfig: HostConfig, private readonly key: string, catalog: FaultCatalog = {}) {
     super(config, hostConfig);
+    const carried: Record<string, Record<string, readonly FaultCount[]>> = {};
+    for (const [operation, entry] of Object.entries(catalog)) {
+      const faults = Array.isArray(entry) ? Object.fromEntries((entry as string[]).map((f) => [f, ["once", "times", "reset"] as FaultCount[]])) : (entry as Record<string, readonly FaultCount[]>);
+      carried[operation] = Object.fromEntries(
+        Object.entries(faults)
+          .map(([fault, counts]) => [fault, counts.filter((c) => c !== "reset")] as const)
+          .filter(([, counts]) => counts.length > 0),
+      );
+    }
+    this.faults = carried;
+  }
+  /** Arm a fault: kind = "<operation>.<fault>", times = the count (the harness refused `until reset` and a detail already). */
+  async fault(arm: FaultArm): Promise<void> {
+    if (arm.times === "reset" || arm.detail !== undefined)
+      throw new ExchangeError("INVALID_REQUEST", "the protocol's fault request carries neither `until reset` nor a detail", true);
+    await this.call("fault", { service: this.key, kind: `${arm.operation}.${arm.fault}`, times: arm.times });
   }
   protected services(): string[] {
     return [this.key];
@@ -138,5 +161,5 @@ export function createAdapter(config: Record<string, unknown>): FeatResponseAdap
     throw new Error(`@mmmnt/feat-adapter-stdio-jsonrpc: ${key === undefined ? "response.invoke.host" : `services.${key}.options.host`} must name { command: [...] } — configuration error.`);
   return key === undefined
     ? new StdioResponseAdapter(config as RoleConfig, host)
-    : new StdioServiceAdapter(config as RoleConfig, host, key);
+    : new StdioServiceAdapter(config as RoleConfig, host, key, (config.options as { faults?: FaultCatalog }).faults);
 }
