@@ -127,6 +127,10 @@ function freePort() {
   });
 }
 
+// The fixture's own clients (the system's writes, the readiness probe) name `localhost`: on Node 26 grpc-js cannot connect to an IP
+// host over TLS (SPEC-ADPKUR-004). The adapter under test is handed the IP host, which is the behaviour the specs observe.
+const clientString = (port, user) => connectionString(port, user, "localhost");
+
 let kdbPromise;
 function kurrent() {
   kdbPromise ??= (async () => {
@@ -158,14 +162,14 @@ function kurrent() {
     const port = hostPort(name, 2113);
     // A fresh client per attempt: one that failed while the node was starting keeps its failed channel.
     await until("KurrentDB", async () => {
-      const probeClient = KurrentDBClient.connectionString(connectionString(port, USERS.admin));
+      const probeClient = KurrentDBClient.connectionString(clientString(port, USERS.admin));
       try {
         for await (const _ of probeClient.readAll({ fromPosition: START, maxCount: 1, deadline: 2000 })) break;
       } finally {
         await probeClient.dispose().catch(() => {});
       }
     });
-    const admin = KurrentDBClient.connectionString(connectionString(port, USERS.admin));
+    const admin = KurrentDBClient.connectionString(clientString(port, USERS.admin));
     await until("the fixture users", async () => {
       await createUser(port, USERS.writer, []).catch((e) => { if (!/HTTP 409/.test(String(e))) throw e; });
       await createUser(port, USERS.reader, []).catch((e) => { if (!/HTTP 409/.test(String(e))) throw e; });
@@ -273,7 +277,7 @@ async function run(input, mode) {
   const dirty = new Set();
   const writers = new Map();
   const writerFor = (user) => {
-    if (!writers.has(user)) writers.set(user, KurrentDBClient.connectionString(connectionString(kdb.port, USERS[user])));
+    if (!writers.has(user)) writers.set(user, KurrentDBClient.connectionString(clientString(kdb.port, USERS[user])));
     return writers.get(user);
   };
   const nsOf = (l) => (l.startsWith("raw=") ? l.slice(4) : namespaceOf(l));
