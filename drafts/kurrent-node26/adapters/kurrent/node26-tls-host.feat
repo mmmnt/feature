@@ -1,0 +1,143 @@
+feat 1.0
+
+# SPEC-ADPKUR-004 — Kurrent adapter: the TLS server name on Node 26 (an amendment to SPEC-ADPKUR-001, in a spec of its own so the agreed
+# file is untouched until the founder flips this one). DRAFT: status draft until the founder flips it. Founder ruling 2026-11-10,
+# chosen verbatim: "A: loopback→localhost (Recommended)". DESIGN.md beside this file holds the rule's rationale, the rejected
+# alternatives, the open choices and the upstream issue text.
+#
+# The fault: on Node 26, Node refuses an IP address as the TLS server name (ERR_INVALID_ARG_VALUE, "Setting the TLS ServerName to an IP
+# address is not permitted"). @grpc/grpc-js 1.14.7 sets connectionOptions.servername from the remote host unconditionally, and
+# @kurrent/kurrentdb-client 1.3.2 exposes no channel option to stop it, so a `kurrentdb://` connection string with `tls=true` (the
+# client's default when `tls` is absent) and an IP host cannot connect. `tlsVerifyCert=false` does not help: the name is still set.
+#
+# The rule (the adapter's instrument connection, SPEC-ADPKUR-001; the system's own client is the system's concern):
+#   1. A host that is exactly the IPv4 loopback address 127.0.0.1 or the IPv6 loopback address ::1 is connected to as `localhost`. Only the
+#      host changes: credentials, port, path and every parameter are as the user wrote them.
+#   2. Any other IP address host (an IPv4 or IPv6 literal, 127.0.0.2 included) with tls=true, when the running Node's major version is 26 or
+#      later, is refused at setup() with TLS_HOST_UNSUPPORTED, before the adapter connects or appends anything.
+#   3. A hostname, tls=false, or a non-loopback IP host on a Node below 26 is left exactly as it is.
+# The rewrite of rule 1 applies on every Node major, not only 26, so the loopback path is one path on the whole CI matrix and is
+# observable on Node 20, 22 and 24. Rule 2 reads the Node major through `options.nodeMajor` (an integer, default the running Node's
+# `process.versions.node` major), the seam by which a scenario puts the adapter on Node 24 or 26 without a second Node.
+#
+# Driven through the probe of SPEC-ADPKUR-001 (adapters/kurrent/fixtures/probe.mjs, inside touches, not shipped).
+# `ObserveKurrentTlsHost { host, tls?, nodeMajor?, script? }` builds the connection string
+#   kurrentdb://admin:<password>@<host>:<port>?tls=<tls>&tlsVerifyCert=false     (tls default true; a v6 host is written in brackets)
+# with the fixture node's port (the test's private secure dev node of SPEC-ADPKUR-001) and the admin identity, creates the adapter for
+# namespace `a` with `options.nodeMajor` set when `nodeMajor` is given, and runs `script` (default `setup:a`; setup() runs only where the script says so,
+# so a scenario that never needs the node never connects). The script
+# uses the steps of SPEC-ADPKUR-001 plus two that never touch the network:
+#   target:<ns>   the host the adapter hands the client, as the client sees it: `target:a=localhost`
+#   params:<ns>   the connection string the adapter hands the client with the secret, the host and the port removed:
+#                 `params:a=admin?tls=true&tlsVerifyCert=false` (user name, then the query string exactly as given)
+# Both read an adapter method `connectionTarget()` that returns the string the client is created from; the probe redacts it.
+# A refused setup is a rejection, so nothing else is traced.
+# The fixture hosts: 127.0.0.1 and `[::1]` reach the fixture node (its port is published on both loopbacks; TLS names are not verified,
+# tlsVerifyCert=false); 192.0.2.10 and 2001:db8::1 are documentation addresses nothing listens on, which is the point of a refusal that
+# happens before any connection. Integration tier only: the connecting scenarios need the fixture node.
+
+spec SPEC-ADPKUR-004 "Kurrent adapter: a loopback IP host is connected to as localhost and any other IP host is refused on Node 26"
+context Toolchain
+aggregate Adapters
+type infrastructure
+status draft
+
+construct:
+  handler at adapters/kurrent/src/index.ts
+  touches adapters/kurrent/**
+  touches feat.config.json
+  needs SPEC-ADPKUR-001
+  Parse the connection string's hosts with the WHATWG URL parser (the adapter already does for `options.system`), so `[::1]` and `[0:0:0:0:0:0:0:1]` are both ::1.
+  Define a loopback host as exactly 127.0.0.1 or ::1. When the connection string has tls=true (the default when `tls` is absent) and
+  a host is an IP literal: if it is a loopback host, replace that host, and only the host, by `localhost` in the string the client is created from;
+  otherwise, when `options.nodeMajor` (default: the major of `process.versions.node`) is 26 or more, refuse setup() with
+  TLS_HOST_UNSUPPORTED before the first connection. A connection string with several hosts is judged host by host, in order, and
+  the first refused host is the one the detail names. A hostname, a `kurrentdb+discover://` string, or tls=false is passed through unchanged.
+  Add `connectionTarget()` to the adapter: the string the client is created from, with the credentials of `options.system` applied;
+  it does no network and never throws for a refusal (setup() throws). Add `nodeMajor` to the adapter's options (integer, 1 or more).
+  The detail of TLS_HOST_UNSUPPORTED names the host and the cause: the IP literal, "tls=true", "Node 26" (the running major) and the remedy
+  (a hostname the certificate names, or tls=false). It carries no credential.
+
+enforce:
+  rejects TLS_HOST_UNSUPPORTED when the host is an IP literal other than 127.0.0.1 and ::1, tls is true and the Node major is 26 or more, before any connection
+  a host that is exactly 127.0.0.1 or ::1 with tls=true is connected to as localhost, and only the host changes
+  a hostname, tls=false, and a non-loopback IP host on a Node below 26 are connected to exactly as the user wrote them
+  the rewrite is in the string the client is created from only: the captured records, the keys, the namespace and the connection string the user gave are unchanged
+
+contract:
+  input ObserveInput
+  response ObserveResult
+  error ObserveError
+
+scenario "an IPv4 loopback host is connected to as localhost, and the node is reached":
+  when: ObserveKurrentTlsHost { host: "127.0.0.1", script: "setup:a target:a start:a write:a:orders:Placed settle:a stop:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a target:a=localhost start:a write:a settle:a=true stop:a=1", last: "orders/Placed" }
+    filesystem has []
+
+scenario "an IPv6 loopback host is connected to as localhost, and the node is reached":
+  when: ObserveKurrentTlsHost { host: "[::1]", script: "setup:a target:a start:a write:a:orders:Placed settle:a stop:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a target:a=localhost start:a write:a settle:a=true stop:a=1", last: "orders/Placed" }
+    filesystem has []
+
+scenario "the loopback rewrite holds on Node 26, where the IP name would be refused":
+  when: ObserveKurrentTlsHost { host: "127.0.0.1", nodeMajor: 26, script: "setup:a target:a start:a write:a:orders:Placed settle:a stop:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a target:a=localhost start:a write:a settle:a=true stop:a=1", last: "orders/Placed" }
+    filesystem has []
+
+scenario "the rewrite changes the host and nothing else":
+  when: ObserveKurrentTlsHost { host: "127.0.0.1", script: "params:a" }
+  predict success:
+    response OK ObserveResult { trace: "params:a=admin?tls=true&tlsVerifyCert=false" }
+    filesystem has []
+
+scenario "a hostname is connected to as written, on Node 26 too":
+  when: ObserveKurrentTlsHost { host: "localhost", nodeMajor: 26, script: "setup:a target:a start:a write:a:orders:Placed settle:a stop:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a target:a=localhost start:a write:a settle:a=true stop:a=1", last: "orders/Placed" }
+    filesystem has []
+
+scenario "the rewrite is invisible in what is captured, so a record is the same through an IP host and through localhost":
+  when: ObserveKurrentTlsHost { host: "127.0.0.1", script: "setup:a start:a write:a:orders:Placed write:a:billing:Charged settle:a stop:a read:a" }
+  predict success:
+    response OK ObserveResult {
+      trace: "setup:a start:a write:a write:a settle:a=true stop:a=2 read:a=2",
+      last: "orders/Placed,billing/Charged"
+    }
+    filesystem has []
+
+scenario outline "an IP host other than the two loopback addresses is refused on Node 26 before the adapter connects to anything":
+  when: ObserveKurrentTlsHost { host: <host>, nodeMajor: 26, script: "setup:a" }
+  predict rejection TLS_HOST_UNSUPPORTED:
+    response ERR ObserveError { code: "TLS_HOST_UNSUPPORTED", detail: matching <detail> }
+    filesystem has []
+  examples:
+    | host           | detail         |
+    | "192.0.2.10"   | "192.0.2.10"   |
+    | "[2001:db8::1]" | "2001:db8::1" |
+    | "127.0.0.2"    | "127.0.0.2"    |
+
+scenario "the refusal names the cause and the remedy":
+  when: ObserveKurrentTlsHost { host: "192.0.2.10", nodeMajor: 26, script: "setup:a" }
+  predict rejection TLS_HOST_UNSUPPORTED:
+    response ERR ObserveError { code: "TLS_HOST_UNSUPPORTED", detail: matching "tls=true.*Node 26.*hostname.*tls=false" }
+    filesystem has []
+
+scenario "a later Node major is refused the same way":
+  when: ObserveKurrentTlsHost { host: "192.0.2.10", nodeMajor: 28, script: "setup:a" }
+  predict rejection TLS_HOST_UNSUPPORTED:
+    response ERR ObserveError { code: "TLS_HOST_UNSUPPORTED", detail: matching "Node 28" }
+    filesystem has []
+
+scenario outline "an IP host is left as written where the name is allowed, so no refusal and no rewrite":
+  when: ObserveKurrentTlsHost { host: <host>, tls: <tls>, nodeMajor: <nodeMajor>, script: "target:a" }
+  predict success:
+    response OK ObserveResult { trace: <trace> }
+    filesystem has []
+  examples:
+    | host           | tls   | nodeMajor | trace                          |
+    | "192.0.2.10"   | false | 26        | "target:a=192.0.2.10"  |
+    | "192.0.2.10"   | true  | 24        | "target:a=192.0.2.10"  |
+    | "127.0.0.1"    | false | 26        | "target:a=127.0.0.1"   |

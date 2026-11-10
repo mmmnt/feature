@@ -1,0 +1,61 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-ADPKUR-004",
+  "schemas": {
+    "ObserveInput": {
+      "type": "object",
+      "required": [
+        "host"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tls": {
+          "type": "boolean"
+        },
+        "nodeMajor": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "script": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "ObserveResult": {
+      "type": "object",
+      "required": [
+        "trace"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "trace": {
+          "type": "string"
+        },
+        "last": {
+          "type": "string"
+        }
+      }
+    },
+    "ObserveError": {
+      "type": "object",
+      "required": [
+        "code"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "TLS_HOST_UNSUPPORTED"
+          ]
+        },
+        "detail": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
