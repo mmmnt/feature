@@ -1,0 +1,177 @@
+feat 1.0
+
+# SPEC-RT-002 — what the harness does with two things an adapter may or may not offer: the
+# scenario clock (`clock at`) and the observation modes (diff for `has`, state for
+# `contains`). The diff mode is not optional: INV-6 makes `has` mandatory for every service in
+# every prediction, so every service adapter serves it, natively or by comparing snapshots; the
+# declaration says which. State is the mode an adapter may lack. Both follow one rule: a scenario that asks for something the adapter in front of
+# it cannot give is a CONFIGURATION error raised before the case has any effect, never a
+# silent pass and never a late surprise. DRAFT: status draft until the founder flips it.
+#
+# Driven through packages/feat-runtime/fixtures/harness/probe.mjs (part of the build, inside
+# touches): `RunHarnessCase { config, cases }` creates a harness from the fixture config (every
+# adapter in those configs is fixtures/harness/stub.mjs, whose declared `observes`, presence of
+# setClock and the records its read() answers are set by the config's options), runs each case
+# in order with runCase, and answers `outcome` (passed, or failed with the harness's
+# violations), and `calls`: every call the stubs received, in order, as one space-separated
+# string — reset:<service>, clock:<response|service>=<iso|null>, seed:<service>,
+# execute:<Command>, start:<service>, invoke:<Command>, read:<service>, stop:<service>. A
+# configuration error is answered as the ERR below, with the calls made before it (the
+# scenarios assert there were none). `readHint` is the query the stub's read() received,
+# rendered Type:key=value[,key=value] per expected record.
+#
+# The fixture configs, all with response stub `response` (command Ping) and service `store`
+# (consistency strong): clock.config.json (both stubs have setClock),
+# service-no-clock.config.json (only the response stub does), no-clock-response.config.json
+# (neither does), no-state.config.json (store observes { diff: "snapshot", state: false }),
+# undeclared.config.json (store declares nothing: the legacy adapter),
+# both-modes.config.json (store observes { diff: "native", state: true }).
+#
+# Order of a case, which the first scenario pins: check the case's needs (clock, modes) against
+# the adapters; reset every service in config order; deliver the clock (response stub first,
+# then services in config order), a null when the case has no `clock at`; seeds; given
+# executes; startCapture on every service; the trigger.
+
+spec SPEC-RT-002 "Harness: clock delivery and observation-mode check"
+context Toolchain
+aggregate Runtime
+type infrastructure
+status draft
+
+construct:
+  handler at packages/feat-runtime/src/harness.ts
+  touches packages/feat-runtime/**
+  touches packages/feat-types/**
+  needs SPEC-RT-001
+  needs SPEC-ADPHND-001
+  Types (feat-types): add to FeatServiceAdapter `readonly observes?: { diff: "native" | "snapshot"; state: boolean }`
+  and `setClock?(clock: string | null): Promise<void>`; add `setClock?` to FeatResponseAdapter;
+  export a ReadQuery = { expect?: { type: string; key?: Record<string, string | number | boolean | null> }[] }
+  and widen read(query: ReadQuery).
+  Check, as the first act of runCase and before any adapter call: (1) the case has `given.clock`
+  and the response adapter, or no response adapter at all but a service the clock could not
+  reach, lacks setClock: refuse CLOCK_UNSUPPORTED naming the adapter; a service adapter
+  without setClock is never refused, it simply is not called; (2) for each service the
+  prediction asserts: `contains` needs observes.state true (`records` always has its diff:
+  every adapter has stopCapture); an adapter that declares no `observes` is treated as
+  { diff: "native", state: true } (the legacy contract, so nothing that works today breaks);
+  otherwise refuse MODE_UNSUPPORTED naming the service and the mode ("state").
+  Both refusals throw HarnessConfigurationError, a subclass of Error whose message begins
+  "Configuration error (exit 2):" and which carries code, service and mode.
+  Deliver the clock with setClock(case.given.clock ?? null) to the response adapter and to
+  every service adapter that has setClock, on every case, after the resets.
+  For a `contains` assertion call read({ expect }) where expect has one entry per predicted
+  record: its type, and as `key` the top-level fields of its value block whose matcher is a
+  literal (and, for a @when reference, the value sent). The hint only lets an adapter narrow
+  its read; the adapter may answer more, never fewer, and the diff is unchanged.
+
+enforce:
+  check the case's clock and modes against the adapters before any adapter call
+  rejects CLOCK_UNSUPPORTED when a case with clock at meets a response adapter that cannot honour it
+  rejects MODE_UNSUPPORTED when a prediction asserts the state mode on a service whose adapter does not serve it
+  deliver the clock to every adapter that accepts one on every case, null when the case has none
+  hand a contains assertion's predicted records to read() as the query hint
+
+contract:
+  input RunInput
+  response RunResult
+  error HarnessError
+
+scenario "clock at reaches every adapter after the resets and before anything is invoked":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/clock.config.json"
+    cases: [ { anchor: "c1", name: "c1", given: { clock: "2026-07-16T00:00:00Z" }, when: { command: "Ping", payload: {} }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } } ]
+  }
+  predict success:
+    response OK RunResult {
+      outcome: "passed"
+      calls: "reset:store clock:response=2026-07-16T00:00:00Z clock:store=2026-07-16T00:00:00Z start:store invoke:Ping stop:store"
+    }
+    filesystem has []
+
+scenario "a case without clock at hands the clock back, so one case's freeze never leaks into the next":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/clock.config.json"
+    cases: [
+      { anchor: "c1", name: "c1", given: { clock: "2026-07-16T00:00:00Z" }, when: { command: "Ping", payload: {} }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } },
+      { anchor: "c2", name: "c2", when: { command: "Ping", payload: {} }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } }
+    ]
+  }
+  predict success:
+    response OK RunResult {
+      outcome: "passed"
+      calls: "reset:store clock:response=2026-07-16T00:00:00Z clock:store=2026-07-16T00:00:00Z start:store invoke:Ping stop:store reset:store clock:response=null clock:store=null start:store invoke:Ping stop:store"
+    }
+    filesystem has []
+
+scenario "a service adapter that cannot take a clock is simply not called with one":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/service-no-clock.config.json"
+    cases: [ { anchor: "c1", name: "c1", given: { clock: "2026-07-16T00:00:00Z" }, when: { command: "Ping", payload: {} }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } } ]
+  }
+  predict success:
+    response OK RunResult {
+      outcome: "passed"
+      calls: "reset:store clock:response=2026-07-16T00:00:00Z start:store invoke:Ping stop:store"
+    }
+    filesystem has []
+
+scenario "a case without clock at needs no clock hook":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/no-clock-response.config.json"
+    cases: [ { anchor: "c1", name: "c1", when: { command: "Ping", payload: {} }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } } ]
+  }
+  predict success:
+    response OK RunResult {
+      outcome: "passed"
+      calls: "reset:store start:store invoke:Ping stop:store"
+    }
+    filesystem has []
+
+scenario "clock at against a response adapter that cannot honour it is refused before any effect":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/no-clock-response.config.json"
+    cases: [ { anchor: "c1", name: "c1", given: { clock: "2026-07-16T00:00:00Z" }, when: { command: "Ping", payload: {} }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } } ]
+  }
+  predict rejection CLOCK_UNSUPPORTED:
+    response ERR HarnessError { code: "CLOCK_UNSUPPORTED", calls: "", detail: matching "response" }
+    filesystem has []
+
+scenario "contains against a service that cannot report state is refused before any effect":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/no-state.config.json"
+    cases: [ { anchor: "c1", name: "c1", when: { command: "Ping", payload: {} }, prediction: { type: "success", services: { store: { ordering: "ordered", contains: [ { type: "OrderPlaced", schemaName: "Placed" } ] } } } } ]
+  }
+  predict rejection MODE_UNSUPPORTED:
+    response ERR HarnessError { code: "MODE_UNSUPPORTED", service: "store", mode: "state", calls: "" }
+    filesystem has []
+
+scenario "a snapshot diff serves has, and a state-less adapter is fine without contains":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/no-state.config.json"
+    cases: [ { anchor: "c1", name: "c1", when: { command: "Ping", payload: {} }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } } ]
+  }
+  predict success:
+    response OK RunResult { outcome: "passed", calls: "reset:store start:store invoke:Ping stop:store" }
+    filesystem has []
+
+scenario "an adapter that declares nothing keeps both modes":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/undeclared.config.json"
+    cases: [ { anchor: "c1", name: "c1", when: { command: "Ping", payload: {} }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [], contains: [] } } } } ]
+  }
+  predict success:
+    response OK RunResult { outcome: "passed", calls: "reset:store start:store invoke:Ping stop:store read:store" }
+    filesystem has []
+
+scenario "a contains assertion hands its predicted records to read as the query hint":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/both-modes.config.json"
+    cases: [ { anchor: "c1", name: "c1", when: { command: "Ping", payload: {} }, prediction: { type: "success", services: { store: { ordering: "ordered", contains: [ { type: "OrderPlaced", schemaName: "Placed", valueBlock: { orderId: { matcher: "literal", value: "o-1" }, total: { matcher: "any" } } } ] } } } } ]
+  }
+  predict success:
+    response OK RunResult {
+      outcome: "passed"
+      readHint: "OrderPlaced:orderId=o-1"
+    }
+    filesystem has []

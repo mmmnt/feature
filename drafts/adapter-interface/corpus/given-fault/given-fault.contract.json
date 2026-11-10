@@ -1,0 +1,30 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-ORD-003",
+  "schemas": {
+    "PlaceOrderInput": {
+      "type": "object",
+      "required": ["orderId"],
+      "additionalProperties": false,
+      "properties": {
+        "orderId": { "type": "string", "minLength": 1 },
+        "sku": { "type": "string" }
+      }
+    },
+    "OrderAccepted": {
+      "type": "object",
+      "required": ["orderId"],
+      "properties": { "orderId": { "type": "string" } }
+    },
+    "OrderPlacedEvent": {
+      "type": "object",
+      "required": ["orderId"],
+      "properties": { "orderId": { "type": "string" } }
+    },
+    "Refusal": {
+      "type": "object",
+      "required": ["code"],
+      "properties": { "code": { "type": "string" }, "message": { "type": "string" } }
+    }
+  }
+}

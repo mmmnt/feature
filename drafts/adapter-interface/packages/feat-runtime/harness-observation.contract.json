@@ -1,0 +1,37 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-RT-002",
+  "schemas": {
+    "RunInput": {
+      "type": "object",
+      "required": ["config", "cases"],
+      "additionalProperties": false,
+      "properties": {
+        "config": { "type": "string", "minLength": 1 },
+        "cases": { "type": "array", "minItems": 1, "items": { "type": "object" } }
+      }
+    },
+    "RunResult": {
+      "type": "object",
+      "required": ["outcome"],
+      "additionalProperties": false,
+      "properties": {
+        "outcome": { "enum": ["passed", "failed"] },
+        "calls": { "type": "string" },
+        "readHint": { "type": "string" },
+        "violations": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "HarnessError": {
+      "type": "object",
+      "required": ["code", "calls"],
+      "properties": {
+        "code": { "enum": ["CLOCK_UNSUPPORTED", "MODE_UNSUPPORTED"] },
+        "service": { "type": "string" },
+        "mode": { "enum": ["state"] },
+        "calls": { "type": "string" },
+        "detail": { "type": "string" }
+      }
+    }
+  }
+}

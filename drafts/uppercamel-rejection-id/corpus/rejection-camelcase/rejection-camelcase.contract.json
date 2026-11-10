@@ -1,0 +1,38 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-REJ-001",
+  "schemas": {
+    "AnswerInput": {
+      "type": "object",
+      "required": ["questionId", "option"],
+      "properties": {
+        "questionId": { "type": "string" },
+        "option": { "type": "string" }
+      }
+    },
+    "Answered": {
+      "type": "object",
+      "required": ["questionId", "option"],
+      "properties": {
+        "questionId": { "type": "string" },
+        "option": { "type": "string" }
+      }
+    },
+    "AnswerRow": {
+      "type": "object",
+      "required": ["questionId", "option"],
+      "properties": {
+        "questionId": { "type": "string" },
+        "option": { "type": "string" }
+      }
+    },
+    "Refusal": {
+      "type": "object",
+      "required": ["code"],
+      "properties": {
+        "code": { "type": "string" },
+        "message": { "type": "string" }
+      }
+    }
+  }
+}

@@ -1,0 +1,247 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-RPC-002",
+  "schemas": {
+    "RunFilesInput": {
+      "type": "object",
+      "required": [
+        "files"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "namespace",
+              "host",
+              "roles"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "host": {
+                "type": "object",
+                "required": [
+                  "command"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "command": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "secondHost": {
+                "type": "object",
+                "required": [
+                  "command"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "command": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "roles": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string"
+                }
+              },
+              "clocks": {
+                "type": "array",
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "cycles": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "namespace": {
+                "type": "string",
+                "pattern": "^s[0-9a-f]{12}$"
+              },
+              "roleNamespaces": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "RunFilesResult": {
+      "type": "object",
+      "required": [
+        "files"
+      ],
+      "properties": {
+        "distinctHosts": {
+          "type": "integer"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "hostsSpawned",
+              "hostsAlive"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "hostsSpawned": {
+                "type": "integer"
+              },
+              "hostsAlive": {
+                "const": 0
+              },
+              "spawnedBy": {
+                "type": "string"
+              },
+              "endedBy": {
+                "type": "string"
+              },
+              "aliveAfterTeardown": {
+                "type": "array",
+                "items": {
+                  "type": "boolean"
+                }
+              },
+              "roleOutcomes": {
+                "type": "object",
+                "additionalProperties": {
+                  "enum": [
+                    "ok",
+                    "HOST_CRASHED"
+                  ]
+                }
+              },
+              "setups": {
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "clocks": {
+                "type": "array",
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "settled": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "boolean"
+                }
+              },
+              "recordsVisibleAfterSettle": {
+                "type": "integer"
+              },
+              "peeks": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                }
+              },
+              "stopped": {
+                "type": "integer"
+              },
+              "clockRoles": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "resetsBeforeClock": {
+                "type": "boolean"
+              },
+              "setupNamespaces": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "hostEnvNamespace": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "SharingError": {
+      "type": "object",
+      "required": [
+        "code",
+        "hostsSpawned",
+        "hostsAlive"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "HOST_CONFIG_MISMATCH",
+            "INVALID_CLOCK",
+            "NAMESPACE_NOT_HONOURED",
+            "PROTOCOL_VIOLATION",
+            "HOST_ERROR",
+            "PROTOCOL_MISMATCH"
+          ]
+        },
+        "detail": {
+          "type": "string"
+        },
+        "hostsSpawned": {
+          "type": "integer"
+        },
+        "hostsAlive": {
+          "const": 0
+        },
+        "rpcCode": {
+          "type": "integer"
+        },
+        "casesRun": {
+          "type": "integer"
+        }
+      }
+    }
+  }
+}

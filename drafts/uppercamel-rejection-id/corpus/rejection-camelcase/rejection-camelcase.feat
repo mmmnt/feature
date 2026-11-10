@@ -1,0 +1,60 @@
+feat 1.0
+
+# Corpus exemplar #13 — UpperCamel rejection ids (ADR-0022). A rejection id is
+# a typed KEYWORD-position token naming one business-rule refusal. Products
+# whose refusal registries are UpperCamel (NotOperator, AlreadyAnswered) state
+# their codes verbatim in `rejects <ID> when …` and `predict rejection <ID>:`
+# instead of transforming them to UPPER_SNAKE. Both forms are valid; the id is
+# compared case-sensitively and exactly, so the two-way lint (B2) pairs
+# `NotOperator` with `NotOperator` and never with NOT_OPERATOR. The two forms
+# coexist in one spec (UNKNOWN_QUESTION below).
+
+spec SPEC-REJ-001 "AnswerQuestion"
+context Questions
+aggregate Question
+type command
+status agreed
+
+construct:
+  handler at features/answer-question/handler.ts
+  touches features/answer-question/**
+
+enforce:
+  record the answer against the open question
+  rejects NotOperator when the caller is not an operator of the workspace
+  rejects AlreadyAnswered when the question already holds an answer
+  rejects UNKNOWN_QUESTION when no question has the given id
+
+contract:
+  input AnswerInput
+  response Answered
+  record AnswerRow
+  error Refusal
+
+scenario "an operator answers an open question":
+  given:
+    A question "q-1" is open.
+  when (as operator): AnswerQuestion { questionId: "q-1", option: "yes" }
+  predict success:
+    response 200 Answered { questionId: @when.questionId, option: "yes" }
+    answers has [ ANSWER_RECORDED with AnswerRow { questionId: @when.questionId, option: "yes" } ]
+
+scenario "a non-operator is refused":
+  when (as reader): AnswerQuestion { questionId: "q-1", option: "yes" }
+  predict rejection NotOperator:
+    response 403 Refusal { code: "NotOperator" }
+    answers has []
+
+scenario "a question that already holds an answer is refused":
+  given:
+    A question "q-2" is open and already answered.
+  when (as operator): AnswerQuestion { questionId: "q-2", option: "no" }
+  predict rejection AlreadyAnswered:
+    response 409 Refusal { code: "AlreadyAnswered" }
+    answers has []
+
+scenario "an unknown question is refused with an UPPER_SNAKE id":
+  when (as operator): AnswerQuestion { questionId: "q-404", option: "yes" }
+  predict rejection UNKNOWN_QUESTION:
+    response 404 Refusal { code: "UNKNOWN_QUESTION" }
+    answers has []

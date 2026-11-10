@@ -1,0 +1,27 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-ADPHND-002",
+  "schemas": {
+    "ProbeInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "script": { "type": "string", "minLength": 1 },
+        "namespace": { "type": "string", "pattern": "^s[0-9a-f]{12}$" },
+        "harness": { "enum": ["Namespace", "Quiet", "Legacy"] },
+        "spec": { "type": "string", "minLength": 1 }
+      }
+    },
+    "ProbeResult": {
+      "type": "object",
+      "required": ["trace"],
+      "additionalProperties": false,
+      "properties": { "trace": { "type": "string" } }
+    },
+    "NamespaceError": {
+      "type": "object",
+      "required": ["code"],
+      "properties": { "code": { "enum": ["NAMESPACE_NOT_HONOURED"] }, "detail": { "type": "string" } }
+    }
+  }
+}

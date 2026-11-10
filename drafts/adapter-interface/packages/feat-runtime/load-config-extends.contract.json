@@ -1,0 +1,63 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-RT-004",
+  "schemas": {
+    "LoadConfigInput": {
+      "type": "object",
+      "required": [
+        "path"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "FeatConfigResult": {
+      "$ref": "../../schemas/feat.config.schema.json"
+    },
+    "ConfigError": {
+      "type": "object",
+      "required": [
+        "code",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "CONFIG_NOT_FOUND",
+            "INVALID_CONFIG",
+            "MISSING_CONVERGENCE_TIMEOUT",
+            "EXTENDS_NOT_FOUND",
+            "EXTENDS_CHAIN",
+            "TIER_SPACE_MISMATCH"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "space": {
+          "enum": [
+            "service",
+            "command",
+            "actor"
+          ]
+        },
+        "change": {
+          "enum": [
+            "added",
+            "removed"
+          ]
+        }
+      }
+    }
+  }
+}

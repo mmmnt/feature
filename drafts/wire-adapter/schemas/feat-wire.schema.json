@@ -1,0 +1,179 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "contracts/adrs/feat-wire.schema.json",
+  "title": "FeatWire",
+  "description": "FLMNT-ADR-006 \u00a74: one line of the wire protocol between @mmmnt/feat-adapter-wire and the Rust spec host. invoke returns {status, body}; stopCapture returns the captured records.",
+  "oneOf": [
+    {
+      "title": "request",
+      "type": "object",
+      "required": [
+        "jsonrpc",
+        "id",
+        "method",
+        "params"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "jsonrpc": {
+          "const": "2.0"
+        },
+        "id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "method": {
+          "enum": [
+            "setup",
+            "teardown",
+            "reset",
+            "invoke",
+            "seed",
+            "startCapture",
+            "stopCapture",
+            "read",
+            "deliver"
+          ]
+        },
+        "params": {
+          "type": "object"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "setup"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "required": [
+                  "services"
+                ],
+                "properties": {
+                  "services": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "clock": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "invoke"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "required": [
+                  "command",
+                  "input"
+                ],
+                "properties": {
+                  "command": {
+                    "type": "string"
+                  },
+                  "input": {
+                    "type": "object"
+                  },
+                  "actor": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "enum": [
+                  "seed",
+                  "startCapture",
+                  "stopCapture",
+                  "read",
+                  "deliver"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "required": [
+                  "service"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "title": "response",
+      "type": "object",
+      "required": [
+        "jsonrpc",
+        "id"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "jsonrpc": {
+          "const": "2.0"
+        },
+        "id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "result": {},
+        "error": {
+          "type": "object",
+          "required": [
+            "code",
+            "message"
+          ],
+          "properties": {
+            "code": {
+              "type": "integer"
+            },
+            "message": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "result"
+          ]
+        },
+        {
+          "required": [
+            "error"
+          ]
+        }
+      ]
+    }
+  ]
+}

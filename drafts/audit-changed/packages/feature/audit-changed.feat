@@ -1,0 +1,97 @@
+feat 1.0
+
+# SPEC-CHG-001 — the `touches` gate (FLMNT-ADR-006 §3, SIFT-ADR-091 §6; founder
+# ruling 2026-10-24, "In Feature: feat audit --changed"). Built once, in Feature,
+# for flmnt and Sift alike. DRAFT: status draft until the founder flips it.
+#
+# The spec covers the decision (changed paths + the specs of a workspace ->
+# pass or the precise violation). The git read that produces the path list
+# (`git diff --name-only --no-renames <base>...HEAD`) is the CLI's thin glue,
+# not-spec'd code under TCR; see FEATURES.md and open question 4.
+
+spec SPEC-CHG-001 "Check changed paths against touches"
+context Toolchain
+aggregate Boundary
+type command
+status draft
+
+construct:
+  handler at packages/feature/src/audit-changed.ts
+  touches packages/feature/src/audit-changed.ts
+  touches packages/feature/src/commands/audit.ts
+  touches packages/feature/audit-changed.feat
+  touches packages/feature/audit-changed.contract.json
+  touches packages/feature/fixtures/changed/**
+  touches feat.config.json
+  imports parse from @mmmnt/feat-core
+  needs SPEC-CORE-001
+  The workspace is the directory holding the given config; every path is relative to it, in
+  forward-slash form. A spec's feature directory is the directory holding its .feat file and every
+  directory beneath it that holds no .feat file of its own. A changed path inside a feature
+  directory must match a touches glob of a spec in the nearest enclosing feature directory
+  (a glob is anchored at the workspace root; * stays inside one path segment, ** crosses
+  segments; nothing else is special). A changed path inside no feature directory is non-spec'd
+  code under TCR: it passes, is counted, and must not equal the handler at path of any spec.
+  The gate reads only the specs and the path list. It writes nothing.
+  The report always states how many paths were checked, so a pass is never silent about its input.
+
+enforce:
+  discover every spec under the config's specs.dir and parse each one
+  rejects NO_SPECS_FOUND when the config's specs.dir holds no spec, because a gate with no input proves nothing
+  rejects SPEC_UNPARSEABLE when any spec of the workspace fails to parse, because its boundary cannot be read
+  rejects OUTSIDE_TOUCHES when a changed path inside a feature directory matches no touches glob of that directory's spec
+  rejects HANDLER_OUTSIDE_FEATURE when a changed path inside no feature directory is the handler at path of a spec
+  report every violation in one answer, not only the first
+
+contract:
+  input ChangedInput
+  response ChangedReport
+  error ChangedError
+
+scenario "changes inside their own boundaries pass":
+  when: CheckChanged { config: "packages/feature/fixtures/changed/ws/feat.config.json", paths: ["src/features/alpha/handler.rs", "src/features/alpha/alpha.feat", "src/features/beta/handler.ts"] }
+  predict success:
+    response OK ChangedReport { checked: 3, specd: 3, unspecd: 0 }
+    filesystem has []
+
+scenario "code outside every feature directory passes and is counted":
+  when: CheckChanged { config: "packages/feature/fixtures/changed/ws/feat.config.json", paths: ["Cargo.toml", "src/lib.rs"] }
+  predict success:
+    response OK ChangedReport { checked: 2, specd: 0, unspecd: 2 }
+    filesystem has []
+
+scenario "an empty change passes and says it checked nothing":
+  when: CheckChanged { config: "packages/feature/fixtures/changed/ws/feat.config.json", paths: [] }
+  predict success:
+    response OK ChangedReport { checked: 0, specd: 0, unspecd: 0 }
+    filesystem has []
+
+scenario "a path inside a feature directory but outside its touches is a violation":
+  when: CheckChanged { config: "packages/feature/fixtures/changed/ws/feat.config.json", paths: ["src/features/beta/mod.rs"] }
+  predict rejection OUTSIDE_TOUCHES:
+    response ERR ChangedError { code: "OUTSIDE_TOUCHES", detail: matching "src/features/beta/mod.rs" }
+    filesystem has []
+
+scenario "a handler path outside every feature directory is a violation":
+  when: CheckChanged { config: "packages/feature/fixtures/changed/ws/feat.config.json", paths: ["src/shared/gamma.ts"] }
+  predict rejection HANDLER_OUTSIDE_FEATURE:
+    response ERR ChangedError { code: "HANDLER_OUTSIDE_FEATURE", detail: matching "src/shared/gamma.ts" }
+    filesystem has []
+
+scenario "every violation is reported together":
+  when: CheckChanged { config: "packages/feature/fixtures/changed/ws/feat.config.json", paths: ["src/features/beta/mod.rs", "src/features/beta/extra.rs"] }
+  predict rejection OUTSIDE_TOUCHES:
+    response ERR ChangedError { code: "OUTSIDE_TOUCHES", detail: matching "extra.rs" }
+    filesystem has []
+
+scenario "a workspace with no specs refuses to pass":
+  when: CheckChanged { config: "packages/feature/fixtures/changed/empty/feat.config.json", paths: ["src/lib.rs"] }
+  predict rejection NO_SPECS_FOUND:
+    response ERR ChangedError { code: "NO_SPECS_FOUND" }
+    filesystem has []
+
+scenario "a spec that cannot be parsed refuses to pass":
+  when: CheckChanged { config: "packages/feature/fixtures/changed/broken/feat.config.json", paths: ["src/lib.rs"] }
+  predict rejection SPEC_UNPARSEABLE:
+    response ERR ChangedError { code: "SPEC_UNPARSEABLE", detail: matching "MALFORMED_SYNTAX" }
+    filesystem has []

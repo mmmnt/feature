@@ -1,0 +1,106 @@
+feat 1.0
+
+# SPEC-ADPMEM-001 — the memory adapter's two optional window methods: peekCapture
+# (ADR-0020, non-destructive) and settle (ADR-0021, the fence), plus its declaration of
+# which observation modes it serves (SPEC-RT-002). DRAFT: status draft until the founder
+# flips it.
+#
+# The spec is driven through a probe, adapters/memory/fixtures/probe.mjs (part of the build,
+# inside touches, not shipped in the package). `ObserveMemory { script }` creates the adapter
+# with two consumers (fixtures/consumers.mjs: Ping publishes Pong, as in the conformance
+# suite) and runs the script, a space-separated list of steps: `seed`, `deliver:<Event>`,
+# `start`, `peek`, `settle`, `stop`, `reset`. It answers a `trace` (each step, with the count of
+# records for peek/stop and true/false for settle), `lastTypes` (the record types of the last
+# peek or stop, comma-joined) and `peekEqualsStop` (the last peek and the next stop returned
+# deeply equal arrays; absent when the script has no peek followed by a stop).
+#
+# Why settle may vouch here: every write the memory adapter can see is a synchronous push onto
+# its log, issued by the adapter itself (seed) or by a consumer the adapter awaits (deliver).
+# After the harness has awaited deliver, nothing is queued but work a consumer detached from
+# its own promise, which no fence can see (ADR-0021: writes started after the handler returned
+# are outside the fence) — so settle yields the event loop once and then vouches, and it
+# declines when no capture window is open (there is nothing to vouch for).
+
+spec SPEC-ADPMEM-001 "Memory adapter: peek and settle"
+context Toolchain
+aggregate Adapters
+type infrastructure
+status draft
+
+construct:
+  handler at adapters/memory/src/index.ts
+  touches adapters/memory/**
+  needs SPEC-RT-002
+  Add `observes = { diff: "native", state: true }` to the adapter: stopCapture and peekCapture
+  report what was published in the window, read() reports the whole log.
+  peekCapture(): while a window is open return the records stopCapture would return right now,
+  in the same order and shape, without moving the window or consuming anything; with no window
+  open return []. Delivered stimuli and seeded records are never in it (the stopCapture rule).
+  settle(): resolve false when no window is open; otherwise yield the event loop once
+  (setImmediate) and resolve true. It never writes to the log (the memory adapter needs no
+  sentinel: its log is its own).
+  reset() closes the window, so a peek after reset is [].
+
+enforce:
+  peekCapture returns the in-window records without consuming them
+  peekCapture returns [] when no window is open
+  settle resolves true only with a window open, after yielding the event loop
+  settle resolves false when no window is open
+
+contract:
+  input ObserveInput
+  response ObserveResult
+
+scenario "a peek reports the window's effects and consumes nothing":
+  when: ObserveMemory { script: "start deliver:Ping peek peek stop" }
+  predict success:
+    response OK ObserveResult { trace: "start deliver:Ping peek=1 peek=1 stop=1", lastTypes: "Pong", peekEqualsStop: true }
+    filesystem has []
+
+scenario "a peek before any effect is empty":
+  when: ObserveMemory { script: "start peek stop" }
+  predict success:
+    response OK ObserveResult { trace: "start peek=0 stop=0" }
+    filesystem has []
+
+scenario "the delivered stimulus is not in a peek, only what the consumer published":
+  when: ObserveMemory { script: "start deliver:Ping peek" }
+  predict success:
+    response OK ObserveResult { trace: "start deliver:Ping peek=1", lastTypes: "Pong" }
+    filesystem has []
+
+scenario "seeded records are not in a peek":
+  when: ObserveMemory { script: "seed start peek stop" }
+  predict success:
+    response OK ObserveResult { trace: "seed start peek=0 stop=0" }
+    filesystem has []
+
+scenario "a peek after stop finds the window closed":
+  when: ObserveMemory { script: "start deliver:Ping stop peek" }
+  predict success:
+    response OK ObserveResult { trace: "start deliver:Ping stop=1 peek=0" }
+    filesystem has []
+
+scenario "reset closes the window":
+  when: ObserveMemory { script: "start deliver:Ping reset peek" }
+  predict success:
+    response OK ObserveResult { trace: "start deliver:Ping reset peek=0" }
+    filesystem has []
+
+scenario "settle vouches once the consumer's publishes are in the log":
+  when: ObserveMemory { script: "start deliver:Ping settle peek stop" }
+  predict success:
+    response OK ObserveResult { trace: "start deliver:Ping settle=true peek=1 stop=1" }
+    filesystem has []
+
+scenario "settle declines when no window is open":
+  when: ObserveMemory { script: "settle" }
+  predict success:
+    response OK ObserveResult { trace: "settle=false" }
+    filesystem has []
+
+scenario "settle vouches on an empty window, which is how an absence is proven":
+  when: ObserveMemory { script: "start settle stop" }
+  predict success:
+    response OK ObserveResult { trace: "start settle=true stop=0" }
+    filesystem has []

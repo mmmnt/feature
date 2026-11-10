@@ -1,0 +1,64 @@
+{
+  "featVersion": "1.0",
+  "environment": "toolchain",
+  "schemas": {
+    "adapter": "@mmmnt/feat-schema-json"
+  },
+  "response": {
+    "adapter": "@mmmnt/feat-adapter-handler",
+    "commands": {
+      "ObserveMemory": {
+        "module": "adapters/memory/fixtures/probe.mjs",
+        "export": "observe"
+      },
+      "ObserveFs": {
+        "module": "adapters/fs/fixtures/probe.mjs",
+        "export": "observe"
+      },
+      "ObserveStripe": {
+        "module": "adapters/stripe/fixtures/probe.mjs",
+        "export": "observe"
+      },
+      "ProbeHandlerClock": {
+        "module": "adapters/handler/fixtures/probe.mjs",
+        "export": "probe"
+      },
+      "RunHarnessCase": {
+        "module": "packages/feat-runtime/fixtures/harness/probe.mjs",
+        "export": "runCases"
+      },
+      "LoadConfig": {
+        "module": "packages/feat-runtime/src/load-config.ts",
+        "export": "loadConfig"
+      },
+      "Parse": {
+        "module": "packages/feat-core/src/parse.ts",
+        "export": "parse"
+      },
+      "ProbeHandlerNamespace": {
+        "module": "adapters/handler/fixtures/probe.mjs",
+        "export": "probeNamespace"
+      }
+    }
+  },
+  "services": {
+    "filesystem": {
+      "adapter": "@mmmnt/feat-adapter-fs",
+      "consistency": "acid",
+      "options": {
+        "scope": "packages"
+      }
+    }
+  },
+  "specs": {
+    "dir": ".",
+    "pattern": "**/*.feat",
+    "contractPattern": "**/*.contract.json",
+    "outputPattern": "{name}.test.ts"
+  },
+  "report": {
+    "format": [
+      "console"
+    ]
+  }
+}

@@ -1,0 +1,281 @@
+feat 1.0
+
+# SPEC-ADPKFK-001 — the Kafka service adapter (@mmmnt/feat-adapter-kafka, built on the official
+# Confluent client @confluentinc/kafka-javascript). DRAFT: status draft until the founder flips it.
+#
+# Driven through adapters/kafka/fixtures/probe.mjs (part of the build, inside touches, not
+# shipped). `ObserveKafka { script, bootstrap?, settleTimeoutMs? }` creates one adapter per
+# namespace named in the script against a single-node Kafka (KRaft, auto topic creation on,
+# one partition by default) that the TEST starts, and runs a space-separated script. Steps:
+#   setup:<ns>
+#   seed:<ns>:<topic>:<Label>        adapter.seed(): produce with acks=all, before the window
+#   topic:<ns>:<topic>:<partitions>  the SYSTEM creates a topic with that many partitions
+#   produce:<ns>:<topic>:<Label>     the SYSTEM produces (acks=all): key = Label, value {"label":Label}
+#   producep:<ns>:<topic>:<p>:<Label>  the same, to partition <p>
+#   producebig:<ns>:<topic>          the SYSTEM produces a 2 KiB value
+#   produceraw:<topic>:<Label>       the SYSTEM produces to a topic outside every namespace
+#   txcommit / txabort :<ns>:<topic>:<Label>   produce inside a transaction, then commit or abort
+#   txopen:<ns>:<topic>:<Label>      produce inside a transaction and leave it open
+#   txclose:<ns>                     commit the transaction txopen left open
+#   start / peek / stop / settle / reset : <ns>
+#   read:<ns>[:<topic>]              adapter.read({}) or read({expect:[{type:<topic>}]})
+#   fault:<ns>:<Operation>.<FAULT>:<topic>[:once|:times2|:reset]   adapter.fault() (count default reset)
+#   fired:<ns>                       adapter.firedFaults()
+# `<topic>` is relative: the probe prefixes it with `<ns>.` as the system under test would. The
+# trace shows each step; window steps carry the record count (`peek:a=2`), settle true/false, read
+# the record count, a refused produce `produce:a!CODE` (UPPER_SNAKE of the client's error, one of
+# MESSAGE_TOO_LARGE, NOT_ENOUGH_REPLICAS). `last` is the last peek or stop's records as
+# `topic/key` joined by comma in the adapter's order; for a topic with several partitions it is
+# `p=topic/key,...;p=...` per partition, because Kafka orders a partition and nothing else.
+#
+# What is verified here (DESIGN.md has the sources): the client exposes end offsets with an
+# isolation level (admin fetchTopicOffsets: READ_UNCOMMITTED gives the high watermark,
+# READ_COMMITTED the last stable offset), a manually assigned consumer with isolation.level
+# read_committed, and deleteTopicRecords. So the fence is not a sentinel: after the system's
+# produces returned, take the last stable offset of every partition of every namespaced topic and
+# consume to it. An open transaction holds the last stable offset below the high watermark, so a
+# gap between the two is an effect the adapter cannot see yet and settle declines.
+
+spec SPEC-ADPKFK-001 "Kafka adapter: namespaced capture, state, settle, reset and faults"
+context Toolchain
+aggregate Adapters
+type infrastructure
+status draft
+
+construct:
+  handler at adapters/kafka/src/index.ts
+  touches adapters/kafka/**
+  needs SPEC-RT-002
+  needs SPEC-FPX-001
+  Declare `observes = { diff: "native", state: true }` and the fault catalog
+  `{ Produce: { MESSAGE_TOO_LARGE: ["reset"], NOT_ENOUGH_REPLICAS: ["reset"] } }` (the Connection
+  entries are in transport.feat and broker-loss.feat).
+  Options: `bootstrapServers` (or `bootstrapServersEnv`), `auth`
+  (env-var NAMES, SASL), `settleTimeoutMs` (default 5000), `proxy` (SPEC-FPX-001).
+  Namespace: received from the runner (SPEC-RT-006) as the config's top-level `namespace`, never an option; the probe maps each script label (a, b) to the namespace `s` + 12 hex of sha256(label), and `raw=<value>` passes a value as is.
+  Namespace use: every topic the system uses is named `<ns>.<topic>`.
+  setup(): create the admin client and verify the brokers answer (else BROKER_UNREACHABLE).
+  startCapture(): list the topics with the prefix and keep, per partition, the READ_COMMITTED end
+  offset as the exclusive cursor; a topic that appears later starts at its low offset.
+  peekCapture()/stopCapture(): a consumer assigned (no group, no commits) to every partition of
+  every namespaced topic, isolation.level read_committed, consumes from the cursor to the
+  current READ_COMMITTED end offsets. Records come back per partition in offset order,
+  partitions in (partition id) order within a topic and topics in name order, as CapturedRecord
+  { type: the topic without the prefix, key: the record key, payload: the JSON value, timestamp:
+  the record timestamp, metadata: { partition, offset, headers } }. peek accumulates and advances
+  the in-adapter cursor; stop returns the accumulation and closes. Records of aborted
+  transactions and transaction markers are never returned.
+  settle(): false with no window open. Otherwise, within settleTimeoutMs: list the topics, fetch
+  READ_COMMITTED and READ_UNCOMMITTED end offsets of every partition; while any partition's two
+  differ (an open transaction) wait and retry; consume to the READ_COMMITTED offsets; resolve
+  true. Resolve false if an open transaction outlives the timeout or the brokers do not answer.
+  It writes nothing.
+  read(query): consume from the low offset to the READ_COMMITTED end of the namespaced topics
+  (only those named by `query.expect[].type` when given); the same record shape.
+  seed(records): produce each record to `<ns>.<topic>` with acks=all, idempotence on.
+  reset(): disarm faults (delete the topics a fault created and wait until they are gone),
+  deleteTopicRecords up to the high watermark on every other namespaced partition, close the
+  window.
+
+enforce:
+  rejects NAMESPACE_INVALID when the namespace does not match ^s[0-9a-f]{12}$, the pattern the runner derives (SPEC-RT-006); defensive, the runner never passes another
+  rejects BROKER_UNREACHABLE when no bootstrap server answers at setup
+  rejects FAULT_TARGET_EXISTS when a Produce fault names a topic that already exists
+  rejects FAULT_UNSUPPORTED when a fault is not in the catalog, or when its count is not one the fault declares
+  capture is restricted to topics whose name starts with the namespace prefix
+  capture reads only committed records
+  settle resolves true only when every namespaced partition was consumed to its last stable offset and no transaction is open
+  settle resolves false when no window is open, a transaction stays open, or the brokers do not answer in time
+  firedFaults is not implemented because the broker reports no produce it refused
+  reset disarms every armed fault and empties the namespace's topics without deleting the ones the system created
+
+contract:
+  input ObserveInput
+  response ObserveResult
+  error ObserveError
+
+scenario outline "a namespace that does not match the runner's pattern is refused":
+  when: ObserveKafka { script: <script> }
+  predict rejection NAMESPACE_INVALID:
+    response ERR ObserveError { code: "NAMESPACE_INVALID", detail: matching <detail> }
+    filesystem has []
+  examples:
+    | script           | detail   |
+    | "setup:raw=Orders"   | "Orders" |
+    | "setup:raw=a.b"      | "a.b"    |
+    | "setup:raw=9lives"   | "9lives" |
+    | "setup:raw=S0599e33863c1" | "S0599e33863c1" |
+    | "setup:raw=s0599e33863c"  | "s0599e33863c" |
+
+scenario "a broker that does not answer is a configuration error at setup":
+  when: ObserveKafka { script: "setup:a", bootstrap: "unreachable" }
+  predict rejection BROKER_UNREACHABLE:
+    response ERR ObserveError { code: "BROKER_UNREACHABLE", detail: matching "bootstrap" }
+    filesystem has []
+
+scenario "records produced in the window are captured in offset order, seeds are not":
+  when: ObserveKafka { script: "setup:a seed:a:orders:Seeded start:a produce:a:orders:Placed produce:a:orders:Paid produce:a:billing:Charged stop:a" }
+  predict success:
+    response OK ObserveResult {
+      trace: "setup:a seed:a start:a produce:a produce:a produce:a stop:a=3",
+      last: "billing/Charged,orders/Placed,orders/Paid"
+    }
+    filesystem has []
+
+scenario "two namespaces never see each other's records":
+  when: ObserveKafka { script: "setup:a setup:b start:a start:b produce:a:orders:PlacedA produce:b:orders:PlacedB produce:b:orders:PaidB stop:a stop:b" }
+  predict success:
+    response OK ObserveResult {
+      trace: "setup:a setup:b start:a start:b produce:a produce:b produce:b stop:a=1 stop:b=2",
+      last: "orders/PlacedB,orders/PaidB"
+    }
+    filesystem has []
+
+scenario "a topic outside every namespace is nobody's effect":
+  when: ObserveKafka { script: "setup:a start:a produceraw:elsewhere:Stray stop:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a start:a produceraw stop:a=0" }
+    filesystem has []
+
+scenario "across partitions only each partition's order is reported":
+  when: ObserveKafka { script: "setup:a topic:a:orders:2 start:a producep:a:orders:0:A producep:a:orders:1:B producep:a:orders:0:C stop:a" }
+  predict success:
+    response OK ObserveResult {
+      trace: "setup:a topic:a start:a producep:a producep:a producep:a stop:a=3",
+      last: "0=orders/A,orders/C;1=orders/B"
+    }
+    filesystem has []
+
+scenario "records of an aborted transaction are not captured, committed ones are":
+  when: ObserveKafka { script: "setup:a start:a txabort:a:orders:Lost txcommit:a:orders:Kept stop:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a start:a txabort:a txcommit:a stop:a=1", last: "orders/Kept" }
+    filesystem has []
+
+scenario "a peek reports the window's records and consumes nothing":
+  when: ObserveKafka { script: "setup:a start:a produce:a:orders:Placed peek:a peek:a stop:a" }
+  predict success:
+    response OK ObserveResult {
+      trace: "setup:a start:a produce:a peek:a=1 peek:a=1 stop:a=1",
+      last: "orders/Placed",
+      peekEqualsStop: true
+    }
+    filesystem has []
+
+scenario "a peek sees records produced between peeks exactly once":
+  when: ObserveKafka { script: "setup:a start:a produce:a:orders:One peek:a produce:a:orders:Two peek:a stop:a" }
+  predict success:
+    response OK ObserveResult {
+      trace: "setup:a start:a produce:a peek:a=1 produce:a peek:a=2 stop:a=2",
+      last: "orders/One,orders/Two",
+      peekEqualsStop: true
+    }
+    filesystem has []
+
+scenario "a peek with no window open is empty":
+  when: ObserveKafka { script: "setup:a produce:a:orders:Placed peek:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a produce:a peek:a=0" }
+    filesystem has []
+
+scenario "settle vouches once the system's records are consumable":
+  when: ObserveKafka { script: "setup:a start:a produce:a:orders:Placed settle:a stop:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a start:a produce:a settle:a=true stop:a=1", last: "orders/Placed" }
+    filesystem has []
+
+scenario "settle vouches on an empty window, which is how an absence is proven":
+  when: ObserveKafka { script: "setup:a start:a settle:a stop:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a start:a settle:a=true stop:a=0" }
+    filesystem has []
+
+scenario "settle declines when no window is open":
+  when: ObserveKafka { script: "setup:a settle:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a settle:a=false" }
+    filesystem has []
+
+scenario "settle declines while a transaction is open, because that effect is not yet decided":
+  when: ObserveKafka { script: "setup:a start:a txopen:a:orders:Pending settle:a txclose:a settle:a stop:a", settleTimeoutMs: 500 }
+  predict success:
+    response OK ObserveResult {
+      trace: "setup:a start:a txopen:a settle:a=false txclose:a settle:a=true stop:a=1",
+      last: "orders/Pending"
+    }
+    filesystem has []
+
+scenario "settle declines when it cannot consume to the fence in time":
+  when: ObserveKafka { script: "setup:a start:a produce:a:orders:Placed settle:a stop:a", settleTimeoutMs: 0 }
+  predict success:
+    response OK ObserveResult { trace: "setup:a start:a produce:a settle:a=false stop:a=1" }
+    filesystem has []
+
+scenario "read reports the namespace's committed records and no other namespace's":
+  when: ObserveKafka { script: "setup:a setup:b seed:a:orders:Seeded produce:a:orders:Placed txabort:a:orders:Lost read:a read:b" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a setup:b seed:a produce:a txabort:a read:a=2 read:b=0" }
+    filesystem has []
+
+scenario "read with a topic hint returns that topic and may return no other":
+  when: ObserveKafka { script: "setup:a seed:a:orders:One seed:a:billing:Two read:a:orders" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a seed:a seed:a read:a:orders=1" }
+    filesystem has []
+
+scenario "reset empties the namespace and leaves the other one alone":
+  when: ObserveKafka { script: "setup:a setup:b seed:a:orders:One seed:b:orders:Two reset:a read:a read:b" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a setup:b seed:a seed:b reset:a read:a=0 read:b=1" }
+    filesystem has []
+
+scenario "a window left open by the previous case is closed by reset":
+  when: ObserveKafka { script: "setup:a start:a produce:a:orders:Placed reset:a peek:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a start:a produce:a reset:a peek:a=0" }
+    filesystem has []
+
+scenario "a record bigger than the topic allows is refused when MESSAGE_TOO_LARGE is armed":
+  when: ObserveKafka { script: "setup:a fault:a:Produce.MESSAGE_TOO_LARGE:orders start:a producebig:a:orders settle:a stop:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a fault:a:Produce.MESSAGE_TOO_LARGE start:a producebig:a!MESSAGE_TOO_LARGE settle:a=true stop:a=0" }
+    filesystem has []
+
+scenario "a produce that needs more in-sync replicas than exist is refused when NOT_ENOUGH_REPLICAS is armed":
+  when: ObserveKafka { script: "setup:a fault:a:Produce.NOT_ENOUGH_REPLICAS:orders start:a produce:a:orders:Placed settle:a stop:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a fault:a:Produce.NOT_ENOUGH_REPLICAS start:a produce:a!NOT_ENOUGH_REPLICAS settle:a=true stop:a=0" }
+    filesystem has []
+
+scenario "reset removes the topic the fault created, so the same produce then succeeds":
+  when: ObserveKafka { script: "setup:a fault:a:Produce.NOT_ENOUGH_REPLICAS:orders reset:a start:a produce:a:orders:Placed settle:a stop:a" }
+  predict success:
+    response OK ObserveResult {
+      trace: "setup:a fault:a:Produce.NOT_ENOUGH_REPLICAS reset:a start:a produce:a settle:a=true stop:a=1",
+      last: "orders/Placed"
+    }
+    filesystem has []
+
+scenario "a fault cannot be armed on a topic that already holds the system's data":
+  when: ObserveKafka { script: "setup:a seed:a:orders:One fault:a:Produce.MESSAGE_TOO_LARGE:orders" }
+  predict rejection FAULT_TARGET_EXISTS:
+    response ERR ObserveError { code: "FAULT_TARGET_EXISTS", detail: matching "orders" }
+    filesystem has []
+
+scenario "the broker reports no produce it refused, so firedFaults is not offered":
+  when: ObserveKafka { script: "setup:a fault:a:Produce.MESSAGE_TOO_LARGE:orders fired:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a fault:a:Produce.MESSAGE_TOO_LARGE fired:a=unobserved" }
+    filesystem has []
+
+scenario outline "a fault the binding cannot produce faithfully is refused before it does anything":
+  when: ObserveKafka { script: <script> }
+  predict rejection FAULT_UNSUPPORTED:
+    response ERR ObserveError { code: "FAULT_UNSUPPORTED", detail: matching <detail> }
+    filesystem has []
+  examples:
+    | script                                                  | detail                   |
+    | "setup:a fault:a:Produce.MESSAGE_TOO_LARGE:orders:once" | "once"                   |
+    | "setup:a fault:a:Produce.NOT_LEADER:orders"             | "NOT_LEADER"             |
+    | "setup:a fault:a:Produce.TOPIC_AUTHORIZATION_FAILED:orders" | "TOPIC_AUTHORIZATION_FAILED" |
+    | "setup:a fault:a:Consume.MESSAGE_TOO_LARGE:orders"      | "Consume"                |

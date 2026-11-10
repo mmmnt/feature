@@ -1,0 +1,84 @@
+{
+  "featVersion": "1.0",
+  "environment": "toolchain",
+  "schemas": {
+    "adapter": "@mmmnt/feat-schema-json"
+  },
+  "response": {
+    "adapter": "@mmmnt/feat-adapter-handler",
+    "commands": {
+      "ObserveKurrent": {
+        "module": "adapters/kurrent/fixtures/probe.mjs",
+        "export": "observe"
+      },
+      "ObserveKurrentTransport": {
+        "module": "adapters/kurrent/fixtures/probe.mjs",
+        "export": "observeTransport"
+      },
+      "ObserveKafka": {
+        "module": "adapters/kafka/fixtures/probe.mjs",
+        "export": "observe"
+      },
+      "ObserveKafkaTransport": {
+        "module": "adapters/kafka/fixtures/probe.mjs",
+        "export": "observeTransport"
+      },
+      "ObserveDynamoQuery": {
+        "module": "adapters/dynamodb/fixtures/query-probe.mjs",
+        "export": "observe"
+      },
+      "ObserveDynamoTransport": {
+        "module": "adapters/dynamodb/fixtures/query-probe.mjs",
+        "export": "observeTransport"
+      },
+      "ObserveNeo4j": {
+        "module": "adapters/neo4j/fixtures/probe.mjs",
+        "export": "observe"
+      },
+      "ObserveNeo4jTransport": {
+        "module": "adapters/neo4j/fixtures/probe.mjs",
+        "export": "observeTransport"
+      },
+      "ObserveKms": {
+        "module": "adapters/kms/fixtures/probe.mjs",
+        "export": "observe"
+      },
+      "ObserveKmsTransport": {
+        "module": "adapters/kms/fixtures/probe.mjs",
+        "export": "observeTransport"
+      },
+      "ProbeFaultProxy": {
+        "module": "adapters/fault-proxy/fixtures/probe.mjs",
+        "export": "probe"
+      },
+      "ObserveKurrentBrokerLoss": {
+        "module": "adapters/kurrent/fixtures/probe.mjs",
+        "export": "observeBrokerLoss"
+      },
+      "ObserveKafkaBrokerLoss": {
+        "module": "adapters/kafka/fixtures/probe.mjs",
+        "export": "observeBrokerLoss"
+      }
+    }
+  },
+  "services": {
+    "filesystem": {
+      "adapter": "@mmmnt/feat-adapter-fs",
+      "consistency": "acid",
+      "options": {
+        "scope": "packages"
+      }
+    }
+  },
+  "specs": {
+    "dir": ".",
+    "pattern": "**/*.feat",
+    "contractPattern": "**/*.contract.json",
+    "outputPattern": "{name}.test.ts"
+  },
+  "report": {
+    "format": [
+      "console"
+    ]
+  }
+}

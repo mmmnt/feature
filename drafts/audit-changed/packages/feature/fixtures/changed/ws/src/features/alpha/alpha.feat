@@ -1,0 +1,24 @@
+feat 1.0
+
+spec SPEC-CHGFX-001 "Fixture alpha"
+context Fixture
+aggregate Thing
+type command
+status agreed
+
+construct:
+  handler at src/features/alpha/handler.ts
+  touches src/features/alpha/**
+
+enforce:
+  do the thing
+
+contract:
+  input ThingInput
+  response ThingResult
+
+scenario "does the thing":
+  when: DoAlpha { value: 1 }
+  predict success:
+    response 200 ThingResult
+    log has []

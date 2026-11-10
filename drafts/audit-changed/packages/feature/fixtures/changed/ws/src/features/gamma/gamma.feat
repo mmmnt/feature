@@ -1,0 +1,25 @@
+feat 1.0
+
+spec SPEC-CHGFX-003 "Fixture gamma"
+context Fixture
+aggregate Thing
+type command
+status agreed
+
+construct:
+  handler at src/shared/gamma.ts
+  touches src/features/gamma/**
+  touches src/shared/gamma.ts
+
+enforce:
+  do the thing
+
+contract:
+  input ThingInput
+  response ThingResult
+
+scenario "does the thing":
+  when: DoGamma { value: 1 }
+  predict success:
+    response 200 ThingResult
+    log has []

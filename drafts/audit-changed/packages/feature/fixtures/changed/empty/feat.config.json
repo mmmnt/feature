@@ -1,0 +1,14 @@
+{
+  "featVersion": "1.0",
+  "schemas": { "adapter": "@mmmnt/feat-schema-json" },
+  "response": {
+    "adapter": "@mmmnt/feat-adapter-handler",
+    "commands": {
+      "DoNothing": { "module": "src/features/nothing/handler.ts", "export": "doNothing" }
+    }
+  },
+  "services": {
+    "log": { "adapter": "@mmmnt/feat-adapter-fs", "consistency": "acid" }
+  },
+  "specs": { "dir": "src/features", "pattern": "**/*.feat", "contractPattern": "**/*.contract.json", "outputPattern": "{name}.test.ts" }
+}

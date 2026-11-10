@@ -1,0 +1,210 @@
+{
+  "featVersion": "1.0",
+  "identity": {
+    "id": "SPEC-REJ-001",
+    "name": "AnswerQuestion",
+    "context": "Questions",
+    "aggregate": "Question",
+    "type": "command",
+    "status": "agreed"
+  },
+  "construct": [
+    {
+      "kind": "handler",
+      "path": "features/answer-question/handler.ts"
+    },
+    {
+      "kind": "touches",
+      "glob": "features/answer-question/**"
+    }
+  ],
+  "enforce": [
+    {
+      "kind": "constraint",
+      "text": "record the answer against the open question"
+    },
+    {
+      "kind": "rejects",
+      "rejectionId": "NotOperator",
+      "text": "the caller is not an operator of the workspace"
+    },
+    {
+      "kind": "rejects",
+      "rejectionId": "AlreadyAnswered",
+      "text": "the question already holds an answer"
+    },
+    {
+      "kind": "rejects",
+      "rejectionId": "UNKNOWN_QUESTION",
+      "text": "no question has the given id"
+    }
+  ],
+  "contract": [
+    {
+      "kind": "input",
+      "schemaName": "AnswerInput"
+    },
+    {
+      "kind": "response",
+      "schemaName": "Answered"
+    },
+    {
+      "kind": "record",
+      "schemaName": "AnswerRow"
+    },
+    {
+      "kind": "error",
+      "schemaName": "Refusal"
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "an operator answers an open question",
+      "given": {
+        "context": [
+          "A question \"q-1\" is open."
+        ]
+      },
+      "when": {
+        "command": "AnswerQuestion",
+        "actor": "operator",
+        "payload": {
+          "questionId": "q-1",
+          "option": "yes"
+        }
+      },
+      "prediction": {
+        "type": "success",
+        "response": {
+          "status": 200,
+          "schemaName": "Answered",
+          "valueBlock": {
+            "questionId": {
+              "matcher": "whenRef",
+              "path": "questionId"
+            },
+            "option": {
+              "matcher": "literal",
+              "value": "yes"
+            }
+          }
+        },
+        "services": {
+          "answers": {
+            "records": [
+              {
+                "type": "ANSWER_RECORDED",
+                "schemaName": "AnswerRow",
+                "valueBlock": {
+                  "questionId": {
+                    "matcher": "whenRef",
+                    "path": "questionId"
+                  },
+                  "option": {
+                    "matcher": "literal",
+                    "value": "yes"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "a non-operator is refused",
+      "when": {
+        "command": "AnswerQuestion",
+        "actor": "reader",
+        "payload": {
+          "questionId": "q-1",
+          "option": "yes"
+        }
+      },
+      "prediction": {
+        "type": "rejection",
+        "rejectionId": "NotOperator",
+        "response": {
+          "status": 403,
+          "schemaName": "Refusal",
+          "valueBlock": {
+            "code": {
+              "matcher": "literal",
+              "value": "NotOperator"
+            }
+          }
+        },
+        "services": {
+          "answers": {
+            "records": []
+          }
+        }
+      }
+    },
+    {
+      "name": "a question that already holds an answer is refused",
+      "given": {
+        "context": [
+          "A question \"q-2\" is open and already answered."
+        ]
+      },
+      "when": {
+        "command": "AnswerQuestion",
+        "actor": "operator",
+        "payload": {
+          "questionId": "q-2",
+          "option": "no"
+        }
+      },
+      "prediction": {
+        "type": "rejection",
+        "rejectionId": "AlreadyAnswered",
+        "response": {
+          "status": 409,
+          "schemaName": "Refusal",
+          "valueBlock": {
+            "code": {
+              "matcher": "literal",
+              "value": "AlreadyAnswered"
+            }
+          }
+        },
+        "services": {
+          "answers": {
+            "records": []
+          }
+        }
+      }
+    },
+    {
+      "name": "an unknown question is refused with an UPPER_SNAKE id",
+      "when": {
+        "command": "AnswerQuestion",
+        "actor": "operator",
+        "payload": {
+          "questionId": "q-404",
+          "option": "yes"
+        }
+      },
+      "prediction": {
+        "type": "rejection",
+        "rejectionId": "UNKNOWN_QUESTION",
+        "response": {
+          "status": 404,
+          "schemaName": "Refusal",
+          "valueBlock": {
+            "code": {
+              "matcher": "literal",
+              "value": "UNKNOWN_QUESTION"
+            }
+          }
+        },
+        "services": {
+          "answers": {
+            "records": []
+          }
+        }
+      }
+    }
+  ]
+}

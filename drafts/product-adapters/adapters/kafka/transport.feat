@@ -1,0 +1,85 @@
+feat 1.0
+
+# SPEC-ADPKFK-002 — Kafka adapter: transport faults on the system's path. DRAFT: status draft until the founder flips it. Integration tier only:
+# this file is excluded from the spec tier (specs.exclude: **/transport.feat) because the
+# in-process spec host has no wire to cut. The mechanism is SPEC-FPX-001; this spec states what
+# the product adapter promises on top of it.
+#
+# Topology: the system's producer bootstraps at the proxy's listen address, and the broker advertises that same address on the listener the system uses (a dedicated listener; otherwise the client follows the broker's advertised address straight past the proxy); the adapter's instrument clients use the broker's direct listener.
+# BrokerLoss is not here: it is exclusive and lives in broker-loss.feat (serial pass, SPEC-RT-005).
+# Fixture: a single-node Kafka container (KRaft) with two listeners, the TEST's own, and a Toxiproxy container.
+# `ObserveKafkaTransport { script }` runs a space-separated script against the adapter of SPEC-ADPKFK-001
+# with `options.proxy` set. Steps: `setup:<ns>`, `start:<ns>`, `stop:<ns>`, `settle:<ns>`,
+# `reset:<ns>`, `fired:<ns>`, `fault:<ns>:Connection.<Fault>[:once]`, and `produce:<ns>:...`
+# (the SYSTEM writes through the proxy); a Connection fault has no stream or topic segment, only an optional count. request timeouts, transport and all-brokers-down errors from the client are all reported as TRANSPORT_FAILURE. Trace and counts as in SPEC-ADPKFK-001.
+#
+# What the scenarios decide: a transport fault is on the SYSTEM's path only; the adapter observes
+# on its own direct connection, so under a fault the capture, the fence and the state read still
+# work, and an absence under a fault is still provable. Whether the fault was consumed is
+# unobserved (the proxy reports bytes, not activations: DESIGN.md of the fault-proxy library).
+
+spec SPEC-ADPKFK-002 "Kafka adapter: transport faults on the system's path"
+context Toolchain
+aggregate Adapters
+type infrastructure
+status draft
+
+construct:
+  handler at adapters/kafka/src/index.ts
+  touches adapters/kafka/**
+  needs SPEC-FPX-001
+  needs SPEC-ADPKFK-001
+  Add `Connection: { Timeout: ["reset"], ConnectionReset: ["reset"], Partition: ["reset"] }` to the fault catalog when `options.proxy` is configured
+  (`{ api, name }` plus, for container control, `container`); without it the catalog has no
+  Connection entry. fault() with Connection delegates to the shared fault-proxy library; reset()
+  calls the library's disarm. The adapter's own clients never use the proxy.
+
+enforce:
+  rejects FAULT_UNSUPPORTED when a Connection fault is armed with a count it does not declare (only until reset), or without options.proxy
+  the adapter's observation is on a connection the proxy does not carry
+  reset removes every toxic, re-enables the proxy and restores a stopped or paused container
+
+contract:
+  input ObserveInput
+  response ObserveResult
+  error ObserveError
+
+scenario "a partition on the system's path refuses its write and leaves the observation intact":
+  when: ObserveKafkaTransport { script: "setup:a start:a fault:a:Connection.Partition produce:a:orders:Placed settle:a stop:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a start:a fault:a:Connection.Partition produce:a!TRANSPORT_FAILURE settle:a=true stop:a=0" }
+    filesystem has []
+
+scenario "a connection reset on the system's path refuses its write the same way":
+  when: ObserveKafkaTransport { script: "setup:a start:a fault:a:Connection.ConnectionReset produce:a:orders:Placed settle:a stop:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a start:a fault:a:Connection.ConnectionReset produce:a!TRANSPORT_FAILURE settle:a=true stop:a=0" }
+    filesystem has []
+
+scenario "a timeout on the system's path surfaces as a transport failure after the client's deadline":
+  when: ObserveKafkaTransport { script: "setup:a start:a fault:a:Connection.Timeout produce:a:orders:Placed settle:a stop:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a start:a fault:a:Connection.Timeout produce:a!TRANSPORT_FAILURE settle:a=true stop:a=0" }
+    filesystem has []
+
+scenario "reset heals the path, so the same write is then captured":
+  when: ObserveKafkaTransport { script: "setup:a fault:a:Connection.Partition reset:a start:a produce:a:orders:Placed settle:a stop:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a fault:a:Connection.Partition reset:a start:a produce:a settle:a=true stop:a=1", last: "orders/Placed" }
+    filesystem has []
+
+scenario "the proxy reports no activation, so firedFaults is not offered":
+  when: ObserveKafkaTransport { script: "setup:a fault:a:Connection.Partition fired:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a fault:a:Connection.Partition fired:a=unobserved" }
+    filesystem has []
+
+scenario outline "a transport fault that the proxy cannot scope to one call is refused":
+  when: ObserveKafkaTransport { script: <script> }
+  predict rejection FAULT_UNSUPPORTED:
+    response ERR ObserveError { code: "FAULT_UNSUPPORTED", detail: matching <detail> }
+    filesystem has []
+  examples:
+    | script                                        | detail |
+    | "setup:a fault:a:Connection.Timeout:once"     | "once" |
+    | "setup:a fault:a:Connection.Partition:times2" | "times" |

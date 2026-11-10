@@ -1,0 +1,37 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-ADPMEM-001",
+  "schemas": {
+    "ObserveInput": {
+      "type": "object",
+      "required": [
+        "script"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "script": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "ObserveResult": {
+      "type": "object",
+      "required": [
+        "trace"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "trace": {
+          "type": "string"
+        },
+        "lastTypes": {
+          "type": "string"
+        },
+        "peekEqualsStop": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

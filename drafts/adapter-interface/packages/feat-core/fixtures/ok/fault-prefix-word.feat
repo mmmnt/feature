@@ -1,0 +1,27 @@
+feat 1.0
+
+spec SPEC-OK-101 "A word that merely begins with fault"
+context Ok
+aggregate Thing
+type command
+status draft
+
+construct:
+  handler at src/do-thing.ts
+  touches src/**
+
+enforce:
+  do the thing
+
+contract:
+  input ThingInput
+  response ThingResult
+
+scenario "does the thing":
+  given:
+    faults in the upstream are rare, and this line is context
+    faultline is one word
+  when: DoThing { value: 1 }
+  predict success:
+    response OK ThingResult
+    eventStore has []

@@ -1,0 +1,55 @@
+feat 1.0
+
+# Corpus exemplar #13 (staged) — `fault` in given: (ADR-0023 draft). A logical fault the
+# product returns is a PRECONDITION: armed after the seeds and the given executes have run,
+# before the capture window opens, and consumed by the named operation of the named service.
+# The prediction states what the system does about it — here a refusal with nothing written,
+# a recovery that writes once, and a fault that holds for the whole case. A fault that is
+# armed and never consumed fails the case (the scenario did not exercise what it claims).
+
+spec SPEC-ORD-003 "PlaceOrder under product faults"
+context Orders
+aggregate Order
+type command
+status agreed
+
+construct:
+  handler at features/place-order/handler.ts
+  touches features/place-order/**
+
+enforce:
+  append OrderPlaced to the order's stream with the expected revision
+  rejects CONCURRENCY_CONFLICT when the store reports a wrong expected revision
+  retry once when the store reports the node is not the leader
+  rejects STORE_UNAVAILABLE when the store denies the append
+
+contract:
+  input PlaceOrderInput
+  response OrderAccepted
+  event OrderPlacedEvent
+  error Refusal
+
+scenario "a concurrent writer wins the append":
+  given:
+    Another writer has already appended to this order's stream.
+    fault eventStore AppendToStream WrongExpectedVersion
+  when: PlaceOrder { orderId: "o-1", sku: "sku-9" }
+  predict rejection CONCURRENCY_CONFLICT:
+    response 409 Refusal { code: "CONCURRENCY_CONFLICT" }
+    eventStore has []
+
+scenario "a not-leader answer is retried once and the order is placed":
+  given:
+    fault eventStore AppendToStream NotLeader { node: "n2" } times 1
+  when: PlaceOrder { orderId: "o-2", sku: "sku-9" }
+  predict success:
+    response 202 OrderAccepted { orderId: @when.orderId }
+    eventStore has [ OrderPlaced with OrderPlacedEvent { orderId: @when.orderId } ]
+
+scenario "access denied holds for the whole case":
+  given:
+    fault eventStore AppendToStream AccessDenied { stream: "orders" } until reset
+  when: PlaceOrder { orderId: "o-3" }
+  predict rejection STORE_UNAVAILABLE:
+    response 503 Refusal { code: "STORE_UNAVAILABLE" }
+    eventStore has []

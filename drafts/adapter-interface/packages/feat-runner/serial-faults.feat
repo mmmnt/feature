@@ -1,0 +1,106 @@
+feat 1.0
+
+# SPEC-RT-005 — the runner's serial pass for exclusive faults (founder ruling c7af7871, item 4:
+# "BrokerLoss runs serially"). DRAFT: status draft until the founder flips it.
+#
+# Why serial: BrokerLoss pauses or stops the product's container, which every namespace and every
+# spec file shares. A file that arms it while another file runs against the same product fails
+# that other file for a reason it cannot see. Namespaces isolate data, not availability.
+#
+# The rule (recommendation of the drafting session; the alternatives are in
+# drafts/product-adapters/BROKERLOSS-SERIAL.md). feat-types exports one constant,
+# EXCLUSIVE_FAULTS = ["BrokerLoss"]. `feat run` reads the IR of every spec (it already parses
+# them), finds the files in which ANY scenario arms a fault whose name is in the constant, and
+# runs the rest first in the usual parallel pass and those files second in a serial pass with
+# exactly one worker (a second vitest invocation with file parallelism off). No tag, no file-name
+# convention and no list to keep: the partition is swept from the IR, so a new spec that arms
+# BrokerLoss cannot be forgotten. As belt and braces the harness's preflight refuses an exclusive
+# fault in a worker that is not the serial one (FAULT_REQUIRES_SERIAL), with the same constant,
+# so a hand-run vitest or a future runner cannot run it in parallel by accident. Product specs
+# keep BrokerLoss scenarios in their own file (broker-loss.feat) so that only that file waits.
+#
+# Driven through packages/feat-runner/fixtures/probe.mjs (part of the build). `PlanRun { specs,
+# exclusive? }` takes spec descriptions { path, faults } (the fault names, as `Connection.Timeout`,
+# that any scenario of the file arms) and answers the plan the runner would execute: `parallel`
+# and `serial` (comma-joined paths, in input order), `order` and `serialWorkers`.
+# `PreflightSerial { fault, worker }` runs the harness preflight for one case that arms `fault` in
+# a worker that is `serial` or `parallel`.
+
+spec SPEC-RT-005 "Runner: exclusive faults run in a serial pass"
+context Toolchain
+aggregate Runner
+type infrastructure
+status draft
+
+construct:
+  handler at packages/feat-runner/src/plan.ts
+  touches packages/feat-runner/**
+  touches packages/feat-types/**
+  touches packages/feat-runtime/src/harness.ts
+  needs SPEC-RT-003
+  Export EXCLUSIVE_FAULTS from feat-types. plan(specs) partitions by the IR: a spec is serial when
+  any scenario's given faults include a fault whose name (the part after the dot) is in
+  EXCLUSIVE_FAULTS. feat run executes the parallel set, then, if the serial set is not empty, a
+  second vitest run over exactly those files with one worker and FEAT_SERIAL=1 in the environment;
+  the report merges both and the exit code fails if either failed; a failure in the parallel pass
+  does not skip the serial pass. The harness preflight refuses an exclusive fault when
+  FEAT_SERIAL is not 1.
+
+enforce:
+  rejects FAULT_REQUIRES_SERIAL when a case arms an exclusive fault in a worker that is not the serial one
+  partition the specs by sweeping the IR for exclusive faults, never by name or by list
+  run the serial pass after the parallel pass with one worker
+  merge both passes into one report and fail the run if either pass failed
+
+contract:
+  input PlanInput
+  response PlanResult
+  error PlanError
+
+scenario "specs with no exclusive fault all run in the parallel pass":
+  when: PlanRun { specs: [ { path: "a.feat", faults: [] }, { path: "b.feat", faults: ["Connection.Timeout", "AppendToStream.AccessDenied"] } ] }
+  predict success:
+    response OK PlanResult { parallel: "a.feat,b.feat", serial: "", order: "parallel", serialWorkers: 0 }
+    filesystem has []
+
+scenario "a spec that arms BrokerLoss moves to the serial pass and the rest do not":
+  when: PlanRun { specs: [ { path: "a.feat", faults: [] }, { path: "loss.feat", faults: ["Connection.BrokerLoss"] }, { path: "c.feat", faults: ["Connection.Partition"] } ] }
+  predict success:
+    response OK PlanResult { parallel: "a.feat,c.feat", serial: "loss.feat", order: "parallel then serial", serialWorkers: 1 }
+    filesystem has []
+
+scenario "one scenario among many is enough to move its whole file":
+  when: PlanRun { specs: [ { path: "mixed.feat", faults: ["Connection.Timeout", "Connection.Timeout", "Connection.BrokerLoss"] } ] }
+  predict success:
+    response OK PlanResult { parallel: "", serial: "mixed.feat", order: "serial", serialWorkers: 1 }
+    filesystem has []
+
+scenario "the file's name decides nothing":
+  when: PlanRun { specs: [ { path: "adapters/kafka/transport.feat", faults: ["Connection.Timeout"] }, { path: "innocent-name.feat", faults: ["Connection.BrokerLoss"] } ] }
+  predict success:
+    response OK PlanResult { parallel: "adapters/kafka/transport.feat", serial: "innocent-name.feat", order: "parallel then serial", serialWorkers: 1 }
+    filesystem has []
+
+scenario "an exclusive fault in a worker that is not the serial one is refused before any effect":
+  when: PreflightSerial { fault: "Connection.BrokerLoss", worker: "parallel" }
+  predict rejection FAULT_REQUIRES_SERIAL:
+    response ERR PlanError { code: "FAULT_REQUIRES_SERIAL", detail: matching "BrokerLoss" }
+    filesystem has []
+
+scenario "the same fault in the serial worker is armed":
+  when: PreflightSerial { fault: "Connection.BrokerLoss", worker: "serial" }
+  predict success:
+    response OK PlanResult { order: "armed" }
+    filesystem has []
+
+scenario "a fault that is not exclusive is armed in any worker":
+  when: PreflightSerial { fault: "Connection.Partition", worker: "parallel" }
+  predict success:
+    response OK PlanResult { order: "armed" }
+    filesystem has []
+
+scenario "a failure in the parallel pass does not skip the serial pass, and the run still fails":
+  when: PlanRun { specs: [ { path: "a.feat", faults: [], outcome: "failed" }, { path: "loss.feat", faults: ["Connection.BrokerLoss"], outcome: "passed" } ] }
+  predict success:
+    response OK PlanResult { parallel: "a.feat", serial: "loss.feat", order: "parallel then serial", serialWorkers: 1, exit: 1, reported: "a.feat=failed,loss.feat=passed" }
+    filesystem has []

@@ -1,0 +1,114 @@
+feat 1.0
+
+# SPEC-WIRE-001 — the transport of @mmmnt/feat-adapter-wire: one request, one
+# answer, over the stdio JSON-RPC 2.0 protocol of FLMNT-ADR-006 §4 / SIFT-ADR-091
+# (contract: schemas/feat-wire.schema.json, copied unchanged from flmnt).
+# DRAFT: status draft until the founder flips it.
+#
+# Scope: the client side of the wire (spawn, frame, validate, correlate, fail
+# precisely, tear down). The adapter classes that expose it as a response adapter
+# and as service adapters, and the host sharing between them, are open question 5.
+# The fake host the scenarios drive (adapters/wire/fixtures/fake-host.mjs; its
+# --mode argument picks ok, echo, rpc-error, garbage, wrong-id, exit, silent) is
+# part of the build and sits inside touches.
+
+spec SPEC-WIRE-001 "Exchange one request with a spec host"
+context Toolchain
+aggregate Wire
+type command
+status draft
+
+construct:
+  handler at adapters/wire/src/exchange.ts
+  touches adapters/wire/**
+  touches feat.config.json
+  imports Ajv from ajv
+  needs SPEC-RT-001
+  Spawn the host named by host.command with stdin and stdout piped, send exactly one request line
+  ({"jsonrpc":"2.0","id":<n>,"method":…,"params":…}), read exactly one answer line, and return
+  its result. Validate the request against schemas/feat-wire.schema.json BEFORE spawning: an
+  invalid request never reaches a host. Validate the answer against the same schema and require
+  its id to equal the request id. Never retry, never reconnect: one exchange is one attempt.
+  The host is killed when the exchange ends (teardown ends its life; there is no long-running host).
+  Every failure names its code, and the answer carries whether a host was spawned and whether it is still alive.
+
+enforce:
+  validate the request, spawn the host, write one line, read one line
+  rejects INVALID_REQUEST when the request does not validate against the wire schema, and no host is spawned
+  rejects HOST_SPAWN_FAILED when the host command cannot be started
+  rejects HOST_EXITED when the host exits before it answers
+  rejects HOST_TIMEOUT when the host does not answer within timeoutMs (default 30000)
+  rejects PROTOCOL_VIOLATION when the host's line is not valid JSON, does not validate against the wire schema, or carries another id
+  rejects HOST_ERROR when the host answers with a JSON-RPC error, relaying its code and message verbatim
+  on every outcome leave no host process running
+
+contract:
+  input WireExchangeInput
+  response ExchangeResult
+  error WireError
+
+scenario "an invoke round-trips and relays status and body":
+  when: Exchange { host: { command: ["node", "adapters/wire/fixtures/fake-host.mjs", "--mode", "echo"] }, method: "invoke", params: { command: "Ping", input: { n: 1 }, actor: "admin" } }
+  predict success:
+    response OK ExchangeResult { method: "invoke", hostSpawned: true, hostAlive: false, result: { status: 200, body: { command: "Ping" } } }
+    filesystem has []
+
+scenario "setup carries the scenario clock to the host":
+  when: Exchange { host: { command: ["node", "adapters/wire/fixtures/fake-host.mjs", "--mode", "echo"] }, method: "setup", params: { services: ["log"], clock: "2026-07-16T00:00:00Z" } }
+  predict success:
+    response OK ExchangeResult { method: "setup", hostSpawned: true, hostAlive: false, result: { clock: "2026-07-16T00:00:00Z", services: ["log"] } }
+    filesystem has []
+
+scenario "teardown leaves no host running":
+  when: Exchange { host: { command: ["node", "adapters/wire/fixtures/fake-host.mjs", "--mode", "ok"] }, method: "teardown", params: {} }
+  predict success:
+    response OK ExchangeResult { method: "teardown", hostSpawned: true, hostAlive: false }
+    filesystem has []
+
+scenario "an invoke without a command never reaches a host":
+  when: Exchange { host: { command: ["node", "adapters/wire/fixtures/fake-host.mjs", "--mode", "ok"] }, method: "invoke", params: { input: {} } }
+  predict rejection INVALID_REQUEST:
+    response ERR WireError { code: "INVALID_REQUEST", hostSpawned: false, hostAlive: false }
+    filesystem has []
+
+scenario "a method outside the protocol never reaches a host":
+  when: Exchange { host: { command: ["node", "adapters/wire/fixtures/fake-host.mjs", "--mode", "ok"] }, method: "explode", params: {} }
+  predict rejection INVALID_REQUEST:
+    response ERR WireError { code: "INVALID_REQUEST", hostSpawned: false, hostAlive: false, detail: matching "explode" }
+    filesystem has []
+
+scenario "a host that cannot be started is named":
+  when: Exchange { host: { command: ["adapters/wire/fixtures/no-such-host"] }, method: "reset", params: {} }
+  predict rejection HOST_SPAWN_FAILED:
+    response ERR WireError { code: "HOST_SPAWN_FAILED", hostSpawned: false, hostAlive: false }
+    filesystem has []
+
+scenario "a host that exits before answering is named":
+  when: Exchange { host: { command: ["node", "adapters/wire/fixtures/fake-host.mjs", "--mode", "exit"] }, method: "reset", params: {} }
+  predict rejection HOST_EXITED:
+    response ERR WireError { code: "HOST_EXITED", hostSpawned: true, hostAlive: false }
+    filesystem has []
+
+scenario "a silent host times out and is killed":
+  when: Exchange { host: { command: ["node", "adapters/wire/fixtures/fake-host.mjs", "--mode", "silent"] }, method: "reset", params: {}, timeoutMs: 300 }
+  predict rejection HOST_TIMEOUT:
+    response ERR WireError { code: "HOST_TIMEOUT", hostSpawned: true, hostAlive: false }
+    filesystem has []
+
+scenario "a line that is not JSON is a protocol violation":
+  when: Exchange { host: { command: ["node", "adapters/wire/fixtures/fake-host.mjs", "--mode", "garbage"] }, method: "reset", params: {} }
+  predict rejection PROTOCOL_VIOLATION:
+    response ERR WireError { code: "PROTOCOL_VIOLATION", hostSpawned: true, hostAlive: false }
+    filesystem has []
+
+scenario "an answer carrying another id is a protocol violation":
+  when: Exchange { host: { command: ["node", "adapters/wire/fixtures/fake-host.mjs", "--mode", "wrong-id"] }, method: "reset", params: {} }
+  predict rejection PROTOCOL_VIOLATION:
+    response ERR WireError { code: "PROTOCOL_VIOLATION", hostSpawned: true, hostAlive: false, detail: matching "id" }
+    filesystem has []
+
+scenario "a JSON-RPC error from the host is relayed verbatim":
+  when: Exchange { host: { command: ["node", "adapters/wire/fixtures/fake-host.mjs", "--mode", "rpc-error"] }, method: "reset", params: {} }
+  predict rejection HOST_ERROR:
+    response ERR WireError { code: "HOST_ERROR", rpcCode: -32000, message: "boom", hostSpawned: true, hostAlive: false }
+    filesystem has []

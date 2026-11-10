@@ -1,0 +1,33 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-CORE-001",
+  "schemas": {
+    "ParseInput": {
+      "type": "object",
+      "required": ["spec", "config"],
+      "additionalProperties": false,
+      "properties": {
+        "spec": { "type": "string", "minLength": 1 },
+        "config": { "type": "string", "minLength": 1 }
+      }
+    },
+    "BuiltSpec": { "$ref": "../../schemas/builtspec.schema.json" },
+    "ParseError": {
+      "type": "object",
+      "required": ["code", "message"],
+      "properties": {
+        "code": {
+          "enum": [
+            "MISSING_PRAGMA", "UNSUPPORTED_VERSION", "MALFORMED_SYNTAX",
+            "UNKNOWN_SERVICE_KEY", "UNKNOWN_COMMAND", "UNDECLARED_SCHEMA",
+            "UNKNOWN_ACTOR", "DUPLICATE_SCENARIO_NAME", "TRIGGER_MISMATCH",
+            "QUERY_SIDE_EFFECT", "INCOMPLETE_PREDICTION", "MISSING_MINIMUM"
+          ]
+        },
+        "message": { "type": "string" },
+        "line": { "type": "integer", "minimum": 1 },
+        "hint": { "type": "string" }
+      }
+    }
+  }
+}

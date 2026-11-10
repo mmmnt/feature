@@ -1,0 +1,26 @@
+feat 1.0
+
+spec SPEC-BAD-014 "Rejection id starting lowercase"
+context Bad
+aggregate Thing
+type command
+status draft
+
+construct:
+  handler at src/do-thing.ts
+  touches src/**
+
+enforce:
+  do the thing
+  rejects notOperator when the thing is refused
+
+contract:
+  input ThingInput
+  response ThingResult
+  error ThingError
+
+scenario "refuses the thing":
+  when: DoThing { value: 1 }
+  predict rejection notOperator:
+    response ERR ThingError { code: "X" }
+    eventStore has []

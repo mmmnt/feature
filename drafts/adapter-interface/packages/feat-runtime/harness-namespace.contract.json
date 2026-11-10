@@ -1,0 +1,93 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-RT-006",
+  "schemas": {
+    "RunInput": {
+      "type": "object",
+      "required": [
+        "specs"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "specs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "cases": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "hostEcho": {
+          "enum": [
+            "ok",
+            "none",
+            "other",
+            "malformed"
+          ]
+        },
+        "digest": {
+          "enum": [
+            "real",
+            "collide"
+          ]
+        },
+        "config": {
+          "enum": [
+            "default",
+            "configured",
+            "configured-overlay"
+          ]
+        },
+        "env": {
+          "type": "string"
+        },
+        "hostKind": {
+          "enum": [
+            "protocol",
+            "in-process"
+          ]
+        }
+      }
+    },
+    "RunResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "namespaces": {
+          "type": "string"
+        },
+        "trace": {
+          "type": "string"
+        },
+        "valid": {
+          "type": "boolean"
+        }
+      }
+    },
+    "NamespaceError": {
+      "type": "object",
+      "required": [
+        "code"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "NAMESPACE_COLLISION",
+            "NAMESPACE_NOT_HONOURED",
+            "NAMESPACE_CONFIGURED",
+            "PROTOCOL_VIOLATION"
+          ]
+        },
+        "trace": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
