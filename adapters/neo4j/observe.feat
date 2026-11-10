@@ -3,7 +3,7 @@ feat 1.0
 # SPEC-ADPNEO-001 — the Neo4j service adapter (@mmmnt/feat-adapter-neo4j, built on the official
 # neo4j-driver). Agreed by founder ruling 58a4ac88; fault counts per ruling c7af7871 (every catalog
 # entry declares ["reset"]; unobserved is accepted evidence; firedFaults is not implemented);
-# amended by founder ruling 2026-11-09, Neo4j both A (the unique-constraint fault detail carries the value).
+# amended by founder ruling 2026-11-09, Neo4j both A (the unique-constraint fault detail carries the value), firedFaults orderId=zz.
 #
 # Driven through adapters/neo4j/fixtures/probe.mjs (part of the build, inside touches, not
 # shipped) against a Neo4j COMMUNITY container the TEST starts (the single user database, bolt://
@@ -254,7 +254,7 @@ scenario "reset drops the constraint and the placeholder, so the same create the
     filesystem has []
 
 scenario "the server reports no write it refused, so firedFaults is not offered":
-  when: ObserveNeo4j { script: "setup:a fault:a:Write.UNIQUE_CONSTRAINT_VIOLATION:orderId fired:a" }
+  when: ObserveNeo4j { script: "setup:a fault:a:Write.UNIQUE_CONSTRAINT_VIOLATION:orderId=zz fired:a" }
   predict success:
     response OK ObserveResult { trace: "setup:a fault:a:Write.UNIQUE_CONSTRAINT_VIOLATION fired:a=unobserved" }
     filesystem has []
