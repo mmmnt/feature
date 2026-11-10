@@ -17,6 +17,6 @@ export class HarnessConfigurationError extends Error {
     public service?: string,
     public mode?: "state",
   ) {
-    super(`Configuration error (exit 2): ${message}`);
+    super(`Configuration error (exit 2): [${code}] ${message}`); // the runner prints only the message
   }
 }
