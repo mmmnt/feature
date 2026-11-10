@@ -4,7 +4,8 @@ feat 1.0
 # service: a package the product adapters (kurrent, kafka, dynamodb, neo4j, kms) use to implement
 # the `Connection` pseudo-operation of the fault catalog. Agreed by founder ruling 58a4ac88;
 # the toxiproxy-node-client dependency by ruling c7af7871; amended by founder rulings 2026-11-09
-# (FPX reset upstream; listen= follows the traces).
+# (FPX reset upstream; listen= follows the traces); amended by founder ruling 2026-11-09, spec-gap
+# amendment (a Timeout armed without a stream is downstream).
 #
 # It wraps Toxiproxy through the existing npm client toxiproxy-node-client (4.1.0) and, for
 # broker loss, the container runtime's own CLI (docker or podman, run without a shell). Neither is
@@ -106,6 +107,12 @@ scenario "an unarmed proxy passes the system's traffic untouched":
 
 scenario "a downstream timeout lets the product receive the request and hides the answer":
   when: ProbeFaultProxy { script: "open:a arm:a:Timeout:downstream send:a:hello" }
+  predict success:
+    response OK ProbeResult { trace: "open:a arm:a send:a=timeout", upstreamSaw: 1 }
+    filesystem has []
+
+scenario "a timeout armed without a stream defaults downstream: the product sees the request and the answer is hidden":
+  when: ProbeFaultProxy { script: "open:a arm:a:Timeout send:a:hello" }
   predict success:
     response OK ProbeResult { trace: "open:a arm:a send:a=timeout", upstreamSaw: 1 }
     filesystem has []
