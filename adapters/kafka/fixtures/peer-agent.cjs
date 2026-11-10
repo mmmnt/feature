@@ -9,6 +9,10 @@ const { makeClient } = require("/system-client.cjs");
 
 const client = makeClient(kafka);
 
+// The peer is the system under test: whatever its client throws is the system's failure, not the fixture's.
+process.on("uncaughtException", (e) => console.error("uncaught", e));
+process.on("unhandledRejection", (e) => console.error("unhandled", e));
+
 net
   .createServer((c) => {
     let buf = "";

@@ -50,6 +50,9 @@ function makeClient(kafka) {
       dr_cb: true,
     });
     producer.setPollInterval(10);
+    // A client error event with no listener would throw and take the process down; the answer is the delivery report or the deadline.
+    producer.on("event.error", () => {});
+    producer.on("error", () => {});
     try {
       try {
         await connect(producer, timeoutMs);
@@ -69,7 +72,12 @@ function makeClient(kafka) {
         new Promise((resolve) => setTimeout(() => resolve({ err: "TRANSPORT_FAILURE", code: -192 }), timeoutMs + 2000)),
       ]);
     } finally {
-      producer.disconnect(() => {});
+      // A producer whose connect failed throws "Producer not connected" here, which would replace the answer.
+      try {
+        producer.disconnect(() => {});
+      } catch {
+        /* nothing to close */
+      }
     }
   }
 
