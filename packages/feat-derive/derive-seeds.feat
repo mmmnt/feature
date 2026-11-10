@@ -47,7 +47,7 @@ enforce:
   substitute an outline row's values into every inline seed record's values, whole-value placeholders only
   give every outline row its own seeds array
   carry a fixture seed into every row unchanged
-  refuse a placeholder with no column in the row, with derive's existing message
+  rejects DERIVE_THREW when a seed placeholder has no column in the row, with derive's existing message
   leave the seeds of a scenario that is not an outline untouched
 
 contract:
