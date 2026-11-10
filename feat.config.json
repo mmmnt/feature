@@ -93,6 +93,14 @@
       "ObserveKmsTransport": {
         "module": "adapters/kms/fixtures/probe.mjs",
         "export": "observeTransport"
+      },
+      "ObserveNeo4j": {
+        "module": "adapters/neo4j/fixtures/probe.mjs",
+        "export": "observe"
+      },
+      "ObserveNeo4jTransport": {
+        "module": "adapters/neo4j/fixtures/probe.mjs",
+        "export": "observeTransport"
       }
     }
   },

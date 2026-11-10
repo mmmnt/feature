@@ -1,0 +1,43 @@
+{
+  "name": "@mmmnt/feat-adapter-neo4j",
+  "version": "0.1.0",
+  "description": "Neo4j service adapter for Feat: a snapshot diff of the namespace label's graph, a transaction-aware settle, state by keyed MATCH or namespace scan, and a unique-constraint fault",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --exclude '**/observe.test.ts' --exclude '**/transport.test.ts' --passWithNoTests"
+  },
+  "dependencies": {
+    "@mmmnt/feat-fault-proxy": "workspace:^",
+    "@mmmnt/feat-types": "workspace:^",
+    "neo4j-driver": "6.3.0"
+  },
+  "devDependencies": {
+    "@mmmnt/feat-adapter-kit": "workspace:^",
+    "@mmmnt/feat-runtime": "workspace:^",
+    "typescript": "^5.8.0",
+    "vitest": "^3.2.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mmmnt/feature.git",
+    "directory": "adapters/neo4j"
+  },
+  "homepage": "https://github.com/mmmnt/feature#readme",
+  "bugs": {
+    "url": "https://github.com/mmmnt/feature/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

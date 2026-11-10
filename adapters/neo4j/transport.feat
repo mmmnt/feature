@@ -1,0 +1,86 @@
+feat 1.0
+
+# SPEC-ADPNEO-002 — Neo4j adapter: transport faults on the system's path. Agreed by founder ruling 58a4ac88; fault counts per ruling c7af7871
+# (every catalog entry declares ["reset"]; unobserved is accepted evidence); amended by founder ruling 2026-11-09, Neo4j both A
+# (the first-write key reads INSERT:Order:o1). Integration tier only:
+# this file is excluded from the spec tier (specs.exclude: **/transport.feat) because the
+# in-process spec host has no wire to cut. The mechanism is SPEC-FPX-001; this spec states what
+# the product adapter promises on top of it.
+#
+# Topology: the system's driver connects with a direct bolt:// URI at the proxy's listen address (a routing neo4j:// URI would follow the server's advertised addresses past the proxy); the adapter's instrument driver connects directly.
+# Fixture: a Neo4j Community container the TEST starts and a Toxiproxy container in front of it.
+# `ObserveNeo4jTransport { script }` runs a space-separated script against the adapter of SPEC-ADPNEO-001
+# with `options.proxy` set. Steps: `setup:<ns>`, `start:<ns>`, `stop:<ns>`, `settle:<ns>`,
+# `reset:<ns>`, `fired:<ns>`, `fault:<ns>:Connection.<Fault>[:once]`, and `create:<ns>:...`
+# (the SYSTEM writes through the proxy); a Connection fault has no stream or topic segment, only an optional count. ServiceUnavailable and SessionExpired from the driver are reported as TRANSPORT_FAILURE. Trace and counts as in SPEC-ADPNEO-001.
+#
+# What the scenarios decide: a transport fault is on the SYSTEM's path only; the adapter observes
+# on its own direct connection, so under a fault the capture, the fence and the state read still
+# work, and an absence under a fault is still provable. Whether the fault was consumed is
+# unobserved (the proxy reports bytes, not activations: DESIGN.md of the fault-proxy library).
+
+spec SPEC-ADPNEO-002 "Neo4j adapter: transport faults on the system's path"
+context Toolchain
+aggregate Adapters
+type infrastructure
+status agreed
+
+construct:
+  handler at adapters/neo4j/src/index.ts
+  touches adapters/neo4j/**
+  needs SPEC-FPX-001
+  needs SPEC-ADPNEO-001
+  Add `Connection: { Timeout: ["reset"], ConnectionReset: ["reset"], Partition: ["reset"] }` to the fault catalog when `options.proxy` is configured
+  (`{ api, name }` plus, for container control, `container`); without it the catalog has no
+  Connection entry. fault() with Connection delegates to the shared fault-proxy library; reset()
+  calls the library's disarm. The adapter's own clients never use the proxy.
+
+enforce:
+  rejects FAULT_UNSUPPORTED when a Connection fault is armed with a count it does not declare (only until reset), or without options.proxy
+  the adapter's observation is on a connection the proxy does not carry
+  reset removes every toxic, re-enables the proxy and restores a stopped or paused container
+
+contract:
+  input ObserveInput
+  response ObserveResult
+  error ObserveError
+
+scenario "a partition on the system's path refuses its write and leaves the observation intact":
+  when: ObserveNeo4jTransport { script: "setup:a start:a fault:a:Connection.Partition create:a:Order:o1 settle:a stop:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a start:a fault:a:Connection.Partition create:a!TRANSPORT_FAILURE settle:a=true stop:a=0" }
+    filesystem has []
+
+scenario "a connection reset on the system's path refuses its write the same way":
+  when: ObserveNeo4jTransport { script: "setup:a start:a fault:a:Connection.ConnectionReset create:a:Order:o1 settle:a stop:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a start:a fault:a:Connection.ConnectionReset create:a!TRANSPORT_FAILURE settle:a=true stop:a=0" }
+    filesystem has []
+
+scenario "a timeout on the system's path surfaces as a transport failure after the client's deadline":
+  when: ObserveNeo4jTransport { script: "setup:a start:a fault:a:Connection.Timeout create:a:Order:o1 settle:a stop:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a start:a fault:a:Connection.Timeout create:a!TRANSPORT_FAILURE settle:a=true stop:a=0" }
+    filesystem has []
+
+scenario "reset heals the path, so the same write is then captured":
+  when: ObserveNeo4jTransport { script: "setup:a fault:a:Connection.Partition reset:a start:a create:a:Order:o1 settle:a stop:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a fault:a:Connection.Partition reset:a start:a create:a settle:a=true stop:a=1", last: "INSERT:Order:o1" }
+    filesystem has []
+
+scenario "the proxy reports no activation, so firedFaults is not offered":
+  when: ObserveNeo4jTransport { script: "setup:a fault:a:Connection.Partition fired:a" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a fault:a:Connection.Partition fired:a=unobserved" }
+    filesystem has []
+
+scenario outline "a transport fault that the proxy cannot scope to one call is refused":
+  when: ObserveNeo4jTransport { script: <script> }
+  predict rejection FAULT_UNSUPPORTED:
+    response ERR ObserveError { code: "FAULT_UNSUPPORTED", detail: matching <detail> }
+    filesystem has []
+  examples:
+    | script                                        | detail |
+    | "setup:a fault:a:Connection.Timeout:once"     | "once" |
+    | "setup:a fault:a:Connection.Partition:times2" | "times" |
