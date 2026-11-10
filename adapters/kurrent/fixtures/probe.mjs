@@ -233,7 +233,8 @@ async function run(input, mode) {
   process.env.AWS_EC2_METADATA_DISABLED = "true";
 
   const adapters = new Map();
-  const ended = new Set();
+  // Adapters whose namespace holds something the run left behind (a seed, a write, an armed fault, a delete).
+  const dirty = new Set();
   const writers = new Map();
   const writerFor = (user) => {
     if (!writers.has(user)) writers.set(user, KurrentDBClient.connectionString(connectionString(kdb.port, USERS[user])));
@@ -277,16 +278,17 @@ async function run(input, mode) {
       switch (kind) {
         case "setup":
           await adapter(l).setup();
-          ended.add(adapter(l));
-          trace.push(`setup:${l}`);
+                    trace.push(`setup:${l}`);
           break;
         case "seed":
+          dirty.add(adapter(l));
           await adapter(l).seed([{ type: b, values: { stream: a } }]);
           trace.push(`seed:${l}`);
           break;
         case "write":
         case "writenew":
         case "writeuser": {
+          dirty.add(adapter(l));
           const stream = `${nsOf(l)}.${a}`;
           const state = kind === "writenew" ? "nostream" : "any";
           let outcome;
@@ -307,6 +309,7 @@ async function run(input, mode) {
           break;
         }
         case "delete":
+          dirty.add(adapter(l));
           await kdb.admin.deleteStream(`${nsOf(l)}.${a}`);
           trace.push(`delete:${l}`);
           break;
@@ -336,6 +339,7 @@ async function run(input, mode) {
           trace.push(`settle:${l}=${await adapter(l).settle()}`);
           break;
         case "reset":
+          dirty.delete(adapter(l));
           await adapter(l).reset();
           trace.push(`reset:${l}`);
           break;
@@ -346,6 +350,7 @@ async function run(input, mode) {
         }
         case "fault": {
           const [operation, fault] = a.split(".");
+          dirty.add(adapter(l));
           const isConnection = operation === "Connection";
           const stream = isConnection ? undefined : b;
           const count = isConnection ? b : c;
@@ -377,7 +382,7 @@ async function run(input, mode) {
     // Put the product back before anything else touches it, then let each adapter close what it opened.
     if ((await containerState(kdb.name).catch(() => "")) === "paused") docker(["unpause", kdb.name]);
     for (const a of adapters.values()) {
-      if (ended.has(a)) await a.reset().catch(() => {});
+      if (dirty.has(a)) await a.reset().catch(() => {});
       await a.teardown().catch(() => {});
     }
     for (const w of writers.values()) await w.dispose().catch(() => {});
