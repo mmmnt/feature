@@ -1117,7 +1117,7 @@ describe("SPEC-ADPKUR-001: Kurrent adapter: namespaced capture, state, settle, r
     h = await createHarness({ configPath: CONFIG_PATH, specPath: SPEC_PATH });
   });
   afterAll(async () => {
-    await h.teardown();
+    await h?.teardown(); // createHarness may have thrown: nothing to tear down
   });
   for (const c of CASES) {
     it(c.name, async () => {

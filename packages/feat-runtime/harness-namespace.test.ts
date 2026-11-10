@@ -714,7 +714,7 @@ describe("SPEC-RT-006: Runner: one namespace per spec file, delivered to adapter
     h = await createHarness({ configPath: CONFIG_PATH, specPath: SPEC_PATH });
   });
   afterAll(async () => {
-    await h.teardown();
+    await h?.teardown(); // createHarness may have thrown: nothing to tear down
   });
   for (const c of CASES) {
     it(c.name, async () => {

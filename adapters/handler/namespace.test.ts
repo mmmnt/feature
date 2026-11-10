@@ -485,7 +485,7 @@ describe("SPEC-ADPHND-002: Handler adapter: the runner's namespace", () => {
     h = await createHarness({ configPath: CONFIG_PATH, specPath: SPEC_PATH });
   });
   afterAll(async () => {
-    await h.teardown();
+    await h?.teardown(); // createHarness may have thrown: nothing to tear down
   });
   for (const c of CASES) {
     it(c.name, async () => {

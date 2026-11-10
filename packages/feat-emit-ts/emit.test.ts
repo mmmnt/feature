@@ -48,6 +48,12 @@ describe("emitted file is environment-agnostic (ADR-0024)", () => {
     expect(out).toContain('"../feat.config.json"');
   });
 
+  it("tears down only a harness that was created (createHarness may have thrown)", () => {
+    const out = emit(inputs());
+    expect(out).toContain("await h?.teardown();");
+    expect(out).not.toContain("await h.teardown();");
+  });
+
   it("stays byte-deterministic for identical inputs", () => {
     expect(emit(inputs())).toBe(emit(inputs()));
   });

@@ -833,7 +833,7 @@ describe("SPEC-ADPKUR-004: Kurrent adapter: a loopback IP host is connected to a
     h = await createHarness({ configPath: CONFIG_PATH, specPath: SPEC_PATH });
   });
   afterAll(async () => {
-    await h.teardown();
+    await h?.teardown(); // createHarness may have thrown: nothing to tear down
   });
   for (const c of CASES) {
     it(c.name, async () => {
