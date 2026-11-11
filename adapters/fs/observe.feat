@@ -21,6 +21,11 @@ feat 1.0
 # needs a fence for it. settle therefore answers false, always. It would become answerable
 # with content digests in the snapshot (a change to stopCapture's cost and semantics, which is
 # its own spec), and this spec says so rather than leaving the question open.
+#
+# Amendment (2026-11-11): stopCapture with no window open returns [], as peekCapture does. It used
+# to diff against an empty baseline and so report every file in scope as FILE_WRITTEN. A case the
+# test runner had given up on could close the next case's window (SPEC-RT-007), and that next case
+# then failed on a list of files it never touched.
 
 spec SPEC-ADPFS-001 "Filesystem adapter: peek and settle"
 context Toolchain
@@ -39,11 +44,13 @@ construct:
   peekCapture(): while a window is open, take a snapshot now and return the FILE_WRITTEN and
   FILE_DELETED records stopCapture would return against it, without clearing the window's
   baseline; with no window open return []. Factor the diff so stopCapture and peekCapture share it.
+  stopCapture with no window open returns [] too, never a diff against an empty baseline.
   settle(): resolve false, whatever the window state (see the header for why).
 
 enforce:
   peekCapture returns the in-window changes without closing the window
   peekCapture returns [] when no window is open
+  stopCapture returns [] when no window is open
   settle resolves false
 
 contract:
@@ -72,6 +79,12 @@ scenario "a peek after stop finds the window closed":
   when: ObserveFs { script: "start write:d.txt stop peek" }
   predict success:
     response OK ObserveResult { trace: "start write:d.txt stop=1 peek=0" }
+    filesystem has []
+
+scenario "a stop with no window open reports nothing, not every file in scope":
+  when: ObserveFs { script: "write:e.txt stop" }
+  predict success:
+    response OK ObserveResult { trace: "write:e.txt stop=0" }
     filesystem has []
 
 scenario "settle declines inside a window with a write in it":

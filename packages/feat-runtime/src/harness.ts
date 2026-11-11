@@ -9,7 +9,7 @@ import type {
   CapturedRecord, CapturedResponse, FeatConfig, FeatResponseAdapter, FeatServiceAdapter,
 } from "@mmmnt/feat-types";
 import { importAdapter } from "./import-adapter.js";
-import { HarnessConfigurationError, type HarnessConfigurationCode } from "./errors.js";
+import { CaseSupersededError, HarnessConfigurationError, type HarnessConfigurationCode } from "./errors.js";
 import { loadConfig, variablesSidecarPath } from "./load-config.js";
 import { assertNamespaceNotConfigured, deriveNamespace } from "./namespace.js";
 import { diffContains, diffRecords, diffResponse, pathGet, type InlineData, type MatchContext } from "./matcher.js";
@@ -290,7 +290,33 @@ export async function createHarness(opts: { configPath: string; specPath?: strin
     }
   }
 
+  // SPEC-RT-007: one case at a time. Starting a case supersedes the one before it, and the adapters a
+  // case holds refuse every call once it is no longer the current case (CaseSupersededError).
+  let generation = 0;
+  let currentAnchor = "";
+  const allServices = services;
+  const responseAdapter = () => response;
+  const guard = <T extends object>(adapter: T, live: () => void): T =>
+    new Proxy(adapter, {
+      get(target, prop, receiver) {
+        const value = Reflect.get(target, prop, receiver);
+        if (typeof value !== "function") return value;
+        return (...args: unknown[]) => {
+          live();
+          return (value as (...a: unknown[]) => unknown).apply(target, args);
+        };
+      },
+    });
+
   async function runCase(rawCase: HarnessCase, inline: InlineData): Promise<void> {
+    const gen = ++generation;
+    currentAnchor = rawCase.anchor;
+    const live = () => {
+      if (gen !== generation) throw new CaseSupersededError(rawCase.anchor, currentAnchor);
+    };
+    const services = new Map([...allServices].map(([k, a]) => [k, guard(a, live)] as const));
+    const outer = responseAdapter();
+    const response = outer === undefined ? undefined : guard(outer, live);
     preflight(rawCase);
     // ADR-0017: resolve the variable table once, substitute throughout — the
     // case's given/when/predictions share every value by construction.

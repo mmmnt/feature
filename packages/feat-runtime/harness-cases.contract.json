@@ -1,0 +1,26 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-RT-007",
+  "schemas": {
+    "OverlapInput": {
+      "type": "object",
+      "required": ["config", "held", "next"],
+      "additionalProperties": false,
+      "properties": {
+        "config": { "type": "string" },
+        "held": { "type": "object" },
+        "next": { "type": "object" }
+      }
+    },
+    "OverlapResult": {
+      "type": "object",
+      "required": ["next", "held", "calls"],
+      "additionalProperties": false,
+      "properties": {
+        "next": { "type": "string" },
+        "held": { "type": "string" },
+        "calls": { "type": "string" }
+      }
+    }
+  }
+}

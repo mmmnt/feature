@@ -84,8 +84,10 @@ class FsAdapter implements FeatServiceAdapter {
     return records;
   }
 
+  /** With no window open there is nothing to report (SPEC-ADPFS-001), never a diff against an empty baseline. */
   async stopCapture(): Promise<CapturedRecord[]> {
-    const records = this.diff(this.before ?? new Map<string, number>());
+    if (this.before === null) return [];
+    const records = this.diff(this.before);
     this.before = null;
     return records;
   }

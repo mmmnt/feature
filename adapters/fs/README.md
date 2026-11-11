@@ -108,7 +108,7 @@ The adapter declares `observes = { diff: "snapshot", state: false }` (SPEC-ADPFS
 - `peekCapture()` takes a snapshot now and returns the `FILE_WRITTEN` and `FILE_DELETED` records
   that `stopCapture()` would return against the same baseline. It does not move the baseline, so
   repeated peeks and the final stop agree. With no window open it returns `[]`. The harness uses
-  it for its early-exit check.
+  it for its early-exit check. `stopCapture()` with no window open also returns `[]`.
 - `settle()` always resolves `false`. A completed local write is visible to the next `stat`, but a
   rewrite inside the timestamp granularity is invisible to the diff, so the adapter cannot truthfully
   vouch that every write was captured. The service is `acid`, so the harness reads it at once and
@@ -134,7 +134,12 @@ The adapter defines no other codes.
 - **mtime comparison.** See Observation modes.
 - **Unreadable paths.** A directory that cannot be listed is skipped silently.
 
-## What changed in this release (v0.1.48, package 0.1.8)
+## What changed in 0.1.9
+
+- `stopCapture()` with no window open returns `[]`. It used to diff against an empty baseline and
+  report every file in scope as `FILE_WRITTEN` (SPEC-ADPFS-001).
+
+## What changed in v0.1.48 (package 0.1.8)
 
 - Declares `observes = { diff: "snapshot", state: false }`, so `contains` is refused by name
   instead of silently reading nothing (SPEC-ADPFS-001, SPEC-RT-002, ADR-0023).

@@ -4,6 +4,7 @@
 // state (records read() answers), faults (its catalog; absent = no fault() at all), observed (offers
 // firedFaults(); default true). The response stub's Ping { appends: n } makes n calls of AppendToStream
 // on the `store` service stub, each answering ok or the name of the fault that was consumed.
+// Ping { hold: true } blocks inside invoke until the probe calls the shared log's release() (SPEC-RT-007).
 
 const log = () => (globalThis.__featHarnessProbe ??= { calls: [], readHint: undefined });
 const note = (s) => log().calls.push(s);
@@ -27,6 +28,7 @@ export function createAdapter(config) {
     adapter.teardown = async () => {};
     adapter.invoke = async (command, input) => {
       note(`${opened ? "invoke" : "execute"}:${command}`);
+      if (input?.hold === true) await new Promise((resolve) => (log().release = resolve));
       for (let i = 0; i < (input?.appends ?? 0); i++) stores().get("store")?.consume("AppendToStream");
       return { status: "OK", body: {} };
     };

@@ -40,6 +40,29 @@ export async function runCases(input) {
   return { status: "OK", body };
 }
 
+// ── SPEC-RT-007: RunOverlappingCases ──
+// The held case is started and not awaited; its trigger blocks in the stub until release(). The next
+// case runs to the end, then the held invoke is released and the held case is awaited.
+export async function runOverlapping(input) {
+  globalThis.__featHarnessProbe = { calls: [], readHint: undefined };
+  const state = globalThis.__featHarnessProbe;
+  const harness = await createHarness({ configPath: path.resolve(process.cwd(), input.config) });
+  const outcomeOf = (p) =>
+    p.then(
+      () => "passed",
+      (e) => (typeof e?.code === "string" ? e.code : e instanceof PredictionViolation ? "failed" : Promise.reject(e)),
+    );
+  try {
+    const held = outcomeOf(harness.runCase(input.held, INLINE));
+    while (state.release === undefined) await new Promise((r) => setImmediate(r));
+    const next = await outcomeOf(harness.runCase(input.next, INLINE));
+    state.release();
+    return { status: "OK", body: { next, held: await held, calls: state.calls.join(" ") } };
+  } finally {
+    await harness.teardown();
+  }
+}
+
 // ── SPEC-RT-006: RunHarnessNamespace ──
 import { assertNoNamespaceCollision, deriveNamespace, normalizeSpecPath, NAMESPACE_PATTERN } from "../../src/index.ts";
 

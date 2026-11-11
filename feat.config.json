@@ -125,6 +125,10 @@
       "ObserveKafkaBrokerLoss": {
         "module": "adapters/kafka/fixtures/probe.mjs",
         "export": "observeBrokerLoss"
+      },
+      "RunOverlappingCases": {
+        "module": "packages/feat-runtime/fixtures/harness/probe.mjs",
+        "export": "runOverlapping"
       }
     }
   },

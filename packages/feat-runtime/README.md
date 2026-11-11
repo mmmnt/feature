@@ -80,6 +80,13 @@ A generated test does exactly this: `createHarness` in `beforeAll`, `h.runCase(c
 
 `runCase` runs these steps in order. The order is part of the contract.
 
+One harness runs one case at a time (SPEC-RT-007). Starting a case supersedes any case still running
+on that harness, which happens when a test runner gives up on a case (its test timed out) while the
+case's invoke or convergence wait has not returned. The superseded case makes no adapter call after
+the next case has started: at its next call it rejects with `CaseSupersededError`
+(`CASE_SUPERSEDED`), naming both anchors. A call already in flight finishes on its own. The next
+case runs as if the superseded one had never started.
+
 1. **Preflight**, before any adapter is called. A case that asks for something its adapters cannot
    give is refused here: `CLOCK_UNSUPPORTED`, then for each fault `FAULT_UNSUPPORTED` and
    `FAULT_REQUIRES_SERIAL`, then `MODE_UNSUPPORTED`.
@@ -534,6 +541,7 @@ Configuration error (exit 2): [FAULT_UNSUPPORTED] SPEC-ITM-001 › "adds": fault
 | An armed fault was never consumed | A `FAULT_NOT_CONSUMED:` line inside that `PredictionViolation`. |
 | A case needs what the config lacks | A plain `Error` naming the anchor: a seed for an unknown service, an `execute` or `when` with no response adapter, a `delivers` to an unknown service, a fixture seed that was not inlined at generate time, an undeclared `${variable}`, a `@given.response` reference that does not resolve. (A seed or delivery to an adapter that cannot take it is a `HarnessConfigurationError`, above.) |
 | `read()` answered something that is not an array | A violation: `adapter read() did not return a record array — configuration error.` |
+| A case resumed after the next case on its harness started | `CaseSupersededError`, `code: "CASE_SUPERSEDED"`, with `anchor` and `by` (the next case's anchor). Not a configuration error: the runner had already failed the case (SPEC-RT-007). |
 
 ## Bundled schema
 
@@ -559,7 +567,7 @@ why `loadConfig` validates the merged document.
 | `loadConfig`, `resolveEnvironment`, `variablesSidecarPath` | Config |
 | `importAdapter` | Adapter loading |
 | `createHarness`, `Harness`, `HarnessCase`, `CaseVariable` | Harness |
-| `HarnessConfigurationError`, `PredictionViolation` | Errors |
+| `HarnessConfigurationError`, `PredictionViolation`, `CaseSupersededError` | Errors |
 | `faultProblem` | Faults |
 | `deriveNamespace`, `normalizeSpecPath`, `assertNoNamespaceCollision`, `assertNamespaceNotConfigured`, `NAMESPACE_PATTERN` | Namespaces |
 | `resolveVariables`, `substituteVariables` | Variables |
@@ -569,6 +577,13 @@ why `loadConfig` validates the merged document.
 Environment variables the runtime reads or sets: `FEAT_ENVIRONMENT` and `ENVIRONMENT`
 (`resolveEnvironment`), `FEAT_NAMESPACE` (set per file), `FEAT_SERIAL` (read in preflight) and
 `FEAT_FENCE_AUDIT` (read in the convergence wait).
+
+## What changed in 0.2.1
+
+- **One case at a time (SPEC-RT-007).** A case that a test runner gave up on no longer touches the
+  adapters once the next case starts. It rejects with `CaseSupersededError` (`CASE_SUPERSEDED`).
+  Before, its late `stopCapture` or `reset` could land inside the next case's window, and one
+  timeout became two failures.
 
 ## What changed in 0.2.0
 
@@ -595,6 +610,7 @@ Environment variables the runtime reads or sets: `FEAT_ENVIRONMENT` and `ENVIRON
 - [SPEC-RT-004](https://github.com/mmmnt/feature/blob/main/packages/feat-runtime/load-config-extends.feat): load a tier overlay.
 - [SPEC-RT-005](https://github.com/mmmnt/feature/blob/main/packages/feat-runner/serial-faults.feat): the runner's serial pass for exclusive faults.
 - [SPEC-RT-006](https://github.com/mmmnt/feature/blob/main/packages/feat-runtime/harness-namespace.feat): one namespace per spec file.
+- [SPEC-RT-007](https://github.com/mmmnt/feature/blob/main/packages/feat-runtime/harness-cases.feat): one case at a time.
 - [ADR-0023](https://github.com/mmmnt/feature/blob/main/docs/adr/ADR-0023-adapter-interface-v2.md): adapter interface v2.
 - [ADR-0024](https://github.com/mmmnt/feature/blob/main/docs/adr/ADR-0024-tier-bindings.md): tier bindings.
 - [Grammar reference](https://github.com/mmmnt/feature/blob/main/docs/grammar-reference.md): the language the predictions come from.

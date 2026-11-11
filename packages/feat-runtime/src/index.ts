@@ -4,7 +4,7 @@ export { importAdapter } from "./import-adapter.js";
 export type { AdapterModule } from "./import-adapter.js";
 export { assertNamespaceNotConfigured, assertNoNamespaceCollision, deriveNamespace, normalizeSpecPath, NAMESPACE_PATTERN } from "./namespace.js";
 export type { Digest } from "./namespace.js";
-export { HarnessConfigurationError } from "./errors.js";
+export { CaseSupersededError, HarnessConfigurationError } from "./errors.js";
 export { createHarness, faultProblem, PredictionViolation, resolveVariables, substituteVariables } from "./harness.js";
 export type { Harness, HarnessCase, CaseVariable } from "./harness.js";
 export { applyMatcher, applyValueBlock, diffRecords, diffResponse } from "./matcher.js";

@@ -1,0 +1,75 @@
+feat 1.0
+
+# SPEC-RT-007 — one harness runs one case at a time. A test runner may give up on a case (vitest's
+# testTimeout) while the case's promise is still running: its invoke or its convergence wait has not
+# returned. The runner then starts the next case on the same harness. Before this spec the stale
+# case carried on when its await returned, and its stopCapture or reset landed inside the next
+# case's window. The fs adapter then lost its baseline, and the next case reported every file in
+# scope as written: one timeout became two failures, the second a false prediction violation
+# naming files the case never touched (the v0.1.48 integration tier, ADPKFK-003 and ADPKUR-003).
+#
+# The rule: starting a case SUPERSEDES any case still running on that harness. A superseded case
+# makes no adapter call after the next case has started; at its next step it stops and rejects
+# with CASE_SUPERSEDED, naming both anchors. A call already in flight when the next case starts
+# cannot be recalled, so it finishes on its own; the harness simply never follows it with another.
+# The superseded case is already failed by the runner that gave up on it, so the rejection is
+# its record, not a second failure of the run.
+#
+# Driven through packages/feat-runtime/fixtures/harness/probe.mjs (part of the build, inside
+# touches): `RunOverlappingCases { config, held, next }` creates a harness from the fixture
+# config, starts the `held` case without awaiting it, its trigger `Ping { hold: true }` blocking
+# inside the response stub, runs the `next` case to the end, then releases the held invoke and
+# waits for the held case to settle. The answer is `next` (the next case's outcome), `held` (passed,
+# or the code the held case rejected with) and `calls`, the stub's call log as in SPEC-RT-002.
+
+spec SPEC-RT-007 "Harness: one case at a time"
+context Toolchain
+aggregate Runtime
+type infrastructure
+status agreed
+
+construct:
+  handler at packages/feat-runtime/src/harness.ts
+  touches packages/feat-runtime/**
+  needs SPEC-RT-002
+  runCase takes a new generation when it starts, which supersedes the case before it. Between its
+  steps (the resets, the clock, each seed, each given execute, each fault, startCapture, the
+  trigger, each deliver, the convergence wait, stopCapture, firedFaults, read) a case checks it is
+  still the current one, and if not, it rejects with CASE_SUPERSEDED before calling any adapter.
+
+enforce:
+  rejects CASE_SUPERSEDED when a case resumes after the next case on its harness has started
+  a superseded case makes no adapter call after the next case has started
+  the next case runs as if the superseded case had never been started
+
+contract:
+  input OverlapInput
+  response OverlapResult
+
+scenario "a case that outlives its test touches no adapter once the next case has started":
+  when: RunOverlappingCases {
+    config: "packages/feat-runtime/fixtures/harness/no-clock-response.config.json"
+    held: { anchor: "c1", name: "c1", when: { command: "Ping", payload: { hold: true } }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } }
+    next: { anchor: "c2", name: "c2", when: { command: "Ping", payload: {} }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } }
+  }
+  predict success:
+    response OK OverlapResult {
+      next: "passed"
+      held: "CASE_SUPERSEDED"
+      calls: "reset:store start:store invoke:Ping reset:store start:store invoke:Ping stop:store"
+    }
+    filesystem has []
+
+scenario "a superseded case does not call the response adapter either":
+  when: RunOverlappingCases {
+    config: "packages/feat-runtime/fixtures/harness/no-clock-response.config.json"
+    held: { anchor: "c1", name: "c1", given: { executes: [ { command: "Ping", payload: { hold: true } }, { command: "Ping", payload: {} } ] }, when: { command: "Ping", payload: {} }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } }
+    next: { anchor: "c2", name: "c2", when: { command: "Ping", payload: {} }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } }
+  }
+  predict success:
+    response OK OverlapResult {
+      next: "passed"
+      held: "CASE_SUPERSEDED"
+      calls: "reset:store execute:Ping reset:store start:store invoke:Ping stop:store"
+    }
+    filesystem has []

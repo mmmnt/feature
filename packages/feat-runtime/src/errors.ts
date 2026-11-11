@@ -29,3 +29,18 @@ export class HarnessConfigurationError extends Error {
     this.detail = message;
   }
 }
+
+/**
+ * SPEC-RT-007: a case resumed after the next case on its harness had started. The runner had already
+ * given up on it (its test timed out), so this is its record, not a configuration error: it made no
+ * adapter call after the next case started.
+ */
+export class CaseSupersededError extends Error {
+  public readonly code = "CASE_SUPERSEDED";
+  constructor(
+    public anchor: string,
+    public by: string,
+  ) {
+    super(`[CASE_SUPERSEDED] ${anchor}: the next case (${by}) started on this harness while this one was still running, so it made no further adapter call`);
+  }
+}
