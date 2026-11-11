@@ -10,7 +10,7 @@ npm install --save-dev @mmmnt/feature
 npx feat init                       # scaffolds config + a first spec, installs everything else
 
 npx feat generate                   # compile specs into test files
-ENVIRONMENT=local npx feat run      # execute them with the adapter lifecycle
+npx feat run                        # execute them with the adapter lifecycle
 ```
 
 ## Where it sits
@@ -63,8 +63,9 @@ npx feat init --no-install     # print the install command instead of running it
 ```
 
 `feat init` writes three files, plus `package.json` when there is none, and stops
-with exit `2` if `feat.config.json` already exists. It checks only that file, so it will overwrite an existing
-`specs/greet.feat`.
+with exit `2` if `feat.config.json`, `specs/greet.feat` or `specs/greet.contract.json`
+already exists. It checks all three before it writes any, so a refused `init` has
+written nothing and no file of yours is overwritten.
 
 ```
 created feat.config.json
@@ -88,12 +89,13 @@ export async function greet(input: { name: string }) {
 ```sh
 npx feat parse specs/greet.feat      # validate; prints the IR
 npx feat generate                    # writes specs/greet.test.ts
-ENVIRONMENT=local npx feat run       # 2 tests pass
+npx feat run                         # 2 tests pass
 ```
 
-`feat run` needs an environment name, and the scaffolded config does not set
-one. Set `ENVIRONMENT` or `FEAT_ENVIRONMENT`, or put `"environment"` in the
-config (see [Environment](#environment)).
+`feat run` needs an environment name, and the scaffolded config sets one:
+`"environment": "spec"`, the in-process tier ([Tiers](#tiers-one-set-of-specs-an-overlay-per-environment)).
+Change it, or override it with `FEAT_ENVIRONMENT` or `ENVIRONMENT`, when you
+point the project at another tier (see [Environment](#environment)).
 
 ## Project layout
 
@@ -251,7 +253,8 @@ Every command takes `-c, --config <path>` (default `feat.config.json`) except
 
 Scaffolds the project (see [Quick start](#quick-start)). `--no-install` skips
 the install and prints it. Exit `2` with `ALREADY_INITIALIZED` when
-`feat.config.json` exists. If the install fails, `init` warns, prints the command
+`feat.config.json`, `specs/greet.feat` or `specs/greet.contract.json` exists; the
+message names the file and nothing is written. If the install fails, `init` warns, prints the command
 to run yourself, and still exits `0`.
 
 ### `feat parse <file> [-c <config>]`

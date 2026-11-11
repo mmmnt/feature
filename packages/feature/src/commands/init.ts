@@ -11,6 +11,7 @@ import { Command, Flags } from "@oclif/core";
 
 const CONFIG = `{
   "featVersion": "1.0",
+  "environment": "spec",
   "schemas": { "adapter": "@mmmnt/feat-schema-json" },
   "response": {
     "adapter": "@mmmnt/feat-adapter-handler",
@@ -134,9 +135,12 @@ export default class Init extends Command {
     const { flags } = await this.parse(Init);
     const root = process.cwd();
     const configPath = path.join(root, "feat.config.json");
-    if (existsSync(configPath)) {
-      this.logToStderr("ERROR [ALREADY_INITIALIZED] feat.config.json already exists.");
-      this.exit(2);
+    // A refusal has no effect: every file init would write is checked before any is written.
+    for (const rel of ["feat.config.json", "specs/greet.feat", "specs/greet.contract.json"]) {
+      if (existsSync(path.join(root, rel))) {
+        this.logToStderr(`ERROR [ALREADY_INITIALIZED] ${rel} already exists.`);
+        this.exit(2);
+      }
     }
     writeFileSync(configPath, CONFIG);
     mkdirSync(path.join(root, "specs"), { recursive: true });

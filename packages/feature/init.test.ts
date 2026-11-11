@@ -2,7 +2,7 @@
 // install path is asserted via --no-install's printed command; package-manager
 // detection via lockfile fixtures.
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -93,6 +93,78 @@ describe("feat init dependency completion", () => {
       const out = initIn(dir);
       expect(out).toContain("dependencies: all present");
       expect(() => initIn(dir)).toThrowError();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+function initResult(dir: string): { code: number; out: string } {
+  const env = { ...process.env };
+  delete env.npm_config_user_agent;
+  try {
+    const out = execFileSync("node", [BIN, "init", "--no-install"], { cwd: dir, encoding: "utf8", env, stdio: ["ignore", "pipe", "pipe"] });
+    return { code: 0, out };
+  } catch (e) {
+    const err = e as { status: number | null; stdout?: string; stderr?: string };
+    return { code: err.status ?? -1, out: `${err.stdout ?? ""}${err.stderr ?? ""}` };
+  }
+}
+
+describe("feat init scaffolds a config that runs", () => {
+  // The scaffold is the in-process spec tier (handler response, fs service), the base ADR-0024 recommends
+  // `environment: "spec"` for. Without an environment `feat run` is a configuration error (NO_ENVIRONMENT).
+  it("pins the spec tier's environment, so feat run needs no ENVIRONMENT", () => {
+    const dir = tmp();
+    try {
+      initIn(dir);
+      const config = JSON.parse(readFileSync(path.join(dir, "feat.config.json"), "utf8"));
+      expect(config.environment).toBe("spec");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("feat init refuses to overwrite what is there", () => {
+  // README contract: exit 2 is a configuration error; init already exits 2 for an existing config.
+  it("an existing specs/greet.feat is ALREADY_INITIALIZED (exit 2) and is left as it was", () => {
+    const dir = tmp();
+    try {
+      mkdirSync(path.join(dir, "specs"));
+      writeFileSync(path.join(dir, "specs/greet.feat"), "my own spec\n");
+      const r = initResult(dir);
+      expect(r.code).toBe(2);
+      expect(r.out).toContain("[ALREADY_INITIALIZED]");
+      expect(r.out).toContain("specs/greet.feat");
+      expect(readFileSync(path.join(dir, "specs/greet.feat"), "utf8")).toBe("my own spec\n");
+      // nothing else was written: a refusal has no effect
+      expect(existsSync(path.join(dir, "feat.config.json"))).toBe(false);
+      expect(existsSync(path.join(dir, "specs/greet.contract.json"))).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  it("an existing specs/greet.contract.json is refused the same way", () => {
+    const dir = tmp();
+    try {
+      mkdirSync(path.join(dir, "specs"));
+      writeFileSync(path.join(dir, "specs/greet.contract.json"), "{}\n");
+      const r = initResult(dir);
+      expect(r.code).toBe(2);
+      expect(r.out).toContain("specs/greet.contract.json");
+      expect(readFileSync(path.join(dir, "specs/greet.contract.json"), "utf8")).toBe("{}\n");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  it("an existing feat.config.json is still ALREADY_INITIALIZED", () => {
+    const dir = tmp();
+    try {
+      writeFileSync(path.join(dir, "feat.config.json"), "{}\n");
+      const r = initResult(dir);
+      expect(r.code).toBe(2);
+      expect(r.out).toContain("[ALREADY_INITIALIZED] feat.config.json already exists.");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
