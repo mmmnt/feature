@@ -7,7 +7,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 // @ts-expect-error the probe fixtures are plain modules, not part of the package's typed sources
 import { dockerAsync } from "./fixtures/docker-async.mjs";
 
-describe("dockerAsync", () => {
+// The assertion is the loop's ticks, not elapsed time; the budget only has to cover spawning sh on a loaded machine,
+// which can exceed vitest's 5 s default when container-heavy suites run beside it.
+describe("dockerAsync", { timeout: 30_000 }, () => {
   let dir = "";
   let pathBefore: string | undefined;
 
