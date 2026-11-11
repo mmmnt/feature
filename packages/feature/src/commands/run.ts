@@ -9,7 +9,7 @@ import path from "node:path";
 import { Command, Flags } from "@oclif/core";
 import type { FeatConfig } from "@mmmnt/feat-types";
 import { plan, runTests } from "@mmmnt/feat-runner";
-import { assertNoNamespaceCollision, variablesSidecarPath } from "@mmmnt/feat-runtime";
+import { assertNoNamespaceCollision, HarnessConfigurationError, variablesSidecarPath } from "@mmmnt/feat-runtime";
 import { rmSync } from "node:fs";
 import { generateAll } from "../pipeline.js";
 import { parseShard, selectShard, shardJunitPath } from "../shard.js";
@@ -37,7 +37,16 @@ export default class Run extends Command {
     rmSync(variablesSidecarPath(root, flags.config), { force: true });
 
     let prepared: Prepared | undefined;
-    let files = (await generateAll(root, flags.config, { onPrepared: (p) => (prepared = p) })).map((f) => ({
+    let generated: Awaited<ReturnType<typeof generateAll>>;
+    try {
+      generated = await generateAll(root, flags.config, { onPrepared: (p) => (prepared = p) });
+    } catch (e) {
+      // An adapter the config cannot use is a configuration error (exit 2); a parse or seed failure stays a validation failure (exit 1).
+      if (!(e instanceof HarnessConfigurationError)) throw e;
+      this.logToStderr(`ERROR ${e.message}`);
+      this.exit(2);
+    }
+    let files = generated.map((f) => ({
       specId: f.specPath,
       faults: f.faults,
       out: f.outputPath,

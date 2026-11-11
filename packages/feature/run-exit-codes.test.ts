@@ -44,10 +44,11 @@ describe("a harness configuration error during feat run", { timeout: 60_000 }, (
 describe("a configuration error before any work exits 2 with its code", { timeout: 60_000 }, () => {
   const TIER = path.join(PKG, "fixtures/tier");
   // an overlay does not inherit `environment`, so this config names none; the process must not either
-  function featIn(args: string[], cwd = TIER): { code: number; out: string } {
+  function featIn(args: string[], cwd = TIER, extraEnv: Record<string, string> = {}): { code: number; out: string } {
     const env = { ...process.env };
     delete env.ENVIRONMENT;
     delete env.FEAT_ENVIRONMENT;
+    Object.assign(env, extraEnv);
     try {
       const out = execFileSync("node", [BIN, ...args], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env });
       return { code: 0, out };
@@ -90,4 +91,22 @@ describe("a configuration error before any work exits 2 with its code", { timeou
       expect(r.out).toContain("schemas.adapter");
     });
   }
+
+  // `feat run` generates in memory first. What fails there is told by its kind: a spec that does not parse and a
+  // seed that violates its contract are validation failures (exit 1); an adapter the config cannot use is not.
+  const RUN_ENV = { ENVIRONMENT: "spec" };
+  it("feat run exits 2 when schemas.adapter cannot be resolved", () => {
+    const r = featIn(["run"], path.join(PKG, "fixtures/schema-bundle-missing-adapter"), RUN_ENV);
+    expect(r.code).toBe(2);
+    expect(r.out).toContain("[INVALID_CONFIG]");
+  });
+  it("feat run stays exit 1 when a spec does not parse (a validation failure)", () => {
+    const r = featIn(["run"], path.join(PKG, "fixtures/generation-parse-error"), RUN_ENV);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("Parse failed");
+  });
+  it("feat run stays exit 1 when a seed violates its contract (a validation failure)", () => {
+    const r = featIn(["run"], path.join(PKG, "fixtures/seed/bad-record"), RUN_ENV);
+    expect(r.code).toBe(1);
+  });
 });
