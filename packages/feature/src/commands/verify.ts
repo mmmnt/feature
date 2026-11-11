@@ -18,24 +18,26 @@ export default class Verify extends Command {
   public async run(): Promise<void> {
     const { flags } = await this.parse(Verify);
     const root = process.cwd();
+    let files: Awaited<ReturnType<typeof generateAll>>;
     try {
-      const files = await generateAll(root, flags.config);
-      const stale: string[] = [];
-      for (const f of files) {
-        const rel = path.relative(root, f.outputPath);
-        if (!existsSync(f.outputPath)) stale.push(`${rel} (missing)`);
-        else if (readFileSync(f.outputPath, "utf8") !== f.content) stale.push(`${rel} (differs)`);
-      }
-      if (stale.length > 0) {
-        this.logToStderr("ERROR [VERIFY_FAILED] Committed tests do not match current specs:");
-        for (const s of stale) this.logToStderr(`  ${s}`);
-        this.logToStderr('  Run "feat generate" and commit the updated files.');
-        this.exit(1);
-      }
-      this.log(`verify: ${files.length} generated file(s) match their specs.`);
+      files = await generateAll(root, flags.config);
     } catch (e) {
       this.logToStderr(`ERROR ${String((e as Error).message)}`);
       this.exit(e instanceof ConfigLoadError || e instanceof HarnessConfigurationError ? 2 : 1); // a refused config is a configuration error (README: exit 2)
     }
+    // Outside the try: exit() throws, and the catch above would report that as an error of its own.
+    const stale: string[] = [];
+    for (const f of files) {
+      const rel = path.relative(root, f.outputPath);
+      if (!existsSync(f.outputPath)) stale.push(`${rel} (missing)`);
+      else if (readFileSync(f.outputPath, "utf8") !== f.content) stale.push(`${rel} (differs)`);
+    }
+    if (stale.length > 0) {
+      this.logToStderr("ERROR [VERIFY_FAILED] Committed tests do not match current specs:");
+      for (const s of stale) this.logToStderr(`  ${s}`);
+      this.logToStderr('  Run "feat generate" and commit the updated files.');
+      this.exit(1);
+    }
+    this.log(`verify: ${files.length} generated file(s) match their specs.`);
   }
 }

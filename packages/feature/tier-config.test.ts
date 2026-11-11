@@ -67,6 +67,16 @@ describe("a configuration error exits 2 on generate and verify", { timeout: 30_0
   });
 });
 
+describe("feat verify's failure message", () => {
+  it("is the last line it prints: the exit that follows it is not reported as an error", () => {
+    const r = feat(["verify", "--config", "feat.config.json"]);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('Run "feat generate" and commit the updated files.');
+    expect(r.out).not.toContain("EEXIT");
+    expect(r.out.trimEnd().split("\n").at(-1)).toBe('  Run "feat generate" and commit the updated files.');
+  });
+});
+
 describe("generation is the same in every tier (ADR-0024)", () => {
   it("a base and its overlay generate byte-identical files, whatever the tiers' services say", async () => {
     const spec = await generateAll(ROOT, "feat.config.json");

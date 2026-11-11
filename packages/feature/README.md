@@ -296,8 +296,7 @@ ERROR [VERIFY_FAILED] Committed tests do not match current specs:
   Run "feat generate" and commit the updated files.
 ```
 
-Exit `1` on drift, `2` on a refused config. (A failing run also prints a stray
-`ERROR EEXIT: 1` line after the message. The exit code is unaffected.)
+Exit `1` on drift, `2` on a refused config.
 
 ### `feat run [-c <config>] [--spec <id>] [--coverage] [--shard <i/n>]`
 
