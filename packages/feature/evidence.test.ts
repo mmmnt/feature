@@ -158,6 +158,10 @@ async function within<T>(dir: string, f: () => Promise<T>): Promise<T> {
   }
 }
 
+/** The version an adapter package declares, read from the project that owns the config (the fixtures resolve it from this repo). */
+const versionOf = (name: string): string =>
+  (JSON.parse(readFileSync(require.resolve(`${name}/package.json`, { paths: [PKG] }), "utf8")) as { version: string }).version;
+
 describe("evidence under a tier overlay", () => {
   // ADR-0024: a bundle produced under a tier overlay names the base and the overlay and what each service was
   // bound to, so a reader of an integration bundle can see it ran Kurrent-at-eventual and not memory-at-strong.
@@ -171,9 +175,20 @@ describe("evidence under a tier overlay", () => {
     for (const d of [project.config.overlay.digest, project.config.base.digest, project.config.resolved])
       expect(d).toMatch(/^sha256:[0-9a-f]{64}$/);
     expect(project.bindings.services).toEqual([
-      { key: "store", adapter: "@mmmnt/feat-adapter-memory", consistency: "eventual", convergenceTimeout: 100 },
+      {
+        key: "store",
+        adapter: "@mmmnt/feat-adapter-memory",
+        adapterVersion: versionOf("@mmmnt/feat-adapter-memory"),
+        consistency: "eventual",
+        convergenceTimeout: 100,
+        observes: { diff: "native", state: true },
+        faultConsumptionObservable: false,
+      },
     ]);
-    expect(project.bindings.response).toEqual({ adapter: "@mmmnt/feat-adapter-handler" });
+    expect(project.bindings.response).toEqual({
+      adapter: "@mmmnt/feat-adapter-handler",
+      adapterVersion: versionOf("@mmmnt/feat-adapter-handler"),
+    });
 
     const base = (await within(root, () => produceEvidence(root, "feat.config.json"))).project as Record<string, any>;
     expect(base.config.overlay).toBeUndefined();
@@ -186,3 +201,26 @@ describe("evidence under a tier overlay", () => {
     expect(validate(tier), JSON.stringify(validate.errors)).toBe(true);
   }, 60_000);
 });
+
+// ADR-0024 decision 6: per binding the bundle records the adapter, its version, the consistency and timeouts, `observes`
+// (ADR-0023) and whether fault consumption is observable — what the run was bound to AND what it could observe.
+describe("evidence records what each binding observes", () => {
+  it("records observes and fault observability as the adapter declares them, and no version for a local module", async () => {
+    const root = path.join(PKG, "fixtures/tier");
+    const bundle = await within(root, () => produceEvidence(root, "feat.observed.config.json"));
+    const [store] = (bundle.project as Record<string, any>).bindings.services;
+    expect(store).toEqual({
+      key: "store",
+      adapter: "./observed.mjs",
+      consistency: "eventual",
+      convergenceTimeout: 100,
+      observes: { diff: "snapshot", state: false },
+      faultConsumptionObservable: true,
+    });
+    const ajv = new Ajv({ strict: false, allErrors: true });
+    addFormats(ajv);
+    const validate = ajv.compile(JSON.parse(readFileSync(path.join(ROOT, "schemas/evidence.schema.json"), "utf8")));
+    expect(validate(bundle), JSON.stringify(validate.errors)).toBe(true);
+  }, 60_000);
+});
+

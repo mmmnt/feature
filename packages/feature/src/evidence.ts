@@ -10,7 +10,7 @@
 
 import { readConfig } from "./config.js";
 import { execSync } from "node:child_process";
-import { resolveEnvironment, variablesSidecarPath } from "@mmmnt/feat-runtime";
+import { importAdapter, resolveEnvironment, variablesSidecarPath } from "@mmmnt/feat-runtime";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -145,18 +145,72 @@ function configProvenance(root: string, configPath: string, configText: string, 
   return out;
 }
 
-function bindingsOf(config: FeatConfig): Record<string, unknown> {
-  const services = Object.keys(config.services).sort().map((key) => {
-    const s = config.services[key]!;
+/**
+ * The version of the npm package an adapter specifier names, found the way the loader finds the module: from the
+ * project that owns the config (ADR-0001). A local module (a path specifier) has no version of its own.
+ */
+function adapterVersionOf(specifier: string, projectRoot: string): string | undefined {
+  if (specifier.startsWith(".") || specifier.startsWith("/")) return undefined;
+  const pkgName = specifier.startsWith("@") ? specifier.split("/").slice(0, 2).join("/") : specifier.split("/")[0]!;
+  try {
+    let dir = path.dirname(createRequire(path.join(projectRoot, "package.json")).resolve(specifier));
+    for (;;) {
+      const manifest = path.join(dir, "package.json");
+      if (existsSync(manifest)) {
+        const pkg = JSON.parse(readFileSync(manifest, "utf8")) as { name?: string; version?: string };
+        if (pkg.name === pkgName) return pkg.version;
+      }
+      const up = path.dirname(dir);
+      if (up === dir) return undefined;
+      dir = up;
+    }
+  } catch {
+    return undefined; // not resolvable here: the run says so itself (INVALID_CONFIG); the bundle records what it can
+  }
+}
+
+/** What a service adapter declares about observation (ADR-0023), as the harness reads it; an adapter that declares nothing is { diff: native, state: true }. */
+async function declaredBy(
+  key: string,
+  svc: FeatConfig["services"][string],
+  projectRoot: string,
+): Promise<{ observes: { diff: string; state: boolean }; faultConsumptionObservable: boolean } | undefined> {
+  try {
+    const mod = await importAdapter(svc.adapter, projectRoot);
+    const adapter = mod.createAdapter({ key, ...svc, projectRoot }) as { observes?: { diff: string; state: boolean }; firedFaults?: unknown };
     return {
+      observes: { diff: adapter.observes?.diff ?? "native", state: adapter.observes?.state ?? true },
+      faultConsumptionObservable: typeof adapter.firedFaults === "function",
+    };
+  } catch {
+    return undefined; // an adapter that cannot be built is not described; the run refuses it on its own
+  }
+}
+
+/** ADR-0024 decision 6: per binding the adapter, its version, consistency, timeouts, `observes` and fault-consumption observability. */
+async function bindingsOf(config: FeatConfig, projectRoot: string): Promise<Record<string, unknown>> {
+  const services = [];
+  for (const key of Object.keys(config.services).sort()) {
+    const s = config.services[key]!;
+    const version = adapterVersionOf(s.adapter, projectRoot);
+    const declared = await declaredBy(key, s, projectRoot);
+    services.push({
       key,
       adapter: s.adapter,
+      ...(version !== undefined ? { adapterVersion: version } : {}),
       consistency: s.consistency,
       ...(s.convergenceTimeout !== undefined ? { convergenceTimeout: s.convergenceTimeout } : {}),
       ...(s.absenceTimeout !== undefined ? { absenceTimeout: s.absenceTimeout } : {}),
-    };
-  });
-  return { ...(config.response ? { response: { adapter: config.response.adapter } } : {}), services };
+      ...(declared ?? {}),
+    });
+  }
+  const responseVersion = config.response ? adapterVersionOf(config.response.adapter, projectRoot) : undefined;
+  return {
+    ...(config.response
+      ? { response: { adapter: config.response.adapter, ...(responseVersion !== undefined ? { adapterVersion: responseVersion } : {}) } }
+      : {}),
+    services,
+  };
 }
 
 export async function produceEvidence(root: string, configPath: string): Promise<Record<string, unknown>> {
@@ -232,7 +286,7 @@ export async function produceEvidence(root: string, configPath: string): Promise
       config_digest: sha256(configText),
       // ADR-0024: which files made the config the run actually used, and what each service was bound to.
       config: configProvenance(root, configPath, configText, config),
-      bindings: bindingsOf(config),
+      bindings: await bindingsOf(config, path.dirname(path.resolve(root, configPath))),
       // Environment: config override > FEAT_ENVIRONMENT > ENVIRONMENT (fail-fast).
       environment: resolveEnvironment(config),
       // The producing commit — CI's sha when present, the local HEAD

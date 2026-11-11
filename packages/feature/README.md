@@ -787,8 +787,10 @@ Conventions:
 - **Tier provenance (ADR-0024).** `project.config.resolved` is a digest of the
   merged config. For an overlay, `project.config.overlay` and `.base` hold each
   file's path and digest. `project.bindings` records the response adapter and,
-  per service, the adapter, consistency and timeouts the run was bound to, so an
-  integration-tier bundle is distinguishable from a spec-tier one.
+  per service, the adapter and its version (`adapterVersion`), the consistency and
+  timeouts, `observes` and whether fault consumption is observable
+  (`faultConsumptionObservable`) (ADR-0024), so an integration-tier
+  bundle is distinguishable from a spec-tier one.
 - **Local records nothing.** With environment `local`, `--evidence` prints
   `evidence: skipped` and writes nothing, unless `--force`.
 

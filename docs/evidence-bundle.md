@@ -49,16 +49,28 @@ record, not a gate.
 
 `project.config` records `resolved` (a digest of the merged config) and, when the config extends a
 base, the `overlay` and `base` files with their digests. `project.bindings` records the response
-adapter and, per service, the adapter, consistency and timeouts the run was bound to — so a bundle
-from the integration tier is distinguishable from a spec-tier one by what it ran against.
+adapter and, per service, what the run was bound to and what it could observe (ADR-0024 decision 6):
+
+| Field | Meaning |
+| --- | --- |
+| `adapter` | The module the config names. |
+| `adapterVersion` | The version of its npm package, resolved from the project that owns the config. Absent for a local module (a path specifier), and for an adapter that cannot be resolved. The response adapter records it too. |
+| `consistency`, `convergenceTimeout`, `absenceTimeout` | As configured. The timeouts are present only when set. |
+| `observes` | `{ diff: "native" \| "snapshot", state: boolean }` (ADR-0023), as the adapter declares it. An adapter that declares nothing is recorded as `{ diff: "native", state: true }`, the way the harness reads it. Absent when the adapter cannot be built. |
+| `faultConsumptionObservable` | `true` when the adapter reports how often an armed fault was consumed (`firedFaults()`), so an unconsumed fault is caught. Absent when the adapter cannot be built. |
+
+So a bundle from the integration tier is distinguishable from a spec-tier one by what it ran
+against and by what that could observe.
 
 ## Environment & output location (supersedes the static ADR-0016 field)
 
 The bundle's `project.environment` resolves: `config.environment` (explicit
 override) → `FEAT_ENVIRONMENT` → `ENVIRONMENT` — none is an immediate
 failure. `feat report --evidence` writes to
-`.feature/evidence/<environment>/<commit-sha>[-dirty].json` (the SHA is the
-bundle's identity; a dirty tree can never masquerade as a clean commit).
+`.feature/evidence/<environment>/<commit-sha>[-<config-slug>][-dirty].json` (the SHA is the
+bundle's identity; a dirty tree can never masquerade as a clean commit). The default
+`feat.config.json` has no slug; any other config appends `-<slug>`, its file name without
+`feat.` and `config.json`, so bundles for several configs never collide.
 The `local` environment records no evidence (skip with notice; `--force`
 for debugging) — compliance windows begin above local. `--out` overrides
 the path.

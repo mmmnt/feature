@@ -95,13 +95,16 @@
           "type": "object",
           "required": ["services"],
           "additionalProperties": false,
-          "description": "ADR-0024: what the run's adapters were bound to, so an integration bundle is distinguishable from a spec-tier one.",
+          "description": "ADR-0024: what the run's adapters were bound to (adapter, version, consistency, timeouts) and what each could observe (observes, fault consumption), so an integration bundle is distinguishable from a spec-tier one.",
           "properties": {
             "response": {
               "type": "object",
               "required": ["adapter"],
               "additionalProperties": false,
-              "properties": { "adapter": { "type": "string" } }
+              "properties": {
+                "adapter": { "type": "string" },
+                "adapterVersion": { "type": "string", "description": "The version of the adapter's npm package, resolved from the project that owns the config. Absent for a local module." }
+              }
             },
             "services": {
               "type": "array",
@@ -112,9 +115,21 @@
                 "properties": {
                   "key": { "type": "string" },
                   "adapter": { "type": "string" },
+                  "adapterVersion": { "type": "string", "description": "The version of the adapter's npm package, resolved from the project that owns the config. Absent for a local module." },
                   "consistency": { "enum": ["acid", "strong", "eventual"] },
                   "convergenceTimeout": { "type": "integer", "minimum": 0 },
-                  "absenceTimeout": { "type": "integer", "minimum": 0 }
+                  "absenceTimeout": { "type": "integer", "minimum": 0 },
+                  "observes": {
+                    "type": "object",
+                    "required": ["diff", "state"],
+                    "additionalProperties": false,
+                    "description": "ADR-0023: the observation modes the adapter serves. An adapter that declares nothing is recorded as { diff: native, state: true }, as the harness reads it.",
+                    "properties": {
+                      "diff": { "enum": ["native", "snapshot"] },
+                      "state": { "type": "boolean" }
+                    }
+                  },
+                  "faultConsumptionObservable": { "type": "boolean", "description": "ADR-0023: true when the adapter reports how often an armed fault was consumed (firedFaults), so an unconsumed fault is checked." }
                 }
               }
             }
