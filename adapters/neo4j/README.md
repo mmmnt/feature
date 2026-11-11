@@ -289,12 +289,13 @@ Adapter errors are `Neo4jAdapterError`, with a `code` and a `detail`.
 | --- | --- | --- |
 | `NAMESPACE_INVALID` | construction | The namespace does not match `^s[0-9a-f]{12}$`. Defensive: the runner never passes another. |
 | `NEO4J_UNREACHABLE` | `setup()` | The server did not answer `verifyConnectivity`. The detail names the URI with any credentials removed. |
+| `OPTIONS_INVALID` | `setup()` | `options.keys` is missing, is not an object, or maps a label to something other than a non-empty string. Refused before any connection. An empty object is accepted (nothing is declared yet; a namespaced node then fails with `NODE_KEY_UNDECLARED`). |
 | `NODE_KEY_UNDECLARED` | snapshot: `startCapture()`, `peekCapture()`, `stopCapture()`, and `read()` | A namespaced node carries no label that declares a key in `options.keys`, or has no value for its key property. |
 | `NAMESPACE_BREACH` | snapshot: `startCapture()`, `peekCapture()`, `stopCapture()`, and an unhinted `read()` | A relationship joins a namespaced node and a node outside the namespace. |
 | `FAULT_UNSUPPORTED` | `fault()` | The fault is not in the catalog (including `Connection` without `options.proxy`), the count is not `until reset`, or the detail is missing `property` (an identifier) or `value` (a scalar). The detail lists the catalog. |
 
 `NODE_KEY_UNDECLARED` and `NAMESPACE_BREACH` surface when the snapshot is taken,
-not at `setup()`. Plain `Error`s (no code) report a missing `uri` and
+not at `setup()`; a missing `options.keys` is refused at `setup()`, as `OPTIONS_INVALID`. Plain `Error`s (no code) report a missing `uri` and
 `options.auth` naming variables that are not both set. Errors from the Toxiproxy
 layer keep the codes of `@mmmnt/feat-fault-proxy` (`PROXY_UNREACHABLE`,
 `PROXY_NOT_OPEN`, `FAULT_UNSUPPORTED`, `CONTAINER_NOT_FOUND`,
@@ -323,7 +324,7 @@ layer keep the codes of `@mmmnt/feat-fault-proxy` (`PROXY_UNREACHABLE`,
   exercised. The adapter never uses CDC.
 - The `options.proxy` block needs a Toxiproxy server you run; the adapter does
   not start one.
-- Options are not validated: unknown keys are ignored.
+- Options are validated only for `keys`: unknown keys are ignored.
 
 ## Specs and design
 

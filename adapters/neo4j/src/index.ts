@@ -28,7 +28,8 @@ export type Neo4jAdapterErrorCode =
   | "NEO4J_UNREACHABLE"
   | "NODE_KEY_UNDECLARED"
   | "NAMESPACE_BREACH"
-  | "FAULT_UNSUPPORTED";
+  | "FAULT_UNSUPPORTED"
+  | "OPTIONS_INVALID";
 
 export class Neo4jAdapterError extends Error {
   constructor(
@@ -159,7 +160,7 @@ class Neo4jAdapter implements FeatServiceAdapter {
       );
     }
     this.namespace = ns;
-    this.options = config.options ?? { keys: {} };
+    this.options = config.options ?? ({} as Neo4jOptions); // keys is required: setup() refuses a config without it
     this.settleTimeoutMs = this.options.settleTimeoutMs ?? 5000;
     this.tag = `feat-instrument-${ns}`;
 
@@ -240,6 +241,19 @@ class Neo4jAdapter implements FeatServiceAdapter {
   }
 
   async setup(): Promise<void> {
+    // A config refusal, before any connection (SPEC-ADPNEO-001: options.keys is required, label -> key property).
+    const keys: unknown = this.options.keys;
+    const declared =
+      typeof keys === "object" &&
+      keys !== null &&
+      !Array.isArray(keys) &&
+      Object.values(keys).every((p) => typeof p === "string" && p !== "");
+    if (!declared) {
+      throw new Neo4jAdapterError(
+        "OPTIONS_INVALID",
+        "options.keys is required: an object mapping each label the system writes to a non-empty key property name",
+      );
+    }
     const uri = this.uri();
     try {
       await this.db().verifyConnectivity();
