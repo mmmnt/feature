@@ -154,7 +154,7 @@ option is optional.
 | `uri` | A Bolt URI. `bolt://` direct is the supported shape. |
 | `uriEnv` | The name of an environment variable holding the URI. Used when `uri` is absent. Neither set, or the variable unset or empty, is a configuration error. |
 | `auth` | `{ username, password }`: the **names** of two environment variables, both of which must be set. Omit it for a server without authentication. |
-| `keys` | **Required** for every label the system writes: label to key property. A namespaced node whose labels declare no key, or that has no value for its key property, makes the snapshot fail with `NODE_KEY_UNDECLARED`. If a node has several declared labels, the first one in this object's order is its identity. |
+| `keys` | **Required** (a config without it is refused at `setup()` with `OPTIONS_INVALID`) for every label the system writes: label to key property. A namespaced node whose labels declare no key, or that has no value for its key property, makes the snapshot fail with `NODE_KEY_UNDECLARED`. If a node has several declared labels, the first one in this object's order is its identity. |
 | `settleTimeoutMs` | How long `settle()` may wait for other transactions to finish. Default 5000. Keep `convergenceTimeout` at or above it. |
 | `proxy` | A Toxiproxy in front of the server for `Connection` faults. `api` and `upstream` are required. See below. |
 
