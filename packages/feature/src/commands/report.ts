@@ -70,7 +70,8 @@ export default class Report extends Command {
       return;
     }
     const xml = readFileSync(abs, "utf8");
-    const suites = [...xml.matchAll(/<testsuite\b[^>]*name="([^"]*)"[^>]*tests="(\d+)"[^>]*failures="(\d+)"[^>]*errors="(\d+)"/g)];
+    // `\sname=`, not `name=`: `hostname="…"` ends in "name" and sits in the same element.
+    const suites = [...xml.matchAll(/<testsuite\b[^>]*\sname="([^"]*)"[^>]*tests="(\d+)"[^>]*failures="(\d+)"[^>]*errors="(\d+)"/g)];
     let total = 0, failures = 0, errors = 0;
     for (const s of suites) {
       total += Number(s[2]);

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="3" failures="1" errors="0" time="0.02">
+    <testsuite name="specs/alpha.test.ts" timestamp="2026-11-10T12:00:00.000Z" hostname="build-host-17.example.internal" tests="2" failures="1" errors="0" skipped="0" time="0.01">
+        <testcase classname="specs/alpha.test.ts" name="SPEC-A-001 › a" time="0.001"></testcase>
+        <testcase classname="specs/alpha.test.ts" name="SPEC-A-001 › b" time="0.001"><failure message="Prediction violated"></failure></testcase>
+    </testsuite>
+    <testsuite name="specs/beta.test.ts" timestamp="2026-11-10T12:00:01.000Z" hostname="build-host-17.example.internal" tests="1" failures="0" errors="0" skipped="0" time="0.01">
+        <testcase classname="specs/beta.test.ts" name="SPEC-B-001 › c" time="0.001"></testcase>
+    </testsuite>
+</testsuites>

@@ -1,0 +1,12 @@
+{
+  "featVersion": "1.0",
+  "environment": "spec",
+  "schemas": { "adapter": "@mmmnt/feat-schema-json" },
+  "response": {
+    "adapter": "@mmmnt/feat-adapter-handler",
+    "commands": { "Ping": { "module": "ping.mjs", "export": "ping" } }
+  },
+  "services": { "store": { "adapter": "@mmmnt/feat-adapter-memory", "consistency": "strong" } },
+  "report": { "format": ["junit"], "junitOutput": "junit.xml" },
+  "specs": { "dir": "specs", "pattern": "**/*.feat", "contractPattern": "**/*.contract.json", "outputPattern": "{name}.test.ts" }
+}
