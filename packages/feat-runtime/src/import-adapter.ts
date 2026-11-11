@@ -9,9 +9,17 @@
 import path from "node:path";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
+import { HarnessConfigurationError } from "./errors.js";
 
 export interface AdapterModule {
   createAdapter: (cfg: Record<string, unknown>) => unknown;
+}
+
+/** An adapter that cannot be used is a configuration error (README: exit 2); the cause rides along. */
+function refused(message: string, cause?: unknown): HarnessConfigurationError {
+  const e = new HarnessConfigurationError("INVALID_CONFIG", message);
+  if (cause !== undefined) e.cause = cause;
+  return e;
 }
 
 export async function importAdapter(specifier: string, projectRoot: string): Promise<AdapterModule> {
@@ -24,10 +32,10 @@ export async function importAdapter(specifier: string, projectRoot: string): Pro
     try {
       resolved = req.resolve(specifier);
     } catch (cause) {
-      throw new Error(
-        `Adapter module '${specifier}' could not be resolved from ${projectRoot} — ` +
-          `configuration error. Install it in the project that owns feat.config.json.`,
-        { cause },
+      throw refused(
+        `Adapter module '${specifier}' could not be resolved from ${projectRoot}. ` +
+          `Install it in the project that owns feat.config.json.`,
+        cause,
       );
     }
   }
@@ -35,14 +43,9 @@ export async function importAdapter(specifier: string, projectRoot: string): Pro
   try {
     mod = (await import(pathToFileURL(resolved).href)) as Record<string, unknown>;
   } catch (cause) {
-    throw new Error(
-      `Adapter module '${specifier}' could not be loaded from ${resolved} — configuration error: ` +
-        `${(cause as Error).message}`,
-      { cause },
-    );
+    throw refused(`Adapter module '${specifier}' could not be loaded from ${resolved}: ${(cause as Error).message}`, cause);
   }
   const createAdapter = mod.createAdapter ?? (mod.default as Record<string, unknown> | undefined)?.createAdapter;
-  if (typeof createAdapter !== "function")
-    throw new Error(`Adapter module '${specifier}' lacks a createAdapter export (INV-10) — configuration error.`);
+  if (typeof createAdapter !== "function") throw refused(`Adapter module '${specifier}' lacks a createAdapter export (INV-10).`);
   return { createAdapter: createAdapter as (cfg: Record<string, unknown>) => unknown };
 }

@@ -1,0 +1,25 @@
+{
+  "featVersion": "1.0",
+  "schemas": {
+    "adapter": "@mmmnt/feat-schema-json"
+  },
+  "response": {
+    "adapter": "./stub.mjs",
+    "commands": {
+      "Ping": {}
+    }
+  },
+  "services": {
+    "store": {
+      "adapter": "./bare.mjs",
+      "consistency": "strong",
+      "options": {}
+    }
+  },
+  "specs": {
+    "dir": ".",
+    "pattern": "**/*.feat",
+    "contractPattern": "**/*.contract.json",
+    "outputPattern": "{name}.test.ts"
+  }
+}

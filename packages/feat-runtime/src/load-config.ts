@@ -40,7 +40,7 @@ interface ServiceConfig {
   convergenceTimeout?: number;
 }
 
-type ConfigErrorCode =
+export type ConfigErrorCode =
   | "CONFIG_NOT_FOUND"
   | "INVALID_CONFIG"
   | "MISSING_CONVERGENCE_TIMEOUT"

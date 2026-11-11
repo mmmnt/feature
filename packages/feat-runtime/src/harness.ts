@@ -9,7 +9,7 @@ import type {
   CapturedRecord, CapturedResponse, FeatConfig, FeatResponseAdapter, FeatServiceAdapter,
 } from "@mmmnt/feat-types";
 import { importAdapter } from "./import-adapter.js";
-import { HarnessConfigurationError } from "./errors.js";
+import { HarnessConfigurationError, type HarnessConfigurationCode } from "./errors.js";
 import { loadConfig, variablesSidecarPath } from "./load-config.js";
 import { assertNamespaceNotConfigured, deriveNamespace } from "./namespace.js";
 import { diffContains, diffRecords, diffResponse, pathGet, type InlineData, type MatchContext } from "./matcher.js";
@@ -195,8 +195,11 @@ export interface Harness {
 
 export async function createHarness(opts: { configPath: string; specPath?: string }): Promise<Harness> {
   const loaded = await loadConfig({ path: opts.configPath });
-  if (loaded.status === "ERR")
-    throw new Error(`Configuration error (exit 2): ${JSON.stringify(loaded.body)}`);
+  if (loaded.status === "ERR") {
+    // The loader's own code, as [CODE], like every other refusal (README: exit 2).
+    const b = loaded.body as { code: HarnessConfigurationCode; message: string; detail?: string };
+    throw new HarnessConfigurationError(b.code, `${b.message}${b.detail ? ` — ${b.detail}` : ""}`);
+  }
   const config = loaded.body as unknown as FeatConfig;
   // The project root is where the config lives — all module/scope resolution anchors there,
   // so generated tests behave identically regardless of the invoking cwd.
@@ -314,7 +317,7 @@ export async function createHarness(opts: { configPath: string; specPath?: strin
     for (const seed of c.given?.seeds ?? []) {
       const adapter = services.get(seed.service);
       if (!adapter) throw new Error(`${c.anchor}: seed targets unknown service '${seed.service}'`);
-      if (!adapter.seed) throw new Error(`${c.anchor}: adapter for '${seed.service}' does not support seed() — configuration error.`);
+      if (!adapter.seed) throw new HarnessConfigurationError("SEED_UNSUPPORTED", `${c.anchor}: adapter for '${seed.service}' does not support seed().`, seed.service);
       if ("fixture" in seed) throw new Error(`${c.anchor}: fixture seeds require generate-time inlining (not yet wired)`);
       await adapter.seed(seed.records);
     }
@@ -359,7 +362,7 @@ export async function createHarness(opts: { configPath: string; specPath?: strin
       const adapter = services.get(d.service);
       if (!adapter) throw new Error(`${c.anchor}: deliver targets unknown service '${d.service}'`);
       if (!adapter.deliver)
-        throw new Error(`${c.anchor}: adapter for '${d.service}' does not support deliver() — configuration error.`);
+        throw new HarnessConfigurationError("DELIVER_UNSUPPORTED", `${c.anchor}: adapter for '${d.service}' does not support deliver().`, d.service);
       // A delivered stimulus may also name what a precondition produced.
       const sent = resolveGivenRefs(d.payload, givenResponse, c.anchor) as Record<string, unknown>;
       sentDelivers.push(sent);
