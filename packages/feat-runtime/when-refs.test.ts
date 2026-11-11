@@ -1,7 +1,7 @@
 // `@when.<path>` equals the value SENT in the `when:` payload (grammar-reference §matchers) — including
 // a value the payload took from a preceding execute through `@given.response.<path>`.
 //
-// The bug this pins (found 2026-10-15 by the howie production regression lane, RG-REQ-03): the
+// The bug this pins (found 2026-10-15 by a consumer project's production regression lane): the
 // harness resolved `@given.response.*` in the `when:` payload before invoking, then handed the
 // matchers the UNRESOLVED payload — so `@when.expect` compared against the literal string
 // "@given.response.start" and a correct system failed its prediction.

@@ -384,7 +384,7 @@ Patch release, on 0.2.0.
   `schema with key or id "..." already exists`. See "`validate` is idempotent" above.
 
 - **A root `$id` on an inline schema re-bases its relative `$ref`s.** They used
-  to resolve against the contract file's directory, so howie's
+  to resolve against the contract file's directory, so a consumer's
   `"$id": "contracts/identity/account-registered.json"` with
   `{"$ref": "../adrs/event-envelope.json"}` failed with
   `referenced schema file '.../features/adrs/event-envelope.json' could not be read`.

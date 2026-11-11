@@ -2,7 +2,7 @@
 //
 // ADR-0020 let a scenario leave the convergence window early only when every eventual service
 // PREDICTED records; an absence proof (`records []`) kept the full ceiling, because nothing in the
-// harness could tell "nothing arrived" from "nothing arrived YET". Measured on howie (2026-10-06):
+// harness could tell "nothing arrived" from "nothing arrived YET". Measured on a consumer project (2026-10-06):
 // 1,103 of 1,122 cases sat the whole 2000ms window with ~60ms of real work — 95% of `feat run`.
 //
 // An adapter that can PROVE its capture has caught up with everything written so far implements

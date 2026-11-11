@@ -1,5 +1,5 @@
 // Generate-path proof for founder ruling 2026-11-10, release findings c1 and c2, on a project shaped like
-// howie's: specs under features/, shared schemas under contracts/ at the project root. Two specs carry
+// a consumer's layout: specs under features/, shared schemas under contracts/ at the project root. Two specs carry
 // the same `$id`-bearing inline schema (c2: the seed check validates it twice on one adapter), and that
 // schema's relative `$id` re-bases its `../` `$ref` to contracts/adrs/ (c1), not to features/adrs/.
 import path from "node:path";

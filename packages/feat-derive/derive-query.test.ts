@@ -13,7 +13,7 @@ import type { BuiltSpec, FeatConfig } from "@mmmnt/feat-types";
  *
  * ⚠ REGRESSION. Until this test, the query branch overwrote every service wholesale, so a
  * `contains` in a query spec was silently discarded and a `contains` naming a record that did
- * not exist PASSED. Found downstream in Marilou's SPEC-NET-001, whose six `calendar contains`
+ * not exist PASSED. Found downstream in a consumer project's spec, whose six `calendar contains`
  * assertions had never once executed.
  */
 
