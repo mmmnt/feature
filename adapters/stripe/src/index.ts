@@ -1,6 +1,6 @@
 // @mmmnt/feat-adapter-stripe — service adapter observing a Stripe account
 // through the Events API. startCapture pins a cursor at the newest event;
-// stopCapture lists everything after it — every Stripe event in the window
+// stopCapture lists everything after it (and [] with no window open) — every Stripe event in the window
 // becomes a CapturedRecord {type: event.type, key: event.id, payload:
 // event.data.object}, so an unpredicted charge, refund, or webhook-visible
 // mutation fails the suite. Declare the service `eventual` with a
@@ -98,7 +98,9 @@ class StripeAdapter implements FeatServiceAdapter {
     }));
   }
 
+  /** The window's events and the window closed; [] with no window open, as peekCapture answers (SPEC-ADPSTR-001). */
   async stopCapture(): Promise<CapturedRecord[]> {
+    if (!this.windowOpen) return [];
     const records = await this.eventsAfterCursor();
     this.cursor = null;
     this.windowOpen = false;

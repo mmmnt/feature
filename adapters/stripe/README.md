@@ -91,7 +91,7 @@ charge or the refund. Match it with a record schema in the contract.
 
 How the window works: `startCapture` asks for the newest event and pins its id as a cursor. `stopCapture`
 lists every event after the cursor, following `has_more` pagination 100 at a time, applies the `types`
-filter, and returns them oldest first. The window is closed by `stopCapture` and by `reset()`.
+filter, and returns them oldest first. The window is closed by `stopCapture` and by `reset()`. `stopCapture()` with no window open (never started, already stopped, or reset) returns `[]` and makes no request, as `peekCapture()` does.
 
 ## Observation modes
 
@@ -141,9 +141,6 @@ The adapter defines no error codes.
 - **Eventual.** An absence proof (`stripe has []`) waits for the convergence timeout or the
   `absenceTimeout`, and cannot prove that nothing arrives later than that.
 - **Account-wide feed.** See Seeding, isolation and state.
-- **`stopCapture()` needs a window.** Called without a `startCapture()`, it lists the whole feed,
-  because the cursor is null. The harness always opens a window first. Only `peekCapture()` checks
-  that a window is open.
 - **Webhooks are not used.** The adapter reads the Events API, not webhook deliveries.
 - **Event retention.** The Events API only returns events that Stripe still retains.
 

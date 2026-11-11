@@ -102,6 +102,22 @@ describe("stripe events capture window", () => {
     expect(records.map((r) => r.type)).toEqual(["charge.succeeded"]);
   });
 
+  // Hand-written: no agreed scenario defines it (the SPEC-ADPSTR-001 header records it as a finding).
+  // The convention of the memory and fs adapters: a closed window yields [], as peekCapture does.
+  it("stopCapture with no window open is empty although the feed is not", async () => {
+    push("charge.succeeded", { id: "ch_old" });
+    const a = adapter();
+    expect(await a.stopCapture()).toEqual([]);
+  });
+
+  it("stopCapture after a stopCapture finds the window closed", async () => {
+    const a = adapter();
+    await a.startCapture();
+    push("charge.succeeded", { id: "ch_1" });
+    expect(await a.stopCapture()).toHaveLength(1);
+    expect(await a.stopCapture()).toEqual([]);
+  });
+
   it("read() returns the full log for contains assertions", async () => {
     push("charge.succeeded", { id: "ch_old" });
     push("refund.created", { id: "re_1" });
