@@ -17,6 +17,8 @@ export type HarnessConfigurationCode =
   | "NO_ENVIRONMENT";
 
 export class HarnessConfigurationError extends Error {
+  /** The refusal without the `Configuration error (exit 2): [CODE]` prefix, for a caller that prints its own. */
+  public readonly detail: string;
   constructor(
     public code: HarnessConfigurationCode,
     message: string,
@@ -24,5 +26,6 @@ export class HarnessConfigurationError extends Error {
     public mode?: "state",
   ) {
     super(`Configuration error (exit 2): [${code}] ${message}`); // the runner prints only the message
+    this.detail = message;
   }
 }

@@ -1,10 +1,9 @@
 // `feat report` — summarize the last run from the JUnit output (per-scenario,
 // anchors included in test names). --junit prints the raw XML path.
 
-import { readConfigOrExit } from "../config.js";
+import { environmentOrExit, readConfigOrExit } from "../config.js";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { execSync } from "node:child_process";
-import { resolveEnvironment } from "@mmmnt/feat-runtime";
 import path from "node:path";
 import { Command, Flags } from "@oclif/core";
 import type { FeatConfig } from "@mmmnt/feat-types";
@@ -29,7 +28,7 @@ export default class Report extends Command {
 
     if (flags.evidence) {
       const cfg = await readConfigOrExit(this, root, flags.config);
-      const environment = resolveEnvironment(cfg);
+      const environment = environmentOrExit(this, cfg);
       if (environment === "local" && !flags.force) {
         this.log("evidence: skipped — the local environment records no compliance evidence (--force to override).");
         return;

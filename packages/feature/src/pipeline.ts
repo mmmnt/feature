@@ -10,7 +10,7 @@ import type { BuiltSpec, FeatConfig, FeatSchemaAdapter } from "@mmmnt/feat-types
 import { parse } from "@mmmnt/feat-core";
 import { derive, type TestTopology } from "@mmmnt/feat-derive";
 import { emit, timingEnvelope, EMITTER_VERSION } from "@mmmnt/feat-emit-ts";
-import { importAdapter } from "@mmmnt/feat-runtime";
+import { HarnessConfigurationError, importAdapter } from "@mmmnt/feat-runtime";
 import { checkSeeds, formatSeedViolations, type SeedViolation } from "./seed-fixtures.js";
 
 // "fixtures" is excluded by convention: fixture .feat files are test vectors
@@ -80,11 +80,10 @@ async function loadSchemaAdapter(config: FeatConfig, projectRoot: string): Promi
     // Loudly, and never by falling back to reading the referenced file verbatim: that
     // read is the defect this path closes, and a silent fallback would reintroduce it
     // invisibly — generated tests carrying `$ref`s that resolve against nothing.
-    throw new Error(
-      `Schema adapter '${specifier}' (feat.config.json › schemas.adapter) could not be loaded: ` +
-        `${(cause as Error).message}`,
-      { cause },
-    );
+    const what = `Schema adapter '${specifier}' (feat.config.json › schemas.adapter) could not be loaded: `;
+    // An adapter that cannot be resolved or loaded is a configuration error (README: exit 2); it keeps its code.
+    if (cause instanceof HarnessConfigurationError) throw new HarnessConfigurationError(cause.code, what + cause.detail);
+    throw new Error(what + `${(cause as Error).message}`, { cause });
   }
   return mod.createAdapter({ ...config.schemas, projectRoot }) as FeatSchemaAdapter;
 }

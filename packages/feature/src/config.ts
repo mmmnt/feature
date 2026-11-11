@@ -4,7 +4,7 @@
 
 import path from "node:path";
 import type { FeatConfig } from "@mmmnt/feat-types";
-import { loadConfig } from "@mmmnt/feat-runtime";
+import { HarnessConfigurationError, loadConfig, resolveEnvironment } from "@mmmnt/feat-runtime";
 
 export class ConfigLoadError extends Error {
   constructor(public readonly code: string, message: string, public readonly detail?: string) {
@@ -39,6 +39,17 @@ export async function readConfigOrExit(
     return await readConfig(root, configPath);
   } catch (e) {
     if (!(e instanceof ConfigLoadError)) throw e;
+    cmd.logToStderr(`ERROR ${e.message}`);
+    return cmd.exit(2);
+  }
+}
+
+/** For a command's run(): the environment the config or the process names; none prints the refusal and exits 2. */
+export function environmentOrExit(cmd: { logToStderr(m: string): void; exit(code: number): never }, config: FeatConfig): string {
+  try {
+    return resolveEnvironment(config);
+  } catch (e) {
+    if (!(e instanceof HarnessConfigurationError)) throw e;
     cmd.logToStderr(`ERROR ${e.message}`);
     return cmd.exit(2);
   }

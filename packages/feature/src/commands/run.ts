@@ -2,14 +2,14 @@
 // --spec filters to a single spec ID; --shard i/n runs one disjoint slice (for N isolated jobs).
 // JUnit output per the config report block, suffixed per shard.
 
-import { readConfigOrExit } from "../config.js";
+import { environmentOrExit, readConfigOrExit } from "../config.js";
 import { runTimeouts, type Prepared } from "../pipeline.js";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { Command, Flags } from "@oclif/core";
 import type { FeatConfig } from "@mmmnt/feat-types";
 import { plan, runTests } from "@mmmnt/feat-runner";
-import { assertNoNamespaceCollision, resolveEnvironment, variablesSidecarPath } from "@mmmnt/feat-runtime";
+import { assertNoNamespaceCollision, variablesSidecarPath } from "@mmmnt/feat-runtime";
 import { rmSync } from "node:fs";
 import { generateAll } from "../pipeline.js";
 import { parseShard, selectShard, shardJunitPath } from "../shard.js";
@@ -32,7 +32,7 @@ export default class Run extends Command {
     const root = process.cwd();
     const config = await readConfigOrExit(this, root, flags.config);
     // Environment must be resolvable BEFORE any work (fail fast + notify).
-    resolveEnvironment(config);
+    environmentOrExit(this, config);
     // ADR-0017: fresh sidecar per run — staleness structurally impossible.
     rmSync(variablesSidecarPath(root, flags.config), { force: true });
 

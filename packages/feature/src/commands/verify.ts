@@ -4,6 +4,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { Command, Flags } from "@oclif/core";
+import { HarnessConfigurationError } from "@mmmnt/feat-runtime";
 import { ConfigLoadError } from "../config.js";
 import { generateAll } from "../pipeline.js";
 
@@ -34,7 +35,7 @@ export default class Verify extends Command {
       this.log(`verify: ${files.length} generated file(s) match their specs.`);
     } catch (e) {
       this.logToStderr(`ERROR ${String((e as Error).message)}`);
-      this.exit(e instanceof ConfigLoadError ? 2 : 1); // a refused config is a configuration error (README: exit 2)
+      this.exit(e instanceof ConfigLoadError || e instanceof HarnessConfigurationError ? 2 : 1); // a refused config is a configuration error (README: exit 2)
     }
   }
 }

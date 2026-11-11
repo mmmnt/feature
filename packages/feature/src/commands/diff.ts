@@ -9,6 +9,7 @@ import path from "node:path";
 import { Args, Command, Flags } from "@oclif/core";
 import type { BuiltSpec } from "@mmmnt/feat-types";
 import { parse } from "@mmmnt/feat-core";
+import { readConfigOrExit } from "../config.js";
 
 export default class Diff extends Command {
   static override description = "Summarize spec changes vs a git ref (IR-level, for PR review)";
@@ -25,6 +26,8 @@ export default class Diff extends Command {
   public async run(): Promise<void> {
     const { args, flags } = await this.parse(Diff);
     const root = process.cwd();
+    // A config that cannot be loaded is a configuration error (README: exit 2), not a spec that does not parse.
+    await readConfigOrExit(this, root, flags.config);
 
     const current = await parse({ spec: args.file, config: flags.config });
     if (current.status === "ERR") {

@@ -7,6 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import type { ErrorObject } from "ajv";
+import { HarnessConfigurationError } from "./errors.js";
 
 // CJS interop under NodeNext: ajv/ajv-formats ship CJS with default-shaped exports.
 const require = createRequire(import.meta.url);
@@ -196,13 +197,15 @@ export async function loadConfig(input: LoadConfigInput): Promise<CapturedRespon
  * Runtime environment resolution (supersedes ADR-0016's static-only field):
  * config.environment is an explicit OVERRIDE (e.g. "synth" for
  * environment-independent synthesis truth); otherwise the environment names
- * itself via FEAT_ENVIRONMENT then ENVIRONMENT; none = immediate failure.
+ * itself via FEAT_ENVIRONMENT then ENVIRONMENT; none = immediate failure, a
+ * configuration error (NO_ENVIRONMENT, exit 2).
  */
 export function resolveEnvironment(config: { environment?: string }): string {
   const env = config.environment ?? process.env.FEAT_ENVIRONMENT ?? process.env.ENVIRONMENT;
   if (!env)
-    throw new Error(
-      "No environment declared — set ENVIRONMENT or FEAT_ENVIRONMENT, or pin config.environment — configuration error.",
+    throw new HarnessConfigurationError(
+      "NO_ENVIRONMENT",
+      "No environment declared — set ENVIRONMENT or FEAT_ENVIRONMENT, or pin config.environment.",
     );
   return env;
 }
