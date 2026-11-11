@@ -8,6 +8,17 @@ output: resources, the SSM publish/consume graph, and the dependency closure.
 Adding infrastructure means adding a construct to *your* app. Feature reads
 the assembly.
 
+## Install
+
+```sh
+npm install --save-dev @mmmnt/feat-cdk aws-cdk
+```
+
+Requires Node 20 or later, `@mmmnt/feature`, and a CDK app. To synthesize, the adapter runs the
+`aws-cdk` CLI resolved from your project (`aws-cdk/bin/cdk`, run with the current Node). If that is
+not installed it falls back to `npx cdk`, or to the binary in `invoke.cdkBin`. To skip synthesis, point
+`invoke.assemblyDir` at a `cdk.out` you already built.
+
 ## What it derives
 
 From a synthesized assembly (`cdk synth --output cdk.out`):
@@ -42,6 +53,7 @@ specs, and the config they already have — no handler files, no wiring code:
     "stage": { "fromEnv": "ENVIRONMENT", "default": "local" }
   },
   "commands": {
+    "SynthStack":    {},
     "SynthDeployed": { "env": { "FEAT_POSTURE": "deployed" } },
     "SynthHarness":  { "env": { "FEAT_POSTURE": "harness" } }
   }
@@ -50,8 +62,28 @@ specs, and the config they already have — no handler files, no wiring code:
 
 Each command synthesizes the app with its configured environment (posture
 flags, anything else your app reads) and answers with the canonical surface.
+Every command takes the same payload (`stack`, and optionally `select`), and
+the command name only chooses which environment and assembly the synth uses.
 The resolved stage is exported to the synth subprocess as `ENVIRONMENT`.
 (`createSynthStackHandler` remains exported for custom setups.)
+
+### Every option
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `invoke.appCommand` | string | The `cdk synth --app` command, such as `node bin/app.ts`. Use it when there is no `cdk.json`. With neither, `cdk` runs the app its own config names. |
+| `invoke.cwd` | string | The CDK app directory. Default: the project root, where `feat.config.json` lives. |
+| `invoke.assemblyDir` | string | A pre-synthesized `cdk.out`. When set, nothing is synthesized: the deterministic path for CI. |
+| `invoke.cdkBin` | string | The binary that runs `cdk`, with `cdk` as its first argument (`npx` by default on the fallback). Setting it forces the shim path instead of the resolved `aws-cdk`. |
+| `invoke.env` | object | Environment added to every synth subprocess. |
+| `invoke.stage` | string or `{ fromEnv, default }` | The active stage. A literal, or the name of an environment variable and a default. See "One spec text, every environment". |
+| `invoke.externalPublications` | string[] | SSM names published by another plane. See below. |
+| `commands.<Name>.env` | object | Environment for that command, merged over `invoke.env`. The stage is added last as `ENVIRONMENT`. |
+| `commands.<Name>.assemblyDir` | string | A pre-synthesized assembly for that command, overriding `invoke.assemblyDir`. |
+
+Synthesis runs `cdk synth --all --output <temp dir> --quiet` for the **whole app**. The assembly is the
+contract, and the analysis rules on stack membership. A failed synth fails the case with the
+subprocess error.
 
 ## Plane-split apps: declared cross-plane consumption
 
@@ -111,19 +143,109 @@ scenario "the table is production-grade and pinned to the endpoint":
 route" become verified predictions — no projection code, any AWS service,
 including ones that don't exist yet.
 
+## Responses and refusals
+
+The command answers `{ status, body }`:
+
+| Status | Body | When |
+| --- | --- | --- |
+| `200` | The `StackSurface` below | The stack is in the assembly. |
+| `400` | `{ code: "MISSING_STACK", message }` | The payload has no `stack` string. |
+| `404` | `{ code: "UNKNOWN_STACK", message }` | The stack is not in the assembly. The message lists the available stacks, stage-normalized. |
+
+Specs predict them with `predict error MISSING_STACK` and `predict error UNKNOWN_STACK`. Two other
+failures are thrown, not answered: a consumed SSM name with no publisher and no `externalPublications`
+entry (it would fail at deploy), a cyclic stack dependency, and a failed `cdk synth`.
+
+`stack` is a stack name or an artifact id, and `<env>` in it resolves to the stage.
+
+The `StackSurface` body:
+
+| Field | Meaning |
+| --- | --- |
+| `stackName` | The deployable stack name, with the stage written as `<env>`. |
+| `artifactId` | The stack's artifact id in the manifest. |
+| `closure` | Stack names to deploy, dependency-first, ending with the requested stack. |
+| `resourceCounts` | CloudFormation type to count, sorted by type. |
+| `publishes` | SSM names this stack writes, sorted. |
+| `consumes` | SSM names this stack reads from another stack, sorted. |
+| `dependsOn` | Stack names this stack depends on directly, sorted. |
+| `selected` | Present only when `select` was sent: query name to `{ count, paths, first? }`. |
+
+A select query is `{ path?, type?, where?, regex? }`. All given fields must hold. `path` is the exact
+construct path, `type` the exact CloudFormation type, `where` a partial deep match over the normalized
+properties (arrays match by containment), and `regex` is tested against the JSON-serialized properties.
+`first` is `{ path, type, properties, deletionPolicy? }` for the first match.
+
+## A runnable example, with no synthesis
+
+With a pre-built assembly the spec runs without CDK installed and without a cloud:
+
+```jsonc
+// feat.config.json
+"response": {
+  "adapter": "@mmmnt/feat-cdk",
+  "invoke": { "assemblyDir": "cdk.out", "stage": { "fromEnv": "ENVIRONMENT", "default": "local" } },
+  "commands": { "SynthStack": {} }
+}
+```
+
+```
+scenario "the data stack has one table and publishes its name":
+  when: SynthStack {
+    stack: "data",
+    select: { tables: { type: "AWS::DynamoDB::Table" } }
+  }
+  predict success:
+    response 200 StackSurface {
+      stackName: "data"
+      closure: ["net", "data"]
+      publishes: ["/app/table-name"]
+      selected: { tables: { count: 1 } }
+    }
+    # plus `<service> has []` for every other configured service
+```
+
 ## API
 
+- `createAdapter(config)` → the Feature response adapter that `feat.config.json` loads by name.
 - `analyzeAssembly(cdkOutDir)` → `{ stacks, byArtifact, byStackName }`
-- `resolveStackClosure(assembly, roots, externalPublications?)` → dependency-first artifact ids
-- `stackSurface(assembly, stack, closure, { stage, select })` → the canonical `StackSurface`
-- `createSynthStackHandler(config)` → the Feature response command
-- `normalizedResources` / `selectResources` / `deepMatch` / `normalizeStage` /
-  `consumedSsmNames` / `publishedSsm` / `listStacks` / `readTemplate` — the
-  primitives, for consumer unit tests and tooling.
+- `resolveStackClosure(assembly, roots, externalPublications?)` → dependency-first artifact ids, where
+  `roots` is a list of artifact ids and `externalPublications` a read-only `Set` of names
+- `stackSurface(assembly, stack, closure, { stage, select })` → the canonical `StackSurface`, where
+  `stack` is a `StackAnalysis` from `assembly.byArtifact`, not a name
+- `createSynthStackHandler(config)` → the Feature response command. Its config adds a `project`
+  function, an escape hatch that merges extra fields over the surface.
+- `resolveStage(stage)` → the stage a config resolves to; `resolveCdkEntry(cwd)` → the project's
+  `aws-cdk` entry, or `null`.
+- `normalizedResources` / `selectResources` / `runSelects` / `deepMatch` / `constructPath` /
+  `normalizeTokens` / `normalizeStage` / `consumedSsmNames` / `publishedSsm` / `listStacks` /
+  `readTemplate` / `countOfType` / `firstOfType` — the primitives, for consumer unit tests and
+  tooling.
+- Types: `Assembly`, `StackAnalysis`, `SsmPublish`, `CfnResource`, `StackSurface`, `SurfaceOptions`,
+  `SynthStackConfig`, `CdkInvokeConfig`, `CdkCommandConfig`, `StageConfig`, `NormalizedResource`,
+  `SelectQuery`, `Selection`.
 
 The [LocalStack adapter](https://www.npmjs.com/package/@mmmnt/feat-adapter-localstack)
 consumes the same analysis to deploy exactly the closure a run needs and
 resolve materialized values afterward.
 
+## Limitations
+
+- The package reads CloudFormation. It does not deploy anything. The LocalStack adapter deploys.
+- It synthesizes the whole app on each invocation unless `assemblyDir` is set. Use `assemblyDir` in CI
+  to synthesize once.
+- A resource without `aws:cdk:path` metadata is addressed by its logical id.
+- The adapter takes no actors and offers no `setClock`, so `clock at` against it is a
+  `CLOCK_UNSUPPORTED` configuration error.
+
+## What changed in this release (v0.1.48, package 0.4.0)
+
+Nothing. The package is unchanged in this release.
+
 Part of [Feature](https://github.com/mmmnt/feature) — the `.feat` execution
-specification language. MIT
+specification language. Adapter contract: https://github.com/mmmnt/feature/wiki/Architecture
+
+## License
+
+MIT
