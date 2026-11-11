@@ -168,7 +168,8 @@ a service) a namespace check. For each case in that file, in this order:
    service adapter that has one. Every case gets a call, with `null` when the
    case has no `clock at`.
 4. `seed(records)` for each `seed` in `given:`, in written order. A service
-   adapter with no `seed` fails the case with "does not support seed()".
+   adapter with no `seed` is a configuration error: `Configuration error (exit 2):
+   [SEED_UNSUPPORTED] … does not support seed()`, and `feat run` exits 2.
 5. `invoke(...)` on the response adapter for each `execute` in `given:`.
 6. `fault(arm)` for each `fault` in `given:`, in written order. Faults are armed
    after the seeds and executes, so setup never consumes one.
