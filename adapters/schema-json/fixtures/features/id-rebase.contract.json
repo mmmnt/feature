@@ -1,0 +1,28 @@
+{
+  "schemas": {
+    "AccountRegistered": {
+      "$id": "contracts/identity/account-registered.json",
+      "type": "object",
+      "required": ["accountId"],
+      "properties": {
+        "envelope": { "$ref": "../adrs/event-envelope.json" },
+        "accountId": { "type": "string", "pattern": "^acct_" }
+      }
+    },
+    "Draft2020": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "contracts/identity/account-2020.json",
+      "type": "object",
+      "properties": {
+        "envelope": { "$ref": "../adrs/event-envelope.json" }
+      }
+    },
+    "Absolute": {
+      "$id": "https://example.test/ids/absolute.json",
+      "type": "object",
+      "properties": {
+        "envelope": { "$ref": "../contracts/adrs/event-envelope.json" }
+      }
+    }
+  }
+}

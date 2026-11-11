@@ -33,7 +33,10 @@ class JsonSchemaAdapter implements FeatSchemaAdapter {
   /** Compiled validators of $id-bearing schemas, by $id: Ajv refuses a second compile of an id it holds. */
   private compiled = new Map<string, { schema: Record<string, unknown>; validator: ValidateFunction }>();
 
-  constructor() {
+  private readonly projectRoot: string | undefined;
+
+  constructor(config: Record<string, unknown> = {}) {
+    this.projectRoot = typeof config.projectRoot === "string" ? config.projectRoot : undefined;
     addFormats(this.ajv as never);
     addFormats(this.ajv2020 as never);
   }
@@ -54,7 +57,7 @@ class JsonSchemaAdapter implements FeatSchemaAdapter {
   // A schema authored inline in the contract: same bundling, but its own local pointers keep
   // meaning the schema itself (it becomes its own document in the generated test).
   async resolveInline(schema: Record<string, unknown>, fromPath: string): Promise<ResolvedSchema> {
-    const bundled = bundleInline(schema, fromPath);
+    const bundled = bundleInline(schema, fromPath, this.projectRoot);
     return { id: bundled.id, format: "json-schema", raw: bundled.raw, normalized: bundled.schema };
   }
 
@@ -91,6 +94,6 @@ class JsonSchemaAdapter implements FeatSchemaAdapter {
   }
 }
 
-export function createAdapter(_config: Record<string, unknown>): FeatSchemaAdapter {
-  return new JsonSchemaAdapter();
+export function createAdapter(config: Record<string, unknown>): FeatSchemaAdapter {
+  return new JsonSchemaAdapter(config);
 }

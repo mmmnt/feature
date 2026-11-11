@@ -63,8 +63,9 @@ installs it and names it in the config. It has no other options.
 |---|---|---|
 | `schemas.adapter` | `string` | The module specifier: an npm package name or a local path. Its module must export `createAdapter(config)`. Here: `"@mmmnt/feat-schema-json"`. |
 
-`schemas` rejects any other key, and `createAdapter` ignores its config, so
-there is nothing to tune. A whole config that uses it:
+`schemas` rejects any other key, so there is nothing to tune. (The generator also
+hands `createAdapter` the `projectRoot`, the directory of `feat.config.json`; see
+"A root `$id` re-bases" below.) A whole config that uses it:
 
 ```jsonc
 {
@@ -182,6 +183,32 @@ differences:
   in (`#/schemas/Kind`). That node is relocated into `$defs` under the last
   token of the pointer (`Kind`).
 
+**A root `$id` re-bases relative file references** (draft-07 and 2020-12 alike).
+Under JSON Schema's base-URI rules the `$id` is the schema's own address, and a
+relative `$ref` resolves against it, not against wherever the contract file
+happens to sit. A relative `$id` is a path under the **project root**, the
+directory of `feat.config.json`. That is the same project-relative convention as
+`error RFC7807 from "contracts/adrs/error-format"`. So this inline schema:
+
+```jsonc
+// packages/billing/features/entitlement-projection/entitlement-projection.contract.json
+"AccountRegistered": {
+  "$id": "contracts/identity/account-registered.json",
+  "properties": { "envelope": { "$ref": "../adrs/event-envelope.json" } }
+}
+```
+
+has the base `<projectRoot>/contracts/identity/account-registered.json`, and the
+ref lands on `<projectRoot>/contracts/adrs/event-envelope.json`, not on
+`features/adrs/...`. Only file references are re-based: a local `#/...` pointer
+still means the schema itself or the contract document, as above. Left on the
+contract file's directory, as before: an absolute-URI `$id` (`https:`, `urn:`)
+names no file the adapter can reach, and an adapter created without a
+`projectRoot` (a bare `createAdapter({})`) has nothing to anchor a relative
+`$id` to. A `$ref` under a *nested* `$id` is still refused (see Errors).
+`resolve()` of a bare `$ref` is unchanged; a referenced file is followed from its
+own location.
+
 ```jsonc
 // features/place.contract.json
 {
@@ -219,8 +246,10 @@ const adapter: FeatSchemaAdapter = createAdapter({});
 
 ### `createAdapter(config): FeatSchemaAdapter`
 
-Returns the adapter. `config` is ignored. Each call builds its own Ajv
-instances, one per dialect.
+Returns the adapter. Each call builds its own Ajv instances, one per dialect.
+The one `config` key it reads is `projectRoot` (an absolute path), which anchors a
+relative root `$id` in `resolveInline()`. `feat generate` supplies it; every
+other key is ignored.
 
 ### `adapter.resolve(ref, fromPath): Promise<ResolvedSchema>`
 
@@ -239,7 +268,8 @@ is not supported; only JSON-pointer fragments are.
 
 ### `adapter.resolveInline(schema, fromPath): Promise<ResolvedSchema>`
 
-Bundles a schema authored inline in the contract at `fromPath`. `id` is
+Bundles a schema authored inline in the contract at `fromPath`, re-basing
+relative file references on a root `$id` (see "Inline schemas"). `id` is
 `<absolute contract path>#inline`, and `raw` is the schema you passed.
 
 ### `adapter.validate(data, schema): { valid: boolean; errors?: string[] }`
@@ -352,6 +382,13 @@ Patch release, on 0.2.0.
 - **`validate()` no longer crashes on a repeated `$id`.** It used to compile
   `normalized` on one shared Ajv, which refused the second compile with
   `schema with key or id "..." already exists`. See "`validate` is idempotent" above.
+
+- **A root `$id` on an inline schema re-bases its relative `$ref`s.** They used
+  to resolve against the contract file's directory, so howie's
+  `"$id": "contracts/identity/account-registered.json"` with
+  `{"$ref": "../adrs/event-envelope.json"}` failed with
+  `referenced schema file '.../features/adrs/event-envelope.json' could not be read`.
+  See "Inline schemas".
 
 ## Docs
 

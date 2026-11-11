@@ -1,0 +1,63 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-ID-002",
+  "schemas": {
+    "GetAccountInput": {
+      "type": "object",
+      "required": [
+        "accountId"
+      ],
+      "properties": {
+        "accountId": {
+          "type": "string"
+        }
+      }
+    },
+    "AccountView": {
+      "type": "object",
+      "required": [
+        "accountId"
+      ],
+      "properties": {
+        "accountId": {
+          "type": "string"
+        }
+      }
+    },
+    "AccountRegistered": {
+      "$id": "contracts/identity/account-registered.json",
+      "type": "object",
+      "required": [
+        "accountId"
+      ],
+      "properties": {
+        "envelope": {
+          "$ref": "../adrs/event-envelope.json"
+        },
+        "accountId": {
+          "type": "string",
+          "pattern": "^acct_"
+        }
+      }
+    },
+    "RFC7807": {
+      "type": "object",
+      "required": [
+        "type",
+        "title",
+        "status"
+      ],
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "status": {
+          "type": "integer"
+        }
+      }
+    }
+  }
+}

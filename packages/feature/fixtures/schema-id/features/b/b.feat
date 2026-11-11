@@ -1,0 +1,36 @@
+feat 1.0
+
+# Fixture for the generate pipeline (release findings c1 and c2, founder ruling 2026-11-10).
+# Specs a and b each carry the SAME $id-bearing schema, so the seed check validates it twice on one
+# adapter, and that schema's $id re-bases a ../ $ref (project-relative: contracts/adrs/...).
+
+spec SPEC-ID-002 "GetAccount query b"
+context Identity
+aggregate Account
+type query
+status agreed
+
+construct:
+  handler at features/b/handler.ts
+  touches features/b/**
+
+enforce:
+  read the account projection by accountId from the projection store
+  never mutate state; a query is a pure read
+  rejects NOT_FOUND when no account exists for the requested id
+
+contract:
+  input GetAccountInput
+  response AccountView
+  record AccountRegistered
+  error RFC7807 from "contracts/adrs/error-format"
+
+scenario "returns the account":
+  given:
+    seed projectionStore [ AccountRow with AccountRegistered {
+      envelope: { eventId: "5e2a7c90-1b3d-4e5f-8a6b-9c0d1e2f3a4b", occurredAt: "2026-01-01T00:00:00Z" }
+      accountId: "acct_1"
+    } ]
+  when: GetAccount { accountId: "acct_1" }
+  predict success:
+    response 200 AccountView { accountId: "acct_1" }

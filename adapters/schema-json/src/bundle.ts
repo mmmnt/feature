@@ -76,6 +76,12 @@ class Bundler {
    * contract document it was authored in. Null for a whole relocated file (its locals are its own root).
    */
   private scope: { node: Obj; prefix: string } | null = null;
+  /**
+   * Where the relative FILE references of the inline schema being rewritten resolve from, when its root
+   * `$id` re-bases them (see `runInline`). Null everywhere else: a relocated document is rewritten
+   * against its own file, and local pointers always name the contract document, whatever the `$id`.
+   */
+  private base: string | null = null;
 
   private load(file: string): Json {
     if (this.docs.has(file)) return this.docs.get(file);
@@ -155,9 +161,12 @@ class Bundler {
     if (!isObj(doc)) throw new Error(`Schema resolution: '${file}' is not a JSON Schema object.`);
 
     const saved = this.scope;
+    const savedBase = this.base;
     this.scope = null;
+    this.base = null;
     const rewritten = this.rewriteSchema(doc, file, false, true) as Obj;
     this.scope = saved;
+    this.base = savedBase;
     delete rewritten["$id"];
     delete rewritten["$schema"];
     this.defs[key] = rewritten;
@@ -191,9 +200,12 @@ class Bundler {
       throw new Error(`Schema resolution: '#${pointer}' in ${file} does not point at a JSON Schema object.`);
 
     const saved = this.scope;
+    const savedBase = this.base;
     this.scope = { node, prefix: where };
+    this.base = null;
     const rewritten = this.rewriteSchema(node, file, false, false) as Obj;
     this.scope = saved;
+    this.base = savedBase;
     delete rewritten["$id"];
     delete rewritten["$schema"];
     this.defs[key] = rewritten;
@@ -216,7 +228,7 @@ class Bundler {
       const doc = this.locate(ref, file);
       return `#${this.placeNode(doc.file, doc.pointer)}`;
     }
-    const target = this.locate(ref, file);
+    const target = this.locate(ref, this.base !== null && filePart !== "" ? this.base : file);
     const pointer = `${this.place(target.file)}${target.pointer}`;
     return pointer === "" ? "#" : `#${pointer}`;
   }
@@ -263,10 +275,23 @@ class Bundler {
    * A schema authored INLINE in `fromPath` (a contract entry). It is its own document in the
    * generated test: a local pointer that resolves inside it stays as authored, a local pointer
    * that does not names the contract document (`#/schemas/Sibling`) and that node is relocated
-   * into `$defs`, and every relative file reference resolves against `fromPath`'s directory.
+   * into `$defs`, and every relative file reference resolves against `fromPath`'s directory,
+   * unless the schema's root `$id` re-bases them.
+   *
+   * A root `$id` re-bases relative references (JSON Schema, draft-07 and 2020-12). A relative `$id`
+   * names a path under `projectRoot` (the directory of feat.config.json), the project-relative
+   * convention of `from "contracts/adrs/error-format"`; its directory is then the base. An absolute
+   * URI `$id` names no file we can reach, and with no `projectRoot` there is nothing to anchor a
+   * relative one: both leave the contract file's directory as the base.
    */
-  runInline(schema: Obj, fromPath: string): Bundled {
+  runInline(schema: Obj, fromPath: string, projectRoot?: string): Bundled {
     const file = path.resolve(fromPath);
+    const id = schema["$id"];
+    if (projectRoot !== undefined && typeof id === "string") {
+      const idPath = id.split("#")[0] ?? "";
+      if (idPath !== "" && !ABSOLUTE_URI.test(idPath) && !idPath.startsWith("/") && !idPath.startsWith("//"))
+        this.base = path.resolve(projectRoot, idPath);
+    }
     this.scope = { node: schema, prefix: "" };
     return { id: `${file}#inline`, raw: schema, schema: this.finish(schema, file, true) };
   }
@@ -297,8 +322,9 @@ export function bundle(ref: string, fromPath: string): Bundled {
 
 /**
  * Bundle a schema authored inline in `fromPath`: relative file references inside it are
- * followed against that file's directory; its own local pointers are left as authored.
+ * followed against that file's directory (or, for a root `$id`, against the directory that `$id`
+ * names under `projectRoot`); its own local pointers are left as authored.
  */
-export function bundleInline(schema: Record<string, unknown>, fromPath: string): Bundled {
-  return new Bundler().runInline(schema, fromPath);
+export function bundleInline(schema: Record<string, unknown>, fromPath: string, projectRoot?: string): Bundled {
+  return new Bundler().runInline(schema, fromPath, projectRoot);
 }

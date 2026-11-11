@@ -1,0 +1,16 @@
+{
+  "featVersion": "1.0",
+  "schemas": { "adapter": "../../../../adapters/schema-json/src/index.ts" },
+  "response": {
+    "adapter": "@mmmnt/feat-adapter-http",
+    "invoke": { "baseUrl": "http://localhost:3000" },
+    "commands": {
+      "GetAccount": { "method": "GET", "path": "/accounts/{accountId}" }
+    }
+  },
+  "services": {
+    "projectionStore": { "adapter": "@mmmnt/feat-adapter-dynamodb", "consistency": "eventual", "convergenceTimeout": 5000 }
+  },
+  "specs": { "dir": "features", "pattern": "**/*.feat", "contractPattern": "**/*.contract.json", "outputPattern": "{name}.test.ts" },
+  "report": { "format": ["console"] }
+}

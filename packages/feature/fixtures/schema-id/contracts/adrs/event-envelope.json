@@ -1,0 +1,8 @@
+{
+  "type": "object",
+  "required": ["eventId", "occurredAt"],
+  "properties": {
+    "eventId": { "type": "string", "minLength": 36 },
+    "occurredAt": { "type": "string" }
+  }
+}
