@@ -150,7 +150,7 @@ connection string must be supplied one way or the other.
 | `connectionStringEnv` | The name of an environment variable holding the string. Used when `connectionString` is absent. Neither set, or the variable unset or empty, is a configuration error at `setup()`. |
 | `system` | `{ username, password }`: the **names** of two environment variables. Their values replace the credentials in the connection string. Both must be set. The config carries references, never secrets. |
 | `settleTimeoutMs` | How long `settle()` may take to read its fence marker back. Default 5000. Keep `convergenceTimeout` at or above it. |
-| `nodeMajor` | An integer that overrides the Node major the TLS host rule uses, so a scenario can put the adapter "on Node 24 or 26" without a second Node. Default: the running Node's major. |
+| `nodeMajor` | An integer, 1 or more (anything else is refused at `setup()` with `OPTIONS_INVALID`), that overrides the Node major the TLS host rule uses, so a scenario can put the adapter "on Node 24 or 26" without a second Node. Default: the running Node's major. |
 | `proxy` | A Toxiproxy in front of KurrentDB for `Connection` faults. `api` and `upstream` are required. See below. |
 
 The adapter does not reject unknown keys under `options`; a misspelled option is
@@ -348,6 +348,7 @@ Adapter errors are `KurrentAdapterError`, with a `code` and a `detail`.
 | `NAMESPACE_INVALID` | construction | The namespace does not match `^s[0-9a-f]{12}$`. Defensive: the runner never passes another. |
 | `ALL_READ_DENIED` | `setup()` | The instrument credentials cannot read `$all`. |
 | `TLS_HOST_UNSUPPORTED` | `setup()` | An IP host other than `127.0.0.1` and `::1`, with `tls=true`, on Node 26 or later. |
+| `OPTIONS_INVALID` | `setup()` | `options.nodeMajor` is present and is not an integer of 1 or more. Refused before any connection. |
 | `FAULT_UNSUPPORTED` | `fault()` | The fault is not in the catalog (including `Connection` without `options.proxy` and `BrokerLoss` without `container`), or the count is not `until reset`, or an `AppendToStream` fault has no `detail.stream`. The detail lists the catalog. |
 
 Plain `Error`s (no code) report a missing connection string
@@ -371,8 +372,7 @@ Toxiproxy layer keep the codes of `@mmmnt/feat-fault-proxy`
 - The `options.proxy` block needs a Toxiproxy server you run; the adapter does
   not start one. `Timeout` can leave a write applied on an established
   connection (see the fault table).
-- Options are not validated: unknown keys are ignored, and `nodeMajor` is not
-  range-checked.
+- Options are validated only for `nodeMajor`: unknown keys are ignored.
 
 ## Specs and design
 

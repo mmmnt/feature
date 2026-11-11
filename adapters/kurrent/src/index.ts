@@ -29,7 +29,7 @@ import type {
   SeedRecord,
 } from "@mmmnt/feat-types";
 
-export type KurrentAdapterErrorCode = "NAMESPACE_INVALID" | "ALL_READ_DENIED" | "FAULT_UNSUPPORTED" | "TLS_HOST_UNSUPPORTED";
+export type KurrentAdapterErrorCode = "NAMESPACE_INVALID" | "ALL_READ_DENIED" | "FAULT_UNSUPPORTED" | "TLS_HOST_UNSUPPORTED" | "OPTIONS_INVALID";
 
 export class KurrentAdapterError extends Error {
   constructor(
@@ -308,6 +308,14 @@ class KurrentAdapter implements FeatServiceAdapter {
   }
 
   async setup(): Promise<void> {
+    // A config refusal, before any connection (SPEC-ADPKUR-004: nodeMajor is an integer, 1 or more).
+    const major = this.options.nodeMajor;
+    if (major !== undefined && !(typeof major === "number" && Number.isInteger(major) && major >= 1)) {
+      throw new KurrentAdapterError(
+        "OPTIONS_INVALID",
+        `options.nodeMajor must be an integer, 1 or more; got ${typeof major === "string" ? JSON.stringify(major) : String(major)}`,
+      );
+    }
     const db = this.db();
     try {
       for await (const _ of db.readAll({ fromPosition: START, maxCount: 1 })) break;
