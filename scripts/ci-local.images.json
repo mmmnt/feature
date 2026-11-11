@@ -1,0 +1,10 @@
+{
+  "comment": "Images scripts/ci-local.sh runs the ubuntu jobs of .github/workflows/ci.yml in, pinned by index digest. node:<major>-bookworm per setup-node major; docker supplies only its static CLI binary. Refresh with: docker buildx imagetools inspect <tag>",
+  "node": {
+    "20": "node:20-bookworm@sha256:8f693eaa7e0a8e71560c9a82b55fd54c2ae920a2ba5d2cde28bac7d1c01c9ba5",
+    "22": "node:22-bookworm@sha256:e13726ca604184d7a91fcacab1fc09eefd642dc28e79ac34e85540dd93b78cfb",
+    "24": "node:24-bookworm@sha256:a2bdd7dabee64357fd6291fe621977c33cda500d13e15dca3e0e92c9a3c9f3b1",
+    "26": "node:26-bookworm@sha256:b7087bc4d973034b30854b378ba107f9fab622b47514cb7e2592e41b8bab8d49"
+  },
+  "dockerCli": "docker:29.7.2-cli@sha256:3f4743208d2338c934d7b8bcfbe1bb54c0b2355c510ad5e0f31c0c4a54bd704e"
+}
