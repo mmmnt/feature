@@ -264,6 +264,15 @@ reported, not just the first.
 `validate` throws, rather than answering `valid: false`, when the schema itself
 cannot be compiled: an unknown `$schema`, or a `$ref` that resolves to nothing.
 
+**`validate` is idempotent.** One adapter instance serves a whole `feat generate`,
+and the seed check calls it once per spec, so two specs that share
+`event X from "contracts/identity/account-registered"` validate the same
+`$id`-bearing schema twice. The adapter keeps the compiled validator by `$id`
+and reuses it when the schema is deep-equal, so the second call neither
+recompiles nor crashes. A schema without `$id` registers nothing and compiles
+freely. A *different* schema that claims a `$id` the adapter already holds throws
+an `Error` whose `code` is `SCHEMA_ID_CONFLICT` and whose message names the `$id`.
+
 ### A complete example
 
 This runs against the fixture tree above (`contracts/common/ids.json`,
@@ -316,6 +325,12 @@ Resolution failures are plain `Error`s whose message starts with
 | `'<ref>' (from <path>) does not point at a JSON Schema object` | The target is not an object (for example an array or a string). Also raised for a relocated file or node. |
 | `'<ref>' in <path> sits under a subschema that declares its own $id, which re-bases relative references — unsupported. Give the subschema its own file.` | A relative `$ref` appears under a nested `$id`. |
 
+`validate` throws one coded error:
+
+| `code` | Raised when |
+|---|---|
+| `SCHEMA_ID_CONFLICT` | Two different schemas claim the same `$id` on one adapter instance. Give each its own `$id`, or make them identical. |
+
 A failure stops generation, loudly. The generator never falls back to reading
 the referenced file verbatim, which would put `$ref`s into the generated test
 that resolve against nothing.
@@ -331,6 +346,12 @@ Patch release, on 0.2.0.
   sibling `#/schemas/<Name>` reference, inside an inline entry now reaches the
   generated test resolved. This adds the optional `resolveInline()` to the
   `FeatSchemaAdapter` interface.
+
+## Fixed after 0.2.1 (regression findings c1 and c2, founder ruling 2026-11-10)
+
+- **`validate()` no longer crashes on a repeated `$id`.** It used to compile
+  `normalized` on one shared Ajv, which refused the second compile with
+  `schema with key or id "..." already exists`. See "`validate` is idempotent" above.
 
 ## Docs
 

@@ -3,6 +3,7 @@
 // and inlines them into generated tests; nothing resolves at run time.
 
 import { createRequire } from "node:module";
+import { isDeepStrictEqual } from "node:util";
 import type { FeatSchemaAdapter, ResolvedSchema } from "@mmmnt/feat-types";
 import { bundle, bundleInline } from "./bundle.js";
 
@@ -15,6 +16,9 @@ const addFormats: typeof import("ajv-formats").default = require("ajv-formats");
 // draft/2020-12 `$schema` (bundling preserves it). Same rule as the run-time matcher's.
 const DIALECT_2020 = /^https?:\/\/json-schema\.org\/draft\/2020-12\/schema\/?#?$/;
 
+type Ajv = InstanceType<typeof import("ajv").default>;
+type ValidateFunction = import("ajv").ValidateFunction;
+
 class JsonSchemaAdapter implements FeatSchemaAdapter {
   private ajv = new (Ajv as new (opts: object) => InstanceType<typeof Ajv>)({
     strict: false,
@@ -25,6 +29,9 @@ class JsonSchemaAdapter implements FeatSchemaAdapter {
     strict: false,
     allErrors: true,
   });
+
+  /** Compiled validators of $id-bearing schemas, by $id: Ajv refuses a second compile of an id it holds. */
+  private compiled = new Map<string, { schema: Record<string, unknown>; validator: ValidateFunction }>();
 
   constructor() {
     addFormats(this.ajv as never);
@@ -51,10 +58,31 @@ class JsonSchemaAdapter implements FeatSchemaAdapter {
     return { id: bundled.id, format: "json-schema", raw: bundled.raw, normalized: bundled.schema };
   }
 
+  // Idempotent per schema: the same document under the same $id reuses its compiled validator; a
+  // different document claiming a taken $id is a coded error, not an Ajv crash. $id-less schemas
+  // register nothing in Ajv, so they compile freely.
+  private compile(ajv: Ajv, schema: Record<string, unknown>): ValidateFunction {
+    const id = schema.$id;
+    if (typeof id !== "string") return ajv.compile(schema);
+    const seen = this.compiled.get(id);
+    if (seen) {
+      if (isDeepStrictEqual(seen.schema, schema)) return seen.validator;
+      const err = new Error(
+        `SCHEMA_ID_CONFLICT: two different schemas claim the $id '${id}'. ` +
+          `Give each schema its own $id, or make the two identical.`,
+      ) as Error & { code: string };
+      err.code = "SCHEMA_ID_CONFLICT";
+      throw err;
+    }
+    const validator = ajv.compile(schema);
+    this.compiled.set(id, { schema: structuredClone(schema), validator });
+    return validator;
+  }
+
   validate(data: unknown, schema: ResolvedSchema): { valid: boolean; errors?: string[] } {
     const dialect = schema.normalized.$schema;
     const ajv = typeof dialect === "string" && DIALECT_2020.test(dialect) ? this.ajv2020 : this.ajv;
-    const validator = ajv.compile(schema.normalized);
+    const validator = this.compile(ajv, schema.normalized);
     if (validator(data)) return { valid: true };
     const errors = (validator.errors ?? []).map(
       (e) => `${e.instancePath || "(root)"} ${e.message ?? "is invalid"}`,
