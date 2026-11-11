@@ -1,0 +1,39 @@
+feat 1.0
+
+# Fixture workspace for SPEC-GEN-001 (seed variables amendment): an outline row and a variable together
+
+spec SPEC-ITM-001 "Add an item"
+context Catalog
+aggregate Item
+type command
+status agreed
+
+construct:
+  handler at src/add-item.ts
+  touches src/**
+
+enforce:
+  rejects ITEM_EXISTS when the item id is already present
+
+contract:
+  input AddItemInput
+  event ItemEvent
+  record ItemRow
+  error ItemError
+
+variables:
+  good: string = "2030-01-01T00:00:00Z"
+  bad: string = "not-a-date"
+
+scenario outline "row and variable":
+  given:
+    The store already holds seeded state.
+    seed store [ ItemAdded with ItemEvent { itemId: "11111111-0000-4000-8000-000000000001", validUntil: <when> } ]
+  when: AddItem { itemId: "22222222-0000-4000-8000-000000000009" }
+  predict rejection ITEM_EXISTS:
+    response 409 ItemError
+    store has []
+  examples:
+    | when |
+    | "${good}" |
+    | "${bad}" |
