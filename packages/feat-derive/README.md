@@ -194,16 +194,13 @@ generated file, and the harness in `@mmmnt/feat-runtime` receives it as `Harness
 
 | Message | When |
 | --- | --- |
-| `Outline row is missing a value for placeholder '<name>'` | A placeholder in a payload, a value block, a seed, a fault detail or a regex argument names a column the row does not have. |
+| `Outline row is missing a value for placeholder '<name>'` | A placeholder in a payload, a value block, a seed, a fault detail, a rejection id or a regex argument names a column the row does not have. |
 
 The parser (`@mmmnt/feat-core`) catches undeclared services, commands, schemas and actors earlier,
 with codes. `feat generate` does not wrap a throw from derive, so it propagates as it is. SPEC-DRV-001
 calls this refusal `DERIVE_THREW`. That is the label its test probe gives the throw, not a code on
 the error.
 
-One limit: a rejection id written as `<name>` is looked up without that check, so a name with no
-column becomes the string `"undefined"` instead of throwing. A well-formed outline has a column for
-every placeholder.
 
 ## What changed in 0.2.0
 

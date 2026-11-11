@@ -109,6 +109,8 @@ function resolvePrediction(
 
   if (p.rejectionId !== undefined) {
     const ph = /^<(.+)>$/.exec(p.rejectionId);
+    if (ph && !(ph[1]! in row))
+      throw new Error(`Outline row is missing a value for placeholder '<${ph[1]}>'`);
     out.rejectionId = ph ? String(row[ph[1]!]) : p.rejectionId;
   }
   if (p.errorCode !== undefined) out.errorCode = p.errorCode;
