@@ -117,6 +117,43 @@ source build, which needs a C++ toolchain, Python and `node-gyp`.
     - "@confluentinc/kafka-javascript"
   ```
 
+### Node 26 on Linux
+
+`@confluentinc/kafka-javascript` 1.11.0 has no prebuilt binary for Node 26
+(ABI `node-v147`), so the install builds librdkafka from source, and on Linux
+that build fails. librdkafka bundles its static library with an `ar -M`
+script, and `ar` cuts every path at the `@` of `node_modules/@confluentinc/…`:
+
+```
+ar: …/node_modules/: file format not recognized
+make[2]: *** [../mklove/Makefile.base:135: librdkafka-static.a] Error 1
+```
+
+It fails the same way under npm and pnpm, because every install path contains
+that `@`. macOS links the library with `libtool` and is not affected. The
+same build from a directory whose path has no `@` succeeds. To install on
+Node 26 under Linux, build the client there and put its binary where the
+installed package looks for it:
+
+```sh
+npm install --ignore-scripts                     # pnpm: pnpm install --ignore-scripts
+work=$(mktemp -d /tmp/ckjs.XXXXXX)               # a path with no '@'
+(cd "$work" && npm pack @confluentinc/kafka-javascript@1.11.0 \
+  && mkdir src && tar -xzf confluentinc-kafka-javascript-1.11.0.tgz -C src --strip-components=1 \
+  && cd src && npm install --ignore-scripts && ./node_modules/.bin/node-pre-gyp rebuild)
+adapter=$(dirname "$(node -p 'require.resolve("@mmmnt/feat-adapter-kafka/package.json")')")
+dir=$(dirname "$(node -p "require.resolve('@confluentinc/kafka-javascript/package.json', { paths: ['$adapter'] })")")
+mkdir -p "$dir/build" && cp -R "$work/src/build/Release" "$dir/build/"
+npm rebuild                                      # pnpm: pnpm rebuild
+```
+
+The client's install script then finds the binary and builds nothing. The
+client is the adapter's dependency, so it is resolved from the adapter's
+directory, which works under npm's flat layout and pnpm's nested one. Run the
+lines from your project's root. Feature's own CI does the same on Node 26
+(`scripts/node26-kafka-native.sh`). Node 20 to 24 install a prebuilt binary
+and need none of this.
+
 The package ships `dist/` only. Its `fixtures/` helpers are internal.
 
 ## Configuration
@@ -354,6 +391,12 @@ fault topic. Errors from the Toxiproxy layer keep the codes of
 - The `options.proxy` block needs a Toxiproxy server you run; the adapter does
   not start one.
 - Options are not validated: unknown keys are ignored.
+
+## What changed in 0.1.1
+
+- Documents the install on Node 26 under Linux, where `@confluentinc/kafka-javascript` has no prebuilt
+  binary and its source build fails inside `node_modules` ([Node 26 on Linux](#node-26-on-linux)). The
+  code is unchanged.
 
 ## Specs and design
 
