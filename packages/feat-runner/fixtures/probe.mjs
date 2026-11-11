@@ -1,11 +1,13 @@
 // The probes behind `PlanRun` and `PreflightSerial` (SPEC-RT-005).
 import path from "node:path";
-import { plan, runPlan } from "../src/plan.ts";
+import { faultsOf, plan, runPlan } from "../src/plan.ts";
 import { createHarness, HarnessConfigurationError } from "../../feat-runtime/src/index.ts";
 
 export async function planRun(input) {
   const specs = input.specs ?? [];
-  const p = plan(specs.map((s) => ({ path: s.path, faults: s.faults ?? [] })), input.exclusive);
+  // A spec gives its faults, or its IR cases for the sweep feat run applies (faultsOf).
+  const faultsFor = (s) => s.faults ?? (s.cases === undefined ? [] : faultsOf(s.cases, input.exclusive));
+  const p = plan(specs.map((s) => ({ path: s.path, faults: faultsFor(s) })), input.exclusive);
   const body = {
     parallel: p.parallel.join(","),
     serial: p.serial.join(","),

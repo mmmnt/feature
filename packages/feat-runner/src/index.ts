@@ -13,8 +13,8 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import path from "node:path";
 import { runPlan, type Plan } from "./plan.js";
 
-export { plan, runPlan } from "./plan.js";
-export type { Plan, PlannedSpec } from "./plan.js";
+export { faultsOf, plan, runPlan } from "./plan.js";
+export type { Plan, PlannedSpec, SweptCase } from "./plan.js";
 
 export interface RunOptions {
   /** Generated test files to execute (repo-root-relative). */

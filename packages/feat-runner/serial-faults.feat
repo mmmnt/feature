@@ -25,6 +25,13 @@ feat 1.0
 # and `serial` (comma-joined paths, in input order), `order` and `serialWorkers`.
 # `PreflightSerial { fault, worker }` runs the harness preflight for one case that arms `fault` in
 # a worker that is `serial` or `parallel`.
+#
+# Amendment (founder ruling d404c026, 2026-11-10, "Widen the sweep"): a probe can arm a fault itself,
+# inside its `when` input (the adapter specs' `script: "... fault:a:Connection.BrokerLoss ..."`), so
+# the given faults alone missed ADPKFK-003 and ADPKUR-003 and they ran in the parallel pass. The sweep
+# also reads every string value of each scenario's `when` input and takes each `<Operation>.<Fault>`
+# whose fault is exclusive. A spec in `PlanRun` may give `cases` (IR scenarios) in place of `faults`;
+# the probe then sweeps them as `feat run` does.
 
 spec SPEC-RT-005 "Runner: exclusive faults run in a serial pass"
 context Toolchain
@@ -40,7 +47,8 @@ construct:
   needs SPEC-RT-003
   Export EXCLUSIVE_FAULTS from feat-types. plan(specs) partitions by the IR: a spec is serial when
   any scenario's given faults include a fault whose name (the part after the dot) is in
-  EXCLUSIVE_FAULTS. feat run executes the parallel set, then, if the serial set is not empty, a
+  EXCLUSIVE_FAULTS, or any string value of its `when` input names one as `<Operation>.<Fault>`.
+  faultsOf(cases) in plan.ts is that sweep, and feat run uses it. feat run executes the parallel set, then, if the serial set is not empty, a
   second vitest run over exactly those files with one worker and FEAT_SERIAL=1 in the environment;
   the report merges both and the exit code fails if either failed; a failure in the parallel pass
   does not skip the serial pass. The harness preflight refuses an exclusive fault when
@@ -49,6 +57,7 @@ construct:
 enforce:
   rejects FAULT_REQUIRES_SERIAL when a case arms an exclusive fault in a worker that is not the serial one
   partition the specs by sweeping the IR for exclusive faults, never by name or by list
+  sweep a when input's strings as well as the given faults, so a fault a probe arms itself is found
   run the serial pass after the parallel pass with one worker
   merge both passes into one report and fail the run if either pass failed
 
@@ -79,6 +88,12 @@ scenario "the file's name decides nothing":
   when: PlanRun { specs: [ { path: "adapters/kafka/transport.feat", faults: ["Connection.Timeout"] }, { path: "innocent-name.feat", faults: ["Connection.BrokerLoss"] } ] }
   predict success:
     response OK PlanResult { parallel: "adapters/kafka/transport.feat", serial: "innocent-name.feat", order: "parallel then serial", serialWorkers: 1 }
+    filesystem has []
+
+scenario "a fault a probe arms in its when input is swept like a given one":
+  when: PlanRun { specs: [ { path: "probe.feat", cases: [ { when: { command: "Observe", payload: { script: "setup:a fault:a:Connection.BrokerLoss reset:a" } } } ] }, { path: "given.feat", cases: [ { given: { faults: [ { operation: "Connection", fault: "BrokerLoss" } ] }, when: { command: "Ping", payload: {} } } ] }, { path: "plain.feat", cases: [ { when: { command: "Observe", payload: { script: "fault:a:Connection.Partition" } } } ] } ] }
+  predict success:
+    response OK PlanResult { parallel: "plain.feat", serial: "probe.feat,given.feat", order: "parallel then serial", serialWorkers: 1 }
     filesystem has []
 
 scenario "an exclusive fault in a worker that is not the serial one is refused before any effect":

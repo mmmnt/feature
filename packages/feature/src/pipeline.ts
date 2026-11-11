@@ -11,6 +11,7 @@ import { parse } from "@mmmnt/feat-core";
 import { derive, type TestTopology } from "@mmmnt/feat-derive";
 import { emit, timingEnvelope, EMITTER_VERSION } from "@mmmnt/feat-emit-ts";
 import { HarnessConfigurationError, importAdapter } from "@mmmnt/feat-runtime";
+import { faultsOf } from "@mmmnt/feat-runner";
 import { checkSeeds, formatSeedViolations, type SeedViolation } from "./seed-fixtures.js";
 
 // "fixtures" is excluded by convention: fixture .feat files are test vectors
@@ -280,7 +281,8 @@ export async function generateAll(
       specDir,
       config.specs.outputPattern.replace("{name}", path.basename(specAbs, ".feat")),
     );
-    const faults = [...new Set(topology.cases.flatMap((c) => (c.given?.faults ?? []).map((f) => `${f.operation}.${f.fault}`)))].sort();
+    // SPEC-RT-005: the given faults and any exclusive fault a probe arms inside its when input.
+    const faults = faultsOf(topology.cases);
     results.push({ specPath: specRel, faults, outputPath, content });
   }
   return results;

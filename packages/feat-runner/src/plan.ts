@@ -18,6 +18,29 @@ export interface Plan {
   serialWorkers: number;
 }
 
+/** A scenario as the sweep reads it: the IR's given faults and its when input. */
+export interface SweptCase {
+  given?: { faults?: readonly { operation: string; fault: string }[] };
+  when?: unknown;
+}
+
+/**
+ * Every fault the cases arm, as `Operation.Fault`, sorted: each given fault, and each `<Operation>.<Fault>`
+ * in a string of a when input whose fault is exclusive (a probe that arms the fault itself).
+ */
+export function faultsOf(cases: readonly SweptCase[], exclusive: readonly string[] = EXCLUSIVE_FAULTS): string[] {
+  const strings = (v: unknown): string[] =>
+    typeof v === "string" ? [v] : v !== null && typeof v === "object" ? Object.values(v).flatMap(strings) : [];
+  const out = new Set<string>();
+  for (const c of cases) {
+    for (const f of c.given?.faults ?? []) out.add(`${f.operation}.${f.fault}`);
+    for (const s of strings(c.when)) {
+      for (const m of s.matchAll(/\b([A-Za-z]\w*)\.([A-Za-z]\w*)\b/g)) if (exclusive.includes(m[2]!)) out.add(m[0]);
+    }
+  }
+  return [...out].sort();
+}
+
 export function plan(specs: readonly PlannedSpec[], exclusive: readonly string[] = EXCLUSIVE_FAULTS): Plan {
   const isExclusive = (s: PlannedSpec) => s.faults.some((f) => exclusive.includes(f.slice(f.lastIndexOf(".") + 1)));
   const serial = specs.filter(isExclusive).map((s) => s.path);

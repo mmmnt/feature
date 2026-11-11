@@ -114,7 +114,9 @@ A failing parallel pass does not skip the serial pass. The run's exit code is th
 passes' codes. If only one pass has files, only that pass runs.
 
 `plan(specs)` computes the split. It sweeps the faults each file arms and matches the part after the
-dot against `EXCLUSIVE_FAULTS`. One scenario in a file is enough to move the whole file. A file's name
+dot against `EXCLUSIVE_FAULTS`. `faultsOf(cases)` is that sweep over a file's IR scenarios: every
+`given` fault, and every `<Operation>.<Fault>` in a string of a `when` input whose fault is exclusive,
+so a probe that arms `Connection.BrokerLoss` itself (the adapter specs' `script`) is found too. One scenario in a file is enough to move the whole file. A file's name
 decides nothing. There is no list to keep and no tag to remember, so a new spec that arms
 `BrokerLoss` cannot be forgotten. The harness backs this up: it refuses an exclusive fault in a
 process that is not the serial one (`FAULT_REQUIRES_SERIAL`), so a hand-run vitest cannot arm it by
@@ -200,7 +202,8 @@ when the matching option was set).
 
 `Plan`: `parallel`, `serial`, `order` (`"parallel"`, `"serial"` or `"parallel then serial"`) and
 `serialWorkers` (1 when there is a serial pass, else 0). `PlannedSpec`: `{ path, faults }`. `plan`'s
-second argument replaces `EXCLUSIVE_FAULTS`, for tests. `runPlan` runs the parallel set, then the
+second argument replaces `EXCLUSIVE_FAULTS`, for tests. `faultsOf(cases, exclusive?)` returns the
+sorted `Operation.Fault` names a file's scenarios arm (`SweptCase`: `{ given?: { faults? }, when? }`). `runPlan` runs the parallel set, then the
 serial set, and returns the larger exit code. `runConfigSource` returns the text of the run config
 and `CONFIG_ERROR_REPORTER_SOURCE` the text of the reporter. Both are exported for testing.
 
@@ -219,7 +222,8 @@ The runner has no error codes of its own.
 
 - **Serial pass for exclusive faults (SPEC-RT-005, ADR-0023).** New `plan` and `runPlan`, the
   `serialFiles` option, and a second vitest run with one worker and `FEAT_SERIAL=1`. The two JUnit
-  reports are merged and either pass failing fails the run.
+  reports are merged and either pass failing fails the run. `faultsOf` sweeps a `when` input's
+  strings as well as the `given` faults.
 - **Configuration errors are told from failures.** `RunResult.configurationError`, so `feat run`
   exits `2` when a harness refused its configuration.
 - **Tier-aware runs (ADR-0024).** New `testTimeoutMs`, `hookTimeoutMs` and `configPath` options. The

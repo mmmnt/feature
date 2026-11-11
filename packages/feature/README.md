@@ -713,7 +713,8 @@ the system's reaction with the usual forms. Three refusals matter to a run:
 
 **The serial pass (SPEC-RT-005).** A spec file that arms an exclusive fault
 (`BrokerLoss`, which pauses a container every namespace shares) cannot run
-beside other files. `feat run` finds those files from the IR, never by name, runs
+beside other files. `feat run` finds those files from the IR, never by name (a `given` fault, or an
+exclusive `<Operation>.<Fault>` in a string of a `when` input, as a probe's script), runs
 every other file in the parallel pass, then runs the exclusive ones in a second
 Vitest pass with one worker and `FEAT_SERIAL=1`. The two JUnit reports are
 merged into one.
