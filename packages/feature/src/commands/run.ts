@@ -9,9 +9,10 @@ import path from "node:path";
 import { Command, Flags } from "@oclif/core";
 import type { FeatConfig } from "@mmmnt/feat-types";
 import { plan, runTests } from "@mmmnt/feat-runner";
-import { assertNoNamespaceCollision, HarnessConfigurationError, variablesSidecarPath } from "@mmmnt/feat-runtime";
+import { HarnessConfigurationError, variablesSidecarPath } from "@mmmnt/feat-runtime";
 import { rmSync } from "node:fs";
 import { generateAll } from "../pipeline.js";
+import { assertRunNamespaces } from "../namespaces.js";
 import { parseShard, selectShard, shardJunitPath } from "../shard.js";
 
 export default class Run extends Command {
@@ -76,7 +77,8 @@ export default class Run extends Command {
 
     // SPEC-RT-006: every file of the run gets its own namespace; two with one value stop the run first.
     try {
-      assertNoNamespaceCollision(files.map((f) => path.relative(root, f.out).replace(/\.test\.ts$/, ".feat")), path.dirname(path.resolve(root, flags.config)));
+      // The harness derives from the spec's path under the BASE config's directory, so the check does too.
+      assertRunNamespaces(root, prepared!, files.map((f) => f.specId));
     } catch (e) {
       this.logToStderr(`ERROR ${(e as Error).message}`);
       this.exit(2);

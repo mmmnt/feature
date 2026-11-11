@@ -321,7 +321,8 @@ What it does, in order:
    rewrite or compare the files on disk.** It runs what is committed, so run
    `feat verify` first.
 4. Filters by `--spec` and `--shard`.
-5. Derives every file's [namespace](#namespaces) and stops on a collision.
+5. Derives every file's [namespace](#namespaces), from its path under the base
+   config's directory (the one the harness uses), and stops on a collision.
 6. Stops with `NOT_GENERATED` (exit `1`) if a generated file is missing.
 7. Computes timeouts from the active config and spawns Vitest. Files that arm an
    exclusive fault run last, alone (see [Faults](#faults-and-the-serial-pass)).
