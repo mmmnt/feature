@@ -12,8 +12,8 @@ and still be a parse error. For validation use `feat parse`
 ## Where it sits
 
 This package is the source of truth for `.feat` highlighting. The `feat-vscode`
-extension ships a copy of the file, synced from here by
-`editors/vscode/scripts-sync-grammar.mjs`. The grammar is tested by tokenizing a
+extension and `editor/` ship copies of the file, synced from here by
+`editors/vscode/scripts-sync-grammar.mjs`. A test fails if either copy drifts. The grammar is tested by tokenizing a
 real corpus exemplar and asserting scopes with `vscode-textmate`, the engine VS
 Code itself uses.
 
