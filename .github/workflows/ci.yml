@@ -40,7 +40,11 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: pnpm
       - name: Install
+        if: matrix.node != 26
         run: pnpm install --frozen-lockfile
+      - name: Install (Node 26 on Linux builds the Kafka client outside the '@' path)
+        if: matrix.node == 26
+        run: bash scripts/node26-kafka-native.sh
       - name: Build
         run: pnpm build
       - name: Install chromium (real-browser adapter e2e; other nodes auto-skip)
@@ -81,7 +85,11 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: pnpm
       - name: Install
+        if: matrix.node != 26
         run: pnpm install --frozen-lockfile
+      - name: Install (Node 26 on Linux builds the Kafka client outside the '@' path)
+        if: matrix.node == 26
+        run: bash scripts/node26-kafka-native.sh
       - name: Build
         run: pnpm build
       - name: feat verify (spec ↔ test integrity)
