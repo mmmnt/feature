@@ -17,7 +17,6 @@ export const grammar = JSON.parse(readFileSync(grammarPath, "utf8"));
 export const featLanguage = {
   ...grammar,
   name: "feat",
-  aliases: ["feat"],
 };
 
 export default featLanguage;

@@ -38,7 +38,7 @@ The package ships three files: `index.js`, `index.d.ts` and
 
 ```ts
 export declare const grammar: Record<string, unknown>;       // the raw TextMate grammar, scopeName "source.feat"
-export declare const featLanguage: Record<string, unknown>;  // grammar plus { name: "feat", aliases: ["feat"] }
+export declare const featLanguage: Record<string, unknown>;  // grammar plus { name: "feat" }, no aliases
 export default featLanguage;
 ```
 
@@ -52,24 +52,21 @@ import grammarJson from "@mmmnt/feat-grammar/feat.tmLanguage.json" with { type: 
 
 ## Websites (Shiki)
 
-Pass the raw grammar to Shiki with an explicit `name`:
+Pass the default export to Shiki. It is a `LanguageRegistration` named `feat`:
 
 ```js
 import { createHighlighter } from "shiki";
-import { grammar } from "@mmmnt/feat-grammar";
+import featLanguage from "@mmmnt/feat-grammar";
 
 const highlighter = await createHighlighter({
   themes: ["github-dark"],
-  langs: [{ ...grammar, name: "feat" }],
+  langs: [featLanguage],
 });
 const html = highlighter.codeToHtml(specText, { lang: "feat", theme: "github-dark" });
 ```
 
-Do not pass the default export (`featLanguage`) to Shiki yet. It carries
-`aliases: ["feat"]` next to `name: "feat"`, and Shiki 1.29, 3.2 and 4.6 all stop
-with `ShikiError: Circular alias 'feat -> feat'` when it is registered. The
-snippet above was run against all three. If you want the alias handling and the
-default export, drop the alias yourself: `{ ...featLanguage, aliases: [] }`.
+The export carries no `aliases`: an alias equal to the language's own name makes
+Shiki stop with `Circular alias 'feat -> feat'`. A test pins that shape.
 
 ## Editors
 
