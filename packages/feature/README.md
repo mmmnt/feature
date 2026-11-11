@@ -183,9 +183,10 @@ Unknown keys are refused: every object in the schema is closed except
 | --- | --- |
 | `adapter` | An npm package name or a local path. The module must export `createAdapter`. The standard one is `@mmmnt/feat-schema-json`. It resolves contract `$ref`s, bundles cross-file and sibling references so the generated test is self-contained, and validates seed values. A project may supply its own. |
 
-If the adapter cannot be loaded, `feat generate`, `verify` and `run` stop with
-`Schema adapter '<name>' (feat.config.json › schemas.adapter) could not be loaded`.
-They never fall back to reading the referenced file verbatim.
+If the adapter cannot be resolved or loaded, `feat generate`, `verify` and `run` stop with exit `2`
+and `Schema adapter '<name>' (feat.config.json › schemas.adapter) could not be loaded`, followed by
+the reason and its code (`INVALID_CONFIG`). They never fall back to reading the referenced file
+verbatim.
 
 ### `response`
 
@@ -235,7 +236,7 @@ A config that cannot be used exits `2` with `ERROR [CODE] message`.
 | Code | Meaning |
 | --- | --- |
 | `CONFIG_NOT_FOUND` | no file at the path |
-| `INVALID_CONFIG` | not valid JSON, or violates the schema (the message names the first problem, for example `config root must have required property 'services'`); also an overlay that redeclares `featVersion` or `schemas`, or a base that is unreadable or invalid |
+| `INVALID_CONFIG` | not valid JSON, or violates the schema (the message names the first problem, for example `config root must have required property 'services'`); also an overlay that redeclares `featVersion` or `schemas`, or a base that is unreadable or invalid; also a module named as an adapter that cannot be resolved or loaded, or exports no `createAdapter` |
 | `MISSING_CONVERGENCE_TIMEOUT` | an `eventual` service with no `convergenceTimeout` |
 | `EXTENDS_NOT_FOUND` | the base named by `extends` does not exist |
 | `EXTENDS_CHAIN` | the base itself has `extends` |
@@ -277,8 +278,8 @@ refused config.
 
 Compiles every spec under `specs.dir` into its test file: parse, derive,
 resolve schemas and goldens, check seeds, emit. It writes nothing unless every
-spec succeeded. A seed violation, a parse failure or an unloadable schema
-adapter stops the run with exit `1`. A refused config is exit `2`.
+spec succeeded. A seed violation or a parse failure stops the run with exit `1`.
+A refused config, or a schema adapter that cannot be resolved or loaded, is exit `2`.
 
 ```
 generated specs/greet.test.ts  (from specs/greet.feat)
@@ -315,11 +316,12 @@ Executes the generated tests with the full adapter lifecycle, through
 What it does, in order:
 
 1. Loads the config (exit `2` if refused) and resolves the
-   [environment](#environment) (a missing one is an error before any work).
+   [environment](#environment) (none resolvable is exit `2`, `NO_ENVIRONMENT`, before any work).
 2. Deletes the previous variables sidecar, so a stale one cannot exist.
 3. Generates in memory to learn each spec's file and faults. **It does not
    rewrite or compare the files on disk.** It runs what is committed, so run
-   `feat verify` first.
+   `feat verify` first. A parse failure or a seed violation here is exit `1`; an
+   adapter that cannot be resolved or loaded is exit `2`.
 4. Filters by `--spec` and `--shard`.
 5. Derives every file's [namespace](#namespaces), from its path under the base
    config's directory (the one the harness uses), and stops on a collision.
@@ -330,7 +332,8 @@ What it does, in order:
 
 The run exits `0` when every test passes and `1` when any fails. It exits `2`
 when the harness refused its configuration: a clock, fault or observation mode
-an adapter cannot serve, a namespace problem, a bad adapter. The output carries
+an adapter cannot serve, an adapter that cannot `seed()` or `deliver()`, a namespace
+problem, a bad adapter. The output carries
 the refusal's code, for example
 `Configuration error (exit 2): [FAULT_UNSUPPORTED] ...`.
 
@@ -432,16 +435,20 @@ The lines are `status: a → b`, `+ scenario`, `- scenario`, `~ scenario ... cha
 file does not exist at the ref it prints
 `new spec (<id>) — not present at <ref>`. If the old version does not parse under
 the current config it lists every scenario as new. Exit `1` when the current
-spec does not parse.
+spec does not parse. A config that cannot be loaded is exit `2`, with its code,
+before any spec is read.
 
 ## Environment
 
 `feat run` and `feat report --evidence` need to know what they are verifying.
-The name resolves in this order, and none of them is an error before any work:
+The name resolves in this order:
 
 1. `environment` in the config (an explicit override);
 2. the `FEAT_ENVIRONMENT` environment variable;
 3. the `ENVIRONMENT` environment variable.
+
+If none names one, `feat run` and `feat report --evidence` stop before any work with
+exit `2` and `NO_ENVIRONMENT`. The scaffold from `feat init` sets `"environment": "spec"`.
 
 A name is lowercase letters, digits and hyphens. The environment is stamped into
 the evidence bundle. The `local` environment records no evidence unless you pass
@@ -816,15 +823,9 @@ description is
 | --- | --- |
 | `0` | success |
 | `1` | validation failure: a parse error, a seed violation, drift (`verify`), a failed prediction, a failed audit, a failed `fmt --check` |
-| `2` | configuration error: a refused config (`CONFIG_NOT_FOUND`, `INVALID_CONFIG`, the `EXTENDS_*` codes, `TIER_SPACE_MISMATCH`, ...), a harness refusal during `run` (`CLOCK_UNSUPPORTED`, `MODE_UNSUPPORTED`, `FAULT_*`, `NAMESPACE_*`), `NO_REPORT`, `ALREADY_INITIALIZED` |
+| `2` | configuration error: a refused config (`CONFIG_NOT_FOUND`, `INVALID_CONFIG`, the `EXTENDS_*` codes, `TIER_SPACE_MISMATCH`, ...), a module named as an adapter that cannot be resolved or loaded (`INVALID_CONFIG`), no environment to name (`NO_ENVIRONMENT`), a harness refusal during `run` (`CLOCK_UNSUPPORTED`, `MODE_UNSUPPORTED`, `FAULT_*`, `NAMESPACE_*`, `SEED_UNSUPPORTED`, `DELIVER_UNSUPPORTED`), `NO_REPORT`, `ALREADY_INITIALIZED` |
 
-Three paths do not follow the table in this release, and exit `1` where a
-configuration error would suggest `2`:
-
-- `feat run` and `feat report --evidence` with no environment resolvable.
-  The message says "configuration error".
-- `feat diff` with a config that cannot be loaded.
-- `feat run` when generation fails (a parse failure or a seed violation).
+Each exit `2` prints a `[CODE]`.
 
 ## In CI
 
@@ -860,8 +861,11 @@ Release v0.1.48.
 - **Namespaces, faults and the serial pass (SPEC-RT-005, SPEC-RT-006, ADR-0023).**
   One namespace per spec file, `feat run` stops on a collision, and exclusive
   faults run in a serial pass after the parallel one.
-- **Exit codes.** `generate` and `verify` exit `2` on a refused config. `run`
-  exits `2` when the run failed on a harness configuration error, and the
+- **Exit codes.** Exit `2` is a configuration error everywhere, with its code:
+  `generate` and `verify` on a refused config or schema adapter; `run` on a
+  harness configuration error, an adapter that cannot be loaded, or no
+  environment; `report --evidence` with no environment; `diff` with an
+  unloadable config. A parse failure or a seed violation stays exit `1`. The
   generated suite tears down only a harness that was created.
 
 Re-run `feat generate` after upgrading.

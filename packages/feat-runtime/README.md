@@ -212,7 +212,7 @@ function resolveEnvironment(config: { environment?: string }): string;
 ```
 
 Returns `config.environment` when set, else `FEAT_ENVIRONMENT`, else `ENVIRONMENT`. With none of the
-three it throws `No environment declared — set ENVIRONMENT or FEAT_ENVIRONMENT, or pin config.environment — configuration error.`
+three it throws a `HarnessConfigurationError` with code `NO_ENVIRONMENT`: `Configuration error (exit 2): [NO_ENVIRONMENT] No environment declared — set ENVIRONMENT or FEAT_ENVIRONMENT, or pin config.environment.`
 
 `variablesSidecarPath(projectRoot, configPath)` returns
 `<projectRoot>/.feature/run/<config file name without .json>-variables.jsonl`, where the harness
@@ -490,6 +490,10 @@ recent execute's response body. An unresolvable reference fails the case loudly,
 | --- | --- | --- |
 | `CONFIG_NOT_FOUND` | No file at the path. | `path` |
 | `INVALID_CONFIG` | The file is not valid JSON. The merged document violates the schema, and `detail` names the first failing path and the allowed values. A base config violates the schema, or is unreadable. An overlay redeclares `featVersion` or `schemas`. | `detail` |
+
+`loadConfig` raises none of these as an exception. `createHarness` does: it throws a
+`HarnessConfigurationError` carrying the same code (see below), and `importAdapter` raises
+`INVALID_CONFIG` when a module named as an adapter cannot be used.
 | `MISSING_CONVERGENCE_TIMEOUT` | A service is `eventual` and has no `convergenceTimeout`. For an overlay, the merged service. | `detail`: the service key |
 | `EXTENDS_NOT_FOUND` | The base file does not exist. | `detail` names the path as written and as resolved |
 | `EXTENDS_CHAIN` | The base itself has `extends`, or the file extends itself. | `detail` names both files |
@@ -497,7 +501,7 @@ recent execute's response body. An unresolvable reference fails the case loudly,
 
 ### `HarnessConfigurationError`
 
-A subclass of `Error` with `code`, and `service` and `mode` where they apply. Its message is
+A subclass of `Error` with `code`, `detail` (the message without its prefix), and `service` and `mode` where they apply. Its message is
 `Configuration error (exit 2): [CODE] <detail>`, so the runner's output shows the code. Each is raised
 before the case has any effect. None is a silent pass.
 
@@ -510,6 +514,11 @@ before the case has any effect. None is a silent pass.
 | `NAMESPACE_COLLISION` | Two spec files of one run derive one namespace. | `assertNoNamespaceCollision`, before any file starts |
 | `NAMESPACE_NOT_HONOURED` | An adapter reports a namespace other than the one delivered, or none. | A service adapter at setup. The response adapter after the invoke. |
 | `NAMESPACE_CONFIGURED` | The response config or a service's `options` carries a `namespace` key. | `createHarness`, after the config loads |
+| `SEED_UNSUPPORTED` | A case seeds a service whose adapter has no `seed()`. `service` is set. | The case, before it runs |
+| `DELIVER_UNSUPPORTED` | A case delivers an event to a service whose adapter has no `deliver()`. `service` is set. | The case, before the capture window closes |
+| `NO_ENVIRONMENT` | `resolveEnvironment` finds neither `config.environment`, `FEAT_ENVIRONMENT` nor `ENVIRONMENT`. | `resolveEnvironment` |
+| `INVALID_CONFIG` | A module named as an adapter cannot be resolved, cannot be loaded, or exports no `createAdapter`. | `importAdapter` |
+| `CONFIG_NOT_FOUND`, `INVALID_CONFIG`, `MISSING_CONVERGENCE_TIMEOUT`, `EXTENDS_NOT_FOUND`, `EXTENDS_CHAIN`, `TIER_SPACE_MISMATCH` | The config `createHarness` was given is refused by `loadConfig`. The message is the loader's message, then its `detail`. | `createHarness`, first |
 
 Example message:
 
@@ -523,9 +532,7 @@ Configuration error (exit 2): [FAULT_UNSUPPORTED] SPEC-ITM-001 › "adds": fault
 | --- | --- |
 | A prediction does not hold | `PredictionViolation`, with `violations: string[]`. Its message is `Prediction violated:` and one line per violation, each starting with the case anchor. |
 | An armed fault was never consumed | A `FAULT_NOT_CONSUMED:` line inside that `PredictionViolation`. |
-| `createHarness` cannot load the config | A plain `Error` whose message is `Configuration error (exit 2): ` followed by the `ERR` body as JSON. The code is in the JSON, not in brackets. |
-| An adapter cannot be resolved, loaded, or lacks `createAdapter` | A plain `Error` that says `configuration error`. It does not carry the `(exit 2):` prefix, so the runner treats the run as failed, not as a configuration error. |
-| A case needs what the config lacks | A plain `Error` naming the anchor: a seed for an unknown service or an adapter without `seed()`, an `execute` or `when` with no response adapter, a `delivers` to an unknown service or an adapter without `deliver()`, a fixture seed that was not inlined at generate time, an undeclared `${variable}`, a `@given.response` reference that does not resolve. |
+| A case needs what the config lacks | A plain `Error` naming the anchor: a seed for an unknown service, an `execute` or `when` with no response adapter, a `delivers` to an unknown service, a fixture seed that was not inlined at generate time, an undeclared `${variable}`, a `@given.response` reference that does not resolve. (A seed or delivery to an adapter that cannot take it is a `HarnessConfigurationError`, above.) |
 | `read()` answered something that is not an array | A violation: `adapter read() did not return a record array — configuration error.` |
 
 ## Bundled schema
