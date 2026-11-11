@@ -38,7 +38,7 @@ construct:
   still the current one, and if not, it rejects with CASE_SUPERSEDED before calling any adapter.
 
 enforce:
-  rejects CASE_SUPERSEDED when a case resumes after the next case on its harness has started
+  a case that resumes after the next case on its harness has started rejects with CASE_SUPERSEDED
   a superseded case makes no adapter call after the next case has started
   the next case runs as if the superseded case had never been started
 
