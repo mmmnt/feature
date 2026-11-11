@@ -278,6 +278,13 @@ references are config's law — `tableEnv`/`endpointEnv`/`baseUrlEnv`),
 cross-case shared variables, transform functions (composition is
 definition-side interpolation). Corpus exemplar: `corpus/waitlist-variables/`.
 
+`feat generate` substitutes the declared variables into every seed record's values (inline and fixture, SPEC-GEN-001)
+before validating them, as the harness does at run time: `${name}` inside a string, whole or embedded, becomes the
+variable's text (a number variable becomes its decimal string), at any depth; in an outline the row's values go in first.
+Only a variable whose value is static at generate time is substituted: a number, a template of static variables,
+`now()`/`iso()` under `clock at`. A string that still holds a reference to `unique()` or to an unfrozen `now()`/`iso()` is
+skipped for that field alone, and the report lists it in `skipped`.
+
 ### 5.2 The trigger — `when:` or `deliver` (ADR-0011)
 
 The spec `type` declares its trigger discipline (parse error on mismatch):

@@ -188,6 +188,7 @@ export interface Prepared {
   fixtures: number;
   records: number;
   recordTypes: string[];
+  skipped: string[];
 }
 
 // Parse, derive and resolve every spec, checking and inlining its seeds (SPEC-GEN-001).
@@ -199,7 +200,7 @@ export async function prepareAll(root: string, configPath: string): Promise<Prep
   // The project root is where the config lives — adapter resolution anchors there, so
   // generate behaves identically regardless of the invoking cwd (as the harness does).
   const schemaAdapter = await loadSchemaAdapter(config, path.dirname(configAbs));
-  const out: Prepared = { config, configAbs, specs: [], violations: [], fixtures: 0, records: 0, recordTypes: [] };
+  const out: Prepared = { config, configAbs, specs: [], violations: [], fixtures: 0, records: 0, recordTypes: [], skipped: [] };
 
   for (const specAbs of specs) {
     const specRel = path.relative(root, specAbs);
@@ -221,6 +222,7 @@ export async function prepareAll(root: string, configPath: string): Promise<Prep
     out.fixtures += seedCheck.fixtures;
     out.records += seedCheck.records;
     out.recordTypes.push(...seedCheck.recordTypes);
+    out.skipped.push(...seedCheck.skipped);
     out.specs.push({ specAbs, specRel, spec, topology, specDir, registry, contractText });
   }
   return out;

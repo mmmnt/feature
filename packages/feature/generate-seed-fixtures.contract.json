@@ -12,14 +12,15 @@
     },
     "SeedFixtureReport": {
       "type": "object",
-      "required": ["specs", "fixtures", "records", "unresolved", "recordTypes"],
+      "required": ["specs", "fixtures", "records", "unresolved", "recordTypes", "skipped"],
       "additionalProperties": false,
       "properties": {
         "specs": { "type": "integer", "minimum": 0 },
         "fixtures": { "type": "integer", "minimum": 0 },
         "records": { "type": "integer", "minimum": 0 },
         "unresolved": { "type": "integer", "minimum": 0 },
-        "recordTypes": { "type": "array", "items": { "type": "string" } }
+        "recordTypes": { "type": "array", "items": { "type": "string" } },
+        "skipped": { "type": "array", "items": { "type": "string" } }
       }
     },
     "SeedFixtureError": {

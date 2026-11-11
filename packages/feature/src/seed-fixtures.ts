@@ -7,6 +7,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { CapturedResponse } from "@mmmnt/feat-core";
+import { resolveVariables, substituteVariables, type CaseVariable } from "@mmmnt/feat-runtime";
 import type { TestTopology } from "@mmmnt/feat-derive";
 import type { FeatSchemaAdapter, Seed, SeedRecord } from "@mmmnt/feat-types";
 
@@ -29,6 +30,39 @@ export interface SeedCheck {
   fixtures: number;
   records: number;
   recordTypes: string[];
+  skipped: string[];
+}
+
+const REF = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
+const esc = (k: string) => k.replace(/~/g, "~0").replace(/\//g, "~1");
+
+// The variables of a case whose value is static at generate time (SPEC-GEN-001): a number, a template of static
+// variables, now()/iso() under `clock at`. unique(), and now()/iso() with no clock, have no value until run time.
+function staticTable(vars: CaseVariable[] | undefined, clock: string | undefined): { table: CaseVariable[]; nonStatic: Set<string> } {
+  const byName = new Map((vars ?? []).map((v) => [v.name, v]));
+  const memo = new Map<string, boolean>();
+  const isStatic = (n: string): boolean => {
+    if (memo.has(n)) return memo.get(n)!;
+    const v = byName.get(n)!;
+    const d = v.definition;
+    const r = d.kind === "number" ? true : d.kind === "call" ? d.fn !== "unique" && clock !== undefined
+      : d.parts.every((p) => typeof p === "string" || isStatic(p.ref));
+    memo.set(n, r);
+    return r;
+  };
+  const table = (vars ?? []).filter((v) => isStatic(v.name));
+  return { table, nonStatic: new Set((vars ?? []).filter((v) => !isStatic(v.name)).map((v) => v.name)) };
+}
+
+// The JSON pointers of the string leaves that still hold a non-static reference after substitution.
+function skippedPointers(v: unknown, nonStatic: Set<string>, at = ""): string[] {
+  if (typeof v === "string") {
+    return [...v.matchAll(REF)].some((m) => nonStatic.has(m[1]!)) ? [at] : [];
+  }
+  if (Array.isArray(v)) return v.flatMap((x, i) => skippedPointers(x, nonStatic, `${at}/${i}`));
+  if (v !== null && typeof v === "object")
+    return Object.entries(v).flatMap(([k, x]) => skippedPointers(x, nonStatic, `${at}/${esc(k)}`));
+  return [];
 }
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
@@ -48,15 +82,24 @@ function valuesProblem(
   rec: SeedRecord,
   registry: Record<string, object>,
   adapter: FeatSchemaAdapter,
+  ctx?: { resolved: Record<string, string | number>; nonStatic: Set<string>; anchor: string; skipped: string[] },
 ): string | undefined {
   const schema = registry[rec.schemaName as string];
-  const res = adapter.validate(rec.values, {
+  let values: unknown = rec.values;
+  let skip: string[] = [];
+  if (ctx) {
+    values = substituteVariables(rec.values, ctx.resolved);
+    skip = skippedPointers(values, ctx.nonStatic);
+    for (const p of skip) ctx.skipped.push(`${ctx.anchor} › ${p}`);
+  }
+  const res = adapter.validate(values, {
     id: rec.schemaName as string,
     format: "json-schema",
     raw: schema,
     normalized: schema as Record<string, unknown>,
   });
-  return res.valid ? undefined : `values fail schema '${rec.schemaName}': ${(res.errors ?? []).join("; ")}`;
+  const errors = (res.errors ?? []).filter((e) => !skip.some((p) => e.startsWith(`${p} `) || e.startsWith(`${p}/`)));
+  return res.valid || errors.length === 0 ? undefined : `values fail schema '${rec.schemaName}': ${errors.join("; ")}`;
 }
 
 /**
@@ -70,8 +113,9 @@ export function checkSeeds(
   registry: Record<string, object>,
   adapter: FeatSchemaAdapter,
 ): SeedCheck {
-  const out: SeedCheck = { violations: [], fixtures: 0, records: 0, recordTypes: [] };
+  const out: SeedCheck = { violations: [], fixtures: 0, records: 0, recordTypes: [], skipped: [] };
   const fixtures = new Map<Seed, Seed>();
+  let fxCtx: ((anchor: string) => Parameters<typeof valuesProblem>[3]) | undefined;
   const violate = (code: SeedViolationCode, detail: string) => out.violations.push({ code, detail });
 
   // Read, check and count one fixture seed; a refused fixture stays as written.
@@ -118,7 +162,7 @@ export function checkSeeds(
           );
           return;
         }
-        const problem = valuesProblem(rec, registry, adapter);
+        const problem = valuesProblem(rec, registry, adapter, fxCtx?.(`${where} record ${j}`));
         if (problem) {
           ok = false;
           violate("SEED_FIXTURE_VALUES_INVALID", `${where} record ${j}: ${problem}`);
@@ -135,6 +179,10 @@ export function checkSeeds(
     if (!seeds) continue;
     const row = / › row\[(\d+)\]$/.exec(c.name)?.[1];
     const scenario = c.name.replace(/ › row\[\d+\]$/, "");
+    const st = staticTable(c.variables as CaseVariable[] | undefined, c.given?.clock);
+    const resolved = st.table.length > 0 ? resolveVariables(st.table, c.given?.clock) : {};
+    const withVars = (anchor: string) => (c.variables && c.variables.length > 0 ? { resolved, nonStatic: st.nonStatic, anchor, skipped: out.skipped } : undefined);
+    fxCtx = withVars;
     const checked = seeds.map((seed, i): Seed => {
       if (!("fixture" in seed)) {
         seed.records.forEach((rec, j) => {
@@ -142,7 +190,7 @@ export function checkSeeds(
           out.recordTypes.push(rec.type);
           const problem = rec.schemaName === undefined ? undefined : registry[rec.schemaName] === undefined
             ? undefined // undeclared inline names are the parser's UNDECLARED_SCHEMA, never reached here
-            : valuesProblem(rec, registry, adapter);
+            : valuesProblem(rec, registry, adapter, withVars(`scenario "${scenario}" given › seed[${i}] record ${j}${row !== undefined ? ` › row[${row}]` : ""}`));
           if (problem && row !== undefined)
             violate("SEED_ROW_VALUES_INVALID", `scenario "${scenario}" given › seed[${i}] record ${j} › row[${row}]: ${problem}`);
           else if (problem) violate("SEED_VALUES_INVALID", `scenario "${scenario}" given › seed[${i}] record ${j}: ${problem}`);
@@ -189,6 +237,7 @@ export async function inlineSeedFixtures(input: { config: string }): Promise<Cap
       specs: prepared.specs.length,
       fixtures: prepared.fixtures,
       records: prepared.records,
+      skipped: prepared.skipped,
       unresolved,
       recordTypes: prepared.recordTypes,
     },
