@@ -1,7 +1,7 @@
 // The serial pass (SPEC-RT-005): files named serial run second, in their own vitest invocation with
 // FEAT_SERIAL=1; a failing parallel pass does not skip them; one merged JUnit report.
 import { execFile } from "node:child_process";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,13 +12,20 @@ import { mergeJunit } from "./src/index.js";
 const exec = promisify(execFile);
 const RUNNER = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures/run-passes.mjs");
 
-/** runTests, in its own process (see fixtures/run-passes.mjs): resolves with its exit code. */
-async function runTests(opts: object): Promise<{ exitCode: number }> {
+/** runTests, in its own process (see fixtures/run-passes.mjs): resolves with its exit code and the RunResult it printed. */
+async function runTests(opts: object): Promise<{ exitCode: number; result?: { junitPath?: string; jsonPath?: string } }> {
+  const parsed = (stdout: string | undefined) => {
+    try {
+      return JSON.parse(stdout ?? "") as { junitPath?: string; jsonPath?: string };
+    } catch {
+      return undefined;
+    }
+  };
   try {
-    await exec("node", [RUNNER, JSON.stringify(opts)], { encoding: "utf8" });
-    return { exitCode: 0 };
+    const { stdout } = await exec("node", [RUNNER, JSON.stringify(opts)], { encoding: "utf8" });
+    return { exitCode: 0, result: parsed(stdout) };
   } catch (e) {
-    return { exitCode: (e as { code?: number }).code ?? 1 };
+    return { exitCode: (e as { code?: number }).code ?? 1, result: parsed((e as { stdout?: string }).stdout) };
   }
 }
 
@@ -49,6 +56,30 @@ describe("runTests with a serial set", { timeout: 120_000 }, () => {
     const xml = readFileSync(junit, "utf8");
     expect(xml).toContain("fails on purpose");
     expect(xml).toContain("runs in the serial pass");
+  });
+});
+
+// RunOptions.jsonOutput: "vitest's JSON results, from the main pass". A run whose files are all serial has no
+// other pass, so the serial pass is the main one: the file the result names must exist.
+describe("runTests with jsonOutput", { timeout: 120_000 }, () => {
+  it("writes the file it returns when every file is serial", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "feat-pass-"));
+    const json = path.join(dir, "results.json");
+    const r = await runTests({ files: [f("serial.probe.ts")], serialFiles: [f("serial.probe.ts")], root: ROOT, quiet: true, jsonOutput: json });
+    expect(r.exitCode).toBe(0);
+    expect(r.result?.jsonPath).toBe(json);
+    expect(existsSync(json)).toBe(true);
+    expect(JSON.parse(readFileSync(json, "utf8")).numTotalTests).toBeGreaterThan(0);
+  });
+  it("writes the parallel pass's results when a serial pass follows, and not the serial pass's", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "feat-pass-"));
+    const json = path.join(dir, "results.json");
+    const r = await runTests({ files: [f("parallel.probe.ts"), f("serial.probe.ts")], serialFiles: [f("serial.probe.ts")], root: ROOT, quiet: true, jsonOutput: json });
+    expect(r.exitCode).toBe(0);
+    expect(r.result?.jsonPath).toBe(json);
+    const results = readFileSync(json, "utf8");
+    expect(results).toContain("parallel.probe.ts");
+    expect(results).not.toContain("serial.probe.ts");
   });
 });
 

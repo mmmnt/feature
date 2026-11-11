@@ -119,7 +119,8 @@ export function runTests(opts: RunOptions): RunResult {
     const writesSeparately = pass.serial && first.ran === true && junitMain !== undefined;
     const junit = junitMain === undefined ? undefined : writesSeparately ? `${junitMain}.serial` : junitMain;
     first.ran = true;
-    return runOnce(opts, files, pass.serial, junit, seen);
+    // The JSON report is the main pass's: the parallel pass, or the serial pass when it is the only one.
+    return runOnce(opts, files, pass.serial, junit, seen, !pass.serial || parallelFiles.length === 0);
   });
   if (junitMain !== undefined && existsSync(`${junitMain}.serial`)) {
     writeFileSync(junitMain, mergeJunit(readFileSync(junitMain, "utf8"), readFileSync(`${junitMain}.serial`, "utf8")));
@@ -148,7 +149,7 @@ export const CONFIG_ERROR_REPORTER_SOURCE = [
   "",
 ].join("\n");
 
-function runOnce(opts: RunOptions, files: string[], serial: boolean, junitAbs: string | undefined, seen: { configurationError: boolean }): number {
+function runOnce(opts: RunOptions, files: string[], serial: boolean, junitAbs: string | undefined, seen: { configurationError: boolean }, writesJson: boolean): number {
   const absFiles = files.map((f) => path.resolve(opts.root, f));
   // Lives under node_modules/.cache so `vitest/config` and the consumer's own
   // imports resolve exactly as they would from the project root.
@@ -175,8 +176,8 @@ function runOnce(opts: RunOptions, files: string[], serial: boolean, junitAbs: s
   // With multiple file-writing reporters vitest needs the dotted outputFile form.
   const outputs: [string, string][] = [];
   if (junitAbs !== undefined) outputs.push(["junit", junitAbs]);
-  // the JSON report belongs to the main pass only (the serial pass would overwrite it)
-  if (opts.jsonOutput && !serial) outputs.push(["json", path.resolve(opts.root, opts.jsonOutput)]);
+  // the JSON report belongs to the main pass only (a serial pass after a parallel one would overwrite it)
+  if (opts.jsonOutput && writesJson) outputs.push(["json", path.resolve(opts.root, opts.jsonOutput)]);
   for (const [reporter, file] of outputs) {
     mkdirSync(path.dirname(file), { recursive: true });
     args.push(`--reporter=${reporter}`);

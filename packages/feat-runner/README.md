@@ -138,9 +138,10 @@ Shards that share one store are not isolated. Give each shard its own instrument
   follows a parallel one, the serial pass writes `<junitOutput>.serial`, and the runner merges it into
   the main file (`tests`, `failures`, `errors` and `time` add up, every suite is kept) and deletes
   it. Both passes are in one report. `mergeJunit(a, b)` is exported if you need the merge alone.
-- **JSON.** Set `jsonOutput` to get vitest's JSON results from the parallel pass. A serial pass does
-  not write it, so a run whose files are all serial leaves no JSON file, although `jsonPath` is still
-  returned.
+- **JSON.** Set `jsonOutput` to get vitest's JSON results from the main pass: the parallel pass, or
+  the serial pass when every file is serial. When a serial pass follows a parallel one it does not
+  write the file, so the JSON holds the parallel pass only. `jsonPath` always names a file that was
+  written.
 - **Coverage.** `coverage: true` passes `--coverage` to each pass. Your own thresholds apply.
 
 ## Configuration errors and exit codes
@@ -164,9 +165,10 @@ The code in the message is one of the harness codes. They are listed in
 [`@mmmnt/feat-runtime`](https://www.npmjs.com/package/@mmmnt/feat-runtime), for example
 `Configuration error (exit 2): [FAULT_UNSUPPORTED] ...`.
 
-Only messages that carry that exact prefix are recognised. An adapter module that cannot be resolved
-or loaded fails with its own message, which says "configuration error" in lower case and does not
-carry the prefix. That run ends with `configurationError` unset.
+Only messages that carry that exact prefix are recognised. Every refusal the harness and the adapter
+loader raise carries it: an adapter module that cannot be resolved or loaded, or has no
+`createAdapter` (`INVALID_CONFIG`), an adapter that cannot `seed()` or `deliver()` (`SEED_UNSUPPORTED`,
+`DELIVER_UNSUPPORTED`), and a config the harness cannot load (the loader's code).
 
 ## API
 
@@ -186,7 +188,7 @@ const CONFIG_ERROR_REPORTER_SOURCE: string;
 | `files` | Generated test files to run, root-relative. Required. |
 | `root` | Project root: the working directory of vitest and the base of every relative path. Required. |
 | `junitOutput` | Write a JUnit XML report here (root-relative). |
-| `jsonOutput` | Write vitest's JSON results here (root-relative). Parallel pass only. |
+| `jsonOutput` | Write vitest's JSON results here (root-relative). The main pass: the parallel pass, or the serial pass when there is no other. |
 | `coverage` | Pass `--coverage`. |
 | `quiet` | Discard vitest's console output, for machine use. |
 | `serialFiles` | The subset of `files` that run in the serial pass. |
