@@ -268,10 +268,11 @@ with one scenario per exemplar.
 
 ### Notes on indentation
 
-The parser measures indentation as a character count and does not reject a tab
-in leading whitespace; a tab-indented spec parses. The grammar reference says a
-leading tab is a parse error, and `feat fmt` reports one as such and refuses to
-rewrite the file. Use spaces.
+Indentation is spaces only. A tab in leading whitespace, including a tab after
+spaces, is refused with `MALFORMED_SYNTAX`, the offending `line`, and the hint
+"Indent with spaces only". A tab inside a line, after its first non-blank
+character, is allowed. `feat fmt` reports the same condition and refuses to
+rewrite the file.
 
 ## Exit codes
 

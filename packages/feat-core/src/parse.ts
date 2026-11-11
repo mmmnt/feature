@@ -109,6 +109,9 @@ function scan(source: string): Stmt[] {
   for (let i = 0; i < raw.length; i++) {
     const line = raw[i]!;
     const trimmed = line.trim();
+    if (trimmed !== "" && /^[ \t]*\t/.test(line)) {
+      throw new ParseFailure("MALFORMED_SYNTAX", "Tab in leading whitespace.", i + 1, "Indent with spaces only; a tab in leading whitespace is a parse error (grammar reference §1.2).");
+    }
     if (depth === 0) {
       if (trimmed === "" || trimmed.startsWith("#")) continue;
       buf = trimmed;
