@@ -1,7 +1,7 @@
 {
   "name": "@mmmnt/feat-types",
   "version": "0.2.0",
-  "description": "Feat contracts: TypeScript types derived from the JSON Schema IR/config/report definitions. Zero dependencies, zero runtime code (DP-8).",
+  "description": "Feat contracts: TypeScript types derived from the JSON Schema IR/config/report definitions. Zero dependencies; types plus one runtime constant, EXCLUSIVE_FAULTS (DP-8).",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
@@ -19,7 +19,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "tsc -p tsconfig.test.json"
   },
   "repository": {
     "type": "git",

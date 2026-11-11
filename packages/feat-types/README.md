@@ -22,7 +22,7 @@ Every other `@mmmnt` package depends on these types:
 
 The language-neutral source of truth is the JSON Schema set in the repository
 ([`schemas/`](https://github.com/mmmnt/feature/tree/main/schemas)). These types
-mirror it by hand. Where the two differ (see [Known gaps](#known-gaps)), the
+mirror it by hand. Where the two differ, the
 source in `src/index.ts` is what the toolchain compiles against.
 
 ## Install
@@ -38,7 +38,7 @@ Requirements:
   (`"type": "module"`) and ships `dist/index.js` and `dist/index.d.ts`.
 - No dependencies and no peer dependencies.
 
-The package is types, plus one runtime constant: `EXCLUSIVE_FAULTS` (see
+The package is types, plus one runtime constant (the `package.json` description says so): `EXCLUSIVE_FAULTS` (see
 [Faults](#faults)). Import everything else with `import type`.
 
 ```ts
@@ -456,7 +456,7 @@ schema's own local pointers. `validate` also checks seed values at generate time
 | `Prediction` | `success`, `rejection` (with `rejectionId`) or `error` (with `errorCode`), plus `response` and per-service `services` |
 | `ServicePrediction`, `PredictedRecord`, `ResponsePrediction` | `records` (from `has`), `contains`, `ordering` |
 | `Matcher`, `ValueBlock` | `literal`, `whenRef`, `deliverRef`, `captureRef`, `any`, `regex`, `absent`, `placeholder`, `goldenFixture`, `nested` |
-| `SpecVariable`, `VariableDefinition`, `VariableType` | The `variables:` block |
+| `SpecVariable`, `VariableDefinition`, `VariableType` | The `variables:` block; a source call is `now`, `iso` or `unique`, and `now` and `iso` take an optional `offsetMs` |
 
 `FeatConfig` mirrors `feat.config.json`: `featVersion`, `extends`,
 `environment`, `schemas`, `response` (`ResponseConfig`), `services`
@@ -465,16 +465,6 @@ and `report`. The field-by-field reference is in
 [`@mmmnt/feature`](https://www.npmjs.com/package/@mmmnt/feature). To validate a
 file, use
 [`schemas/feat.config.schema.json`](https://github.com/mmmnt/feature/blob/main/schemas/feat.config.schema.json).
-
-## Known gaps
-
-Places where the hand-written types and the toolchain disagree.
-
-- `VariableDefinition` allows `{ kind: "call", fn: "now" | "unique" }`. The
-  parser also produces `fn: "iso"` and an `offsetMs`, for `iso()`, `now(ms)` and
-  `iso(ms)`. The runtime's own `CaseVariable` type has them.
-- The package description says "zero runtime code". `EXCLUSIVE_FAULTS` is one
-  runtime constant.
 
 ## What changed in 0.2.0
 

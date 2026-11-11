@@ -144,7 +144,7 @@ export interface Scenario {
 // execution start; composition is definition-side template interpolation.
 export type VariableType = "string" | "number";
 export type VariableDefinition =
-  | { kind: "call"; fn: "now" | "unique" }
+  | { kind: "call"; fn: "now" | "iso" | "unique"; offsetMs?: number }
   | { kind: "number"; value: number }
   | { kind: "template"; parts: (string | { ref: string })[] };
 export interface SpecVariable {
