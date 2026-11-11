@@ -239,9 +239,9 @@ resolve materialized values afterward.
 - The adapter takes no actors and offers no `setClock`, so `clock at` against it is a
   `CLOCK_UNSUPPORTED` configuration error.
 
-## What changed in this release (v0.1.48, package 0.4.0)
+## What changed in this release (v0.1.48, package 0.4.1)
 
-Nothing. The package is unchanged in this release.
+No source change. The package is republished as 0.4.1 against `@mmmnt/feat-types` 0.2.0, with this README.
 
 Part of [Feature](https://github.com/mmmnt/feature) — the `.feat` execution
 specification language. Adapter contract: https://github.com/mmmnt/feature/wiki/Architecture

@@ -179,9 +179,9 @@ The adapter defines no error codes. A missing browser binary surfaces as Playwri
   `convergenceTimeout` accordingly, and keep journey scenarios few.
 - **Headless by default.** Set `invoke.headless` to `false` to watch a journey while debugging.
 
-## What changed in this release (v0.1.48, package 0.1.8)
+## What changed in this release (v0.1.48, package 0.1.9)
 
-No source change in this release. The behaviour is as of 0.1.8, which added `invoke.baseUrlEnv`, with
+No source change in this release. It is republished as 0.1.9 against `@mmmnt/feat-types` 0.2.0, with this README. The behaviour is as of 0.1.8, which added `invoke.baseUrlEnv`, with
 the same contract as `@mmmnt/feat-adapter-http`.
 
 ## Specs

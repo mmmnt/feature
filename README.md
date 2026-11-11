@@ -122,4 +122,4 @@ roadmap — lives in the **project wiki**.
 
 ## License
 
-Core packages are MIT-licensed (see each `package.json`).
+Every published `@mmmnt/*` package is MIT-licensed and ships its own `LICENSE`; the repository as a whole is BSD-3-Clause (see `LICENSE`).

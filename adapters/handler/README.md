@@ -220,7 +220,7 @@ Two things to know:
   them is a `CLOCK_UNSUPPORTED` configuration error. Only a handler (or a service adapter that offers
   the hook) can honour it.
 
-## What changed in this release (v0.1.48, package 0.1.8)
+## What changed in this release (v0.1.48, package 0.2.0)
 
 - **Scenario clock** (SPEC-ADPHND-001): `setClock`, and the `ctx` third argument with `ctx.clock`.
   `clock at` was in the grammar before, but no adapter honoured it.
@@ -228,6 +228,9 @@ Two things to know:
   the `namespace: true` route marker. The harness refuses an opted-in route whose handler ignores the
   namespace with `NAMESPACE_NOT_HONOURED`.
 - A handler written with the old two-argument signature is unchanged.
+- **Breaking, hence 0.2.0:** the third argument is always passed. A handler that declared a third
+  parameter of its own, such as a defaulted dependency (`(input, actor, port = makePort())`), now
+  receives `ctx` in it. Move that dependency out of the third position before upgrading.
 
 ## Specs
 

@@ -1,6 +1,6 @@
 {
   "name": "@mmmnt/feat-adapter-kit",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Conformance suites for Feat adapter authors: prove your adapter honors the capture-window and invoke contracts",
   "type": "module",
   "main": "dist/index.js",

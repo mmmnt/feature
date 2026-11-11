@@ -147,9 +147,9 @@ case. An HTTP error status is not an error here: it is a response, and a spec pr
 - **JSON only.** Request bodies are JSON. Form-encoded or multipart bodies are not supported.
 - **No retries, no polling.** One request per stimulus.
 
-## What changed in this release (v0.1.48, package 0.1.8)
+## What changed in this release (v0.1.48, package 0.1.9)
 
-No source change in this release. The behaviour is as of 0.1.8, which added `invoke.baseUrlEnv`
+No source change in this release. It is republished as 0.1.9 against `@mmmnt/feat-types` 0.2.0, with this README. The behaviour is as of 0.1.8, which added `invoke.baseUrlEnv`
 (API origins belong to the environment).
 
 ## Specs

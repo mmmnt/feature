@@ -199,11 +199,10 @@ not detected. The parser itself does not reject tab indentation (see
 A configuration error is exit `2`, as everywhere in the toolchain. The library
 itself returns values and never exits.
 
-## What changed in 0.1.8
+## What changed in 0.1.9
 
-Nothing. `@mmmnt/feat-analyze` is unchanged in release v0.1.48 and stays at
-0.1.8, the version it had in v0.1.47. This README is the only addition: until
-now the package had none.
+No source change in release v0.1.48. The package is republished as 0.1.9 against
+`@mmmnt/feat-types` 0.2.0, with this README; until now it had none.
 
 ## Specs and decisions
 

@@ -280,7 +280,8 @@ An adapter reference is an npm package name or a local path.
 
 ## This release
 
-No change to the kit in Feature v0.1.48: the version stays 0.1.6. The adapter
+No source change to the kit in Feature v0.1.48. It is republished as 0.1.7 against
+`@mmmnt/feat-types` 0.2.0, with this README. The adapter
 interface it asserts against grew optional members in that release (namespace,
 faults, observation modes, `setClock`); the kit does not assert them.
 
