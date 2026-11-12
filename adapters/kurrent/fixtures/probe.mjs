@@ -453,3 +453,8 @@ export const observe = (input) => run(input, "observe");
 export const observeTransport = (input) => run(input, "transport");
 export const observeBrokerLoss = (input) => run(input, "broker-loss");
 export const observeTlsHost = (input) => run(input, "tls-host");
+
+// SPEC-ADPHND-003 (founder ruling ba21abb2, "Transport envs start at load"): every one-time start-up of this
+// probe, the KurrentDB server and the transport environment (Toxiproxy and the peer agent; the peer install already runs above), runs when the module is evaluated. The handler adapter imports the module in setup(), in the
+// suite's beforeAll under the hook timeout, so none of it is charged to the first case's test timeout.
+await Promise.all([kurrent(), proxyEnvironment()]);

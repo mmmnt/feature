@@ -366,3 +366,8 @@ async function run(input, mode) {
 export const observe = (input) => run(input, "observe");
 export const observeTransport = (input) => run(input, "transport");
 export const observeBrokerLoss = (input) => run(input, "broker-loss");
+
+// SPEC-ADPHND-003 (founder ruling ba21abb2, "Transport envs start at load"): every one-time start-up of this
+// probe, the two-broker cluster with its Toxiproxy (cluster.mjs) and the peer agent (the peer install already runs above), runs when the module is evaluated. The handler adapter imports the module in setup(), in the
+// suite's beforeAll under the hook timeout, so none of it is charged to the first case's test timeout.
+await Promise.all([cluster(), proxyEnvironment()]);

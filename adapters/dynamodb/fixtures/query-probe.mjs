@@ -406,3 +406,8 @@ async function run(input, { transport }) {
 
 export const observe = (input) => run(input, { transport: false });
 export const observeTransport = (input) => run(input, { transport: true });
+
+// SPEC-ADPHND-003 (founder ruling ba21abb2, "Transport envs start at load"): every one-time start-up of this
+// probe, DynamoDB Local, and the transport environment (its own DynamoDB Local, Toxiproxy and the peer), runs when the module is evaluated. The handler adapter imports the module in setup(), in the
+// suite's beforeAll under the hook timeout, so none of it is charged to the first case's test timeout.
+await Promise.all([environment(false), environment(true)]);

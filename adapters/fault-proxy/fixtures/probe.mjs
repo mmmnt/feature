@@ -275,3 +275,8 @@ export async function probe(input) {
     await restoreBroker(env).catch(() => {});
   }
 }
+
+// SPEC-ADPHND-003 (founder ruling ba21abb2, "Transport envs start at load"): every one-time start-up of this
+// probe, Toxiproxy and its echo upstream, runs when the module is evaluated. The handler adapter imports the module in setup(), in the
+// suite's beforeAll under the hook timeout, so none of it is charged to the first case's test timeout.
+await environment();
