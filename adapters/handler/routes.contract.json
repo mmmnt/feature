@@ -1,0 +1,27 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-ADPHND-003",
+  "schemas": {
+    "ProbeInput": {
+      "type": "object",
+      "required": ["routes"],
+      "additionalProperties": false,
+      "properties": {
+        "routes": { "type": "string", "pattern": "^(Alpha|AlphaTwo|Beta|Missing|Throws|NoExport|NotFunction)(,(Alpha|AlphaTwo|Beta|Missing|Throws|NoExport|NotFunction))*$" },
+        "script": { "type": "string", "minLength": 1 },
+        "harness": { "type": "string", "pattern": "^(Alpha|AlphaTwo|Beta|Missing|Throws|NoExport|NotFunction)(,(Alpha|AlphaTwo|Beta|Missing|Throws|NoExport|NotFunction))*$" }
+      }
+    },
+    "ProbeResult": {
+      "type": "object",
+      "required": ["trace"],
+      "additionalProperties": false,
+      "properties": { "trace": { "type": "string" } }
+    },
+    "RouteError": {
+      "type": "object",
+      "required": ["code"],
+      "properties": { "code": { "enum": ["ROUTE_UNLOADABLE"] }, "detail": { "type": "string" } }
+    }
+  }
+}

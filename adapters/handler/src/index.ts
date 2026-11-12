@@ -1,11 +1,12 @@
 // @mmmnt/feat-adapter-handler — direct function invocation (ADR-0009 routing).
 // Route shape: response.commands[<Command>] = { module, export }. Modules resolve
 // relative to the user project root (process.cwd()). Handlers return
-// CapturedResponse-shaped results ({ status, body }).
+// CapturedResponse-shaped results ({ status, body }). setup() loads the routes of the
+// commands the spec file invokes (SPEC-ADPHND-003); any other route loads on first invoke.
 
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import type { CapturedResponse, FeatResponseAdapter } from "@mmmnt/feat-types";
+import type { CapturedResponse, FeatResponseAdapter, ResponseSetupContext } from "@mmmnt/feat-types";
 
 interface HandlerRoute {
   module: string;
@@ -41,6 +42,14 @@ function invalidClock(value: string): Error {
   return Object.assign(
     new Error(`'${value}' is not an ISO-8601 instant with a zone designator (Z or +hh:mm)`),
     { code: "INVALID_CLOCK" },
+  );
+}
+
+/** SPEC-ADPHND-003: a route of the file's commands that setup() cannot load. A configuration error. */
+function unloadable(command: string, route: HandlerRoute, reason: string): Error {
+  return Object.assign(
+    new Error(`Route '${command}' (module '${route.module}', export '${route.export}') ${reason} — configuration error.`),
+    { code: "ROUTE_UNLOADABLE" },
   );
 }
 
@@ -83,8 +92,34 @@ class HandlerAdapter implements FeatResponseAdapter {
 
   constructor(private config: HandlerAdapterConfig) {}
 
-  async setup(): Promise<void> {
-    // Routes load lazily on first invocation; nothing to provision.
+  /**
+   * SPEC-ADPHND-003: load the routes of the commands the spec file's cases invoke (SPEC-RT-008), so their
+   * modules' one-time work runs here, under the hook timeout, not inside the first case. Without commands
+   * nothing loads, and every route loads on its first invoke as before.
+   */
+  async setup(_invoke?: Record<string, unknown>, context?: ResponseSetupContext): Promise<void> {
+    for (const command of context?.commands ?? []) {
+      const route = this.config.commands[command];
+      if (!route || this.handlers.has(command)) continue; // an unrouted command is invoke()'s refusal
+      this.handlers.set(command, await this.load(command, route, true));
+    }
+  }
+
+  private async load(command: string, route: HandlerRoute, atSetup: boolean): Promise<Handler> {
+    const root = this.config.projectRoot ?? process.cwd();
+    let mod: Record<string, unknown>;
+    try {
+      mod = (await import(pathToFileURL(path.resolve(root, route.module)).href)) as Record<string, unknown>;
+    } catch (e) {
+      if (!atSetup) throw e;
+      throw unloadable(command, route, `cannot be imported: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    const fn = mod[route.export];
+    if (typeof fn !== "function") {
+      if (atSetup) throw unloadable(command, route, fn === undefined ? "lacks the export" : "has an export that is not a function");
+      throw new Error(`Module '${route.module}' lacks export '${route.export}' (INV-10) — configuration error.`);
+    }
+    return fn as Handler;
   }
 
   async teardown(): Promise<void> {
@@ -100,12 +135,7 @@ class HandlerAdapter implements FeatResponseAdapter {
     if (!handler) {
       const route = this.config.commands[command];
       if (!route) throw new Error(`Command '${command}' is not routed in response.commands — configuration error.`);
-      const root = this.config.projectRoot ?? process.cwd();
-      const mod = (await import(pathToFileURL(path.resolve(root, route.module)).href)) as Record<string, unknown>;
-      const fn = mod[route.export];
-      if (typeof fn !== "function")
-        throw new Error(`Module '${route.module}' lacks export '${route.export}' (INV-10) — configuration error.`);
-      handler = fn as Handler;
+      handler = await this.load(command, route, false); // a route setup() did not load (SPEC-ADPHND-003)
       this.handlers.set(command, handler);
     }
     const actorContext =

@@ -1,6 +1,6 @@
 {
   "name": "@mmmnt/feat-adapter-handler",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Feat response adapter: direct function invocation (module/export routes from response.commands).",
   "license": "MIT",
   "type": "module",
@@ -19,7 +19,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --exclude '**/clock.test.ts' --exclude '**/namespace.test.ts' --passWithNoTests"
+    "test": "vitest run --exclude '**/clock.test.ts' --exclude '**/namespace.test.ts' --exclude '**/routes.test.ts' --passWithNoTests"
   },
   "dependencies": {
     "@mmmnt/feat-types": "workspace:^"

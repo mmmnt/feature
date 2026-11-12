@@ -1,0 +1,183 @@
+feat 1.0
+
+# SPEC-ADPHND-003 — the handler adapter loads the routes a spec file invokes at setup. Today setup()
+# provisions nothing and invoke() imports a route's module the first time its command is called
+# ("Routes load lazily on first invocation"). Everything a module does once when it is evaluated is then
+# charged to whichever case happens to invoke it first, under that case's test timeout. Found
+# 2026-11-11: in the Node 26 Spec chain, SPEC-ADPNEO-001 "a namespace that does not match the runner's
+# pattern is refused" row[1] timed out at 60043ms because the Neo4j probe's peer-driver install and
+# Neo4j start-up both ran inside it; the next row took 5.2s (the end of that start-up) and every later
+# row about 0.5s. The same first row takes 4-31s in CI run 43091760187.
+#
+# Founder rulings: e7d6cd2f "Eager load in setup (Recommended)"; ba21abb2 "Only the file's commands
+# (Recommended)", "Transport envs start at load (Recommended)", "ROUTE_UNLOADABLE exits 2
+# (Recommended)" (2026-11-11).
+#
+# No agreed SPEC-ADPHND states how routes load: SPEC-ADPHND-001 (clock) and -002 (namespace) take the
+# lazy import as given, and the behaviour is written only in the adapter's README ("The module is
+# imported on the first call of a command"). So this is a new spec beside them, not an amendment of
+# either. Both stay unchanged. The harness side (which commands reach setup(), and ROUTE_UNLOADABLE as
+# a configuration error) is SPEC-RT-008 (packages/feat-runtime/harness-setup.feat); this spec needs it.
+#
+# Agreed: the founder ruled "Flip and build now" (2026-11-11, citing ba21abb2). Status agreed.
+#
+# WHAT CHANGES (and nothing else):
+#  1. setup(invoke, { commands }) imports the module of the route of each command in `commands`, the
+#     commands the spec file's cases invoke (SPEC-RT-008), each distinct module once, and resolves each
+#     of those routes' export. A route of a command the file does not invoke is not imported. setup()
+#     runs in createHarness, which the generated suite awaits in beforeAll, so the imports run under the
+#     hook timeout, before the first case.
+#  2. setup() given no `commands` (an older harness, or a harness built without its cases) imports
+#     nothing. A command in `commands` that response.commands does not route is left to invoke(), which
+#     refuses it as today ("is not routed in response.commands — configuration error.").
+#  3. invoke() uses the handler setup() resolved and imports nothing. A route setup() did not load (no
+#     setup, or a command outside `commands`) still loads on its first call, as today.
+#  4. A route setup() cannot load is refused at setup with the new code ROUTE_UNLOADABLE: the module
+#     does not resolve, its evaluation throws, the export is missing, or the export is not a function.
+#     The detail names the route and the module; the message ends "— configuration error.". The adapter
+#     has no coded configuration error that fits (its only code is INVALID_CLOCK), so this adds one. The
+#     harness wraps it as a HarnessConfigurationError, so `feat run` exits 2 with [ROUTE_UNLOADABLE]
+#     (SPEC-RT-008). A missing or non-function export (INV-10), which invoke() reports today, is
+#     ROUTE_UNLOADABLE at setup for a route setup() loads, and stays invoke()'s message otherwise.
+#  5. teardown() forgets the resolved handlers; a later setup() resolves them again (Node's module
+#     cache still holds an imported module, as today).
+#  6. The README's "imported on the first call" and the Errors table follow.
+#
+# COMPANION FIXTURE CHANGE (not in this spec's touches: each lies in its own adapter's spec). A probe's
+# one-time start-up lands in setup only if the probe does it when its module is evaluated. Ruling
+# ba21abb2: each product probe starts, at module load, its server, its peer install AND its
+# transport-only environment (Toxiproxy and the peer agent), so all of its one-time start-up is in setup.
+# A module serves both its observe and its transport commands, so a file that invokes either starts all
+# of it. Today:
+#  - SPEC-ADPNEO-001, -002: adapters/neo4j/fixtures/probe.mjs. Server: neo4jServer() (dbPromise), lazy.
+#    Peer install: at load already. Transport env: proxyEnvironment() (proxyPromise), lazy.
+#  - SPEC-ADPKFK-001 to -003: adapters/kafka/fixtures/probe.mjs + cluster.mjs. Server: cluster()
+#    (clusterPromise), lazy. Peer install: at load already. Transport env: proxyPromise, lazy.
+#  - SPEC-ADPKUR-001 to -004: adapters/kurrent/fixtures/probe.mjs. Server: kdbPromise, lazy. Peer
+#    install: at load already. Transport env: proxyPromise, lazy.
+#  - SPEC-ADPKMS-001, -002: adapters/kms/fixtures/probe.mjs. Server: envPromise (local-kms), lazy.
+#    Transport env: transportPromise, lazy. No peer install.
+#  - SPEC-ADPDDB-001, -002: adapters/dynamodb/fixtures/query-probe.mjs. Server: environment(false)
+#    (DynamoDB Local), lazy. Transport env: environment(true) (its own DynamoDB Local, Toxiproxy and peer),
+#    lazy. No peer install.
+#  - SPEC-FPX-001: adapters/fault-proxy/fixtures/probe.mjs. Environment: envPromise (Toxiproxy and the
+#    echo upstream), lazy; it is the transport environment itself.
+#  No other routed module does one-time start-up (stripe, fs, memory and handler probes, the feat-derive,
+#  feat-runner and feat-runtime fixtures, stdio-jsonrpc and the src routes).
+#
+# Driven through adapters/handler/fixtures/probe.mjs (part of the build, inside touches), command
+# `ProbeHandlerRoutes { routes, script?, harness? }`. Each call copies the route modules of
+# fixtures/routes/ to a fresh temporary project root, so every module is evaluated anew, and each
+# module appends its file name to that call's import log when it is evaluated. `routes` is a
+# comma-separated list of: Alpha (alpha.mjs, export alpha), AlphaTwo (alpha.mjs, export alphaTwo),
+# Beta (beta.mjs, export beta), Missing (missing.mjs, which does not exist), Throws (throws.mjs, whose
+# evaluation throws), NoExport (noexport.mjs, without the export), NotFunction (notfunction.mjs, whose
+# export is a string).
+#  - Script mode (script given): create the adapter with those routes and run a space-separated
+#    script: `setup` (setup with no commands), `setup:<Route,...>` (setup with those commands),
+#    `invoke:<Route>`, `teardown`, `imports` (adds imports=<file,...> in evaluation order, or none).
+#    The trace shows each step.
+#  - Harness mode (harness: <Route,...>): build a REAL harness (createHarness) over a config whose
+#    response is this adapter with those routes, handing it one case per listed command (when: that
+#    command), and run nothing. The answer is the trace `harness:ready imports=<file,...>`, or the
+#    refusal as the ERR below.
+
+spec SPEC-ADPHND-003 "Handler adapter: the file's routes load at setup"
+context Toolchain
+aggregate Adapters
+type infrastructure
+status agreed
+
+construct:
+  handler at adapters/handler/src/index.ts
+  touches adapters/handler/**
+  needs SPEC-RT-008
+  needs SPEC-ADPHND-002
+  setup(invoke, context) takes context.commands, the commands the spec file's cases invoke. For each
+  of them that config.commands routes it imports the route's module, each distinct module once,
+  resolves the export and keeps the handler. With no context.commands it imports nothing. A route it
+  cannot load (the module does not resolve, its evaluation throws, the export is missing or is not a
+  function) is refused with an error whose code is ROUTE_UNLOADABLE and whose message names the route
+  and the module and ends "— configuration error.". invoke(command, input, actor) calls a handler
+  setup() kept and imports nothing; any other route loads on first call as before. teardown() forgets
+  the kept handlers. Everything SPEC-ADPHND-001 and -002 say about invoke, the clock and the namespace
+  is unchanged.
+
+enforce:
+  setup imports the module of each route the file's commands name, before the first invocation
+  a route of a command the file does not invoke is not imported at setup
+  a module named by several of the file's commands is imported once
+  an invocation after setup imports no module
+  setup without the file's commands imports nothing, and a route then loads on its first call
+  rejects ROUTE_UNLOADABLE when setup cannot import a route's module or resolve its export as a function
+
+contract:
+  input ProbeInput
+  response ProbeResult
+  error RouteError
+
+scenario "setup imports the routes of the file's commands and no other":
+  when: ProbeHandlerRoutes { routes: "Alpha,Beta", script: "imports setup:Alpha imports" }
+  predict success:
+    response OK ProbeResult { trace: "imports=none setup:Alpha imports=alpha.mjs" }
+    filesystem has []
+
+scenario "a route the file does not invoke is not refused even when it cannot load":
+  when: ProbeHandlerRoutes { routes: "Alpha,Throws", script: "setup:Alpha invoke:Alpha imports" }
+  predict success:
+    response OK ProbeResult { trace: "setup:Alpha invoke:Alpha imports=alpha.mjs" }
+    filesystem has []
+
+scenario "an invocation after setup imports nothing more":
+  when: ProbeHandlerRoutes { routes: "Alpha,Beta", script: "setup:Alpha,Beta invoke:Beta invoke:Alpha imports" }
+  predict success:
+    response OK ProbeResult { trace: "setup:Alpha,Beta invoke:Beta invoke:Alpha imports=alpha.mjs,beta.mjs" }
+    filesystem has []
+
+scenario "two of the file's commands on one module import it once":
+  when: ProbeHandlerRoutes { routes: "Alpha,AlphaTwo", script: "setup:Alpha,AlphaTwo imports" }
+  predict success:
+    response OK ProbeResult { trace: "setup:Alpha,AlphaTwo imports=alpha.mjs" }
+    filesystem has []
+
+scenario "setup without the file's commands imports nothing, and a route loads on its first call":
+  when: ProbeHandlerRoutes { routes: "Alpha,Beta", script: "setup imports invoke:Alpha imports" }
+  predict success:
+    response OK ProbeResult { trace: "setup imports=none invoke:Alpha imports=alpha.mjs" }
+    filesystem has []
+
+scenario "an adapter used without setup still loads a route on its first call":
+  when: ProbeHandlerRoutes { routes: "Alpha,Beta", script: "invoke:Alpha imports" }
+  predict success:
+    response OK ProbeResult { trace: "invoke:Alpha imports=alpha.mjs" }
+    filesystem has []
+
+scenario "setup after teardown resolves the routes again":
+  when: ProbeHandlerRoutes { routes: "Alpha", script: "setup:Alpha teardown setup:Alpha invoke:Alpha imports" }
+  predict success:
+    response OK ProbeResult { trace: "setup:Alpha teardown setup:Alpha invoke:Alpha imports=alpha.mjs" }
+    filesystem has []
+
+scenario outline "a route of the file's commands that cannot load is refused at setup":
+  when: ProbeHandlerRoutes { routes: <routes>, script: <script> }
+  predict rejection ROUTE_UNLOADABLE:
+    response ERR RouteError { code: "ROUTE_UNLOADABLE", detail: matching <detail> }
+    filesystem has []
+  examples:
+    | routes              | script                                  | detail                        |
+    | "Alpha,Missing"     | "setup:Alpha,Missing invoke:Alpha"      | "Missing.*missing\\.mjs"      |
+    | "Alpha,Throws"      | "setup:Alpha,Throws invoke:Alpha"       | "Throws.*throws\\.mjs"        |
+    | "Alpha,NoExport"    | "setup:Alpha,NoExport invoke:Alpha"     | "NoExport.*noexport\\.mjs"    |
+    | "Alpha,NotFunction" | "setup:Alpha,NotFunction invoke:Alpha"  | "NotFunction.*not a function" |
+
+scenario "a harness loads the routes of its cases' commands before its first case":
+  when: ProbeHandlerRoutes { routes: "Alpha,Beta", harness: "Alpha" }
+  predict success:
+    response OK ProbeResult { trace: "harness:ready imports=alpha.mjs" }
+    filesystem has []
+
+scenario "a harness refuses a case's route that cannot load as a configuration error, before its first case":
+  when: ProbeHandlerRoutes { routes: "Alpha,Throws", harness: "Alpha,Throws" }
+  predict rejection ROUTE_UNLOADABLE:
+    response ERR RouteError { code: "ROUTE_UNLOADABLE", detail: matching "^Configuration error \\(exit 2\\): \\[ROUTE_UNLOADABLE\\].*Throws" }
+    filesystem has []

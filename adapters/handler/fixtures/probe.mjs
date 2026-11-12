@@ -105,3 +105,86 @@ async function harnessMode(input) {
     delete globalThis.__adphnd2Mode;
   }
 }
+
+// ── SPEC-ADPHND-003: ProbeHandlerRoutes ──
+//   routes: comma-separated route names from ROUTES below
+//   script mode:  setup | setup:<Route,...> | invoke:<Route> | teardown | imports
+//   harness mode: harness: <Route,...>, a real harness over a config with those routes, one case per command
+// Each call copies fixtures/routes/ to a fresh project root under .feature/, so every module is evaluated
+// anew; each module appends its file name to globalThis.__featHandlerRouteImports when it is evaluated.
+import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+
+const ROUTES = {
+  Alpha: { module: "alpha.mjs", export: "alpha" },
+  AlphaTwo: { module: "alpha.mjs", export: "alphaTwo" },
+  Beta: { module: "beta.mjs", export: "beta" },
+  Missing: { module: "missing.mjs", export: "missing" },
+  Throws: { module: "throws.mjs", export: "throws" },
+  NoExport: { module: "noexport.mjs", export: "handler" },
+  NotFunction: { module: "notfunction.mjs", export: "handler" },
+};
+const ROUTE_FIXTURES = path.join(path.dirname(HANDLERS), "routes");
+const REPO = path.resolve(path.dirname(HANDLERS), "../../..");
+
+export async function probeRoutes(input) {
+  const names = String(input.routes).split(",");
+  const commands = Object.fromEntries(names.map((n) => [n, ROUTES[n]]));
+  mkdirSync(path.join(REPO, ".feature"), { recursive: true });
+  const root = mkdtempSync(path.join(REPO, ".feature", "handler-routes-"));
+  cpSync(ROUTE_FIXTURES, root, { recursive: true });
+  const imports = (globalThis.__featHandlerRouteImports = []);
+  const shown = () => `imports=${imports.length > 0 ? imports.join(",") : "none"}`;
+  const refused = (e) => {
+    if (e && e.code === "ROUTE_UNLOADABLE") return { status: "ERR", body: { code: e.code, detail: e.message } };
+    throw e;
+  };
+  try {
+    if (input.harness !== undefined) {
+      const configPath = path.join(root, "feat.config.json");
+      writeFileSync(
+        configPath,
+        JSON.stringify({
+          featVersion: "1.0",
+          schemas: { adapter: "@mmmnt/feat-schema-json" },
+          response: { adapter: path.resolve(path.dirname(HANDLERS), "../src/index.ts"), commands },
+          services: { store: { adapter: path.resolve(path.dirname(HANDLERS), "../../memory/src/index.ts"), consistency: "strong" } },
+          specs: { dir: ".", pattern: "**/*.feat", contractPattern: "**/*.contract.json", outputPattern: "{name}.test.ts" },
+        }),
+      );
+      const cases = String(input.harness)
+        .split(",")
+        .map((command, i) => ({ anchor: `c${i + 1}`, name: `c${i + 1}`, when: { command, payload: {} }, prediction: { type: "success", services: { store: { records: [] } } } }));
+      let harness;
+      try {
+        harness = await createHarness({ configPath, cases });
+      } catch (e) {
+        return refused(e);
+      }
+      await harness.teardown();
+      return { status: "OK", body: { trace: `harness:ready ${shown()}` } };
+    }
+    const adapter = createAdapter({ projectRoot: root, commands });
+    const trace = [];
+    try {
+      for (const step of String(input.script).split(" ")) {
+        if (step === "setup") await adapter.setup({});
+        else if (step.startsWith("setup:")) await adapter.setup({}, { commands: step.slice("setup:".length).split(",") });
+        else if (step.startsWith("invoke:")) await adapter.invoke(step.slice("invoke:".length), {});
+        else if (step === "teardown") await adapter.teardown();
+        else if (step === "imports") {
+          trace.push(shown());
+          continue;
+        } else throw new Error(`unknown probe step '${step}'`);
+        trace.push(step);
+      }
+    } catch (e) {
+      return refused(e);
+    } finally {
+      await adapter.teardown();
+    }
+    return { status: "OK", body: { trace: trace.join(" ") } };
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    delete globalThis.__featHandlerRouteImports;
+  }
+}

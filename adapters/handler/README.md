@@ -81,9 +81,16 @@ A handler that takes only `(payload, actor)` keeps working: the extra argument i
 
 The return value is the response. It must have the `{ status, body }` shape that the scenario's
 `response <status> <Schema>` line is matched against. `status` is a number or a name such as `"OK"`,
-as the spec writes it. An error the handler throws propagates out of the adapter's `invoke`. The module is
-imported on the first call of a command and the export is reused until the adapter is torn down, which
-is once per spec file.
+as the spec writes it. An error the handler throws propagates out of the adapter's `invoke`.
+
+The routes a spec file uses are loaded when its harness is set up (SPEC-ADPHND-003): `setup()` receives
+the commands the file's cases invoke (`@mmmnt/feat-runtime` 0.2.2, SPEC-RT-008), imports each of their
+modules once and resolves each export. That runs in the generated suite's `beforeAll`, under the hook
+timeout, so whatever a module does when it is evaluated (start a server, install a client) is not
+charged to the first case's test timeout. Routes of commands the file does not invoke are not imported.
+A route that is not loaded at setup (no commands were passed, or the adapter is used outside a
+harness) is imported on its first call. The export is reused until the adapter is torn down, which is
+once per spec file.
 
 TypeScript types are exported:
 
@@ -210,15 +217,24 @@ Two things to know:
 | `INVALID_CLOCK` | `setClock` (the adapter) | The clock is not an ISO-8601 instant with a zone designator, or is not a finite time. |
 | `NAMESPACE_NOT_HONOURED` | The harness | An opted-in route's handler never read `ctx.namespace`. |
 | `Command '<name>' is not routed in response.commands — configuration error.` | `invoke` | The command is not in `response.commands`. The parser normally catches this first. |
-| `Module '<path>' lacks export '<name>' (INV-10) — configuration error.` | `invoke` | The module loaded but the export is missing or is not a function. |
+| `ROUTE_UNLOADABLE` | `setup` (the adapter); the harness makes it a configuration error, exit 2 | A route of a command the file invokes cannot be loaded: its module does not resolve or throws while it is evaluated, or its export is missing or is not a function. The message names the route, the module and the export. |
+| `Module '<path>' lacks export '<name>' (INV-10) — configuration error.` | `invoke` | A route not loaded at setup: the module loaded but the export is missing or is not a function. |
 
 ## Limitations
 
 - In process only. A handler shares the runner's process, its environment and its working directory.
-- Modules are cached after the first import in a spec file. A change to a handler during a run is not picked up.
+- Modules are cached once imported, at setup or on first call. A change to a handler during a run is not picked up.
 - `feat-adapter-http` and `feat-adapter-playwright` do not offer `setClock`, so a `clock at` against
   them is a `CLOCK_UNSUPPORTED` configuration error. Only a handler (or a service adapter that offers
   the hook) can honour it.
+
+## What changed in 0.2.1
+
+- **Routes load at setup** (SPEC-ADPHND-003, SPEC-RT-008): `setup()` imports the routes of the commands
+  the spec file invokes, so a module's one-time work runs in `beforeAll`, not in the first case. A route
+  that cannot load is refused there with `ROUTE_UNLOADABLE`, which `feat run` reports as exit 2. Needs
+  `@mmmnt/feat-runtime` 0.2.2 to receive the commands; with an older harness every route loads on its
+  first call, as before.
 
 ## What changed in this release (v0.1.48, package 0.2.0)
 
@@ -236,6 +252,7 @@ Two things to know:
 
 - [SPEC-ADPHND-001, the scenario clock](https://github.com/mmmnt/feature/blob/main/adapters/handler/clock.feat)
 - [SPEC-ADPHND-002, the runner's namespace](https://github.com/mmmnt/feature/blob/main/adapters/handler/namespace.feat)
+- [SPEC-ADPHND-003, the file's routes load at setup](https://github.com/mmmnt/feature/blob/main/adapters/handler/routes.feat)
 - [Grammar reference, `clock at` and command routing](https://github.com/mmmnt/feature/blob/main/docs/grammar-reference.md)
 
 Part of [Feature](https://github.com/mmmnt/feature). Adapter contract:
