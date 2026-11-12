@@ -24,6 +24,8 @@ jobs:
         run: pnpm typecheck
       - name: Corpus validation
         run: pnpm corpus:validate
+      - name: Local CI pass record
+        run: bash scripts/ci-local.test.sh
 
   test:
     name: Workspace tests (Node ${{ matrix.node }})

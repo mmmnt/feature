@@ -142,7 +142,11 @@ scripts/ci-local.sh --list          # what would run
 ```
 
 `.githooks/pre-push` runs the default (Node 24) on every commit you push and blocks the push when a job
-fails. Enable it once per clone:
+fails. A default run that passes leaves a pass record in the clone's git directory
+(`scripts/ci-local.sh --record-path` prints where), and the hook passes `--skip-passed`, so a commit that
+already passed, such as a release commit whose tag is pushed after the branch, is not run again. Changing
+`ci-local.sh`, `ci-local-plan.mjs` or `ci-local.images.json` makes every record stale. Enable the hook once
+per clone:
 
 ```sh
 git config core.hooksPath .githooks

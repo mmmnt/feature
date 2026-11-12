@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Before a push, run the ubuntu jobs of .github/workflows/ci.yml on each commit being pushed, in throwaway Linux
 # containers (scripts/ci-local.sh). A failing job blocks the push. The one-time setup per clone is in
-# README.md ("Local CI before a push").
+# README.md ("Local CI before a push"). A commit that already passed is not run again (ci-local's
+# --skip-passed), so pushing a tag after its branch costs no second run.
 set -euo pipefail
 
 ROOT=$(git rev-parse --show-toplevel)
@@ -20,6 +21,6 @@ done
 
 [ "${#commits[@]}" -gt 0 ] || exit 0
 for commit in "${commits[@]}"; do
-  echo "pre-push: scripts/ci-local.sh --ref $commit"
-  "$ROOT/scripts/ci-local.sh" --ref "$commit"
+  echo "pre-push: scripts/ci-local.sh --skip-passed --ref $commit"
+  "$ROOT/scripts/ci-local.sh" --skip-passed --ref "$commit"
 done

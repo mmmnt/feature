@@ -24,7 +24,16 @@
 #   --all   every Node version of the matrix
 #   --keep  keep the trees after the run (default: removed, the logs stay)
 #   --list  print what the filters select and exit
+#   --skip-passed  exit 0 without running when this commit already passed the default selection (below)
+#   --record-path  print where this commit's pass record lives and exit
 # env: CI_LOCAL_DIR  where runs go (default ${TMPDIR:-/tmp}/feat-ci-local); Docker Desktop must share it
+#
+# A run of the default selection (no --job, --node or --all) that passes every job leaves a pass record in the
+# clone's git directory, feat-ci-local/passed/<commit>-<runner>, where <runner> hashes this script, the plan
+# script and the image pins as they are on disk: a runner change makes every record stale. A run is a function
+# of the commit and the runner (it checks a `git archive` of the commit, never the working tree), so with
+# --skip-passed (.githooks/pre-push passes it) a commit that passed is not run again, as when its tag is pushed
+# after the branch.
 set -euo pipefail
 
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
@@ -33,25 +42,46 @@ KEEP=0
 LIST=0
 ALL=0
 NODES=0
+JOBS=0
+SKIP_PASSED=0
+RECORD_PATH=0
 FILTERS=()
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --ref) REF=${2:?--ref needs a commit}; shift 2 ;;
-    --job) FILTERS+=(--job "${2:?--job needs a name}"); shift 2 ;;
+    --job) FILTERS+=(--job "${2:?--job needs a name}"); JOBS=1; shift 2 ;;
     --node) FILTERS+=(--node "${2:?--node needs a major}"); NODES=1; shift 2 ;;
     --all) ALL=1; shift ;;
     --keep) KEEP=1; shift ;;
     --list) LIST=1; shift ;;
-    -h|--help) sed -n '2,28p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --skip-passed) SKIP_PASSED=1; shift ;;
+    --record-path) RECORD_PATH=1; shift ;;
+    -h|--help) sed -n '2,36p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "ci-local: unknown option $1" >&2; exit 2 ;;
   esac
 done
 if [ "$ALL" = 1 ] && [ "$NODES" = 1 ]; then echo "ci-local: --all and --node exclude each other" >&2; exit 2; fi
+DEFAULT_SELECTION=0
+if [ "$JOBS" = 0 ] && [ "$NODES" = 0 ] && [ "$ALL" = 0 ]; then DEFAULT_SELECTION=1; fi
+if [ "$SKIP_PASSED" = 1 ] && [ "$DEFAULT_SELECTION" = 0 ]; then
+  echo "ci-local: --skip-passed applies to the default selection only, not with --job, --node or --all" >&2; exit 2
+fi
 
-for tool in git node docker tar; do
+for tool in git node docker tar shasum; do
   command -v "$tool" >/dev/null || { echo "ci-local: $tool is not on PATH" >&2; exit 2; }
 done
+
+SHA=$(git -C "$REPO" rev-parse --verify "$REF^{commit}")
+RUNNER=$(cat "$REPO/scripts/ci-local.sh" "$REPO/scripts/ci-local-plan.mjs" "$REPO/scripts/ci-local.images.json" | shasum -a 256 | cut -c1-16)
+GIT_COMMON=$(cd "$REPO" && cd "$(git rev-parse --git-common-dir)" && pwd -P)
+RECORD="$GIT_COMMON/feat-ci-local/passed/$SHA-$RUNNER"
+if [ "$RECORD_PATH" = 1 ]; then echo "$RECORD"; exit 0; fi
+if [ "$SKIP_PASSED" = 1 ] && [ -f "$RECORD" ]; then
+  echo "ci-local: $SHA already passed ($(head -1 "$RECORD")), not run again; record $RECORD"
+  exit 0
+fi
+
 docker info >/dev/null 2>&1 || { echo "ci-local: the Docker daemon is not reachable" >&2; exit 2; }
 
 # A run killed outright (SIGKILL) cannot remove its container. Each one carries the runner's pid, so a later run
@@ -64,7 +94,6 @@ for c in $(docker ps -a --filter label=feat-ci-local.pid --format '{{.Names}}');
   fi
 done
 
-SHA=$(git -C "$REPO" rev-parse --verify "$REF^{commit}")
 BASE=${CI_LOCAL_DIR:-${TMPDIR:-/tmp}/feat-ci-local}
 mkdir -p "$BASE"
 BASE=$(cd "$BASE" && pwd -P)
@@ -206,4 +235,11 @@ done
 
 echo "ci-local: $PASS passed, $FAIL failed in $(( $(date +%s) - T_ALL ))s for $SHA" | tee -a "$SUMMARY"
 echo "ci-local: summary $SUMMARY"
+if [ "$FAIL" = 0 ] && [ "$PASS" -gt 0 ] && [ "$DEFAULT_SELECTION" = 1 ]; then
+  # Written through a temporary name, so a record is never half there.
+  mkdir -p "$(dirname "$RECORD")"
+  { echo "$PASS passed at $(date -u +%Y-%m-%dT%H:%M:%SZ)"; cat "$SUMMARY"; } > "$RECORD.tmp.$$"
+  mv "$RECORD.tmp.$$" "$RECORD"
+  echo "ci-local: pass recorded in $RECORD"
+fi
 [ "$FAIL" = 0 ]
