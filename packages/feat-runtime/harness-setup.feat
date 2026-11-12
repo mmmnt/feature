@@ -1,0 +1,119 @@
+feat 1.0
+
+# SPEC-RT-008 — the harness sets the response adapter up with the commands the spec file invokes, and an
+# adapter's ROUTE_UNLOADABLE is a configuration error. SPEC-ADPHND-003 moves the handler adapter's route
+# imports from the first invoke() into setup(), so that a probe's one-time start-up runs under the hook
+# timeout and is not charged to the first case (the SPEC-ADPNEO-001 row[1] timeout of 2026-11-11). It
+# imports only the routes of the file's own commands (founder ruling ba21abb2, "Only the file's commands
+# (Recommended)"): the one feat.config.json routes 31 commands to 19 modules, and every spec file gets
+# all of them. Only the harness knows which commands a file invokes, so it must hand them to setup().
+# And a route that cannot load must end `feat run` with exit 2 (ruling ba21abb2, "ROUTE_UNLOADABLE exits
+# 2 (Recommended)"), which only the harness can make so: the runner exits 2 on a
+# HarnessConfigurationError's "Configuration error (exit 2):" message, and an adapter's own error is not one.
+#
+# Why a new spec and not an amendment of SPEC-RT-002: RT-002 is the per-case check (a case's clock and
+# observation modes against the adapters, as the first act of runCase). This is createHarness: what the
+# harness hands an adapter's setup() and how it reports an adapter that refuses there. No agreed RT spec
+# states createHarness's setup today (the INVALID_CONFIG wrapping of an unloadable adapter is a README
+# contract fix, 34c3fcb), so this is a new spec beside RT-002, which stays unchanged.
+#
+# Agreed with SPEC-ADPHND-003: the founder ruled "Flip and build now" (2026-11-11, citing ba21abb2).
+# Status agreed.
+#
+# WHAT CHANGES (and nothing else):
+#  1. feat-types: FeatResponseAdapter.setup(config, context?) gains an optional second argument
+#     { commands?: string[] }. An adapter that ignores it is unchanged.
+#  2. createHarness({ configPath, specPath?, cases? }) gains `cases`, the HarnessCase[] the file will
+#     run. The file's commands are, over the cases in order, each case's given.executes[].command in
+#     order and then its when.command, each command once, at its first appearance. The harness calls
+#     response.setup(invoke, { commands }) with them; with no `cases` it calls response.setup(invoke)
+#     as today.
+#  3. An error response.setup() throws whose code is ROUTE_UNLOADABLE is rethrown as a
+#     HarnessConfigurationError with that code and the adapter's message, so its message begins
+#     "Configuration error (exit 2): [ROUTE_UNLOADABLE]" and `feat run` exits 2 (the runner's existing
+#     rule). ROUTE_UNLOADABLE joins HarnessConfigurationCode. Any other error setup() throws propagates
+#     unchanged, as today.
+#  4. Generation (feat-emit-ts): the generated suite passes its cases, createHarness({ configPath:
+#     CONFIG_PATH, specPath: SPEC_PATH, cases: CASES }). CASES is already in the file. The emitter's
+#     version moves, so every generated suite is regenerated in the same change (feat verify would
+#     otherwise report drift). Nothing else in a generated file changes.
+#  5. The hook timeout (120s, timingEnvelope) now covers the probes' one-time start-up. The longest
+#     observed is the Neo4j probe's, 45-65s locally and 4-31s in CI.
+#
+# Driven through packages/feat-runtime/fixtures/harness/probe.mjs (part of the build, inside touches):
+# `BuildHarness { config, cases? }` creates a harness from the fixture config, passing `cases` to
+# createHarness when the input has them, and runs nothing. The answer is `setup`, the commands the
+# response stub's setup() received, comma-separated, or `none` when it received no context. A
+# HarnessConfigurationError is answered as the ERR below. The response stub (fixtures/harness/stub.mjs)
+# records its setup() context; with the invoke option `setupThrows: <code>` its setup() throws an Error
+# with that code. Fixture configs: clock.config.json (as in SPEC-RT-002) and setup-refuses.config.json
+# (the response stub with setupThrows: "ROUTE_UNLOADABLE").
+
+spec SPEC-RT-008 "Harness: the response adapter is set up with the file's commands"
+context Toolchain
+aggregate Runtime
+type infrastructure
+status agreed
+
+construct:
+  handler at packages/feat-runtime/src/harness.ts
+  touches packages/feat-runtime/**
+  touches packages/feat-types/**
+  touches packages/feat-emit-ts/**
+  needs SPEC-RT-002
+  Types (feat-types): FeatResponseAdapter.setup(config, context?: { commands?: string[] }).
+  createHarness takes an optional cases: HarnessCase[]. When given, the file's commands are each case's
+  given.executes commands in order and then its when command, over the cases in order, each command
+  once at its first appearance, and the harness calls response.setup(invoke, { commands }); without
+  cases it calls response.setup(invoke). An error response.setup() throws with code ROUTE_UNLOADABLE
+  is rethrown as HarnessConfigurationError("ROUTE_UNLOADABLE", its message); any other error propagates
+  unchanged. ROUTE_UNLOADABLE joins HarnessConfigurationCode.
+  feat-emit-ts: the generated suite calls createHarness({ configPath: CONFIG_PATH, specPath: SPEC_PATH,
+  cases: CASES }); bump the emitter version and regenerate every suite.
+
+enforce:
+  the response adapter's setup receives the commands the file's cases invoke, given executes before the stimulus, each once
+  a harness built without cases sets the response adapter up as before, with no commands
+  rejects ROUTE_UNLOADABLE when the response adapter's setup refuses a route it cannot load, as a configuration error
+
+contract:
+  input BuildInput
+  response BuildResult
+  error SetupError
+
+scenario "the response adapter's setup receives each command the cases invoke, given executes first, each once":
+  when: BuildHarness {
+    config: "packages/feat-runtime/fixtures/harness/clock.config.json"
+    cases: [
+      { anchor: "c1", name: "c1", given: { executes: [ { command: "Seed", payload: {} } ] }, when: { command: "Ping", payload: {} }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } },
+      { anchor: "c2", name: "c2", when: { command: "Ping", payload: {} }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } },
+      { anchor: "c3", name: "c3", given: { executes: [ { command: "Ping", payload: {} }, { command: "Load", payload: {} } ] }, when: { command: "Stamp", payload: {} }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } }
+    ]
+  }
+  predict success:
+    response OK BuildResult { setup: "Seed,Ping,Load,Stamp" }
+    filesystem has []
+
+scenario "a case with given executes and no stimulus contributes its executes":
+  when: BuildHarness {
+    config: "packages/feat-runtime/fixtures/harness/clock.config.json"
+    cases: [ { anchor: "c1", name: "c1", given: { executes: [ { command: "Seed", payload: {} } ] }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } } ]
+  }
+  predict success:
+    response OK BuildResult { setup: "Seed" }
+    filesystem has []
+
+scenario "a harness built without cases sets the response adapter up with no commands":
+  when: BuildHarness { config: "packages/feat-runtime/fixtures/harness/clock.config.json" }
+  predict success:
+    response OK BuildResult { setup: "none" }
+    filesystem has []
+
+scenario "ROUTE_UNLOADABLE from the response adapter's setup is a configuration error, exit 2":
+  when: BuildHarness {
+    config: "packages/feat-runtime/fixtures/harness/setup-refuses.config.json"
+    cases: [ { anchor: "c1", name: "c1", when: { command: "Ping", payload: {} }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } } ]
+  }
+  predict rejection ROUTE_UNLOADABLE:
+    response ERR SetupError { code: "ROUTE_UNLOADABLE", detail: matching "^Configuration error \\(exit 2\\): \\[ROUTE_UNLOADABLE\\]" }
+    filesystem has []

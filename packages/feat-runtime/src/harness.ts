@@ -193,7 +193,20 @@ export interface Harness {
   teardown(): Promise<void>;
 }
 
-export async function createHarness(opts: { configPath: string; specPath?: string }): Promise<Harness> {
+/**
+ * SPEC-RT-008: the commands a spec file's cases invoke — each case's given executes in order, then its
+ * stimulus, over the cases in order, each command once at its first appearance.
+ */
+export function fileCommands(cases: readonly HarnessCase[]): string[] {
+  const seen = new Set<string>();
+  for (const c of cases) {
+    for (const e of c.given?.executes ?? []) seen.add(e.command);
+    if (c.when) seen.add(c.when.command);
+  }
+  return [...seen];
+}
+
+export async function createHarness(opts: { configPath: string; specPath?: string; cases?: readonly HarnessCase[] }): Promise<Harness> {
   const loaded = await loadConfig({ path: opts.configPath });
   if (loaded.status === "ERR") {
     // The loader's own code, as [CODE], like every other refusal (README: exit 2).
@@ -233,7 +246,15 @@ export async function createHarness(opts: { configPath: string; specPath?: strin
     if (config.response) {
       const mod = await importAdapter(config.response.adapter, projectRoot);
       response = mod.createAdapter({ ...config.response, projectRoot, ...(namespace !== undefined ? { namespace } : {}) }) as FeatResponseAdapter;
-      await response.setup(config.response.invoke ?? {});
+      try {
+        if (opts.cases !== undefined) await response.setup(config.response.invoke ?? {}, { commands: fileCommands(opts.cases) });
+        else await response.setup(config.response.invoke ?? {});
+      } catch (e) {
+        // SPEC-RT-008: a route the adapter cannot load is a configuration error (exit 2); anything else is unchanged.
+        if ((e as { code?: unknown })?.code === "ROUTE_UNLOADABLE")
+          throw new HarnessConfigurationError("ROUTE_UNLOADABLE", e instanceof Error ? e.message : String(e));
+        throw e;
+      }
       // The response adapter is checked after the case's invoke(), not here (namespace timing A): an
       // in-process handler reports the namespace only once its handler has read it.
     }

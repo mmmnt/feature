@@ -230,9 +230,18 @@ export interface FeatResponseAdapter extends ReportsNamespace {
    * adapter without it cannot run a spec that uses `clock at` (CLOCK_UNSUPPORTED).
    */
   setClock?(clock: string | null): Promise<void>;
-  setup(config: Record<string, unknown>): Promise<void>;
+  /**
+   * `context.commands` (SPEC-RT-008): the commands the spec file's cases invoke, given executes before the
+   * stimulus, each once. A harness built without its cases passes no context.
+   */
+  setup(config: Record<string, unknown>, context?: ResponseSetupContext): Promise<void>;
   teardown(): Promise<void>;
   invoke(command: string, input: Record<string, unknown>, actor?: string): Promise<CapturedResponse>;
+}
+
+/** What the harness hands a response adapter's setup() besides its invoke options (SPEC-RT-008). */
+export interface ResponseSetupContext {
+  commands?: string[];
 }
 
 /** The query hint `contains` hands to read() (ADR-0023): one entry per predicted record. */

@@ -843,6 +843,15 @@ buildability, and `feat report --evidence` to archive the bundle as a build
 artifact. For the integration tier add
 `feat run --config feat.integration.config.json`.
 
+## What changed in 0.4.1
+
+- **Generated suites hand the harness their cases (SPEC-RT-008).** `feat generate` now emits
+  `createHarness({ configPath, specPath, cases: CASES })` (`@mmmnt/feat-emit-ts` 0.2.1), and the
+  harness (`@mmmnt/feat-runtime` 0.2.2) sets the response adapter up with the commands those cases
+  invoke. With the handler adapter (0.2.1) the routes a file uses load in `beforeAll`, under the hook
+  timeout, not in the first case. A route that cannot load stops `feat run` with exit `2` and
+  `[ROUTE_UNLOADABLE]`. Every committed generated file changes once: run `feat generate` and commit.
+
 ## What changed in 0.4.0
 
 Release v0.1.48.

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-RT-008",
+  "schemas": {
+    "BuildInput": {
+      "type": "object",
+      "required": ["config"],
+      "additionalProperties": false,
+      "properties": {
+        "config": { "type": "string", "minLength": 1 },
+        "cases": { "type": "array", "minItems": 1, "items": { "type": "object" } }
+      }
+    },
+    "BuildResult": {
+      "type": "object",
+      "required": ["setup"],
+      "additionalProperties": false,
+      "properties": { "setup": { "type": "string" } }
+    },
+    "SetupError": {
+      "type": "object",
+      "required": ["code"],
+      "properties": { "code": { "enum": ["ROUTE_UNLOADABLE"] }, "detail": { "type": "string" } }
+    }
+  }
+}

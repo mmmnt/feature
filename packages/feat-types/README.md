@@ -394,9 +394,13 @@ because a configured value would be shared by every file.
 ```ts
 interface FeatResponseAdapter extends ReportsNamespace {
   setClock?(clock: string | null): Promise<void>;
-  setup(config: Record<string, unknown>): Promise<void>;
+  setup(config: Record<string, unknown>, context?: ResponseSetupContext): Promise<void>;
   teardown(): Promise<void>;
   invoke(command: string, input: Record<string, unknown>, actor?: string): Promise<CapturedResponse>;
+}
+
+interface ResponseSetupContext {
+  commands?: string[];                     // the commands the spec file's cases invoke (SPEC-RT-008)
 }
 
 interface CapturedResponse {
@@ -409,7 +413,11 @@ interface CapturedResponse {
 
 `invoke` is how `when:` and `execute` reach the system. `command` is a key of
 `response.commands` (a closed space, validated at parse time), `actor` is a key
-of `response.actors`, and `setup` receives `response.invoke` (or `{}`). When
+of `response.actors`, and `setup` receives `response.invoke` (or `{}`) and, from a
+harness built with the file's cases, `{ commands }`: each command those cases
+invoke, given executes before the stimulus, once each (SPEC-RT-008). An adapter
+can load what those commands need there, under the hook timeout, instead of in
+the first case. It may ignore the argument. When
 `response.invoke.timeout` is a number, it is the per-invoke allowance in
 milliseconds that `feat run` uses to size the test timeout (default 30 000).
 
@@ -466,6 +474,12 @@ and `report`. The field-by-field reference is in
 [`@mmmnt/feature`](https://www.npmjs.com/package/@mmmnt/feature). To validate a
 file, use
 [`schemas/feat.config.schema.json`](https://github.com/mmmnt/feature/blob/main/schemas/feat.config.schema.json).
+
+## What changed in 0.2.1
+
+- **The file's commands at setup** (SPEC-RT-008): `FeatResponseAdapter.setup`
+  takes an optional second argument, `ResponseSetupContext { commands? }`. An
+  adapter that ignores it is unchanged.
 
 ## What changed in 0.2.0
 

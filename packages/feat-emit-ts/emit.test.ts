@@ -61,7 +61,13 @@ describe("emitted file is environment-agnostic (ADR-0024)", () => {
   it("hands the harness the spec path its namespace derives from (SPEC-RT-006)", () => {
     const out = emit(inputs({ namespacePath: "adapters/kurrent/observe.feat" }));
     expect(out).toContain('const SPEC_PATH = "adapters/kurrent/observe.feat";');
-    expect(out).toContain("createHarness({ configPath: CONFIG_PATH, specPath: SPEC_PATH })");
+    expect(out).toContain("createHarness({ configPath: CONFIG_PATH, specPath: SPEC_PATH, cases: CASES })");
+  });
+
+  it("hands the harness the file's cases, so the response adapter is set up with their commands (SPEC-RT-008)", () => {
+    const out = emit(inputs());
+    expect(out.indexOf("const CASES: HarnessCase[] =")).toBeGreaterThan(-1);
+    expect(out.indexOf("const CASES: HarnessCase[] =")).toBeLessThan(out.indexOf("cases: CASES"));
   });
 });
 

@@ -14,7 +14,8 @@ export type HarnessConfigurationCode =
   | "NAMESPACE_CONFIGURED"
   | "SEED_UNSUPPORTED"
   | "DELIVER_UNSUPPORTED"
-  | "NO_ENVIRONMENT";
+  | "NO_ENVIRONMENT"
+  | "ROUTE_UNLOADABLE"; // SPEC-RT-008: a response adapter's setup() could not load a route the file invokes
 
 export class HarnessConfigurationError extends Error {
   /** The refusal without the `Configuration error (exit 2): [CODE]` prefix, for a caller that prints its own. */

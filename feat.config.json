@@ -62,6 +62,14 @@
         "module": "adapters/handler/fixtures/probe.mjs",
         "export": "probe"
       },
+      "ProbeHandlerRoutes": {
+        "module": "adapters/handler/fixtures/probe.mjs",
+        "export": "probeRoutes"
+      },
+      "BuildHarness": {
+        "module": "packages/feat-runtime/fixtures/harness/probe.mjs",
+        "export": "buildHarness"
+      },
       "RunFiles": {
         "module": "adapters/stdio-jsonrpc/src/run-files.ts",
         "export": "runFiles"

@@ -40,6 +40,26 @@ export async function runCases(input) {
   return { status: "OK", body };
 }
 
+// ── SPEC-RT-008: BuildHarness ──
+// Build a harness (with the input's cases when it has them) and run nothing: answer what the response
+// stub's setup() was handed, or the configuration error createHarness threw.
+export async function buildHarness(input) {
+  globalThis.__featHarnessProbe = { calls: [], readHint: undefined };
+  const state = globalThis.__featHarnessProbe;
+  let harness;
+  try {
+    harness = await createHarness({
+      configPath: path.resolve(process.cwd(), input.config),
+      ...(input.cases !== undefined ? { cases: input.cases } : {}),
+    });
+  } catch (e) {
+    if (e instanceof HarnessConfigurationError) return { status: "ERR", body: { code: e.code, detail: e.message } };
+    throw e;
+  }
+  await harness.teardown();
+  return { status: "OK", body: { setup: state.setup } };
+}
+
 // ── SPEC-RT-007: RunOverlappingCases ──
 // The held case is started and not awaited; its trigger blocks in the stub until release(). The next
 // case runs to the end, then the held invoke is released and the held case is awaited.

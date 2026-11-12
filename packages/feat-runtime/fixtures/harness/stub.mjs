@@ -5,6 +5,7 @@
 // firedFaults(); default true). The response stub's Ping { appends: n } makes n calls of AppendToStream
 // on the `store` service stub, each answering ok or the name of the fault that was consumed.
 // Ping { hold: true } blocks inside invoke until the probe calls the shared log's release() (SPEC-RT-007).
+// setupThrows (response only): its setup() throws an Error with that code (SPEC-RT-008).
 
 const log = () => (globalThis.__featHarnessProbe ??= { calls: [], readHint: undefined });
 const note = (s) => log().calls.push(s);
@@ -23,8 +24,12 @@ export function createAdapter(config) {
   if (o.observes !== undefined) adapter.observes = o.observes;
   if (o.clock === true) adapter.setClock = async (c) => note(`clock:${key}=${c}`);
   if (config.key === undefined) {
-    // the response adapter
-    adapter.setup = async () => {};
+    // the response adapter. SPEC-RT-008: its setup() records the commands it was handed (none without a
+    // context); with the invoke option setupThrows: <code> it throws an Error with that code.
+    adapter.setup = async (_invoke, context) => {
+      log().setup = context?.commands === undefined ? "none" : context.commands.join(",");
+      if (typeof o.setupThrows === "string") throw Object.assign(new Error(`stub setup refused (${o.setupThrows})`), { code: o.setupThrows });
+    };
     adapter.teardown = async () => {};
     adapter.invoke = async (command, input) => {
       note(`${opened ? "invoke" : "execute"}:${command}`);

@@ -525,6 +525,7 @@ before the case has any effect. None is a silent pass.
 | `DELIVER_UNSUPPORTED` | A case delivers an event to a service whose adapter has no `deliver()`. `service` is set. | The case, before the capture window closes |
 | `NO_ENVIRONMENT` | `resolveEnvironment` finds neither `config.environment`, `FEAT_ENVIRONMENT` nor `ENVIRONMENT`. | `resolveEnvironment` |
 | `INVALID_CONFIG` | A module named as an adapter cannot be resolved, cannot be loaded, or exports no `createAdapter`. | `importAdapter` |
+| `ROUTE_UNLOADABLE` | The response adapter's `setup()` threw an error with this code: a route the file invokes cannot be loaded (SPEC-RT-008, SPEC-ADPHND-003). The message is the adapter's. | `createHarness`, at the response adapter's setup |
 | `CONFIG_NOT_FOUND`, `INVALID_CONFIG`, `MISSING_CONVERGENCE_TIMEOUT`, `EXTENDS_NOT_FOUND`, `EXTENDS_CHAIN`, `TIER_SPACE_MISMATCH` | The config `createHarness` was given is refused by `loadConfig`. The message is the loader's message, then its `detail`. | `createHarness`, first |
 
 Example message:
@@ -578,6 +579,16 @@ Environment variables the runtime reads or sets: `FEAT_ENVIRONMENT` and `ENVIRON
 (`resolveEnvironment`), `FEAT_NAMESPACE` (set per file), `FEAT_SERIAL` (read in preflight) and
 `FEAT_FENCE_AUDIT` (read in the convergence wait).
 
+## What changed in 0.2.2
+
+- **The file's commands at setup (SPEC-RT-008).** `createHarness({ configPath, specPath, cases })`
+  takes the file's cases and calls the response adapter's `setup(invoke, { commands })` with each
+  command they invoke (given executes, then the stimulus, once each). Without `cases` it calls
+  `setup(invoke)` as before. Generated suites pass their cases from `@mmmnt/feat-emit-ts` 0.2.1.
+- **`ROUTE_UNLOADABLE`.** An error the response adapter's `setup()` throws with that code becomes a
+  `HarnessConfigurationError`, so `feat run` exits 2 with `[ROUTE_UNLOADABLE]`. Any other error from
+  `setup()` propagates as before.
+
 ## What changed in 0.2.1
 
 - **One case at a time (SPEC-RT-007).** A case that a test runner gave up on no longer touches the
@@ -611,6 +622,7 @@ Environment variables the runtime reads or sets: `FEAT_ENVIRONMENT` and `ENVIRON
 - [SPEC-RT-005](https://github.com/mmmnt/feature/blob/main/packages/feat-runner/serial-faults.feat): the runner's serial pass for exclusive faults.
 - [SPEC-RT-006](https://github.com/mmmnt/feature/blob/main/packages/feat-runtime/harness-namespace.feat): one namespace per spec file.
 - [SPEC-RT-007](https://github.com/mmmnt/feature/blob/main/packages/feat-runtime/harness-cases.feat): one case at a time.
+- [SPEC-RT-008](https://github.com/mmmnt/feature/blob/main/packages/feat-runtime/harness-setup.feat): the response adapter is set up with the file's commands.
 - [ADR-0023](https://github.com/mmmnt/feature/blob/main/docs/adr/ADR-0023-adapter-interface-v2.md): adapter interface v2.
 - [ADR-0024](https://github.com/mmmnt/feature/blob/main/docs/adr/ADR-0024-tier-bindings.md): tier bindings.
 - [Grammar reference](https://github.com/mmmnt/feature/blob/main/docs/grammar-reference.md): the language the predictions come from.

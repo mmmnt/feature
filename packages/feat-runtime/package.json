@@ -1,6 +1,6 @@
 {
   "name": "@mmmnt/feat-runtime",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "What generated tests import: loadConfig, config-driven adapter loading (createAdapter contract), lifecycle/capture orchestration, precondition executor, toMatchPrediction. Deps: feat-types + Ajv only (ADR-0001).",
   "license": "MIT",
   "type": "module",
@@ -21,7 +21,7 @@
   "scripts": {
     "build": "node scripts/copy-schema.mjs && tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --exclude '**/load-config.test.ts' --exclude '**/harness-observation.test.ts' --exclude '**/harness-faults.test.ts' --exclude '**/load-config-extends.test.ts' --exclude '**/harness-namespace.test.ts' --exclude '**/harness-cases.test.ts' --passWithNoTests"
+    "test": "vitest run --exclude '**/load-config.test.ts' --exclude '**/harness-observation.test.ts' --exclude '**/harness-faults.test.ts' --exclude '**/load-config-extends.test.ts' --exclude '**/harness-namespace.test.ts' --exclude '**/harness-cases.test.ts' --exclude '**/harness-setup.test.ts' --passWithNoTests"
   },
   "dependencies": {
     "@mmmnt/feat-types": "workspace:^",
