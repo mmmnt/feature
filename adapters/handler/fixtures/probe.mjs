@@ -112,7 +112,8 @@ async function harnessMode(input) {
 //   harness mode: harness: <Route,...>, a real harness over a config with those routes, one case per command
 // Each call copies fixtures/routes/ to a fresh project root under .feature/, so every module is evaluated
 // anew; each module appends its file name to globalThis.__featHandlerRouteImports when it is evaluated.
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 
 const ROUTES = {
   Alpha: { module: "alpha.mjs", export: "alpha" },
@@ -129,9 +130,11 @@ const REPO = path.resolve(path.dirname(HANDLERS), "../../..");
 export async function probeRoutes(input) {
   const names = String(input.routes).split(",");
   const commands = Object.fromEntries(names.map((n) => [n, ROUTES[n]]));
-  mkdirSync(path.join(REPO, ".feature"), { recursive: true });
-  const root = mkdtempSync(path.join(REPO, ".feature", "handler-routes-"));
-  cpSync(ROUTE_FIXTURES, root, { recursive: true });
+  // Per-file copies: fs.cpSync is refused with EACCES on a Docker Desktop bind mount, where
+  // scripts/ci-local.sh runs this (copyFileSync is not).
+  const root = path.join(REPO, ".feature", `handler-routes-${randomBytes(4).toString("hex")}`);
+  mkdirSync(root, { recursive: true });
+  for (const f of readdirSync(ROUTE_FIXTURES)) copyFileSync(path.join(ROUTE_FIXTURES, f), path.join(root, f));
   const imports = (globalThis.__featHandlerRouteImports = []);
   const shown = () => `imports=${imports.length > 0 ? imports.join(",") : "none"}`;
   const refused = (e) => {
