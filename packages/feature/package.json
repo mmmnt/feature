@@ -1,6 +1,6 @@
 {
   "name": "@mmmnt/feature",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "The feat CLI — Feature, the quality spine of AI-native delivery.",
   "license": "MIT",
   "type": "module",
@@ -22,7 +22,7 @@
   "scripts": {
     "build": "node scripts/copy-schemas.mjs && tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --exclude '**/generate-seed-fixtures.test.ts'"
+    "test": "vitest run --exclude '**/generate-seed-fixtures.test.ts' --exclude '**/audit-changed.test.ts'"
   },
   "dependencies": {
     "@mmmnt/feat-core": "workspace:^",

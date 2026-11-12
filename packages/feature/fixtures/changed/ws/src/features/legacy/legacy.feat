@@ -1,0 +1,2 @@
+This file is not a spec. It is excluded by specs.exclude, so the gate never parses it
+and its directory is no feature directory.

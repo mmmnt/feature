@@ -1,0 +1,287 @@
+feat 1.0
+
+# SPEC-CHG-001 — the `touches` gate, `feat audit --changed <base>` (FLMNT-ADR-006 §3, SIFT-ADR-091 §6; founder
+# ruling 2026-10-24, "In Feature: feat audit --changed"). Built once, in Feature, for flmnt and Sift alike.
+# Founder ruling c4481136 (Sift workspace, 2026-11-12), "Build Feature's SPEC-CHG-001 (Recommended)": the spec is
+# made flip-ready; the founder flips it, it is built and released in Feature, and Sift's `touches` job uses it.
+# Agreed: the founder flipped the spec on 2026-11-12, "Flip and build (Recommended)" (recorded in flmnt), taking the
+# five recommendations as drafted: Sift passes `main` and flmnt the pull request's base; the git read is spec'd; the
+# working tree is part of the change; workspaces come from a repeatable -c that takes globs; SPEC_UNPARSEABLE is exit 1
+# and NO_SPECS_FOUND exit 2. Status agreed.
+#
+# Amended 2026-11-12 (preparing the flip, ruling c4481136), against Feature v0.1.51 (@mmmnt/feature 0.4.1) and the
+# two consumers as they stand (Sift ci/gates.json `touches`, SIFT-ADR-086 §2.5, SIFT-ADR-091 §1 and §6; flmnt
+# FLMNT-ADR-006 §1, §3, §6 and its amendment A8, and flmnt's `touches` gap EXT-01):
+#  1. Paths and globs are anchored at the repository root, not at the config's directory. Both consumers keep one
+#     feat.config.json per context crate (specs.dir "src/features") and write `handler at` and `touches` from the
+#     repository root (`touches crates/sift-<context>/src/features/<feature>/**`). Anchored at the config directory,
+#     no Sift or flmnt glob could ever match. The check takes the root as input; the CLI passes git's top level.
+#  2. One run covers many workspaces. The check takes a list of configs, each a path or a glob relative to the root
+#     (Sift's job selects `crates/*/feat.config.json`); feature directories are found across all of them, and each
+#     config must discover at least one spec, so a crate whose specs.dir is wrong is refused, not silently ungated.
+#  3. A spec is one that feat discovers (specs.dir, specs.exclude, and the directories discovery never enters, such as
+#     fixtures and node_modules). A .feat file discovery skips makes no feature directory and is never parsed.
+#  4. The glob dialect is the one specs.exclude already uses (pipeline.ts globToRegExp): `**` crosses segments, `*`
+#     and `?` stay inside one segment, nothing else is special. The draft's "nothing else is special" omitted `?`.
+#  5. "Changed" is defined, and the git read is spec'd (the draft left it as unspecified glue, citing an "open question
+#     4" that the draft never contained): committed changes since the merge base of <base> and HEAD, plus the working
+#     tree (staged, unstaged and untracked files that are not ignored), deletions and both sides of a rename included.
+#     flmnt's pull-request CI has a clean tree, so it reads the committed diff; Sift's gate runs on this machine before
+#     a commit lands (SIFT-ADR-086 §1), so its change is the working tree. No git, no repository, an unknown base and a
+#     shallow clone with no merge base are each refused with exit 2; the read never falls back to a two-dot diff.
+#  6. Codes, counts and exit codes follow the CLI's contract: every refusal has a code, a count and a detail with one
+#     line per finding; violations and an unparseable spec are exit 1, everything else exit 2, and each prints [CODE].
+#     A config the loader refuses keeps the loader's own code (CONFIG_NOT_FOUND, INVALID_CONFIG, ...).
+#  7. The probe commands are routed (CheckChanged to the handler, ReadChanged to a probe that builds throwaway git
+#     repositories); the draft's CheckChanged had no route, so the spec could not parse in the closed command space.
+#
+# WHAT IS BUILT (and nothing else):
+#  1. packages/feature/src/audit-changed.ts exports checkChanged({ root, configs, paths }) (the decision) and
+#     changedPaths({ cwd, base, git?, env? }) (the git read), each answering a CapturedResponse { status, body }.
+#  2. `feat audit --changed <base>` in packages/feature/src/commands/audit.ts: changedPaths, then checkChanged, then the
+#     output and exit code below. `feat audit` without --changed is unchanged.
+#  3. Routes in feat.config.json: CheckChanged -> packages/feature/src/audit-changed.ts#checkChanged, ReadChanged ->
+#     packages/feature/fixtures/changed/probe.mjs#readChanged.
+#  4. The probe, packages/feature/fixtures/changed/probe.mjs. `ReadChanged { repo, base }` makes a fresh directory
+#     under os.tmpdir(), builds the named repository in it, calls changedPaths({ cwd: <that directory>, base, env })
+#     and answers its paths only (the temporary top level is never in the answer), then removes the directory, on a
+#     refusal too. Every git it runs, and the env it hands changedPaths, sets GIT_CONFIG_NOSYSTEM=1,
+#     GIT_CONFIG_GLOBAL=/dev/null and GIT_CEILING_DIRECTORIES=<the temp directory's parent>, and commits with
+#     `-c user.name=feat -c user.email=feat@example.invalid -c commit.gpgsign=false`, so the host's git settings and
+#     any enclosing repository are never read. The repositories:
+#       committed: `git init -b main`; commit a.txt, b.txt, m.txt, r-old.txt; branch topic; on topic delete a.txt,
+#                  change b.txt, add c.txt, `git mv r-old.txt r-new.txt`, commit; on main change m.txt and commit;
+#                  check topic out; then create d.txt, untracked. HEAD is topic.
+#       dirty:     `git init -b main`; commit a.txt, b.txt and a .gitignore holding `ignored.txt`; change a.txt and
+#                  `git add` it; change b.txt and leave it unstaged; create new.txt and ignored.txt.
+#       none:      the empty directory, no repository.
+#       shallow:   build `committed` as the origin, then `git clone --depth 1 --no-single-branch file://<origin>`
+#                  into a second directory, check topic out there, and read in the clone (main and topic each have
+#                  one commit and no common one).
+#       no-git:    the `dirty` repository, read with changedPaths({ ..., git: "/nonexistent/feat-no-git" }).
+#  5. Fixtures in packages/feature/fixtures/changed/: ws (one workspace: alpha, alpha/nested, beta, gamma, and an
+#     excluded legacy/ whose .feat does not parse), mono (two crate configs, Sift's and flmnt's layout), empty (a
+#     config whose specs.dir holds no spec) and broken (a spec that does not parse). The handler files the fixture
+#     specs name do not exist; the check reads paths, never the files behind them.
+#
+# The CLI (TCR-tested glue around the two spec'd functions, audit-changed-cli.test.ts):
+#   feat audit --changed <base> [-c <config or glob>]...
+#   - <base> is any git revision. It has no default: `--changed` without a value is the flag parser's exit 2.
+#   - The root is the git top level of the working directory. Each -c (default feat.config.json) resolves against
+#     the working directory and is passed to checkChanged relative to the root; a glob keeps its wildcards.
+#   - Without --changed, more than one -c, or a -c holding a wildcard, is refused with exit 2, [CONFIG_MULTIPLE].
+#   - Output: on a pass, one line to stdout, `audit --changed <base>: <checked> path(s) checked against <specs>
+#     spec(s) in <workspaces> workspace(s): <specd> inside a feature directory, <unspecd> outside every one.`,
+#     exit 0. On a refusal, `ERROR [<code>] <count> finding(s)` and then each detail line indented by four spaces;
+#     to stdout with exit 1 for OUTSIDE_TOUCHES, HANDLER_OUTSIDE_FEATURE and SPEC_UNPARSEABLE, to stderr with exit 2
+#     for every other code (the config codes, PATH_OUTSIDE_ROOT, NO_SPECS_FOUND and the four git codes).
+#
+# What the consumers call: Sift, `pnpm exec feat audit --changed <base> --config crates/*/feat.config.json` from the
+# repository root (xtask runs no shell, so the glob arrives unexpanded); flmnt the same with the pull request's base,
+# from a checkout with full history (a shallow checkout is NO_MERGE_BASE). The base each passes is the founder's call.
+
+spec SPEC-CHG-001 "Check changed paths against touches"
+context Toolchain
+aggregate Boundary
+type command
+status agreed
+
+construct:
+  handler at packages/feature/src/audit-changed.ts
+  touches packages/feature/src/audit-changed.ts
+  touches packages/feature/src/commands/audit.ts
+  touches packages/feature/src/pipeline.ts
+  touches packages/feature/audit-changed.feat
+  touches packages/feature/audit-changed.contract.json
+  touches packages/feature/audit-changed-cli.test.ts
+  touches packages/feature/fixtures/changed/**
+  touches feat.config.json
+  imports parse from @mmmnt/feat-core
+  imports loadConfig from @mmmnt/feat-runtime
+  needs SPEC-CORE-001
+  The root is the directory every path and every glob is relative to: the repository root. The input's root resolves
+  against the working directory; configs and paths are relative to it, in forward-slash form, compared case-sensitively.
+  A changed path that is absolute, holds a backslash, or has an empty, `.` or `..` segment is refused PATH_OUTSIDE_ROOT.
+  Each entry of configs is a path or a glob in the specs.exclude dialect (globToRegExp, exported from pipeline.ts for
+  this and changed nowhere else): `**` crosses segments, `*` and `?` stay inside one segment, nothing else is special.
+  A glob is expanded against the files under the root, never entering node_modules or .git, and sorted; an entry that
+  names no file, or a glob that matches none, is refused CONFIG_NOT_FOUND naming the entry. Each config is read through
+  loadConfig, so an overlay's extends is resolved, and a config the loader refuses is refused with the loader's code.
+  A config whose file is matched twice counts once. Each config is a workspace.
+  A workspace's specs are those discoverSpecs finds under its specs.dir with its specs.exclude, both resolved against
+  the config's own directory, as when feat runs from it. A .feat file discovery skips is never parsed and makes no
+  feature directory. A workspace that discovers no spec is refused NO_SPECS_FOUND naming its config. Every spec is
+  parsed with its workspace's config; one that fails is refused SPEC_UNPARSEABLE with its root-relative path and the
+  parser's code. Status does not matter: draft, agreed, built and verified specs are all read. A spec found by two
+  workspaces counts once.
+  A spec's feature directory is the directory holding its .feat file, with every directory beneath it except those
+  that hold a discovered .feat file of their own, and theirs, and so on. Two specs in one directory share it.
+  Membership is by path alone: the path need not exist, so a deleted path is checked like any other.
+  A changed path inside a feature directory is spec'd: it must match a touches glob of a spec in that directory, the
+  nearest one enclosing it, and no other. A changed path inside no feature directory is non-spec'd code under TCR: it
+  passes and is counted, and it must not equal the `handler at` path of any spec of any workspace.
+  Paths are checked once each: a path given twice is one path. checked is the number of distinct paths, specd those
+  inside a feature directory, unspecd the rest; checked is always specd plus unspecd.
+  The refusals come in stages, and a stage runs only when the stage before it refused nothing: the configs (in input
+  order, a glob's matches in sorted order), the paths, the workspaces' discovery, the parse, the paths against the
+  boundaries. Within a stage every finding is collected before answering. The refusal's code is that of its first
+  finding, its count the number of findings, and its detail one line per finding, `<CODE>: <subject>: <reason>`, in
+  the stage's order: configs in input order, then paths sorted by code unit, specs by root-relative path. A violation
+  line names the spec IDs whose boundary or handler it crossed. The check reads only the configs, the specs and the
+  path list, and writes nothing. A pass reports how many paths, specs and workspaces it checked, so a pass is never
+  silent about its input.
+  changedPaths({ cwd, base, git, env }) runs git (the program named by `git`, default "git", with `env` added to the
+  process environment) from cwd to find the top level, then every later git command from the top level, with -z so a
+  path is never quoted. It refuses GIT_UNAVAILABLE when the program cannot be started, NOT_A_GIT_REPO when cwd is in no
+  repository, BASE_NOT_FOUND when `<base>^{commit}` does not resolve, and NO_MERGE_BASE when <base> and HEAD have no
+  merge base, which is what a shallow clone gives; the detail names the base and, for NO_MERGE_BASE, says to fetch the
+  full history. It never falls back to a two-dot diff. The changed paths are the union, sorted by code unit with no
+  duplicates, of `git diff -z --name-only --no-renames <merge base> HEAD` (what the branch committed),
+  `git diff -z --name-only --no-renames HEAD` (staged and unstaged) and `git ls-files -z --others --exclude-standard`
+  (untracked, not ignored). With --no-renames a rename is its old path and its new path, and a deletion is its path.
+  It answers { root, paths } with root the top level; it writes nothing, to the repository or anywhere else.
+
+enforce:
+  anchor every path, every touches glob and every handler path at the root, never at a config's directory
+  find feature directories across every workspace given, from the specs feat discovers and no others
+  check a path inside a feature directory against the touches of the nearest enclosing feature directory's specs only
+  rejects CONFIG_NOT_FOUND when a config entry names no file or its glob matches none
+  rejects PATH_OUTSIDE_ROOT when a changed path is absolute, holds a backslash, or has an empty, dot or dot-dot segment
+  rejects NO_SPECS_FOUND when a workspace discovers no spec, because a gate with no input proves nothing
+  rejects SPEC_UNPARSEABLE when a discovered spec fails to parse, because its boundary cannot be read
+  rejects OUTSIDE_TOUCHES when a changed path inside a feature directory matches no touches glob of that directory's specs
+  rejects HANDLER_OUTSIDE_FEATURE when a changed path inside no feature directory is the handler at path of a spec
+  report every finding of a stage in one answer, not only the first
+  read the change as the committed diff since the merge base plus the working tree, and never as a two-dot diff
+  rejects GIT_UNAVAILABLE when the git program cannot be started
+  rejects NOT_A_GIT_REPO when the working directory is in no git repository
+  rejects BASE_NOT_FOUND when the base does not name a commit
+  rejects NO_MERGE_BASE when the base and HEAD share no commit, as in a shallow clone
+
+contract:
+  input ChangedInput
+  input ReadInput
+  response ChangedReport
+  response ChangedPaths
+  error ChangedError
+  error ReadError
+
+scenario "changes inside their own boundaries pass, whether or not the files exist":
+  when: CheckChanged { root: "packages/feature/fixtures/changed/ws", configs: ["feat.config.json"], paths: ["src/features/alpha/handler.rs", "src/features/alpha/alpha.feat", "src/features/beta/handler.ts"] }
+  predict success:
+    response OK ChangedReport { workspaces: 1, specs: 4, checked: 3, specd: 3, unspecd: 0 }
+    filesystem has []
+
+scenario "code outside every feature directory passes and is counted once":
+  when: CheckChanged { root: "packages/feature/fixtures/changed/ws", configs: ["feat.config.json"], paths: ["Cargo.toml", "src/lib.rs", "src/lib.rs"] }
+  predict success:
+    response OK ChangedReport { workspaces: 1, specs: 4, checked: 2, specd: 0, unspecd: 2 }
+    filesystem has []
+
+scenario "an empty change passes and says it checked nothing":
+  when: CheckChanged { root: "packages/feature/fixtures/changed/ws", configs: ["feat.config.json"], paths: [] }
+  predict success:
+    response OK ChangedReport { workspaces: 1, specs: 4, checked: 0, specd: 0, unspecd: 0 }
+    filesystem has []
+
+scenario "a spec that discovery excludes makes no feature directory and is never parsed":
+  when: CheckChanged { root: "packages/feature/fixtures/changed/ws", configs: ["feat.config.json"], paths: ["src/features/legacy/old.rs"] }
+  predict success:
+    response OK ChangedReport { workspaces: 1, specs: 4, checked: 1, specd: 0, unspecd: 1 }
+    filesystem has []
+
+scenario "crate configs found by a glob are one run, their globs anchored at the repository root":
+  when: CheckChanged { root: "packages/feature/fixtures/changed/mono", configs: ["crates/*/feat.config.json"], paths: ["crates/a/src/features/one/handler.rs", "crates/b/src/features/two/two.feat", "crates/a/src/lib.rs", "Cargo.lock"] }
+  predict success:
+    response OK ChangedReport { workspaces: 2, specs: 2, checked: 4, specd: 2, unspecd: 2 }
+    filesystem has []
+
+scenario "a path inside a feature directory but outside its touches is a violation":
+  when: CheckChanged { root: "packages/feature/fixtures/changed/ws", configs: ["feat.config.json"], paths: ["src/features/beta/mod.rs"] }
+  predict rejection OUTSIDE_TOUCHES:
+    response ERR ChangedError { code: "OUTSIDE_TOUCHES", count: 1, detail: matching "^OUTSIDE_TOUCHES: src/features/beta/mod\\.rs: .*SPEC-CHGFX-002" }
+    filesystem has []
+
+scenario "the nearest feature directory governs, even when an enclosing spec's touches would match":
+  when: CheckChanged { root: "packages/feature/fixtures/changed/ws", configs: ["feat.config.json"], paths: ["src/features/alpha/nested/other.rs"] }
+  predict rejection OUTSIDE_TOUCHES:
+    response ERR ChangedError { code: "OUTSIDE_TOUCHES", count: 1, detail: matching "^OUTSIDE_TOUCHES: src/features/alpha/nested/other\\.rs: .*SPEC-CHGFX-004" }
+    filesystem has []
+
+scenario "a handler path outside every feature directory is a violation":
+  when: CheckChanged { root: "packages/feature/fixtures/changed/ws", configs: ["feat.config.json"], paths: ["src/shared/gamma.ts"] }
+  predict rejection HANDLER_OUTSIDE_FEATURE:
+    response ERR ChangedError { code: "HANDLER_OUTSIDE_FEATURE", count: 1, detail: matching "^HANDLER_OUTSIDE_FEATURE: src/shared/gamma\\.ts: .*SPEC-CHGFX-003" }
+    filesystem has []
+
+scenario "every violation is reported together, in path order, the first naming the code":
+  when: CheckChanged { root: "packages/feature/fixtures/changed/ws", configs: ["feat.config.json"], paths: ["src/shared/gamma.ts", "src/features/beta/mod.rs", "src/features/beta/extra.rs"] }
+  predict rejection OUTSIDE_TOUCHES:
+    response ERR ChangedError { code: "OUTSIDE_TOUCHES", count: 3, detail: matching "^OUTSIDE_TOUCHES: src/features/beta/extra\\.rs: [\\s\\S]*OUTSIDE_TOUCHES: src/features/beta/mod\\.rs: [\\s\\S]*HANDLER_OUTSIDE_FEATURE: src/shared/gamma\\.ts: " }
+    filesystem has []
+
+scenario "a path that leaves the root is refused before any boundary is read":
+  when: CheckChanged { root: "packages/feature/fixtures/changed/ws", configs: ["feat.config.json"], paths: ["../escape.rs", "/etc/hosts"] }
+  predict rejection PATH_OUTSIDE_ROOT:
+    response ERR ChangedError { code: "PATH_OUTSIDE_ROOT", count: 2, detail: matching "^PATH_OUTSIDE_ROOT: \\.\\./escape\\.rs: [\\s\\S]*PATH_OUTSIDE_ROOT: /etc/hosts: " }
+    filesystem has []
+
+scenario "a config that does not exist is refused and named":
+  when: CheckChanged { root: "packages/feature/fixtures/changed/ws", configs: ["nope/feat.config.json"], paths: ["src/lib.rs"] }
+  predict rejection CONFIG_NOT_FOUND:
+    response ERR ChangedError { code: "CONFIG_NOT_FOUND", count: 1, detail: matching "^CONFIG_NOT_FOUND: nope/feat\\.config\\.json: " }
+    filesystem has []
+
+scenario "a config glob that matches nothing is refused, so no workspace is silently skipped":
+  when: CheckChanged { root: "packages/feature/fixtures/changed/mono", configs: ["crates/*/feat.integration.config.json"], paths: ["src/lib.rs"] }
+  predict rejection CONFIG_NOT_FOUND:
+    response ERR ChangedError { code: "CONFIG_NOT_FOUND", count: 1, detail: matching "^CONFIG_NOT_FOUND: crates/\\*/feat\\.integration\\.config\\.json: " }
+    filesystem has []
+
+scenario "a workspace with no specs refuses to pass":
+  when: CheckChanged { root: "packages/feature/fixtures/changed/empty", configs: ["feat.config.json"], paths: ["src/lib.rs"] }
+  predict rejection NO_SPECS_FOUND:
+    response ERR ChangedError { code: "NO_SPECS_FOUND", count: 1, detail: matching "^NO_SPECS_FOUND: feat\\.config\\.json: " }
+    filesystem has []
+
+scenario "a spec that cannot be parsed refuses to pass":
+  when: CheckChanged { root: "packages/feature/fixtures/changed/broken", configs: ["feat.config.json"], paths: ["src/lib.rs"] }
+  predict rejection SPEC_UNPARSEABLE:
+    response ERR ChangedError { code: "SPEC_UNPARSEABLE", count: 1, detail: matching "^SPEC_UNPARSEABLE: src/features/broken/broken\\.feat: .*MALFORMED_SYNTAX" }
+    filesystem has []
+
+scenario "the change is the branch's commits since the merge base plus the untracked files, renames as both paths":
+  when: ReadChanged { repo: "committed", base: "main" }
+  predict success:
+    response OK ChangedPaths { paths: ["a.txt", "b.txt", "c.txt", "d.txt", "r-new.txt", "r-old.txt"] }
+    filesystem has []
+
+scenario "the change includes staged, unstaged and untracked files, never ignored ones":
+  when: ReadChanged { repo: "dirty", base: "HEAD" }
+  predict success:
+    response OK ChangedPaths { paths: ["a.txt", "b.txt", "new.txt"] }
+    filesystem has []
+
+scenario "a directory in no repository is refused":
+  when: ReadChanged { repo: "none", base: "HEAD" }
+  predict rejection NOT_A_GIT_REPO:
+    response ERR ReadError { code: "NOT_A_GIT_REPO", detail: matching "." }
+    filesystem has []
+
+scenario "a base that names no commit is refused and named":
+  when: ReadChanged { repo: "dirty", base: "no-such-ref" }
+  predict rejection BASE_NOT_FOUND:
+    response ERR ReadError { code: "BASE_NOT_FOUND", detail: matching "no-such-ref" }
+    filesystem has []
+
+scenario "a shallow clone with no merge base is refused, never read as a two-dot diff":
+  when: ReadChanged { repo: "shallow", base: "origin/main" }
+  predict rejection NO_MERGE_BASE:
+    response ERR ReadError { code: "NO_MERGE_BASE", detail: matching "origin/main.*full history" }
+    filesystem has []
+
+scenario "a git program that cannot be started is refused":
+  when: ReadChanged { repo: "no-git", base: "HEAD" }
+  predict rejection GIT_UNAVAILABLE:
+    response ERR ReadError { code: "GIT_UNAVAILABLE", detail: matching "/nonexistent/feat-no-git" }
+    filesystem has []

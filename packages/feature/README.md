@@ -377,6 +377,59 @@ error. Exit `1` if any spec has an error. Warnings never fail the run.
 audit: 1 spec(s), 1 with errors, 0 warning(s).
 ```
 
+More than one `-c`, or a `-c` holding a wildcard, is refused with exit `2`
+and `CONFIG_MULTIPLE`: several configs are for `--changed`.
+
+### `feat audit --changed <base> [-c <config or glob>]...`
+
+The `touches` gate (SPEC-CHG-001). It checks that a change stayed inside the
+`touches` boundaries of the specs it falls under. It reads the specs and git,
+and writes nothing.
+
+- **The change** is every path the branch changed since the merge base of
+  `<base>` and `HEAD`, plus the working tree: staged, unstaged and untracked
+  files that are not ignored. A deletion is its path, and a rename is both its
+  old and its new path. `<base>` is any git revision and has no default. In a
+  pull request it is the target branch; on a local branch it is the branch you
+  will merge into, so uncommitted work is checked before it is committed.
+- **The root** is the repository's top level. Every `handler at`, every
+  `touches` glob and every changed path is read from it, whatever directory a
+  config is in.
+- **Workspaces.** Each `-c` (default `feat.config.json`) is a config path or
+  a glob, resolved against the working directory, and is one workspace; repeat
+  it, or use a glob such as `crates/*/feat.config.json` for one config per
+  crate. Quote the glob in a shell. Each workspace's `specs.dir` and
+  `specs.exclude` resolve against its config's directory. A spec discovery
+  skips makes no boundary and is never parsed.
+- **The rule.** A spec's feature directory is the directory holding its
+  `.feat` file and the directories beneath it, except those that hold a spec
+  of their own. A changed path inside a feature directory must match a
+  `touches` glob of a spec in the nearest one (`OUTSIDE_TOUCHES`). A changed
+  path inside no feature directory is code without a spec: it passes, unless it
+  is some spec's `handler at` (`HANDLER_OUTSIDE_FEATURE`). Globs use the
+  `specs.exclude` dialect: `**` crosses directories, `*` and `?` do not.
+
+```
+audit --changed main: 3 path(s) checked against 2 spec(s) in 2 workspace(s): 2 inside a feature directory, 1 outside every one.
+```
+
+A refusal prints `ERROR [CODE] <n> finding(s)` and then one indented line per
+finding. The checks run in stages, and each stage reports all of its findings:
+configs, paths, discovery, parse, boundaries.
+
+| Code | Exit | When |
+| --- | --- | --- |
+| `OUTSIDE_TOUCHES` | `1` | a path inside a feature directory matches no `touches` glob of its specs |
+| `HANDLER_OUTSIDE_FEATURE` | `1` | a path outside every feature directory is a spec's `handler at` |
+| `SPEC_UNPARSEABLE` | `1` | a discovered spec does not parse; its boundary cannot be read |
+| `CONFIG_NOT_FOUND` and the other config codes | `2` | a `-c` names no file, its glob matches none, or the loader refuses the config |
+| `PATH_OUTSIDE_ROOT` | `2` | a changed path is absolute or leaves the root |
+| `NO_SPECS_FOUND` | `2` | a workspace discovers no spec, so a gate with no input never passes |
+| `GIT_UNAVAILABLE` | `2` | git cannot be started |
+| `NOT_A_GIT_REPO` | `2` | the working directory is in no repository |
+| `BASE_NOT_FOUND` | `2` | `<base>` names no commit |
+| `NO_MERGE_BASE` | `2` | `<base>` and `HEAD` share no commit, as in a shallow clone: fetch the full history (`fetch-depth: 0`) |
+
 ### `feat lint [-c <config>]`
 
 Language-quality warnings: unused schema declarations, unused variables,
@@ -823,8 +876,8 @@ description is
 | Code | Meaning |
 | --- | --- |
 | `0` | success |
-| `1` | validation failure: a parse error, a seed violation, drift (`verify`), a failed prediction, a failed audit, a failed `fmt --check` |
-| `2` | configuration error: a refused config (`CONFIG_NOT_FOUND`, `INVALID_CONFIG`, the `EXTENDS_*` codes, `TIER_SPACE_MISMATCH`, ...), a module named as an adapter that cannot be resolved or loaded (`INVALID_CONFIG`), no environment to name (`NO_ENVIRONMENT`), a harness refusal during `run` (`CLOCK_UNSUPPORTED`, `MODE_UNSUPPORTED`, `FAULT_*`, `NAMESPACE_*`, `SEED_UNSUPPORTED`, `DELIVER_UNSUPPORTED`), `NO_REPORT`, `ALREADY_INITIALIZED` |
+| `1` | validation failure: a parse error, a seed violation, drift (`verify`), a failed prediction, a failed audit, a change outside its `touches` (`audit --changed`: `OUTSIDE_TOUCHES`, `HANDLER_OUTSIDE_FEATURE`, `SPEC_UNPARSEABLE`), a failed `fmt --check` |
+| `2` | configuration error: a refused config (`CONFIG_NOT_FOUND`, `INVALID_CONFIG`, the `EXTENDS_*` codes, `TIER_SPACE_MISMATCH`, ...), a module named as an adapter that cannot be resolved or loaded (`INVALID_CONFIG`), no environment to name (`NO_ENVIRONMENT`), a harness refusal during `run` (`CLOCK_UNSUPPORTED`, `MODE_UNSUPPORTED`, `FAULT_*`, `NAMESPACE_*`, `SEED_UNSUPPORTED`, `DELIVER_UNSUPPORTED`), `NO_REPORT`, `ALREADY_INITIALIZED`, `CONFIG_MULTIPLE` (`audit`), and the `audit --changed` refusals that are not a violation (`PATH_OUTSIDE_ROOT`, `NO_SPECS_FOUND`, `GIT_UNAVAILABLE`, `NOT_A_GIT_REPO`, `BASE_NOT_FOUND`, `NO_MERGE_BASE`) |
 
 Each exit `2` prints a `[CODE]`.
 
@@ -842,6 +895,20 @@ with the environment set (`ENVIRONMENT=ci`). Add `feat audit` to gate on
 buildability, and `feat report --evidence` to archive the bundle as a build
 artifact. For the integration tier add
 `feat run --config feat.integration.config.json`.
+
+## What changed in 0.5.0
+
+- **The `touches` gate (SPEC-CHG-001).** `feat audit --changed <base>` checks a
+  change against the `touches` of the specs it falls under: the branch's commits
+  since the merge base, plus the working tree. One run covers many workspaces:
+  `-c` repeats and takes a glob. Paths and globs are read from the repository
+  root. A violation or an unparseable spec is exit `1`. A missing config, a
+  workspace with no specs, or no repository, base or merge base is exit `2`. See
+  [`feat audit --changed`](#feat-audit---changed-base--c-config-or-glob).
+- **`feat audit` without `--changed`** is unchanged, and still takes one config.
+  More than one `-c`, or a glob, is refused with exit `2` and `CONFIG_MULTIPLE`.
+- No other package changes, and no generated file changes beyond its
+  `Inputs-hash` line.
 
 ## What changed in 0.4.1
 
@@ -886,6 +953,8 @@ The toolchain is specified in `.feat` and built with itself.
 
 - [SPEC-GEN-001](https://github.com/mmmnt/feature/blob/main/packages/feature/generate-seed-fixtures.feat):
   check and inline seed fixtures at generate time
+- [SPEC-CHG-001](https://github.com/mmmnt/feature/blob/main/packages/feature/audit-changed.feat):
+  check a change against the `touches` of the specs it falls under (`feat audit --changed`)
 - [SPEC-DRV-001](https://github.com/mmmnt/feature/blob/main/packages/feat-derive/derive-seeds.feat):
   derive substitutes each outline row into its own seeds
 - [SPEC-RT-001](https://github.com/mmmnt/feature/blob/main/packages/feat-runtime/load-config.feat):

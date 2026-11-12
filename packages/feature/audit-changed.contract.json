@@ -1,0 +1,78 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-CHG-001",
+  "schemas": {
+    "ChangedInput": {
+      "type": "object",
+      "required": ["root", "configs", "paths"],
+      "additionalProperties": false,
+      "properties": {
+        "root": { "type": "string", "minLength": 1 },
+        "configs": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+        "paths": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "ChangedReport": {
+      "type": "object",
+      "required": ["workspaces", "specs", "checked", "specd", "unspecd"],
+      "additionalProperties": false,
+      "properties": {
+        "workspaces": { "type": "integer", "minimum": 1 },
+        "specs": { "type": "integer", "minimum": 1 },
+        "checked": { "type": "integer", "minimum": 0 },
+        "specd": { "type": "integer", "minimum": 0 },
+        "unspecd": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "ChangedError": {
+      "type": "object",
+      "required": ["code", "count", "detail"],
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "enum": [
+            "CONFIG_NOT_FOUND",
+            "INVALID_CONFIG",
+            "MISSING_CONVERGENCE_TIMEOUT",
+            "EXTENDS_NOT_FOUND",
+            "EXTENDS_CHAIN",
+            "TIER_SPACE_MISMATCH",
+            "PATH_OUTSIDE_ROOT",
+            "NO_SPECS_FOUND",
+            "SPEC_UNPARSEABLE",
+            "OUTSIDE_TOUCHES",
+            "HANDLER_OUTSIDE_FEATURE"
+          ]
+        },
+        "count": { "type": "integer", "minimum": 1 },
+        "detail": { "type": "string" }
+      }
+    },
+    "ReadInput": {
+      "type": "object",
+      "required": ["repo", "base"],
+      "additionalProperties": false,
+      "properties": {
+        "repo": { "enum": ["committed", "dirty", "none", "shallow", "no-git"] },
+        "base": { "type": "string", "minLength": 1 }
+      }
+    },
+    "ChangedPaths": {
+      "type": "object",
+      "required": ["paths"],
+      "additionalProperties": false,
+      "properties": {
+        "paths": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "ReadError": {
+      "type": "object",
+      "required": ["code", "detail"],
+      "additionalProperties": false,
+      "properties": {
+        "code": { "enum": ["GIT_UNAVAILABLE", "NOT_A_GIT_REPO", "BASE_NOT_FOUND", "NO_MERGE_BASE"] },
+        "detail": { "type": "string" }
+      }
+    }
+  }
+}

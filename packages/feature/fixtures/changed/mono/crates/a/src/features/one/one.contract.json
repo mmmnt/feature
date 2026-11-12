@@ -1,0 +1,8 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-CHGFX-011",
+  "schemas": {
+    "ThingInput": { "type": "object" },
+    "ThingResult": { "type": "object" }
+  }
+}

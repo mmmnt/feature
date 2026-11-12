@@ -137,6 +137,14 @@
       "RunOverlappingCases": {
         "module": "packages/feat-runtime/fixtures/harness/probe.mjs",
         "export": "runOverlapping"
+      },
+      "CheckChanged": {
+        "module": "packages/feature/src/audit-changed.ts",
+        "export": "checkChanged"
+      },
+      "ReadChanged": {
+        "module": "packages/feature/fixtures/changed/probe.mjs",
+        "export": "readChanged"
       }
     }
   },

@@ -4,9 +4,7 @@
   "response": {
     "adapter": "@mmmnt/feat-adapter-handler",
     "commands": {
-      "DoAlpha": { "module": "src/features/alpha/handler.ts", "export": "doAlpha" },
-      "DoBeta": { "module": "src/features/beta/handler.ts", "export": "doBeta" },
-      "DoGamma": { "module": "src/shared/gamma.ts", "export": "doGamma" }
+      "DoTwo": { "module": "src/features/two/handler.ts", "export": "doTwo" }
     }
   },
   "services": {

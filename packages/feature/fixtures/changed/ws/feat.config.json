@@ -1,0 +1,17 @@
+{
+  "featVersion": "1.0",
+  "schemas": { "adapter": "@mmmnt/feat-schema-json" },
+  "response": {
+    "adapter": "@mmmnt/feat-adapter-handler",
+    "commands": {
+      "DoAlpha": { "module": "src/features/alpha/handler.ts", "export": "doAlpha" },
+      "DoNested": { "module": "src/features/alpha/nested/handler.ts", "export": "doNested" },
+      "DoBeta": { "module": "src/features/beta/handler.ts", "export": "doBeta" },
+      "DoGamma": { "module": "src/shared/gamma.ts", "export": "doGamma" }
+    }
+  },
+  "services": {
+    "log": { "adapter": "@mmmnt/feat-adapter-fs", "consistency": "acid" }
+  },
+  "specs": { "dir": "src/features", "pattern": "**/*.feat", "contractPattern": "**/*.contract.json", "outputPattern": "{name}.test.ts", "exclude": ["legacy/**"] }
+}

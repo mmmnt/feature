@@ -27,7 +27,7 @@ export interface GeneratedFile {
 }
 
 /** A glob (`**`, `*`, `?`) over posix-style relative paths, as a RegExp. `**` crosses directories, `*` does not. */
-function globToRegExp(glob: string): RegExp {
+export function globToRegExp(glob: string): RegExp {
   let re = "";
   for (let i = 0; i < glob.length; i++) {
     const c = glob[i]!;
