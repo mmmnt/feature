@@ -39,6 +39,16 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: pnpm
+      - name: Kafka client cache key (Node 26)
+        if: matrix.node == 26
+        id: kafka-native
+        run: echo "key=$(bash scripts/node26-kafka-native.sh --cache-key)" >> "$GITHUB_OUTPUT"
+      - name: Kafka client binary cache (Node 26)
+        if: matrix.node == 26
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/feat-kafka-native
+          key: ${{ steps.kafka-native.outputs.key }}
       - name: Install
         if: matrix.node != 26
         run: pnpm install --frozen-lockfile
@@ -84,6 +94,16 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: pnpm
+      - name: Kafka client cache key (Node 26)
+        if: matrix.node == 26
+        id: kafka-native
+        run: echo "key=$(bash scripts/node26-kafka-native.sh --cache-key)" >> "$GITHUB_OUTPUT"
+      - name: Kafka client binary cache (Node 26)
+        if: matrix.node == 26
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/feat-kafka-native
+          key: ${{ steps.kafka-native.outputs.key }}
       - name: Install
         if: matrix.node != 26
         run: pnpm install --frozen-lockfile
