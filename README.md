@@ -123,28 +123,35 @@ roadmap — lives in the **project wiki**.
 ### Local CI before a push
 
 `scripts/ci-local.sh` runs the ubuntu jobs of `.github/workflows/ci.yml` on your machine. It reads the
-jobs, their matrix and their steps from `ci.yml` itself, so it runs what CI runs. Each job gets a fresh
-`git archive` of the commit in a throwaway Linux container from a pinned `node:<major>-bookworm` image
-(`scripts/ci-local.images.json`), one job at a time, with the Docker socket and the host network so the
-tests' own containers work as they do on a GitHub runner. Each job writes a log, and the run ends with one
-PASS or FAIL line per job. A job CI runs on another OS (feat-cdk on Windows) is printed as a GAP line and
-left to CI. It needs Docker, and Node with this workspace installed (`pnpm install`).
+jobs, their matrix and their steps from `ci.yml` itself, so it runs what CI runs. By default it runs every
+ubuntu job at the Node version of `.tool-versions` (24): Typecheck & corpus, Workspace tests and Spec chain.
+The other Node versions are printed as OFF lines and left to CI; `--node <major>` or `--all` runs them.
+
+The jobs of one Node version share a throwaway Linux container from a pinned `node:<major>-bookworm` image
+(`scripts/ci-local.images.json`), on a fresh `git archive` of the commit, with the Docker socket and the host
+network so the tests' own containers work as they do on a GitHub runner. The steps they all start with
+(Install, Build) run once, then each job's own steps; each job writes a log and gets a PASS or FAIL line. A
+job CI runs on another OS (feat-cdk on Windows) is printed as a GAP line and left to CI. It needs Docker, and
+Node with this workspace installed (`pnpm install`).
 
 ```sh
-scripts/ci-local.sh                        # every ubuntu job x Node version, on HEAD
-scripts/ci-local.sh --job spec --node 26   # a subset; --ref <commit> checks another commit
-scripts/ci-local.sh --list                 # what would run
+scripts/ci-local.sh                 # every ubuntu job at Node 24, on HEAD
+scripts/ci-local.sh --node 26       # another matrix version; --all runs all of them
+scripts/ci-local.sh --job spec      # a subset; --ref <commit> checks another commit
+scripts/ci-local.sh --list          # what would run
 ```
 
-`.githooks/pre-push` runs it on every commit you push and blocks the push when a job fails. Enable it once
-per clone:
+`.githooks/pre-push` runs the default (Node 24) on every commit you push and blocks the push when a job
+fails. Enable it once per clone:
 
 ```sh
 git config core.hooksPath .githooks
 ```
 
 Runs go under `${TMPDIR:-/tmp}/feat-ci-local` (set `CI_LOCAL_DIR` to move them; on Docker Desktop the
-directory must be in a shared path). The pnpm store there is kept between runs, as CI caches it.
+directory must be in a shared path). Caches are docker volumes named `feat-ci-cache-*`, kept between runs:
+the pnpm store (CI's `cache: pnpm`), each `actions/cache` path in `ci.yml` (the Node 26 Kafka client
+binary), and Playwright's browser and apt downloads. Remove them with `docker volume rm` to start cold.
 
 ## License
 

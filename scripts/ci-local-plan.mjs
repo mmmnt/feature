@@ -1,13 +1,18 @@
 #!/usr/bin/env node
-// Reads .github/workflows/ci.yml and writes, for every ubuntu job x matrix entry, a driver script that runs the
-// job's `run:` steps in order with GitHub's step semantics. scripts/ci-local.sh runs each driver in a container.
-// The jobs are derived from the workflow, never listed here, so the local run cannot drift from CI. Anything in
-// the workflow this planner does not understand is an error, not a silent skip.
+// Reads .github/workflows/ci.yml and writes, per Node version, one driver script that runs the `run:` steps of
+// every selected ubuntu job of that version with GitHub's step semantics: the steps all of them start with
+// (checkout, setup, Install, Build) once, then each job's own steps in order, each job with its own verdict.
+// scripts/ci-local.sh runs each driver in a container. The jobs are derived from the workflow, never listed here,
+// so the local run cannot drift from CI. Anything in the workflow this planner does not understand is an error,
+// not a silent skip.
 //
 // usage: node ci-local-plan.mjs --workflow <ci.yml> --package <package.json> --images <images.json> --out <dir>
 //                               [--job <id|name>]... [--node <major>]...
-// stdout, one line per job instance:  JOB<TAB>key<TAB>node<TAB>image<TAB>name<TAB>driver
-//                       per gap:      GAP<TAB>key<TAB>runs-on<TAB>name
+// stdout:  GROUP<TAB>node<TAB>image<TAB>driver<TAB>job,job   one container
+//          JOB<TAB>key<TAB>node<TAB>name                     a job instance the group runs
+//          CACHE<TAB>node<TAB>path                           an actions/cache path the group's jobs restore
+//          OFF<TAB>key<TAB>node<TAB>name                     an instance the --node filter leaves to CI
+//          GAP<TAB>key<TAB>runs-on<TAB>name                  a job on another OS, left to CI
 import { createRequire } from "node:module";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -152,15 +157,98 @@ function expandMatrix(job, key) {
 }
 
 // `uses:` steps the container replaces: the source is already extracted, Node is the image's, pnpm is installed
-// from package.json's packageManager (what pnpm/action-setup reads), and upload-artifact has nowhere to upload.
+// from package.json's packageManager (what pnpm/action-setup reads), a cache is a persistent docker volume at the
+// step's path, and upload-artifact has nowhere to upload.
 const REPLACED = {
-  "actions/checkout": "source = git archive of the commit, extracted fresh for this job",
+  "actions/checkout": "source = git archive of the commit, extracted fresh for this run",
   "pnpm/action-setup": "npm i -g pnpm@<packageManager>",
   "actions/setup-node": "the image's Node",
-  "actions/upload-artifact": "no artifact store locally; the files stay in the job's tree until it is removed",
+  "actions/cache": "a persistent docker volume at the cached path",
+  "actions/upload-artifact": "no artifact store locally; the files stay in the tree until it is removed",
 };
 
 const shq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
+const nodeOf = (job, matrix, key) => {
+  const setup = (job.steps ?? []).find((s) => typeof s.uses === "string" && s.uses.startsWith("actions/setup-node@"));
+  return setup?.with?.["node-version"] === undefined ? undefined : interpolate(setup.with["node-version"], matrix, `job ${key} node-version`);
+};
+
+// A job instance's steps, resolved against its matrix. A step whose `if:` can never be true is dropped (and
+// logged as skipped), so two jobs whose steps differ only by such a step still share their common prefix.
+function resolveSteps(job, key, matrix, pm) {
+  const steps = [];
+  let n = 0;
+  for (const s of job.steps ?? []) {
+    n++;
+    const idx = String(n).padStart(2, "0");
+    const { onSuccess, onFailure } = condition(s.if, matrix);
+    if (s.uses !== undefined) {
+      const action = String(s.uses).split("@")[0];
+      if (!(action in REPLACED)) throw new Error(`ci-local: job ${key}: step uses ${s.uses}, which ci-local cannot replace`);
+      const step = { idx, kind: "uses", uses: s.uses, action, never: !onSuccess && !onFailure, name: s.name ?? s.uses };
+      if (action === "pnpm/action-setup") step.pnpm = pm;
+      if (action === "actions/cache") {
+        const p = s.with?.path;
+        if (typeof p !== "string" || p.includes("\n")) throw new Error(`ci-local: job ${key}: actions/cache needs one path`);
+        step.path = interpolate(p, matrix, `job ${key} step ${n} path`);
+      }
+      steps.push(step);
+      continue;
+    }
+    if (s.run === undefined) throw new Error(`ci-local: job ${key}: step ${n} has neither run nor uses`);
+    for (const k of Object.keys(s)) {
+      if (!["name", "run", "if", "shell", "working-directory", "env", "id"].includes(k)) {
+        throw new Error(`ci-local: job ${key}: step ${n} key "${k}" is not supported locally`);
+      }
+    }
+    // GitHub's ubuntu default is `bash -e {0}`; an explicit `shell: bash` is `bash --noprofile --norc -eo pipefail {0}`.
+    let shell;
+    if (s.shell === undefined) shell = "bash -e";
+    else if (s.shell === "bash") shell = "bash --noprofile --norc -eo pipefail";
+    else if (s.shell === "sh") shell = "sh -e";
+    else throw new Error(`ci-local: job ${key}: step ${n} shell "${s.shell}" is not supported locally`);
+    const env = Object.entries(s.env ?? {}).map(([k, v]) => `export ${k}=${shq(interpolate(v, matrix, `job ${key} step ${n} env`))}`);
+    steps.push({
+      idx,
+      kind: "run",
+      name: interpolate(s.name ?? s.run.split("\n")[0], matrix, `job ${key} step ${n} name`),
+      body: [...env, interpolate(s.run, matrix, `job ${key} step ${n} run`), ""].join("\n"),
+      shell,
+      wd: s["working-directory"] ? interpolate(s["working-directory"], matrix, `job ${key} step ${n}`) : "",
+      onSuccess,
+      onFailure,
+      never: !onSuccess && !onFailure,
+    });
+  }
+  return steps;
+}
+
+// What makes two steps the same step: everything that changes what runs, not the step number.
+const signature = (st) =>
+  st.kind === "uses"
+    ? JSON.stringify(["uses", st.uses, st.path ?? null])
+    : JSON.stringify(["run", st.body, st.shell, st.wd, st.onSuccess, st.onFailure]);
+
+function emitSteps(d, steps, dir, prefix, log) {
+  for (const st of steps) {
+    const label = `${prefix}step ${st.idx}`;
+    if (st.never) { d.push(`say ${log} ${shq(`${label} SKIP (if:) ${st.name}`)}`); continue; }
+    if (st.kind === "uses") {
+      if (st.action === "pnpm/action-setup") {
+        d.push(`say ${log} ${shq(`${label} USES ${st.uses} -> npm i -g pnpm@${st.pnpm}`)}`);
+        d.push(`npm i -g --no-audit --no-fund pnpm@${st.pnpm} >> ${log} 2>&1 || failed=1`);
+      } else if (st.action === "actions/cache") {
+        d.push(`say ${log} ${shq(`${label} USES ${st.uses} -> the persistent volume at ${st.path}`)}`);
+      } else {
+        d.push(`say ${log} ${shq(`${label} USES ${st.uses} -> ${REPLACED[st.action]}`)}`);
+      }
+      continue;
+    }
+    const file = path.join(dir, `${prefix.replace(/[^a-z0-9]+/gi, "-")}step-${st.idx}.sh`);
+    writeFileSync(file, st.body);
+    d.push(`step ${log} ${shq(label)} ${st.onSuccess ? 1 : 0} ${st.onFailure ? 1 : 0} ${shq(st.name)} ${shq(st.shell)} ${shq(file)} ${st.wd ? shq(st.wd) : ""}`.trimEnd());
+  }
+}
 
 function main() {
   const args = parseArgs(process.argv.slice(2));
@@ -174,16 +262,14 @@ function main() {
 
   const lines = [];
   const known = new Set();
+  const instances = [];
   for (const [key, job] of Object.entries(wf.jobs ?? {})) {
     known.add(key);
     if (job.name) known.add(String(job.name).replace(/\s*\(.*\)\s*$/, ""));
     const jobPicked = args.job.length === 0 || args.job.some((j) => j === key || String(job.name ?? "").startsWith(j));
     const runsOn = String(job["runs-on"] ?? "");
     if (!/^ubuntu-/.test(runsOn)) {
-      const nodes = expandMatrix(job, key).map((matrix) => {
-        const setup = (job.steps ?? []).find((s) => typeof s.uses === "string" && s.uses.startsWith("actions/setup-node@"));
-        return setup?.with?.["node-version"] === undefined ? undefined : interpolate(setup.with["node-version"], matrix, `job ${key}`);
-      });
+      const nodes = expandMatrix(job, key).map((matrix) => nodeOf(job, matrix, key));
       const nodePicked = args.node.length === 0 || nodes.some((v) => v === undefined || args.node.includes(v));
       if (jobPicked && nodePicked) lines.push(["GAP", key, runsOn, job.name ?? key].join("\t"));
       continue;
@@ -194,80 +280,88 @@ function main() {
     if (!jobPicked) continue;
     for (const matrix of expandMatrix(job, key)) {
       const name = interpolate(job.name ?? key, matrix, `job ${key} name`);
-      const setup = (job.steps ?? []).find((s) => typeof s.uses === "string" && s.uses.startsWith("actions/setup-node@"));
-      if (!setup?.with?.["node-version"]) throw new Error(`ci-local: job ${key}: no actions/setup-node node-version`);
-      const node = interpolate(setup.with["node-version"], matrix, `job ${key} node-version`);
+      const node = nodeOf(job, matrix, key);
+      if (node === undefined) throw new Error(`ci-local: job ${key}: no actions/setup-node node-version`);
       if (!/^\d+$/.test(node)) throw new Error(`ci-local: job ${key}: node-version "${node}" is not a major version`);
-      if (args.node.length > 0 && !args.node.includes(node)) continue;
-      const image = images.node?.[node];
-      if (!image) throw new Error(`ci-local: no pinned image for Node ${node} in ${args.images}`);
-
-      const dir = path.join(args.out, `${key}-${node}`);
-      mkdirSync(dir, { recursive: true });
-      const d = [
-        "#!/usr/bin/env bash",
-        `# Generated by scripts/ci-local-plan.mjs from ${path.basename(args.workflow)}: job ${key}, ${JSON.stringify(matrix)}.`,
-        "set -uo pipefail",
-        "failed=0",
-        "say() { printf '\\n::ci-local:: %s\\n' \"$*\"; }",
-        "step() { # idx onSuccess onFailure name shell file [workdir]",
-        "  local idx=$1 ok=$2 ko=$3 name=$4 sh=$5 file=$6 wd=${7:-.} run=$2 rc t0",
-        "  [ \"$failed\" = 1 ] && run=$ko",
-        "  if [ \"$run\" != 1 ]; then say \"step $idx SKIP (if:) $name\"; return 0; fi",
-        "  say \"step $idx RUN $name\"; t0=$(date +%s)",
-        "  ( cd \"$wd\" && $sh \"$file\" ); rc=$?",
-        "  say \"step $idx rc=$rc $(( $(date +%s) - t0 ))s $name\"",
-        "  [ \"$rc\" = 0 ] || failed=1",
-        "}",
-        `say "job ${key} (${name}) on $(node -v) in $(pwd)"`,
-      ];
-      let n = 0;
-      for (const s of job.steps ?? []) {
-        n++;
-        const idx = String(n).padStart(2, "0");
-        if (s.uses !== undefined) {
-          const action = String(s.uses).split("@")[0];
-          if (!(action in REPLACED)) throw new Error(`ci-local: job ${key}: step uses ${s.uses}, which ci-local cannot replace`);
-          if (action === "pnpm/action-setup") {
-            d.push(`say "step ${idx} USES ${s.uses} -> npm i -g pnpm@${pm[1]}"`);
-            d.push(`npm i -g --no-audit --no-fund pnpm@${pm[1]} >/dev/null || { say "pnpm@${pm[1]} install failed"; exit 1; }`);
-          } else {
-            d.push(`say ${shq(`step ${idx} USES ${s.uses} -> ${REPLACED[action]}`)}`);
-          }
-          continue;
-        }
-        if (s.run === undefined) throw new Error(`ci-local: job ${key}: step ${n} has neither run nor uses`);
-        for (const k of Object.keys(s)) {
-          if (!["name", "run", "if", "shell", "working-directory", "env", "id"].includes(k)) {
-            throw new Error(`ci-local: job ${key}: step ${n} key "${k}" is not supported locally`);
-          }
-        }
-        const stepName = interpolate(s.name ?? s.run.split("\n")[0], matrix, `job ${key} step ${n} name`);
-        const { onSuccess, onFailure } = condition(s.if, matrix);
-        // GitHub's ubuntu default is `bash -e {0}`; an explicit `shell: bash` is `bash --noprofile --norc -eo pipefail {0}`.
-        let shell;
-        if (s.shell === undefined) shell = "bash -e";
-        else if (s.shell === "bash") shell = "bash --noprofile --norc -eo pipefail";
-        else if (s.shell === "sh") shell = "sh -e";
-        else throw new Error(`ci-local: job ${key}: step ${n} shell "${s.shell}" is not supported locally`);
-        const file = path.join(dir, `step-${idx}.sh`);
-        const env = Object.entries(s.env ?? {}).map(([k, v]) => `export ${k}=${shq(interpolate(v, matrix, `job ${key} step ${n} env`))}`);
-        writeFileSync(file, [...env, interpolate(s.run, matrix, `job ${key} step ${n} run`), ""].join("\n"));
-        const wd = s["working-directory"] ? shq(interpolate(s["working-directory"], matrix, `job ${key} step ${n}`)) : "";
-        d.push(`step ${idx} ${onSuccess ? 1 : 0} ${onFailure ? 1 : 0} ${shq(stepName)} ${shq(shell)} ${shq(file)} ${wd}`.trimEnd());
+      if (args.node.length > 0 && !args.node.includes(node)) {
+        lines.push(["OFF", key, node, name].join("\t"));
+        continue;
       }
-      d.push('say "job result failed=$failed"', 'exit "$failed"', "");
-      const driver = path.join(dir, "job.sh");
-      writeFileSync(driver, d.join("\n"), { mode: 0o755 });
-      lines.push(["JOB", key, node, image, name, driver].join("\t"));
+      if (!images.node?.[node]) throw new Error(`ci-local: no pinned image for Node ${node} in ${args.images}`);
+      instances.push({ key, node, name, steps: resolveSteps(job, key, matrix, pm[1]) });
     }
   }
+
+  // One container per Node version: the steps every job of that version starts with (checkout, setup, Install,
+  // Build) run once, then each job's own steps run in ci.yml's order on the same tree, each with its own verdict.
+  const byNode = new Map();
+  for (const inst of instances) {
+    if (!byNode.has(inst.node)) byNode.set(inst.node, []);
+    byNode.get(inst.node).push(inst);
+  }
+  for (const [node, group] of byNode) {
+    const live = group.map((g) => g.steps.filter((st) => !st.never));
+    let shared = 0;
+    while (group.length > 1 && live.every((l) => shared < l.length) && live.every((l) => signature(l[shared]) === signature(live[0][shared]))) shared++;
+    // Shared steps must be a prefix of each job's live steps; anything after the first difference is the job's own.
+    const dir = path.join(args.out, `node-${node}`);
+    mkdirSync(dir, { recursive: true });
+    const d = [
+      "#!/usr/bin/env bash",
+      `# Generated by scripts/ci-local-plan.mjs from ${path.basename(args.workflow)}: Node ${node}, jobs ${group.map((g) => g.key).join(", ")}.`,
+      "# usage: driver.sh <log directory>",
+      "set -uo pipefail",
+      'LOGS=$1',
+      "failed=0",
+      "say() { local log=$1; shift; printf '::ci-local:: %s\\n' \"$*\" | tee -a \"$log\"; }",
+      "step() { # log label onSuccess onFailure name shell file [workdir]",
+      "  local log=$1 label=$2 ok=$3 ko=$4 name=$5 sh=$6 file=$7 wd=${8:-.} run=$3 rc t0",
+      "  [ \"$failed\" = 1 ] && run=$ko",
+      "  if [ \"$run\" != 1 ]; then say \"$log\" \"$label SKIP (if:) $name\"; return 0; fi",
+      "  say \"$log\" \"$label RUN $name\"; t0=$(date +%s)",
+      "  ( cd \"$wd\" && $sh \"$file\" ) >> \"$log\" 2>&1 < /dev/null; rc=$?",
+      "  say \"$log\" \"$label rc=$rc $(( $(date +%s) - t0 ))s $name\"",
+      "  [ \"$rc\" = 0 ] || failed=1",
+      "}",
+      'export GITHUB_OUTPUT="$TMPDIR/github-output" GITHUB_ENV="$TMPDIR/github-env"',
+      ': > "$GITHUB_OUTPUT"; : > "$GITHUB_ENV"',
+      `SH="$LOGS/shared-${node}.log"`,
+      `say "$SH" "Node ${node} ($(node -v)) in $(pwd); shared steps of ${group.map((g) => g.key).join(", ")}"`,
+      "t_shared=$(date +%s)",
+    ];
+    // The shared prefix, numbered as the first job numbers it.
+    emitSteps(d, group[0].steps.filter((st) => !st.never).slice(0, shared), dir, "shared ", '"$SH"');
+    d.push("shared_secs=$(( $(date +%s) - t_shared ))", `say "$SH" "shared failed=$failed \${shared_secs}s"`, "shared_failed=$failed");
+    for (const [gi, inst] of group.entries()) {
+      const own = [];
+      let seen = 0;
+      for (const st of inst.steps) {
+        if (st.never) { if (seen >= shared) own.push(st); continue; }
+        if (seen++ >= shared) own.push(st);
+      }
+      const log = `"$LOGS/${inst.key}-${node}.log"`;
+      d.push(
+        `failed=$shared_failed; t_job=$(date +%s)`,
+        `say ${log} ${shq(`job ${inst.key} (${inst.name})`)} "after the shared steps (failed=$shared_failed)"`,
+      );
+      emitSteps(d, own, dir, `${inst.key} `, log);
+      d.push(`say ${log} "result ${inst.key} rc=$failed $(( $(date +%s) - t_job ))s"`);
+      d.push(`printf '::ci-local:: =result %s %s %s\\n' ${shq(inst.key)} "$failed" "$(( $(date +%s) - t_job ))"`);
+      if (gi === group.length - 1) d.push("");
+    }
+    d.push(`printf '::ci-local:: =shared %s %s\\n' "$shared_failed" "$shared_secs"`, "exit 0", "");
+    const driver = path.join(dir, "driver.sh");
+    writeFileSync(driver, d.join("\n"), { mode: 0o755 });
+    const caches = [...new Set(group.flatMap((g) => g.steps.filter((st) => st.action === "actions/cache" && !st.never).map((st) => st.path)))];
+    for (const c of caches) lines.push(["CACHE", node, c].join("\t"));
+    lines.push(["GROUP", node, images.node[node], driver, group.map((g) => g.key).join(",")].join("\t"));
+    for (const inst of group) lines.push(["JOB", inst.key, node, inst.name].join("\t"));
+  }
+
   for (const j of args.job) {
     if (![...known].some((k) => k === j || k.startsWith(j))) throw new Error(`ci-local: --job ${j} matches no job in ${args.workflow}`);
   }
-  if (!lines.some((l) => l.startsWith("JOB\t")) && !lines.some((l) => l.startsWith("GAP\t"))) {
-    throw new Error("ci-local: the filters select no job");
-  }
+  if (!lines.some((l) => l.startsWith("GROUP\t") || l.startsWith("GAP\t"))) throw new Error("ci-local: the filters select no job");
   process.stdout.write(lines.join("\n") + "\n");
 }
 
