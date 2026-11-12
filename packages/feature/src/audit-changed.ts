@@ -3,8 +3,8 @@
 // of the first stage that has one. changedPaths is the git read: the commits since the merge base of <base> and
 // HEAD, plus the working tree. Every path and glob is anchored at the repository root, never at a config's directory.
 
-import { spawnSync } from "node:child_process";
-import { readdirSync, statSync } from "node:fs";
+import { execFile } from "node:child_process";
+import { accessSync, constants, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import type { BuiltSpec, FeatConfig } from "@mmmnt/feat-types";
 import { parse, type CapturedResponse } from "@mmmnt/feat-core";
@@ -269,41 +269,83 @@ export interface ChangedPathsInput {
   env?: Record<string, string>;
 }
 
+// The program's absolute path, looked up on PATH once per process. Spawning a bare name makes libuv try one
+// posix_spawn per PATH entry on macOS, about half a second under a package manager's long PATH, and seconds on a
+// loaded host; changedPaths runs git six times. A name holding a separator, or found on no entry, is used as given,
+// so a program that does not exist still fails to start (GIT_UNAVAILABLE).
+const resolved = new Map<string, string>();
+export function resolveProgram(name: string, envPath: string | undefined = process.env.PATH): string {
+  if (name.includes("/") || name.includes("\\")) return name;
+  const key = `${name}\0${envPath ?? ""}`;
+  const hit = resolved.get(key);
+  if (hit) return hit;
+  let found = name;
+  for (const dir of (envPath ?? "").split(path.delimiter)) {
+    if (!dir) continue;
+    for (const candidate of process.platform === "win32" ? [`${name}.exe`, `${name}.cmd`, name] : [name]) {
+      const p = path.join(dir, candidate);
+      try {
+        accessSync(p, constants.X_OK);
+        if (statSync(p).isFile()) {
+          found = p;
+          break;
+        }
+      } catch {
+        // not here
+      }
+    }
+    if (found !== name) break;
+  }
+  resolved.set(key, found);
+  return found;
+}
+
 function readRefusal(code: string, subject: string, reason: string): CapturedResponse {
   return { status: "ERR", body: { code, detail: `${code}: ${subject}: ${reason}` } };
 }
 
 export async function changedPaths(input: ChangedPathsInput): Promise<CapturedResponse> {
   const git = input.git ?? "git";
-  const env = { ...process.env, ...(input.env ?? {}) };
-  const run = (args: string[], cwd: string) =>
-    spawnSync(git, args, { cwd, env, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
+  // GIT_OPTIONAL_LOCKS=0: a read never takes the index lock to refresh stat data, so the gate writes nothing.
+  const env: NodeJS.ProcessEnv = { ...process.env, ...(input.env ?? {}), GIT_OPTIONAL_LOCKS: "0" };
+  const program = resolveProgram(git, env.PATH);
+  // Asynchronous, so a caller's event loop is never held while git runs.
+  const run = (args: string[]) =>
+    new Promise<{ error?: NodeJS.ErrnoException; status: number | null; stdout: string; stderr: string }>((resolve) => {
+      execFile(program, args, { cwd: input.cwd, env, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 }, (err, stdout, stderr) => {
+        const e = err as (NodeJS.ErrnoException & { code?: unknown }) | null;
+        // A program that cannot start fails with a string errno code; a git that ran and exited non-zero has a number.
+        if (e && typeof e.code === "string") resolve({ error: e, status: null, stdout, stderr });
+        else resolve({ status: e ? Number(e.code ?? 1) : 0, stdout, stderr });
+      });
+    });
 
-  const top = run(["rev-parse", "--show-toplevel"], input.cwd);
+  // Every command reads, and none needs another's answer, so all run at once from cwd; the answers are then read in
+  // the refusal order. `<base>...HEAD` is the diff from the merge base of <base> and HEAD. Paths are root-relative
+  // whatever cwd is: --no-relative for the diffs, --full-name and the `:/` (top level) pathspec for ls-files.
+  const [top, verify, mb, committed, worktree, untracked] = await Promise.all([
+    run(["rev-parse", "--show-toplevel"]),
+    run(["rev-parse", "--verify", "--quiet", `${input.base}^{commit}`]),
+    run(["merge-base", input.base, "HEAD"]),
+    run(["diff", "-z", "--name-only", "--no-relative", "--no-renames", `${input.base}...HEAD`]),
+    run(["diff", "-z", "--name-only", "--no-relative", "--no-renames", "HEAD"]),
+    run(["ls-files", "-z", "--others", "--exclude-standard", "--full-name", ":/"]),
+  ]);
   if (top.error)
-    return readRefusal("GIT_UNAVAILABLE", git, `cannot be started (${(top.error as NodeJS.ErrnoException).code ?? top.error.message})`);
+    return readRefusal("GIT_UNAVAILABLE", git, `cannot be started (${top.error.code ?? top.error.message})`);
   if (top.status !== 0) return readRefusal("NOT_A_GIT_REPO", input.cwd, "is in no git repository");
   const root = top.stdout.replace(/\r?\n$/, "");
-
-  if (run(["rev-parse", "--verify", "--quiet", `${input.base}^{commit}`], root).status !== 0)
-    return readRefusal("BASE_NOT_FOUND", input.base, "names no commit");
-  const mb = run(["merge-base", input.base, "HEAD"], root);
+  if (verify.status !== 0) return readRefusal("BASE_NOT_FOUND", input.base, "names no commit");
   if (mb.status !== 0)
     return readRefusal(
       "NO_MERGE_BASE",
       input.base,
       `${input.base} and HEAD share no commit, as in a shallow clone; fetch the full history (git fetch --unshallow, or a checkout with fetch-depth 0)`,
     );
-  const mergeBase = mb.stdout.trim();
 
   const paths = new Set<string>();
-  for (const args of [
-    ["diff", "-z", "--name-only", "--no-renames", mergeBase, "HEAD"],
-    ["diff", "-z", "--name-only", "--no-renames", "HEAD"],
-    ["ls-files", "-z", "--others", "--exclude-standard"],
-  ]) {
-    const r = run(args, root);
-    if (r.status !== 0) throw new Error(`git ${args.join(" ")} failed (${r.status}): ${r.stderr.trim()}`);
+  for (const [what, r] of [["the committed diff", committed], ["the working tree diff", worktree], ["the untracked files", untracked]] as const) {
+    if (r.status !== 0) throw new Error(`git could not list ${what} (exit ${r.status}): ${r.stderr.trim()}`);
     for (const p of r.stdout.split("\0")) if (p !== "") paths.add(p);
   }
   return { status: "OK", body: { root, paths: [...paths].sort(byCodeUnit) } };

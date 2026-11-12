@@ -1,12 +1,19 @@
-// The probe behind `ReadChanged` (SPEC-CHG-001): build a named throwaway git repository under os.tmpdir(),
-// read its change with changedPaths and answer the paths only, then remove the directory, on a refusal too.
-// The host's git settings and any enclosing repository are never read. Test fixture, not shipped.
-//   committed | dirty | none | shallow | no-git
-import { execFileSync } from "node:child_process";
+// The probe behind `ReadChanged` (SPEC-CHG-001): read the change of a named throwaway git repository with
+// changedPaths and answer the paths only. The host's git settings and any enclosing repository are never read.
+// Test fixture, not shipped.   committed | dirty | none | shallow | no-git
+// The repositories are built once, when the module is evaluated (as the product probes start their environments at
+// load), so the build runs in beforeAll under the hook timeout and no case is charged for it: under a full parallel
+// `feat run` each git process can take seconds to start. They live in one directory under os.tmpdir(), removed when
+// the process exits. changedPaths only reads them, so cases sharing one cannot see each other. History is written with
+// one `git fast-import` per repository, and every git runs asynchronously by its absolute path.
+import { execFile } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync, appendFileSync, realpathSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { changedPaths } from "../../src/audit-changed.ts";
+import { changedPaths, resolveProgram } from "../../src/audit-changed.ts";
+
+// Looked up once: a bare name costs one posix_spawn per PATH entry on every start (see resolveProgram).
+const GIT = resolveProgram("git");
 
 function isolation(tmp) {
   return {
@@ -16,81 +23,101 @@ function isolation(tmp) {
   };
 }
 
-function gitIn(cwd, env, ...args) {
-  execFileSync(
-    "git",
-    ["-c", "user.name=feat", "-c", "user.email=feat@example.invalid", "-c", "commit.gpgsign=false", ...args],
-    { cwd, env: { ...process.env, ...env }, stdio: "ignore" },
-  );
+function gitIn(cwd, env, args, input) {
+  return new Promise((resolve, reject) => {
+    const child = execFile(
+      GIT,
+      ["-c", "user.name=feat", "-c", "user.email=feat@example.invalid", "-c", "commit.gpgsign=false", ...args],
+      { cwd, env: { ...process.env, ...env } },
+      (err, _stdout, stderr) => (err ? reject(new Error(`git ${args.join(" ")}: ${stderr || err.message}`)) : resolve()),
+    );
+    if (input !== undefined) child.stdin.end(input);
+  });
+}
+
+// A fast-import stream. commits: [{ ref, from?, files: { name: content | null } }], null deleting the file.
+function history(commits) {
+  let out = "";
+  commits.forEach((c, i) => {
+    out += `commit ${c.ref}\nmark :${i + 1}\ncommitter feat <feat@example.invalid> ${1700000000 + i} +0000\ndata 1\n${i + 1}\n`;
+    if (c.from) out += `from ${c.from}\n`;
+    for (const [name, content] of Object.entries(c.files)) {
+      if (content === null) out += `D ${name}\n`;
+      else out += `M 100644 inline ${name}\ndata ${Buffer.byteLength(content)}\n${content}\n`;
+    }
+    out += "\n";
+  });
+  return out;
 }
 
 const write = (dir, name, text) => writeFileSync(path.join(dir, name), text);
 
-function committed(dir, env) {
+async function committed(dir, env) {
   mkdirSync(dir, { recursive: true });
-  const git = (...a) => gitIn(dir, env, ...a);
-  git("init", "-q", "-b", "main");
-  for (const f of ["a", "b", "m", "r-old"]) write(dir, `${f}.txt`, `${f} content line\n`);
-  git("add", "-A");
-  git("commit", "-q", "-m", "1");
-  git("checkout", "-q", "-b", "topic");
-  git("rm", "-q", "a.txt");
-  appendFileSync(path.join(dir, "b.txt"), "x\n");
-  write(dir, "c.txt", "c\n");
-  git("mv", "r-old.txt", "r-new.txt");
-  git("add", "-A");
-  git("commit", "-q", "-m", "2");
-  git("checkout", "-q", "main");
-  appendFileSync(path.join(dir, "m.txt"), "y\n");
-  git("commit", "-q", "-a", "-m", "3");
-  git("checkout", "-q", "topic");
+  await gitIn(dir, env, ["init", "-q", "-b", "main"]);
+  const base = { "a.txt": "a content line\n", "b.txt": "b content line\n", "m.txt": "m content line\n", "r-old.txt": "r-old content line\n" };
+  await gitIn(
+    dir,
+    env,
+    ["fast-import", "--quiet"],
+    history([
+      { ref: "refs/heads/main", files: base },
+      {
+        ref: "refs/heads/topic",
+        from: ":1",
+        files: { "a.txt": null, "b.txt": "b content line\nx\n", "c.txt": "c\n", "r-old.txt": null, "r-new.txt": base["r-old.txt"] },
+      },
+      { ref: "refs/heads/main", from: ":1", files: { "m.txt": "m content line\ny\n" } },
+    ]),
+  );
+  await gitIn(dir, env, ["checkout", "-q", "-f", "topic"]);
   write(dir, "d.txt", "d\n");
   return dir;
 }
 
-function dirty(dir, env) {
+async function dirty(dir, env) {
   mkdirSync(dir, { recursive: true });
-  const git = (...a) => gitIn(dir, env, ...a);
-  git("init", "-q", "-b", "main");
-  write(dir, "a.txt", "a\n");
-  write(dir, "b.txt", "b\n");
-  write(dir, ".gitignore", "ignored.txt\n");
-  git("add", "-A");
-  git("commit", "-q", "-m", "1");
+  await gitIn(dir, env, ["init", "-q", "-b", "main"]);
+  await gitIn(
+    dir,
+    env,
+    ["fast-import", "--quiet"],
+    history([{ ref: "refs/heads/main", files: { "a.txt": "a\n", "b.txt": "b\n", ".gitignore": "ignored.txt\n" } }]),
+  );
+  await gitIn(dir, env, ["checkout", "-q", "-f", "main"]);
   appendFileSync(path.join(dir, "a.txt"), "a2\n");
-  git("add", "a.txt");
+  await gitIn(dir, env, ["add", "a.txt"]);
   appendFileSync(path.join(dir, "b.txt"), "b2\n");
   write(dir, "new.txt", "n\n");
   write(dir, "ignored.txt", "i\n");
   return dir;
 }
 
-function shallow(tmp, env) {
-  const origin = committed(path.join(tmp, "origin"), env);
-  const clone = path.join(tmp, "clone");
-  gitIn(tmp, env, "clone", "-q", "--depth", "1", "--no-single-branch", `file://${origin}`, clone);
-  gitIn(clone, env, "checkout", "-q", "topic");
-  return clone;
+
+const TMP = realpathSync(mkdtempSync(path.join(os.tmpdir(), "feat-chg-")));
+process.on("exit", () => rmSync(TMP, { recursive: true, force: true }));
+const ENV = isolation(TMP);
+
+async function build() {
+  const none = path.join(TMP, "none");
+  mkdirSync(none);
+  const shallowFrom = async () => {
+    const origin = await committed(path.join(TMP, "committed"), ENV);
+    const clone = path.join(TMP, "shallow");
+    await gitIn(TMP, ENV, ["clone", "-q", "--depth", "1", "--no-single-branch", `file://${origin}`, clone]);
+    await gitIn(clone, ENV, ["checkout", "-q", "topic"]);
+    return { committed: origin, shallow: clone };
+  };
+  const [c, d] = await Promise.all([shallowFrom(), dirty(path.join(TMP, "dirty"), ENV)]);
+  return { committed: c.committed, shallow: c.shallow, dirty: d, none };
 }
 
+const REPOS = await build();
+
 export async function readChanged(input) {
-  const tmp = realpathSync(mkdtempSync(path.join(os.tmpdir(), "feat-chg-")));
-  const env = isolation(tmp);
-  try {
-    let cwd;
-    let git;
-    switch (input.repo) {
-      case "committed": cwd = committed(path.join(tmp, "repo"), env); break;
-      case "dirty": cwd = dirty(path.join(tmp, "repo"), env); break;
-      case "none": cwd = path.join(tmp, "repo"); mkdirSync(cwd); break;
-      case "shallow": cwd = shallow(tmp, env); break;
-      case "no-git": cwd = dirty(path.join(tmp, "repo"), env); git = "/nonexistent/feat-no-git"; break;
-      default: throw new Error(`unknown repo '${input.repo}'`);
-    }
-    const r = await changedPaths({ cwd, base: input.base, env, ...(git ? { git } : {}) });
-    if (r.status !== "OK") return r;
-    return { status: "OK", body: { paths: r.body.paths } };
-  } finally {
-    rmSync(tmp, { recursive: true, force: true });
-  }
+  const cwd = { committed: REPOS.committed, dirty: REPOS.dirty, none: REPOS.none, shallow: REPOS.shallow, "no-git": REPOS.dirty }[input.repo];
+  if (!cwd) throw new Error(`unknown repo '${input.repo}'`);
+  const r = await changedPaths({ cwd, base: input.base, env: ENV, ...(input.repo === "no-git" ? { git: "/nonexistent/feat-no-git" } : {}) });
+  if (r.status !== "OK") return r;
+  return { status: "OK", body: { paths: r.body.paths } };
 }

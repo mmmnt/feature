@@ -42,13 +42,17 @@ feat 1.0
 #     output and exit code below. `feat audit` without --changed is unchanged.
 #  3. Routes in feat.config.json: CheckChanged -> packages/feature/src/audit-changed.ts#checkChanged, ReadChanged ->
 #     packages/feature/fixtures/changed/probe.mjs#readChanged.
-#  4. The probe, packages/feature/fixtures/changed/probe.mjs. `ReadChanged { repo, base }` makes a fresh directory
-#     under os.tmpdir(), builds the named repository in it, calls changedPaths({ cwd: <that directory>, base, env })
-#     and answers its paths only (the temporary top level is never in the answer), then removes the directory, on a
-#     refusal too. Every git it runs, and the env it hands changedPaths, sets GIT_CONFIG_NOSYSTEM=1,
-#     GIT_CONFIG_GLOBAL=/dev/null and GIT_CEILING_DIRECTORIES=<the temp directory's parent>, and commits with
+#  4. The probe, packages/feature/fixtures/changed/probe.mjs. When the module is evaluated (in beforeAll, as the
+#     product probes start their environments at load, ruling ba21abb2), it builds the repositories below once, in one
+#     directory under os.tmpdir() that is removed when the process exits. `ReadChanged { repo, base }` calls
+#     changedPaths({ cwd: <that repository>, base, env }) and answers its paths only (the temporary top level is never
+#     in the answer); changedPaths only reads, so cases sharing a repository cannot see each other. Every git it runs,
+#     and the env it hands changedPaths, sets GIT_CONFIG_NOSYSTEM=1, GIT_CONFIG_GLOBAL=/dev/null and
+#     GIT_CEILING_DIRECTORIES=<the temp directory's parent>, and commits with
 #     `-c user.name=feat -c user.email=feat@example.invalid -c commit.gpgsign=false`, so the host's git settings and
-#     any enclosing repository are never read. The repositories:
+#     any enclosing repository are never read. Each history is written by one `git fast-import`, and git is spawned
+#     asynchronously by its absolute path (resolveProgram, below): under a full parallel `feat run` a git process can
+#     take seconds to start, and none of that is charged to a case. The repositories:
 #       committed: `git init -b main`; commit a.txt, b.txt, m.txt, r-old.txt; branch topic; on topic delete a.txt,
 #                  change b.txt, add c.txt, `git mv r-old.txt r-new.txt`, commit; on main change m.txt and commit;
 #                  check topic out; then create d.txt, untracked. HEAD is topic.
@@ -131,14 +135,18 @@ construct:
   path list, and writes nothing. A pass reports how many paths, specs and workspaces it checked, so a pass is never
   silent about its input.
   changedPaths({ cwd, base, git, env }) runs git (the program named by `git`, default "git", with `env` added to the
-  process environment) from cwd to find the top level, then every later git command from the top level, with -z so a
-  path is never quoted. It refuses GIT_UNAVAILABLE when the program cannot be started, NOT_A_GIT_REPO when cwd is in no
-  repository, BASE_NOT_FOUND when `<base>^{commit}` does not resolve, and NO_MERGE_BASE when <base> and HEAD have no
-  merge base, which is what a shallow clone gives; the detail names the base and, for NO_MERGE_BASE, says to fetch the
-  full history. It never falls back to a two-dot diff. The changed paths are the union, sorted by code unit with no
-  duplicates, of `git diff -z --name-only --no-renames <merge base> HEAD` (what the branch committed),
-  `git diff -z --name-only --no-renames HEAD` (staged and unstaged) and `git ls-files -z --others --exclude-standard`
-  (untracked, not ignored). With --no-renames a rename is its old path and its new path, and a deletion is its path.
+  process environment and GIT_OPTIONAL_LOCKS=0, so no read takes the index lock) from cwd, with -z so a path is never
+  quoted. A bare program name is looked up on the PATH once per process and run by its absolute path; a name holding a
+  separator, or found on no entry, is run as given. Its commands only read and none needs another's answer, so they
+  run at once, asynchronously, and their answers are read in this order. It refuses GIT_UNAVAILABLE when the program
+  cannot be started, NOT_A_GIT_REPO when cwd is in no repository, BASE_NOT_FOUND when `<base>^{commit}` does not
+  resolve, and NO_MERGE_BASE when <base> and HEAD have no merge base, which is what a shallow clone gives; the detail
+  names the base and, for NO_MERGE_BASE, says to fetch the full history. It never falls back to a two-dot diff. The
+  changed paths are the union, sorted by code unit with no duplicates, of
+  `git diff -z --name-only --no-relative --no-renames <base>...HEAD` (what the branch committed since the merge base),
+  `git diff -z --name-only --no-relative --no-renames HEAD` (staged and unstaged) and
+  `git ls-files -z --others --exclude-standard --full-name :/` (untracked, not ignored), each relative to the top level
+  whatever cwd is. With --no-renames a rename is its old path and its new path, and a deletion is its path.
   It answers { root, paths } with root the top level; it writes nothing, to the repository or anywhere else.
 
 enforce:
