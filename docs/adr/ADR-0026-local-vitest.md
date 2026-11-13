@@ -43,5 +43,14 @@ that started there has it; one that added Feature by hand need not.
 - Package managers that install peers (pnpm by default, npm 7 and later) add vitest to a consumer's
   lockfile when they install Feature, where its version and age are under the project's policy; one that
   does not warns about the missing peer.
-- Other places that start a tool through npx are not changed by this decision: the `feat-cdk` handler's
-  `npx cdk` fallback and the VS Code extension's `npx feat watch`. They are recorded for their own rulings.
+- Other places that started a tool through npx follow the same rule (amendment below).
+
+## Amendment (founder rulings 2026-11-13, "Ship v0.1.54 (Recommended)" and "Fix both in v0.1.54 (Recommended)")
+
+The same rule holds wherever Feature starts a tool on the user's behalf:
+
+1. `@mmmnt/feat-cdk`'s SynthStack handler fell back to `npx cdk synth` when `aws-cdk` did not resolve, and
+   npx fetched the npm package `cdk`, which is not `aws-cdk`. It now finds `aws-cdk` from the app directory
+   upward as the runner finds vitest, runs its `cdk` bin with `process.execPath`, and otherwise throws
+   `Configuration error (exit 2): [AWS_CDK_NOT_INSTALLED] ...` before writing or spawning anything. An
+   explicit `invoke.cdkBin` is the user's own choice and still runs (SPEC-CDK-001).

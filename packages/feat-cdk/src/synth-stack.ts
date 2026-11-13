@@ -5,7 +5,7 @@
 // the canonical surface.
 //
 // The handler runs `cdk synth` (via the consumer's own aws-cdk install or a
-// configured shim), analyzes the resulting assembly, and returns the
+// configured cdkBin; never a fetched one, SPEC-CDK-001), analyzes the resulting assembly, and returns the
 // requested stack's canonical surface. With a stage configured, the "<env>"
 // token is a two-way contract: it resolves to the stage in the requested
 // stack id, and the stage normalizes back to "<env>" in the response — one
@@ -13,8 +13,7 @@
 // resource selection (path / type / partial match / regex) for relational
 // and absence predictions.
 import { execFile as execFileCb } from "node:child_process";
-import { mkdtempSync } from "node:fs";
-import { createRequire } from "node:module";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -28,7 +27,7 @@ export interface SynthStackConfig {
   /** Directory of the CDK app (default: process cwd). */
   cwd?: string;
   /**
-   * The `cdk synth --app` command. Default "npx cdk". Set to a project's own
+   * The `cdk synth --app` command. By default cdk runs the app its cdk.json names. Set to a project's own
    * entrypoint runner (e.g. "node bin/app.ts") when there is no cdk.json.
    */
   appCommand?: string;
@@ -40,10 +39,11 @@ export interface SynthStackConfig {
   /** Extra environment for the synth subprocess (e.g. ENVIRONMENT). */
   env?: Record<string, string>;
   /**
-   * Binary that runs cdk. By default the consumer's own `aws-cdk` install is
-   * resolved and run with the current Node executable — cross-platform, no
-   * shell. Setting this forces the shim path instead (spawned through a
-   * shell on Windows, where npx is a .cmd file execFile cannot run).
+   * Binary that runs cdk, with `cdk` as its first argument. By default the
+   * consumer's own `aws-cdk` install is resolved and run with the current
+   * Node executable — cross-platform, no shell — and a missing one is refused
+   * (AWS_CDK_NOT_INSTALLED), never fetched. Setting this runs that binary
+   * instead (through a shell on Windows, for a .cmd shim).
    */
   cdkBin?: string;
   /**
@@ -82,15 +82,36 @@ interface SynthStackPayload {
 }
 
 /**
- * The consumer's own aws-cdk CLI entry, resolved from `cwd` — running it via
- * process.execPath is the cross-platform path (no .cmd shim involved).
- * Null when aws-cdk is not installed there (the npx fallback applies).
+ * The consumer's own aws-cdk CLI entry: the first `node_modules/aws-cdk/package.json` from `cwd` upward
+ * (a workspace-hoisted install is found; NODE_PATH is not read) and the file its `bin.cdk` (or string
+ * `bin`) names. Running it via process.execPath is the cross-platform path (no .cmd shim involved).
+ * Null when aws-cdk is not installed there, it names no bin, or the bin is absent (SPEC-CDK-001).
  */
 export function resolveCdkEntry(cwd: string): string | null {
-  try {
-    return createRequire(path.join(cwd, "__feat-cdk-resolve__.js")).resolve("aws-cdk/bin/cdk");
-  } catch {
-    return null;
+  for (let dir = path.resolve(cwd); ; dir = path.dirname(dir)) {
+    const manifestPath = path.join(dir, "node_modules", "aws-cdk", "package.json");
+    if (existsSync(manifestPath)) {
+      const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as { bin?: string | Record<string, string> };
+      const rel = typeof manifest.bin === "string" ? manifest.bin : manifest.bin?.cdk;
+      if (rel === undefined) return null;
+      const entry = path.resolve(path.dirname(manifestPath), rel);
+      return existsSync(entry) ? entry : null;
+    }
+    if (path.dirname(dir) === dir) return null;
+  }
+}
+
+/** Thrown when SynthStack must synthesize and the app has no aws-cdk (SPEC-CDK-001): a configuration error, exit 2. */
+export class CdkNotInstalledError extends Error {
+  public readonly code = "AWS_CDK_NOT_INSTALLED" as const;
+  constructor(cwd: string) {
+    super(
+      `Configuration error (exit 2): [AWS_CDK_NOT_INSTALLED] aws-cdk is not installed for the CDK app at ${cwd}. ` +
+        `SynthStack runs the project's own aws-cdk and never fetches one; add aws-cdk as a dev dependency ` +
+        `(for example \`npm install --save-dev aws-cdk\`, \`pnpm add -D aws-cdk\`), set invoke.cdkBin, or point ` +
+        `invoke.assemblyDir at a synthesized cdk.out.`,
+    );
+    this.name = "CdkNotInstalledError";
   }
 }
 
@@ -110,6 +131,10 @@ export function createSynthStackHandler(config: SynthStackConfig = {}) {
     let assemblyDir = config.assemblyDir;
     if (!assemblyDir) {
       const cwd = config.cwd ?? process.cwd();
+      // The app's own aws-cdk, run by this Node; a missing one is refused before anything is written or
+      // spawned, never fetched (SPEC-CDK-001). A configured cdkBin is the user's choice and runs instead.
+      const entry = config.cdkBin ? null : resolveCdkEntry(cwd);
+      if (!config.cdkBin && entry === null) throw new CdkNotInstalledError(cwd);
       assemblyDir = mkdtempSync(path.join(tmpdir(), "feat-cdk-"));
       // Synthesize the WHOLE app: the assembly is the contract, and stack
       // membership is ruled on by the analysis (an unknown stack must answer
@@ -117,14 +142,13 @@ export function createSynthStackHandler(config: SynthStackConfig = {}) {
       const synthArgs = ["synth", "--all", "--output", assemblyDir, "--quiet"];
       if (config.appCommand) synthArgs.push("--app", config.appCommand);
       const env = { ...process.env, ...config.env };
-      const entry = config.cdkBin ? null : resolveCdkEntry(cwd);
-      if (entry) {
+      if (entry !== null) {
         await execFile(process.execPath, [entry, ...synthArgs], { cwd, env });
       } else {
+        // The user's own cdkBin, as configured (a .cmd shim needs a shell on Windows).
         const win = process.platform === "win32";
-        const bin = config.cdkBin ?? (win ? "npx.cmd" : "npx");
         const args = ["cdk", ...synthArgs];
-        await execFile(bin, win ? args.map(quoteForShell) : args, { cwd, env, shell: win });
+        await execFile(config.cdkBin!, win ? args.map(quoteForShell) : args, { cwd, env, shell: win });
       }
     }
 

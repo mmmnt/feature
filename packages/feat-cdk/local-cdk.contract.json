@@ -1,0 +1,65 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-CDK-001",
+  "schemas": {
+    "SynthLocalCdkInput": {
+      "type": "object",
+      "required": [
+        "cdk"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "cdk": {
+          "enum": [
+            "installed",
+            "hoisted",
+            "missing"
+          ]
+        }
+      }
+    },
+    "SynthLocalCdkResult": {
+      "type": "object",
+      "required": [
+        "stackName",
+        "ran",
+        "fetched"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "stackName": {
+          "type": "string"
+        },
+        "ran": {
+          "type": "string"
+        },
+        "fetched": {
+          "type": "boolean"
+        }
+      }
+    },
+    "SynthLocalCdkError": {
+      "type": "object",
+      "required": [
+        "code"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "enum": [
+            "AWS_CDK_NOT_INSTALLED"
+          ]
+        },
+        "detail": {
+          "type": "string"
+        },
+        "ran": {
+          "type": "string"
+        },
+        "fetched": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

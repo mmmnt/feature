@@ -1,0 +1,73 @@
+feat 1.0
+
+# SPEC-CDK-001 — SynthStack runs the project's own aws-cdk and never fetches one (founder rulings
+# 2026-11-13, "Ship v0.1.54 (Recommended)" and "Fix both in v0.1.54 (Recommended)"; ADR-0026, amended).
+#
+# Until now, when aws-cdk did not resolve from the app directory, the handler fell back to
+# `npx cdk synth ...`. npx then fetched the npm package `cdk` (which is not aws-cdk) from the registry at
+# run time, outside the project's lockfile and any review of its supply chain. The same defect SPEC-RT-010
+# fixed for vitest in the runner.
+#
+# WHAT CHANGES (and nothing else):
+#  1. resolveCdkEntry(cwd) takes the first <dir>/node_modules/aws-cdk/package.json from cwd upward (as
+#     resolveVitest does; a workspace-hoisted aws-cdk is found, NODE_PATH is not read) and the file its
+#     `bin.cdk` (or a string `bin`) names. The handler runs it with process.execPath, without a shell.
+#  2. With no aws-cdk there and no `cdkBin` configured, the handler spawns nothing and throws
+#     CdkNotInstalledError, `Configuration error (exit 2): [AWS_CDK_NOT_INSTALLED] ...`, telling the user
+#     to add aws-cdk as a dev dependency; through the harness that is a configuration error, exit 2.
+#  3. An explicit `cdkBin` is still run as configured (the user's own choice of binary); there is no
+#     default binary any more, so `npx` is never chosen by the package.
+# Unchanged: `assemblyDir` skips synthesis; the assembly analysis, the surface, the 400 and 404 answers.
+#
+# Driven through packages/feat-cdk/fixtures/probe.mjs (part of the build). `SynthLocalCdk { cdk }` builds a
+# throwaway CDK app directory in the temporary directory with a stub aws-cdk package (version
+# 2.999.0-stub; its bin copies the single-stack fixture's assembly to the `--output` directory) at the app
+# directory (`installed`), in its parent, as a workspace root hoists it (`hoisted`), or nowhere (`missing`).
+# It puts stubs named npx, npm, pnpm, pnpx, yarn and bunx first on PATH, each recording that it was called,
+# and asks the handler for FeatureDashboardLocalData. It answers the stack name, `ran` (the stub version
+# that ran, "" if none) and `fetched` (whether any stub was called); a refusal answers ERR with its code.
+
+spec SPEC-CDK-001 "SynthStack: aws-cdk resolves from the project, never fetched"
+context Toolchain
+aggregate Cdk
+type infrastructure
+status agreed
+
+construct:
+  handler at packages/feat-cdk/src/synth-stack.ts
+  touches packages/feat-cdk/**
+  needs SPEC-RT-010
+  resolveCdkEntry(cwd) takes the first <dir>/node_modules/aws-cdk/package.json from cwd upward and returns
+  the absolute path of its `bin.cdk` (or string `bin`), or null when there is none or the file is absent.
+  createSynthStackHandler, when it must synthesize and no cdkBin is configured, runs that entry with
+  process.execPath and no shell; when it is null it throws CdkNotInstalledError (code AWS_CDK_NOT_INSTALLED,
+  message prefixed `Configuration error (exit 2): [AWS_CDK_NOT_INSTALLED]`) before spawning anything.
+
+enforce:
+  rejects AWS_CDK_NOT_INSTALLED when aws-cdk does not resolve from the app directory and no cdkBin is configured
+  run the aws-cdk the project installed, resolved from the app directory, never one fetched by npx
+  spawn nothing when aws-cdk is not installed
+  tell the user to add aws-cdk as a dev dependency in the refusal
+
+contract:
+  input SynthLocalCdkInput
+  response SynthLocalCdkResult
+  error SynthLocalCdkError
+
+scenario "aws-cdk installed in the app directory is the one that synthesizes":
+  when: SynthLocalCdk { cdk: "installed" }
+  predict success:
+    response OK SynthLocalCdkResult { stackName: "feature-dashboard-local-data", ran: "2.999.0-stub", fetched: false }
+    filesystem has []
+
+scenario "aws-cdk hoisted to a parent directory, as a workspace installs it, is found":
+  when: SynthLocalCdk { cdk: "hoisted" }
+  predict success:
+    response OK SynthLocalCdkResult { stackName: "feature-dashboard-local-data", ran: "2.999.0-stub", fetched: false }
+    filesystem has []
+
+scenario "an app without aws-cdk is refused before anything runs, and nothing is fetched":
+  when: SynthLocalCdk { cdk: "missing" }
+  predict rejection AWS_CDK_NOT_INSTALLED:
+    response ERR SynthLocalCdkError { code: "AWS_CDK_NOT_INSTALLED", detail: matching "add aws-cdk as a dev dependency", ran: "", fetched: false }
+    filesystem has []

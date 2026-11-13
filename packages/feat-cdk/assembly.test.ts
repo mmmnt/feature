@@ -2,6 +2,8 @@
 // feature-dashboard DataStack — every truth here came out of `cdk synth`) and
 // a synthetic 3-stack assembly proving both cross-stack SSM edge forms and
 // closure resolution. No mocks: the input is genuine assembly JSON.
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -258,8 +260,25 @@ describe("resolveCdkEntry (the cross-platform synth path)", () => {
     expect(entry!.endsWith(path.join("aws-cdk", "bin", "cdk"))).toBe(true);
   });
 
-  it("is null when aws-cdk is not installed there (the npx fallback applies)", () => {
-    expect(resolveCdkEntry(path.join(HERE, "fixtures", "single-stack"))).toBeNull();
+  it("is null when aws-cdk is not installed there or above it", () => {
+    expect(resolveCdkEntry(mkdtempSync(path.join(tmpdir(), "feat-cdk-none-")))).toBeNull();
+  });
+
+  it("is found hoisted to a parent directory, and is null for a package that names no cdk bin", () => {
+    const ws = mkdtempSync(path.join(tmpdir(), "feat-cdk-ws-"));
+    const pkg = path.join(ws, "node_modules", "aws-cdk");
+    mkdirSync(path.join(pkg, "bin"), { recursive: true });
+    writeFileSync(path.join(pkg, "bin", "cdk"), "");
+    writeFileSync(path.join(pkg, "package.json"), JSON.stringify({ name: "aws-cdk", bin: { cdk: "bin/cdk" } }));
+    mkdirSync(path.join(ws, "infra"));
+    expect(resolveCdkEntry(path.join(ws, "infra"))).toBe(path.join(pkg, "bin", "cdk"));
+    writeFileSync(path.join(pkg, "package.json"), JSON.stringify({ name: "aws-cdk" }));
+    expect(resolveCdkEntry(path.join(ws, "infra"))).toBeNull();
+  });
+
+  it("refuses to synthesize without aws-cdk (AWS_CDK_NOT_INSTALLED) and never falls back to npx", async () => {
+    const cwd = mkdtempSync(path.join(tmpdir(), "feat-cdk-none-"));
+    await expect(createSynthStackHandler({ cwd })({ stack: "Any" })).rejects.toThrow(/\[AWS_CDK_NOT_INSTALLED\].*add aws-cdk as a dev dependency/);
   });
 });
 

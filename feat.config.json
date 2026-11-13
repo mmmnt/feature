@@ -50,6 +50,10 @@
         "module": "packages/feat-runner/fixtures/probe.mjs",
         "export": "runVitest"
       },
+      "SynthLocalCdk": {
+        "module": "packages/feat-cdk/fixtures/probe.mjs",
+        "export": "synthLocalCdk"
+      },
       "RunHarnessNamespace": {
         "module": "packages/feat-runtime/fixtures/harness/probe.mjs",
         "export": "runNamespace"

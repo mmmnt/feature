@@ -23,7 +23,7 @@ export {
   type CfnResource,
 } from "./assembly.js";
 export { stackSurface, countOfType, firstOfType, type StackSurface, type SurfaceOptions } from "./surface.js";
-export { createSynthStackHandler, resolveCdkEntry, type SynthStackConfig } from "./synth-stack.js";
+export { CdkNotInstalledError, createSynthStackHandler, resolveCdkEntry, type SynthStackConfig } from "./synth-stack.js";
 export {
   createAdapter,
   resolveStage,

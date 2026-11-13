@@ -15,9 +15,12 @@ npm install --save-dev @mmmnt/feat-cdk aws-cdk
 ```
 
 Requires Node 20 or later, `@mmmnt/feature`, and a CDK app. To synthesize, the adapter runs the
-`aws-cdk` CLI resolved from your project (`aws-cdk/bin/cdk`, run with the current Node). If that is
-not installed it falls back to `npx cdk`, or to the binary in `invoke.cdkBin`. To skip synthesis, point
-`invoke.assemblyDir` at a `cdk.out` you already built.
+`aws-cdk` CLI your project installed: the first `node_modules/aws-cdk` from the app directory upward
+(so a workspace-hoisted install is found), its `cdk` bin run with the current Node, no shell. It never
+fetches one with `npx`: without `aws-cdk` the command is refused with `AWS_CDK_NOT_INSTALLED`, a
+configuration error (`feat run` exits `2`); add `aws-cdk` as a dev dependency (SPEC-CDK-001). Set
+`invoke.cdkBin` to run a binary of your own instead. To skip synthesis, point `invoke.assemblyDir` at a
+`cdk.out` you already built.
 
 ## What it derives
 
@@ -74,7 +77,7 @@ The resolved stage is exported to the synth subprocess as `ENVIRONMENT`.
 | `invoke.appCommand` | string | The `cdk synth --app` command, such as `node bin/app.ts`. Use it when there is no `cdk.json`. With neither, `cdk` runs the app its own config names. |
 | `invoke.cwd` | string | The CDK app directory. Default: the project root, where `feat.config.json` lives. |
 | `invoke.assemblyDir` | string | A pre-synthesized `cdk.out`. When set, nothing is synthesized: the deterministic path for CI. |
-| `invoke.cdkBin` | string | The binary that runs `cdk`, with `cdk` as its first argument (`npx` by default on the fallback). Setting it forces the shim path instead of the resolved `aws-cdk`. |
+| `invoke.cdkBin` | string | A binary of your own that runs `cdk`, with `cdk` as its first argument, used instead of the resolved `aws-cdk` (through a shell on Windows, for a `.cmd` shim). There is no default: without it, the project's `aws-cdk` runs, or the command is refused with `AWS_CDK_NOT_INSTALLED`. |
 | `invoke.env` | object | Environment added to every synth subprocess. |
 | `invoke.stage` | string or `{ fromEnv, default }` | The active stage. A literal, or the name of an environment variable and a default. See "One spec text, every environment". |
 | `invoke.externalPublications` | string[] | SSM names published by another plane. See below. |
@@ -155,7 +158,10 @@ The command answers `{ status, body }`:
 
 Specs predict them with `predict error MISSING_STACK` and `predict error UNKNOWN_STACK`. Two other
 failures are thrown, not answered: a consumed SSM name with no publisher and no `externalPublications`
-entry (it would fail at deploy), a cyclic stack dependency, and a failed `cdk synth`.
+entry (it would fail at deploy), a cyclic stack dependency, and a failed `cdk synth`. A command that must
+synthesize while the app has no `aws-cdk` (and no `invoke.cdkBin`) throws
+`Configuration error (exit 2): [AWS_CDK_NOT_INSTALLED] ...` before anything is written or spawned, so
+`feat run` exits `2`.
 
 `stack` is a stack name or an artifact id, and `<env>` in it resolves to the stage.
 
@@ -217,7 +223,8 @@ scenario "the data stack has one table and publishes its name":
 - `createSynthStackHandler(config)` → the Feature response command. Its config adds a `project`
   function, an escape hatch that merges extra fields over the surface.
 - `resolveStage(stage)` → the stage a config resolves to; `resolveCdkEntry(cwd)` → the project's
-  `aws-cdk` entry, or `null`.
+  `aws-cdk` entry (its `cdk` bin, from `cwd` upward), or `null`. `CdkNotInstalledError`
+  (`code: "AWS_CDK_NOT_INSTALLED"`) is what the handler throws without one.
 - `normalizedResources` / `selectResources` / `runSelects` / `deepMatch` / `constructPath` /
   `normalizeTokens` / `normalizeStage` / `consumedSsmNames` / `publishedSsm` / `listStacks` /
   `readTemplate` / `countOfType` / `firstOfType` — the primitives, for consumer unit tests and
@@ -239,7 +246,16 @@ resolve materialized values afterward.
 - The adapter takes no actors and offers no `setClock`, so `clock at` against it is a
   `CLOCK_UNSUPPORTED` configuration error.
 
-## What changed in this release (v0.1.48, package 0.4.1)
+## What changed in this release (v0.1.54, package 0.5.0)
+
+- **The project's own `aws-cdk`, never a fetched one (SPEC-CDK-001, ADR-0026).** Without `aws-cdk` in
+  the app, synthesis used to fall back to `npx cdk synth`, and npx fetched the npm package `cdk` (which
+  is not `aws-cdk`) from the registry at run time. Now `aws-cdk` is found from the app directory upward
+  (a workspace-hoisted install is served) and run with Node; without it the command is refused with
+  `AWS_CDK_NOT_INSTALLED`, exit `2`. `invoke.cdkBin` still runs a binary of your own. New export
+  `CdkNotInstalledError`.
+
+## What changed in v0.1.48 (package 0.4.1)
 
 No source change. The package is republished as 0.4.1 against `@mmmnt/feat-types` 0.2.0, with this README.
 
