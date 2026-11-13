@@ -1,6 +1,6 @@
 {
   "name": "@mmmnt/feat-adapter-stdio-jsonrpc",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Feat response and service adapters over the Feat Host Protocol: JSON-RPC 2.0 on a spec host's stdio (SPEC-RPC-001/002).",
   "license": "MIT",
   "type": "module",
