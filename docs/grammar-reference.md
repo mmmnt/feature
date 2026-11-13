@@ -415,7 +415,8 @@ scenario outline "unknown users are rejected":
     | "missing@example.com" | "UNKNOWN_USER" |
 ```
 
-`<placeholder>` tokens are valid in `when:`/`execute` payloads, in value blocks, and in the
+`<placeholder>` tokens are valid in `when:`/`execute` payloads, in value blocks (as a field's whole
+value, or as a whole element at any depth of a literal array or object: `roles: [<role>]`), and in the
 **rejection-ID position** (`predict rejection <code>:` — every value the column supplies must be
 a declared `rejects` ID; the two-way lint evaluates per expanded row; a row value is a rejection id in either form and is compared exactly). The `examples:` pipe table
 supplies one row per derived test case (column headers = placeholder names; cells are JSON

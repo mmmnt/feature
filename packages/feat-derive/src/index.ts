@@ -52,6 +52,13 @@ export interface TestTopology {
 
 type Row = Record<string, unknown>;
 
+/**
+ * The row of a scenario that is not an outline. A literal's contents are substituted only in an outline
+ * row: in any other scenario a `{ $placeholder }` inside a literal is the data the spec wrote (a probe that
+ * predicts derive's own output does exactly that), as its seeds are (SPEC-DRV-001).
+ */
+const NOT_OUTLINE: Row = Object.freeze({});
+
 function isPlaceholder(v: unknown): v is { $placeholder: string } {
   return typeof v === "object" && v !== null && "$placeholder" in v;
 }
@@ -81,6 +88,10 @@ function substituteMatcher(m: Matcher, row: Row): Matcher {
     return { matcher: "regex", pattern: String(row[name]) };
   }
   if (m.matcher === "nested") return { matcher: "nested", fields: substituteBlock(m.fields, row) };
+  // A literal's array or object value may hold whole-value placeholders (`roles: [<role>]`): they take
+  // the row's value at any depth, as in a payload. A scalar literal has none, so it is returned as is.
+  if (m.matcher === "literal" && row !== NOT_OUTLINE && typeof m.value === "object" && m.value !== null)
+    return { matcher: "literal", value: substituteValue(m.value, row) as typeof m.value };
   return m;
 }
 
@@ -192,7 +203,7 @@ export function derive(spec: BuiltSpec, config: FeatConfig): TestTopology {
   for (const scenario of spec.scenarios) {
     const rows: (Row | null)[] = scenario.examples ? scenario.examples : [null];
     rows.forEach((rawRow, idx) => {
-      const row = rawRow ?? {};
+      const row = rawRow ?? NOT_OUTLINE;
       const isOutline = rawRow !== null;
       const anchor = isOutline
         ? `${spec.identity.id} › "${scenario.name}" › row[${idx + 1}]`
