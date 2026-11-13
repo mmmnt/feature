@@ -46,7 +46,7 @@ jobs:
         # the release so the freshly synced grammar always ships. ext-v* tags
         # keep the version editors/vscode/package.json declares.
         if: startsWith(github.ref_name, 'v')
-        run: npm version --no-git-tag-version "${GITHUB_REF_NAME#v}"
+        run: npm version --no-git-tag-version --allow-same-version "${GITHUB_REF_NAME#v}"
 
       - name: Package .vsix
         run: npx --yes @vscode/vsce package --allow-missing-repository
