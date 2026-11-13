@@ -902,7 +902,7 @@ buildability, and `feat report --evidence` to archive the bundle as a build
 artifact. For the integration tier add
 `feat run --config feat.integration.config.json`.
 
-## What changed in the next release
+## What changed in 0.7.0
 
 - **`feat run` runs the project's own Vitest, never a fetched one (SPEC-RT-010,
   ADR-0026).** It used to spawn `npx vitest run`, and npx fetched the latest

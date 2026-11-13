@@ -2,7 +2,7 @@
   "name": "feat-vscode",
   "displayName": "Feat — execution specifications",
   "description": "Syntax highlighting and live spec-anchored test feedback for .feat files",
-  "version": "0.1.2",
+  "version": "0.1.54",
   "publisher": "mmmnt",
   "license": "MIT",
   "repository": {

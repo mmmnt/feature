@@ -232,7 +232,7 @@ The runner has one error code of its own, `VITEST_NOT_INSTALLED`.
 | A pass fails | Its exit code counts. The other pass still runs. |
 | A harness refused its configuration | `configurationError: true`. |
 
-## What changed in the next release
+## What changed in 0.3.0
 
 - **The project's own vitest, never a fetched one (SPEC-RT-010, ADR-0026).** The runner used to spawn
   `npx vitest run`, and npx fetched the latest vitest from the registry when the project had none
