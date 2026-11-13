@@ -24,6 +24,10 @@ import {
 import { faultProblem } from "@mmmnt/feat-runtime";
 import { createAdapter, KmsAdapterError } from "../src/index.ts";
 
+// Every container this file starts carries the pid of the run that owns it (ci-local's, passed in as
+// FEAT_CI_LOCAL_PID, else this process), so scripts/docker-sweep.sh can remove what a killed run left.
+const OWNER = ["--label", `feat-test.owner-pid=${process.env.FEAT_CI_LOCAL_PID ?? process.pid}`];
+
 process.env.AWS_EC2_METADATA_DISABLED = "true";
 process.env.FEAT_KMS_TEST_ACCESS_KEY_ID = "local";
 process.env.FEAT_KMS_TEST_SECRET_ACCESS_KEY = "local";
@@ -45,7 +49,7 @@ function docker(args) {
 
 function removeAll() {
   const names = created.splice(0);
-  if (names.length > 0) spawnSync("docker", ["rm", "-f", ...names], { stdio: "ignore" });
+  if (names.length > 0) spawnSync("docker", ["rm", "-f", "-v", ...names], { stdio: "ignore" });
 }
 
 function hook() {
@@ -63,7 +67,7 @@ function hook() {
 export function start(name, args) {
   hook();
   created.push(name);
-  return docker(["run", "-d", "--name", name, ...args]);
+  return docker(["run", "-d", ...OWNER, "--name", name, ...args]);
 }
 
 export function hostPort(name, inner) {

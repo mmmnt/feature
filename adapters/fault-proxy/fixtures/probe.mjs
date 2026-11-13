@@ -16,6 +16,10 @@ import net from "node:net";
 import { createFaultProxy, FaultProxyError } from "../src/index.ts";
 import { dockerAsync } from "./docker-async.mjs";
 
+// Every container this file starts carries the pid of the run that owns it (ci-local's, passed in as
+// FEAT_CI_LOCAL_PID, else this process), so scripts/docker-sweep.sh can remove what a killed run left.
+const OWNER = ["--label", `feat-test.owner-pid=${process.env.FEAT_CI_LOCAL_PID ?? process.pid}`];
+
 export const TOXIPROXY_IMAGE = "ghcr.io/shopify/toxiproxy:2.12.0";
 export const NODE_IMAGE = "node:22.12.0-slim";
 
@@ -66,7 +70,7 @@ function docker(args) {
 function removeAll() {
   // One call for every container this probe created, so a worker killed mid-cleanup cannot leave half.
   const names = created.splice(0);
-  if (names.length > 0) spawnSync("docker", ["rm", "-f", ...names], { stdio: "ignore" });
+  if (names.length > 0) spawnSync("docker", ["rm", "-f", "-v", ...names], { stdio: "ignore" });
 }
 
 function hook() {
@@ -84,7 +88,7 @@ function hook() {
 function start(name, args) {
   hook();
   created.push(name);
-  return docker(["run", "-d", "--name", name, ...args]);
+  return docker(["run", "-d", ...OWNER, "--name", name, ...args]);
 }
 
 let envPromise;

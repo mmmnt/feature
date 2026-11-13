@@ -73,7 +73,7 @@ for tool in git node docker tar shasum; do
 done
 
 SHA=$(git -C "$REPO" rev-parse --verify "$REF^{commit}")
-RUNNER=$(cat "$REPO/scripts/ci-local.sh" "$REPO/scripts/ci-local-plan.mjs" "$REPO/scripts/ci-local.images.json" | shasum -a 256 | cut -c1-16)
+RUNNER=$(cat "$REPO/scripts/ci-local.sh" "$REPO/scripts/ci-local-plan.mjs" "$REPO/scripts/ci-local.images.json" "$REPO/scripts/docker-sweep.sh" | shasum -a 256 | cut -c1-16)
 GIT_COMMON=$(cd "$REPO" && cd "$(git rev-parse --git-common-dir)" && pwd -P)
 RECORD="$GIT_COMMON/feat-ci-local/passed/$SHA-$RUNNER"
 if [ "$RECORD_PATH" = 1 ]; then echo "$RECORD"; exit 0; fi
@@ -84,15 +84,10 @@ fi
 
 docker info >/dev/null 2>&1 || { echo "ci-local: the Docker daemon is not reachable" >&2; exit 2; }
 
-# A run killed outright (SIGKILL) cannot remove its container. Each one carries the runner's pid, so a later run
-# removes those whose runner is gone.
-for c in $(docker ps -a --filter label=feat-ci-local.pid --format '{{.Names}}'); do
-  owner=$(docker inspect -f '{{index .Config.Labels "feat-ci-local.pid"}}' "$c" 2>/dev/null || true)
-  if [ -n "$owner" ] && ! kill -0 "$owner" 2>/dev/null; then
-    echo "ci-local: removing $c, left by a run that is gone"
-    docker rm -f "$c" >/dev/null 2>&1 || true
-  fi
-done
+# A run killed outright (SIGKILL) cannot clean up. Its job container and every container its tests started carry
+# the runner's pid (feat-test.owner-pid; the tests read it from FEAT_CI_LOCAL_PID), so a later run removes what a
+# run that is gone left, with the containers' anonymous volumes. Label-scoped: nothing else on the daemon is touched.
+bash "$REPO/scripts/docker-sweep.sh" --gone | sed 's/^/ci-local: /'
 
 BASE=${CI_LOCAL_DIR:-${TMPDIR:-/tmp}/feat-ci-local}
 mkdir -p "$BASE"
@@ -105,7 +100,8 @@ CURRENT=""
 TREES=()
 cleanup() {
   local rc=$?
-  if [ -n "$CURRENT" ]; then docker rm -f "$CURRENT" >/dev/null 2>&1 || true; fi
+  if [ -n "$CURRENT" ]; then docker rm -f -v "$CURRENT" >/dev/null 2>&1 || true; fi
+  bash "$REPO/scripts/docker-sweep.sh" --run $$ | sed 's/^/ci-local: /'
   if [ "$KEEP" = 0 ] && [ "${#TREES[@]}" -gt 0 ]; then
     for d in "${TREES[@]}"; do rm -rf "$d" 2>/dev/null || echo "ci-local: could not remove $d" >&2; done
   fi
@@ -200,18 +196,22 @@ for gi in "${!GROUPS_NODE[@]}"; do
   echo "ci-local: RUN   Node $node in $name (logs $RUN/logs)"
   t0=$(date +%s)
   CURRENT=$name
-  if docker run --rm --name "$name" --label "feat-ci-local.pid=$$" --network host \
+  if docker run --rm --name "$name" --label "feat-test.owner-pid=$$" -e FEAT_CI_LOCAL_PID=$$ --network host \
       -v /var/run/docker.sock:/var/run/docker.sock \
       -v "$tree:$tree" -v "$RUN/plan:$RUN/plan:ro" -v "$RUN/logs:$RUN/logs" "${mounts[@]}" \
       -w "$tree/src" -e CI=true -e GITHUB_ACTIONS=true -e TMPDIR="$tree/tmp" -e npm_config_store_dir=/ci-cache/pnpm-store \
       "$tag" bash "${GROUPS_DRIVER[$gi]}" "$RUN/logs" > "$out" 2>&1 < /dev/null; then crc=0; else crc=$?; fi
   CURRENT=""
   secs=$(( $(date +%s) - t0 ))
-  # Containers a test started and left behind: CI's runner is discarded, so remove them here and say so.
-  leaked=$(docker ps -a --format '{{.Names}}' | grep -E '^feat-.*-test-' | grep -vxF -f <(printf '%s\n' "$before") || true)
-  if [ -n "$leaked" ]; then
-    echo "ci-local: WARN  Node $node left containers behind, removing: $(echo $leaked)" | tee -a "$SUMMARY"
-    echo "$leaked" | xargs docker rm -f -v >/dev/null 2>&1 || true
+  # What this run's tests started and left behind (CI's runner is discarded): removed by this run's label, with the
+  # containers' anonymous volumes, and said. Removal is label-scoped: another ci-local run, in another clone or
+  # session, shares the daemon and starts containers of the same names.
+  bash "$REPO/scripts/docker-sweep.sh" --run $$ | sed "s/^docker-sweep: /ci-local: WARN  Node $node: /" | tee -a "$SUMMARY"
+  # A test container with no owner label would escape every sweep: named here, not removed (it may be another run's).
+  unlabelled=$(docker ps -a --format '{{.Names}}	{{.Label "feat-test.owner-pid"}}' | awk -F '\t' '$2 == "" { print $1 }' \
+    | grep -E '^feat-.*-test-' | grep -vxF -f <(printf '%s\n' "$before") || true)
+  if [ -n "$unlabelled" ]; then
+    echo "ci-local: WARN  Node $node started containers with no feat-test.owner-pid label: $(echo $unlabelled)" | tee -a "$SUMMARY"
   fi
   shared=$(awk '$1 == "::ci-local::" && $2 == "=shared" { print $4 }' "$out")
   while IFS=$'\t' read -r kind key jn jname; do

@@ -27,6 +27,10 @@ import { serviceAdapterContract } from "@mmmnt/feat-adapter-kit";
 import { createHarness, PredictionViolation, type Harness, type HarnessCase } from "@mmmnt/feat-runtime";
 import { createAdapter } from "./src/index.js";
 
+// Every container this file starts carries the pid of the run that owns it (ci-local's, passed in as
+// FEAT_CI_LOCAL_PID, else this process), so scripts/docker-sweep.sh can remove what a killed run left.
+const OWNER = ["--label", `feat-test.owner-pid=${process.env.FEAT_CI_LOCAL_PID ?? process.pid}`];
+
 const PKG = path.dirname(fileURLToPath(import.meta.url));
 const E2E = path.join(PKG, "fixtures", "e2e");
 const PORT = 8321;
@@ -101,11 +105,11 @@ describe.runIf(available)("dynamodb adapter against real DynamoDB (Local)", () =
   beforeAll(async () => {
     if (!presetEndpoint) {
       try {
-        execFileSync("docker", ["rm", "-f", CONTAINER], { stdio: "ignore" });
+        execFileSync("docker", ["rm", "-f", "-v", CONTAINER], { stdio: "ignore" });
       } catch {}
       execFileSync(
         "docker",
-        ["run", "-d", "--rm", "--name", CONTAINER, "-p", `${PORT}:8000`, "amazon/dynamodb-local"],
+        ["run", "-d", "--rm", ...OWNER, "--name", CONTAINER, "-p", `${PORT}:8000`, "amazon/dynamodb-local"],
         { stdio: "ignore" },
       );
       startedContainer = true;
@@ -118,7 +122,7 @@ describe.runIf(available)("dynamodb adapter against real DynamoDB (Local)", () =
   afterAll(async () => {
     if (startedContainer) {
       try {
-        execFileSync("docker", ["rm", "-f", CONTAINER], { stdio: "ignore" });
+        execFileSync("docker", ["rm", "-f", "-v", CONTAINER], { stdio: "ignore" });
       } catch {}
     }
     rmSync(E2E, { recursive: true, force: true });

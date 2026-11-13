@@ -14,6 +14,10 @@ import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
+// Every container this file starts carries the pid of the run that owns it (ci-local's, passed in as
+// FEAT_CI_LOCAL_PID, else this process), so scripts/docker-sweep.sh can remove what a killed run left.
+const OWNER = ["--label", `feat-test.owner-pid=${process.env.FEAT_CI_LOCAL_PID ?? process.pid}`];
+
 const MARKER = ".peer-install-complete";
 
 const alive = (pid) => {
@@ -69,7 +73,7 @@ export async function ensurePeerInstall({ dir, pkg, version, image, name, track 
       // The client is loaded inside the container, so a binding that did not build fails here, not in a spec.
       execFileSync(
         "docker",
-        ["run", "--rm", "--name", name, "-v", `${work}:/work`, "-w", "/work", image, "sh", "-c",
+        ["run", "--rm", ...OWNER, "--name", name, "-v", `${work}:/work`, "-w", "/work", image, "sh", "-c",
           `npm install --no-audit --no-fund --prefix /work ${pkg}@${version} && node -e "require('${pkg}')"`],
         { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
       );

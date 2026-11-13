@@ -27,6 +27,10 @@ import {
 } from "@aws-sdk/client-dynamodb";
 import { createAdapter, DynamoAdapterError } from "../src/index.ts";
 
+// Every container this file starts carries the pid of the run that owns it (ci-local's, passed in as
+// FEAT_CI_LOCAL_PID, else this process), so scripts/docker-sweep.sh can remove what a killed run left.
+const OWNER = ["--label", `feat-test.owner-pid=${process.env.FEAT_CI_LOCAL_PID ?? process.pid}`];
+
 export const DYNAMODB_IMAGE = "amazon/dynamodb-local:2.6.1";
 export const TOXIPROXY_IMAGE = "ghcr.io/shopify/toxiproxy:2.12.0";
 export const NODE_IMAGE = "node:22.12.0-slim";
@@ -69,7 +73,7 @@ function docker(args) {
 function removeAll() {
   // One call for every container this probe created, so a worker killed mid-cleanup cannot leave half.
   const names = created.splice(0);
-  if (names.length > 0) spawnSync("docker", ["rm", "-f", ...names], { stdio: "ignore" });
+  if (names.length > 0) spawnSync("docker", ["rm", "-f", "-v", ...names], { stdio: "ignore" });
   if (bundleDir !== undefined) {
     rmSync(bundleDir, { recursive: true, force: true });
     bundleDir = undefined;
@@ -90,7 +94,7 @@ function hook() {
 
 /** A watchdog for the case the process is killed without running any hook: it removes the named containers once the parent is gone. */
 function watchdog(names) {
-  const script = `while kill -0 ${process.pid} 2>/dev/null; do sleep 2; done; docker rm -f ${names.join(" ")} >/dev/null 2>&1`;
+  const script = `while kill -0 ${process.pid} 2>/dev/null; do sleep 2; done; docker rm -f -v ${names.join(" ")} >/dev/null 2>&1`;
   spawn("sh", ["-c", script], { detached: true, stdio: "ignore" }).unref();
 }
 
@@ -170,7 +174,7 @@ function environment(withProxy) {
         names.forEach(track);
         watchdog(names);
         docker([
-          "run", "-d", "--rm", "--name", ddb, "-p", "127.0.0.1:0:8000", ...(withProxy ? ["-p", "127.0.0.1:0:8474"] : []),
+          "run", "-d", "--rm", ...OWNER, "--name", ddb, "-p", "127.0.0.1:0:8000", ...(withProxy ? ["-p", "127.0.0.1:0:8474"] : []),
           DYNAMODB_IMAGE, "-jar", "DynamoDBLocal.jar", "-inMemory", "-sharedDb",
         ]);
         const endpoint = `http://127.0.0.1:${hostPort(ddb, 8000)}`;
@@ -181,7 +185,7 @@ function environment(withProxy) {
         await createTables(client);
         const env = { ddb, endpoint, client, tox: undefined, peer: undefined, api: undefined };
         if (withProxy) {
-          docker(["run", "-d", "--rm", "--name", tox, `--network=container:${ddb}`, TOXIPROXY_IMAGE, "-host=0.0.0.0"]);
+          docker(["run", "-d", "--rm", ...OWNER, "--name", tox, `--network=container:${ddb}`, TOXIPROXY_IMAGE, "-host=0.0.0.0"]);
           const api = `http://127.0.0.1:${hostPort(ddb, 8474)}`;
           await until("the Toxiproxy API", async () => {
             const r = await fetch(`${api}/version`);
@@ -198,7 +202,7 @@ function environment(withProxy) {
             outfile: path.join(bundleDir, "put.cjs"),
             logLevel: "silent",
           });
-          docker(["create", "--name", peer, `--network=container:${ddb}`, NODE_IMAGE, "sleep", "900"]);
+          docker(["create", ...OWNER, "--name", peer, `--network=container:${ddb}`, NODE_IMAGE, "sleep", "900"]);
           docker(["cp", path.join(bundleDir, "put.cjs"), `${peer}:/put.cjs`]);
           docker(["start", peer]);
           Object.assign(env, { tox, peer, api });

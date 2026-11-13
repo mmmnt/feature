@@ -24,7 +24,7 @@ fresh() {
   R="$WORK/repo-$CASES"
   rm -rf "$R"
   mkdir -p "$R/scripts" "$R/.githooks"
-  cp "$SRC/scripts/ci-local.sh" "$SRC/scripts/ci-local-plan.mjs" "$SRC/scripts/ci-local.images.json" "$R/scripts/"
+  cp "$SRC/scripts/ci-local.sh" "$SRC/scripts/ci-local-plan.mjs" "$SRC/scripts/ci-local.images.json" "$SRC/scripts/docker-sweep.sh" "$R/scripts/"
   cp "$SRC/.githooks/pre-push" "$R/.githooks/"
   git -C "$R" init -q
   git -C "$R" -c user.name=t -c user.email=t@example.invalid add -A
@@ -87,6 +87,83 @@ hook() { (cd "$R" && printf '%s\n' "$1" | bash .githooks/pre-push origin git@exa
 run "pre-push runs a commit with no record" 2 "Docker daemon is not reachable" hook "$LINE"
 plant "$(bash "$R/scripts/ci-local.sh" --record-path)"
 run "pre-push lets a commit that passed through" 0 "not run again" hook "$LINE"
+
+# scripts/docker-sweep.sh against a recording `docker` stub: listings come from files, every call is logged.
+SW="$WORK/sweep"
+mkdir -p "$SW/bin"
+cat > "$SW/bin/docker" <<'STUB'
+#!/bin/sh
+echo "$*" >> "$SWEEP_LOG"
+case "$1 $2" in
+  "ps -a") cat "$SWEEP_DIR/containers" ;;
+  "network ls") cat "$SWEEP_DIR/networks" ;;
+  "volume ls") cat "$SWEEP_DIR/volumes" ;;
+esac
+exit 0
+STUB
+chmod +x "$SW/bin/docker"
+sh -c 'exit 0' & DEAD=$!
+wait "$DEAD" || true
+ALIVE=$$
+sweep() { : > "$SW/log"; PATH="$SW/bin:$PATH" SWEEP_LOG="$SW/log" SWEEP_DIR="$SW" bash "$SRC/scripts/docker-sweep.sh" "$@" >/dev/null; }
+printf 'feat-kurrent-test-kdb-1\t%s\nfeat-neo4j-test-1\t%s\n' "$DEAD" "$ALIVE" > "$SW/containers"
+printf 'feat-test-net-1\t%s\n' "$DEAD" > "$SW/networks"
+printf 'feat-test-vol-1\t%s\nfeat-test-vol-2\t%s\n' "$ALIVE" "$DEAD" > "$SW/volumes"
+
+sweep --gone
+if grep -qx "rm -f -v feat-kurrent-test-kdb-1" "$SW/log" && ! grep -q "feat-neo4j-test-1" "$SW/log" \
+  && grep -qx "network rm feat-test-net-1" "$SW/log" && grep -qx "volume rm -f feat-test-vol-2" "$SW/log" \
+  && ! grep -q "feat-test-vol-1" "$SW/log"; then
+  ok "docker-sweep --gone removes, with their volumes, what a dead run left and keeps a live run's"
+else bad "docker-sweep --gone removes, with their volumes, what a dead run left and keeps a live run's" "$(cat "$SW/log")"; fi
+
+sweep --run "$ALIVE"
+if grep -qx "rm -f -v feat-neo4j-test-1" "$SW/log" && grep -qx "volume rm -f feat-test-vol-1" "$SW/log" \
+  && ! grep -q "kdb-1\|net-1\|vol-2" "$SW/log"; then ok "docker-sweep --run <pid> removes that run's objects only"
+else bad "docker-sweep --run <pid> removes that run's objects only" "$(cat "$SW/log")"; fi
+
+sweep --gone
+unscoped=$(grep -E '^(ps|network ls|volume ls)' "$SW/log" | grep -v -- '--filter label=feat-test.owner-pid' || true)
+pruned=$(grep -E 'prune' "$SW/log" || true)
+if [ -z "$unscoped$pruned" ] && [ "$(grep -cE '^(ps|network ls|volume ls)' "$SW/log")" = 3 ]; then
+  ok "docker-sweep lists by its label only and never prunes"
+else bad "docker-sweep lists by its label only and never prunes" "$(cat "$SW/log")"; fi
+
+run "docker-sweep refuses an unknown mode" 2 "usage" bash "$SRC/scripts/docker-sweep.sh" --everything
+
+# The two sweeps below read the tree itself, not git: ci-local checks a `git archive`, which has no .git. Each also
+# counts what it read, so a sweep that finds no call site at all fails instead of passing on zero work.
+# sources [fixtures]: the files to read; with `fixtures`, without the packages' product code (<group>/<pkg>/src).
+# Paths are pruned relative to $SRC: ci-local extracts the tree into a directory that is itself named src.
+sources() {
+  local product=(-false)
+  [ "${1:-}" = fixtures ] && product=(-path "$SRC/adapters/*/src" -o -path "$SRC/packages/*/src")
+  find "$SRC/adapters" "$SRC/packages" "$SRC/scripts" \( -name node_modules -o -name dist -o -name .feature -o -name coverage \
+    -o "${product[@]}" \) -prune -o -type f \( -name '*.mjs' -o -name '*.js' -o -name '*.ts' -o -name '*.sh' \) \
+    ! -name ci-local.test.sh -print
+}
+
+# A container started from an image that declares VOLUME leaves an anonymous volume behind unless it is removed
+# with -v (664 KurrentDB and Neo4j volumes had piled up). Every `docker rm` in the repository passes it.
+rm_scan=$(sources | while read -r f; do
+  perl -ne 'if (/"rm",\s*+"-f",|\bdocker rm /) { print "SITE\n"; print "$ARGV:$.: $_" if /"rm",\s*+"-f",\s*+(?!"-v")|\bdocker rm (?!-f -v)/ } close ARGV if eof' "$f"
+done)
+rm_sites=$(printf '%s\n' "$rm_scan" | grep -c '^SITE$' || true)
+missing=$(printf '%s\n' "$rm_scan" | grep -v '^SITE$' | sed '/^$/d' || true)
+if [ -z "$missing" ] && [ "$rm_sites" -ge 10 ]; then ok "every docker rm in the repository removes the container's anonymous volumes (-v) ($rm_sites sites)"
+else bad "every docker rm in the repository removes the container's anonymous volumes (-v)" "sites read: $rm_sites
+$missing"; fi
+
+# Every container a test fixture starts carries the owner label the sweep removes by (product code under src/ is
+# not a test fixture). A docker run or create spread over several lines is read as one call.
+run_scan=$(sources fixtures | while read -r f; do
+  perl -0ne 'while (/\[\s*"(?:run|create)",([^\]]*)\]/g) { my ($m, $a) = ($&, $1); next unless $a =~ /"--name"/; print "SITE\n"; print "$ARGV: $m\n" if $a !~ /\.\.\.OWNER/ }' "$f"
+done)
+run_sites=$(printf '%s\n' "$run_scan" | grep -c '^SITE$' || true)
+unowned=$(printf '%s\n' "$run_scan" | grep -v '^SITE$' | sed '/^$/d' || true)
+if [ -z "$unowned" ] && [ "$run_sites" -ge 9 ]; then ok "every container a test fixture starts carries the feat-test.owner-pid label ($run_sites calls)"
+else bad "every container a test fixture starts carries the feat-test.owner-pid label" "calls read: $run_sites
+$unowned"; fi
 
 echo "ci-local.test: $((CASES - FAILS)) passed, $FAILS failed"
 [ "$FAILS" = 0 ]

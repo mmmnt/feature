@@ -598,7 +598,7 @@ class DynamoAdapter implements FeatServiceAdapter {
     this.streams = null;
     if (this.container) {
       try {
-        await execFile("docker", ["rm", "-f", this.container]);
+        await execFile("docker", ["rm", "-f", "-v", this.container]);
       } catch {
         // best-effort: --rm cleans up if the daemon already reaped it
       }

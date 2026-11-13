@@ -31,6 +31,10 @@ import { randomBytes } from "node:crypto";
 import { KafkaJS } from "@confluentinc/kafka-javascript";
 import { dockerAsync } from "../../fault-proxy/fixtures/docker-async.mjs";
 
+// Every container this file starts carries the pid of the run that owns it (ci-local's, passed in as
+// FEAT_CI_LOCAL_PID, else this process), so scripts/docker-sweep.sh can remove what a killed run left.
+const OWNER = ["--label", `feat-test.owner-pid=${process.env.FEAT_CI_LOCAL_PID ?? process.pid}`];
+
 export const KAFKA_IMAGE = "apache/kafka:3.9.0";
 export const TOXIPROXY_IMAGE = "ghcr.io/shopify/toxiproxy:2.12.0";
 export const NODE_IMAGE = "node:22.12.0-slim";
@@ -82,7 +86,7 @@ export function hook() {
 export function start(name, args) {
   hook();
   created.push(name);
-  return docker(["run", "-d", "--name", name, ...args]);
+  return docker(["run", "-d", ...OWNER, "--name", name, ...args]);
 }
 
 export function track(name) {
