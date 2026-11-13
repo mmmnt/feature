@@ -153,7 +153,14 @@ option is optional.
 | --- | --- |
 | `uri` | A Bolt URI. `bolt://` direct is the supported shape. |
 | `uriEnv` | The name of an environment variable holding the URI. Used when `uri` is absent. Neither set, or the variable unset or empty, is a configuration error. |
-| `auth` | `{ username, password }`: the **names** of two environment variables, both of which must be set. Omit it for a server without authentication. |
+| `uriFile` | The path of a file whose content is the URI (SPEC-ADPNEO-003). Never given with `uri` or `uriEnv` (`OPTIONS_INVALID`); `uri` and `uriEnv` together still mean the literal wins. |
+| `auth` | Either `{ username, password }`: the **names** of two environment variables, both of which must be set; or `{ user, passwordFile }` (SPEC-ADPNEO-003): the login name itself and the path of a file whose content is the password. The two forms are never mixed, and the file form needs both keys (`OPTIONS_INVALID`). Omit it for a server without authentication. |
+
+A file option holds a path, never a secret. A relative path is resolved against the working directory of the run. The file is
+read at `setup()`, before any connection: exactly one trailing LF or CRLF is removed and nothing else, so a password with spaces
+is kept as written. The driver takes the password as an auth token, so it is never decoded or re-encoded. A file that is missing,
+is a directory, cannot be read, or is empty after the line ending is removed is refused with `CREDENTIAL_FILE_UNREADABLE`, whose
+detail names the option, the path and the cause and never the content.
 | `keys` | **Required** (a config without it is refused at `setup()` with `OPTIONS_INVALID`) for every label the system writes: label to key property. A namespaced node whose labels declare no key, or that has no value for its key property, makes the snapshot fail with `NODE_KEY_UNDECLARED`. If a node has several declared labels, the first one in this object's order is its identity. |
 | `settleTimeoutMs` | How long `settle()` may wait for other transactions to finish. Default 5000. Keep `convergenceTimeout` at or above it. |
 | `proxy` | A Toxiproxy in front of the server for `Connection` faults. `api` and `upstream` are required. See below. |
@@ -289,13 +296,14 @@ Adapter errors are `Neo4jAdapterError`, with a `code` and a `detail`.
 | --- | --- | --- |
 | `NAMESPACE_INVALID` | construction | The namespace does not match `^s[0-9a-f]{12}$`. Defensive: the runner never passes another. |
 | `NEO4J_UNREACHABLE` | `setup()` | The server did not answer `verifyConnectivity`. The detail names the URI with any credentials removed. |
-| `OPTIONS_INVALID` | `setup()` | `options.keys` is missing, is not an object, or maps a label to something other than a non-empty string. Refused before any connection. An empty object is accepted (nothing is declared yet; a namespaced node then fails with `NODE_KEY_UNDECLARED`). |
+| `OPTIONS_INVALID` | `setup()` | `options.keys` is missing, is not an object, or maps a label to something other than a non-empty string. Also `uriFile` given with `uri` or `uriEnv`, an `auth` that mixes the variable names with `user`/`passwordFile`, or an `auth` with only one of `user` and `passwordFile` (SPEC-ADPNEO-003). Refused before any file is read or any connection. An empty object is accepted (nothing is declared yet; a namespaced node then fails with `NODE_KEY_UNDECLARED`). |
+| `CREDENTIAL_FILE_UNREADABLE` | `setup()` | A file named by `uriFile` or `auth.passwordFile` is missing, is a directory, cannot be read, or is empty after one trailing line ending is removed. Refused before any connection; the detail never carries the content. |
 | `NODE_KEY_UNDECLARED` | snapshot: `startCapture()`, `peekCapture()`, `stopCapture()`, and `read()` | A namespaced node carries no label that declares a key in `options.keys`, or has no value for its key property. |
 | `NAMESPACE_BREACH` | snapshot: `startCapture()`, `peekCapture()`, `stopCapture()`, and an unhinted `read()` | A relationship joins a namespaced node and a node outside the namespace. |
 | `FAULT_UNSUPPORTED` | `fault()` | The fault is not in the catalog (including `Connection` without `options.proxy`), the count is not `until reset`, or the detail is missing `property` (an identifier) or `value` (a scalar). The detail lists the catalog. |
 
 `NODE_KEY_UNDECLARED` and `NAMESPACE_BREACH` surface when the snapshot is taken,
-not at `setup()`; a missing `options.keys` is refused at `setup()`, as `OPTIONS_INVALID`. Plain `Error`s (no code) report a missing `uri` and
+not at `setup()`; a missing `options.keys` is refused at `setup()`, as `OPTIONS_INVALID`. Plain `Error`s (no code) report a missing `uri` (or `uriEnv`, or `uriFile`) and
 `options.auth` naming variables that are not both set. Errors from the Toxiproxy
 layer keep the codes of `@mmmnt/feat-fault-proxy` (`PROXY_UNREACHABLE`,
 `PROXY_NOT_OPEN`, `FAULT_UNSUPPORTED`, `CONTAINER_NOT_FOUND`,

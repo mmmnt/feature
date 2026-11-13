@@ -10,6 +10,8 @@
 // transport faults (Connection.*) are armed on a Toxiproxy proxy in front of the SYSTEM's path through
 // @mmmnt/feat-fault-proxy (SPEC-FPX-001).
 
+import { readFileSync, statSync } from "node:fs";
+import path from "node:path";
 import neo4j from "neo4j-driver";
 import type { Driver, QueryResult, Session } from "neo4j-driver";
 import { createFaultProxy } from "@mmmnt/feat-fault-proxy";
@@ -29,7 +31,8 @@ export type Neo4jAdapterErrorCode =
   | "NODE_KEY_UNDECLARED"
   | "NAMESPACE_BREACH"
   | "FAULT_UNSUPPORTED"
-  | "OPTIONS_INVALID";
+  | "OPTIONS_INVALID"
+  | "CREDENTIAL_FILE_UNREADABLE";
 
 export class Neo4jAdapterError extends Error {
   constructor(
@@ -53,12 +56,30 @@ export interface Neo4jProxyOptions {
   runtime?: string;
 }
 
+/** The instrument's credentials as environment-variable names (SPEC-ADPNEO-001). */
+export interface Neo4jAuthFromEnv {
+  /** Name of the environment variable holding the login name. */
+  username: string;
+  /** Name of the environment variable holding the password. */
+  password: string;
+}
+
+/** The instrument's credentials with the password in a file (SPEC-ADPNEO-003). */
+export interface Neo4jAuthFromFile {
+  /** The login name itself (not a secret). */
+  user: string;
+  /** Path of a file whose content is the password; a relative path is resolved against the working directory. */
+  passwordFile: string;
+}
+
 export interface Neo4jOptions {
   uri?: string;
   /** Name of the environment variable holding the URI. */
   uriEnv?: string;
-  /** Names of the environment variables holding the instrument's credentials. Omit for a server without auth. */
-  auth?: { username: string; password: string };
+  /** Path of a file whose content is the URI (SPEC-ADPNEO-003); relative to the working directory. */
+  uriFile?: string;
+  /** The instrument's credentials: environment-variable names, or a literal user and a password file. Never both forms. Omit for a server without auth. */
+  auth?: Neo4jAuthFromEnv | Neo4jAuthFromFile;
   /** Label -> the property that identifies a node of that label. Required for every label the system writes. */
   keys: Record<string, string>;
   settleTimeoutMs?: number;
@@ -130,6 +151,30 @@ function stable(v: unknown): string {
 
 const byKey = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
+/**
+ * SPEC-ADPNEO-003: a file the options name by path. Relative to the working directory; exactly one trailing LF or CRLF is
+ * removed and nothing else. The refusal's detail names the option, the path and the cause, never the content.
+ */
+function readCredentialFile(option: string, file: string): string {
+  const at = path.resolve(process.cwd(), file);
+  const refuse = (cause: string) =>
+    new Neo4jAdapterError("CREDENTIAL_FILE_UNREADABLE", `options.${option} names ${at}, which ${cause}`);
+  let content: string;
+  try {
+    if (statSync(at).isDirectory()) throw refuse("is a directory");
+    content = readFileSync(at, "utf8");
+  } catch (e) {
+    if (e instanceof Neo4jAdapterError) throw e;
+    const code = typeof e === "object" && e !== null && "code" in e ? String((e as { code: unknown }).code) : "";
+    if (code === "ENOENT") throw refuse("is missing");
+    if (code === "EISDIR") throw refuse("is a directory");
+    throw refuse(`cannot be read (${code || "unknown error"})`);
+  }
+  const value = content.endsWith("\r\n") ? content.slice(0, -2) : content.endsWith("\n") ? content.slice(0, -1) : content;
+  if (value === "") throw refuse("is empty");
+  return value;
+}
+
 /** A URI without any credentials in it, for a message. */
 function redact(uri: string): string {
   return uri.replace(/\/\/[^@/]*@/, "//");
@@ -200,13 +245,57 @@ class Neo4jAdapter implements FeatServiceAdapter {
 
   // ── the instrument connection ─────────────────────────────────────────────
 
-  private uri(): string {
+  /** The URI and the auth token, read once: files are read here, so their refusals come before any connection. */
+  private resolved: { uri: string; token: ReturnType<typeof neo4j.auth.basic> | undefined } | undefined;
+
+  /**
+   * SPEC-ADPNEO-003: one URI source when a file is named, and one form of `auth`; no file is read here. uri and uriEnv
+   * together keep SPEC-ADPNEO-001's rule (the literal wins).
+   */
+  private optionsRule(): Neo4jAdapterError | undefined {
     const o = this.options;
-    const raw = o.uri ?? (o.uriEnv !== undefined ? process.env[o.uriEnv] : undefined);
-    if (raw === undefined || raw === "") {
-      throw new Error("the neo4j service has no uri (or uriEnv naming a set variable)");
+    const sources = (["uri", "uriEnv", "uriFile"] as const).filter((k) => o[k] !== undefined);
+    if (o.uriFile !== undefined && sources.length > 1) {
+      return new Neo4jAdapterError("OPTIONS_INVALID", `the options name more than one uri source: ${sources.join(", ")}; give exactly one with uriFile`);
     }
-    return raw;
+    const a = o.auth as Partial<Neo4jAuthFromEnv & Neo4jAuthFromFile> | undefined;
+    if (a !== undefined) {
+      const env = a.username !== undefined || a.password !== undefined;
+      const file = a.user !== undefined || a.passwordFile !== undefined;
+      if (env && file) {
+        return new Neo4jAdapterError("OPTIONS_INVALID", "options.auth mixes the variable names (username, password) with user and passwordFile; use one form");
+      }
+      if (file && (a.user === undefined || a.passwordFile === undefined)) {
+        return new Neo4jAdapterError("OPTIONS_INVALID", "options.auth with a passwordFile needs both user and passwordFile");
+      }
+    }
+    return undefined;
+  }
+
+  private resolve(): { uri: string; token: ReturnType<typeof neo4j.auth.basic> | undefined } {
+    if (this.resolved !== undefined) return this.resolved;
+    const refusal = this.optionsRule();
+    if (refusal !== undefined) throw refusal;
+    const o = this.options;
+    const raw =
+      o.uriFile !== undefined
+        ? readCredentialFile("uriFile", o.uriFile)
+        : (o.uri ?? (o.uriEnv !== undefined ? process.env[o.uriEnv] : undefined));
+    // The file form is read here (before any connection); the variable form stays read when the driver is made (SPEC-ADPNEO-001).
+    const auth = o.auth;
+    const token =
+      auth !== undefined && "passwordFile" in auth
+        ? neo4j.auth.basic(auth.user, readCredentialFile("auth.passwordFile", auth.passwordFile))
+        : undefined;
+    if (raw === undefined || raw === "") {
+      throw new Error("the neo4j service has no uri (or uriEnv naming a set variable, or uriFile)");
+    }
+    this.resolved = { uri: raw, token };
+    return this.resolved;
+  }
+
+  private uri(): string {
+    return this.resolve().uri;
   }
 
   private routing(): boolean {
@@ -215,9 +304,10 @@ class Neo4jAdapter implements FeatServiceAdapter {
 
   private db(): Driver {
     if (this.driver === undefined) {
+      const { uri, token: fromFile } = this.resolve();
       const auth = this.options.auth;
-      let token;
-      if (auth !== undefined) {
+      let token = fromFile;
+      if (auth !== undefined && !("passwordFile" in auth)) {
         const user = process.env[auth.username];
         const pass = process.env[auth.password];
         if (user === undefined || pass === undefined) {
@@ -225,7 +315,7 @@ class Neo4jAdapter implements FeatServiceAdapter {
         }
         token = neo4j.auth.basic(user, pass);
       }
-      this.driver = neo4j.driver(this.uri(), token, { connectionTimeout: 10_000, connectionAcquisitionTimeout: 15_000 });
+      this.driver = neo4j.driver(uri, token, { connectionTimeout: 10_000, connectionAcquisitionTimeout: 15_000 });
     }
     return this.driver;
   }

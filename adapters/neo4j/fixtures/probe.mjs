@@ -1,5 +1,5 @@
-// The probe behind `ObserveNeo4j` and `ObserveNeo4jTransport` (SPEC-ADPNEO-001, -002). Part of the build,
-// inside touches, not shipped.
+// The probe behind `ObserveNeo4j`, `ObserveNeo4jTransport` and `ObserveNeo4jCredentials` (SPEC-ADPNEO-001, -002, -003).
+// Part of the build, inside touches, not shipped.
 //
 // It starts, once per process, the throwaway containers the scenarios need and removes them on exit:
 //   feat-neo4j-test-db-<id>      Neo4j Community (pinned image), bolt published on a free loopback port that is also
@@ -14,7 +14,9 @@
 // Only containers this probe created, by name, are ever touched.
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import net from "node:net";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import neo4j from "neo4j-driver";
@@ -37,6 +39,8 @@ const AGENT_FILE = path.join(HERE, "peer-agent.cjs");
 const CONTROL_PORT = 19002;
 const KEYS = { Order: "orderId", Customer: "customerId" };
 const USER = "neo4j";
+// SPEC-ADPNEO-003: a user whose password starts with a space and has one inside, so a trim beyond the line ending would show.
+const SPACED = ["spaced", " spaced pass-1"];
 const TRANSPORT_CODES = new Set(["ServiceUnavailable", "SessionExpired"]);
 
 const created = [];
@@ -125,6 +129,13 @@ function neo4jServer() {
       const d = neo4j.driver(`bolt://127.0.0.1:${port}`, neo4j.auth.basic(USER, password));
       try {
         await d.verifyConnectivity();
+        // SPEC-ADPNEO-003's spaced user; Community has no roles, so a native user may write.
+        const session = d.session({ database: "system" });
+        try {
+          await session.run("CREATE USER $u IF NOT EXISTS SET PLAINTEXT PASSWORD $p CHANGE NOT REQUIRED", { u: SPACED[0], p: SPACED[1] });
+        } finally {
+          await session.close();
+        }
       } finally {
         await d.close().catch(() => {});
       }
@@ -211,9 +222,51 @@ function outcomeOf(e) {
   throw e;
 }
 
+/**
+ * SPEC-ADPNEO-003: the connection options of `ObserveNeo4jCredentials`, with the files written into `dir` (a fresh temporary
+ * directory the caller removes). The secret goes only into a file, never into the options or the trace. `content` and `path`
+ * apply to the file the source is about: the password file for passwordFile, the uri file for uriFile.
+ */
+function credentialOptions(input, db, dir, direct) {
+  const source = input.source;
+  const content = input.content ?? "exact";
+  const login = content === "innerSpace" ? SPACED : [USER, db.password];
+  const subject = source === "uriFile" ? direct : login[1];
+  const body = { exact: subject, innerSpace: subject, lf: `${subject}\n`, crlf: `${subject}\r\n`, empty: "", lfOnly: "\n" }[content];
+  const file = path.join(dir, "subject");
+  writeFileSync(file, body);
+  const where = input.path ?? "absolute";
+  const named =
+    where === "relative" ? path.relative(process.cwd(), file) : where === "missing" ? path.join(dir, "absent") : where === "directory" ? dir : file;
+  const passwordFile = path.join(dir, "password");
+  writeFileSync(passwordFile, db.password);
+  const fileAuth = { user: USER, passwordFile };
+  switch (source) {
+    case "passwordFile":
+      return { uri: direct, auth: { user: login[0], passwordFile: named } };
+    case "uriFile":
+      return { uriFile: named, auth: fileAuth };
+    case "uriAndFile":
+      return { uri: direct, uriFile: named, auth: fileAuth };
+    case "uriEnvAndFile":
+      return { uriEnv: "FEAT_NEO4J_TEST_URI", uriFile: named, auth: fileAuth };
+    case "uriAndEnv":
+      // SPEC-ADPNEO-001's rule, unchanged: the literal wins over the variable (which names an unreachable server here).
+      process.env.FEAT_NEO4J_TEST_URI = "bolt://127.0.0.1:1";
+      return { uri: direct, uriEnv: "FEAT_NEO4J_TEST_URI", auth: fileAuth };
+    case "authMixed":
+      return { uri: direct, auth: { username: "FEAT_NEO4J_TEST_USER", password: "FEAT_NEO4J_TEST_PASSWORD", user: USER, passwordFile: named } };
+    case "authNoUser":
+      return { uri: direct, auth: { passwordFile: named } };
+    default:
+      throw new Error(`unknown credentials source '${source}'`);
+  }
+}
+
 async function run(input, mode) {
   const db = await neo4jServer();
-  const env = mode === "observe" ? undefined : await proxyEnvironment();
+  const env = mode === "observe" || mode === "credentials" ? undefined : await proxyEnvironment();
+  const credentialDir = mode === "credentials" ? mkdtempSync(path.join(os.tmpdir(), "feat-neo4j-cred-")) : undefined;
   if (env !== undefined) {
     const all = await (await fetch(`${env.api}/proxies`)).json();
     for (const n of Object.keys(all)) await fetch(`${env.api}/proxies/${n}`, { method: "DELETE" });
@@ -230,9 +283,12 @@ async function run(input, mode) {
   const call = ++calls;
   const nsOf = (l) => (l.startsWith("raw=") ? l.slice(4) : namespaceOf(l, call));
   const make = (l) => {
+    const connection =
+      credentialDir !== undefined
+        ? credentialOptions(input, db, credentialDir, direct)
+        : { uriEnv: "FEAT_NEO4J_TEST_URI", auth: { username: "FEAT_NEO4J_TEST_USER", password: "FEAT_NEO4J_TEST_PASSWORD" } };
     const options = {
-      uriEnv: "FEAT_NEO4J_TEST_URI",
-      auth: { username: "FEAT_NEO4J_TEST_USER", password: "FEAT_NEO4J_TEST_PASSWORD" },
+      ...connection,
       keys: KEYS,
       ...(input.settleTimeoutMs !== undefined ? { settleTimeoutMs: input.settleTimeoutMs } : {}),
       ...(env !== undefined ? { proxy: { api: env.api, upstream: `host.docker.internal:${db.port}` } } : {}),
@@ -425,11 +481,13 @@ async function run(input, mode) {
     for (const x of adapters.values()) await x.reset().catch(() => {});
     for (const x of adapters.values()) await x.teardown().catch(() => {});
     if (system !== undefined) await system.close().catch(() => {});
+    if (credentialDir !== undefined) rmSync(credentialDir, { recursive: true, force: true });
   }
 }
 
 export const observe = (input) => run(input, "observe");
 export const observeTransport = (input) => run(input, "transport");
+export const observeCredentials = (input) => run(input, "credentials");
 
 // SPEC-ADPHND-003 (founder ruling ba21abb2, "Transport envs start at load"): every one-time start-up of this
 // probe, the Neo4j server and the transport environment (Toxiproxy and the peer agent; the peer install already runs above), runs when the module is evaluated. The handler adapter imports the module in setup(), in the

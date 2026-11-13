@@ -11,7 +11,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --exclude '**/observe.test.ts' --exclude '**/transport.test.ts' --passWithNoTests"
+    "test": "vitest run --exclude '**/observe.test.ts' --exclude '**/transport.test.ts' --exclude '**/credential-files.test.ts' --passWithNoTests"
   },
   "dependencies": {
     "@mmmnt/feat-fault-proxy": "workspace:^",

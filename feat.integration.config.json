@@ -19,7 +19,8 @@
       "*/observe.feat",
       "dynamodb/query-mode.feat",
       "kurrent/node26-tls-host.feat",
-      "kurrent/credential-files.feat"
+      "kurrent/credential-files.feat",
+      "neo4j/credential-files.feat"
     ]
   },
   "environment": "integration"

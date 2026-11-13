@@ -134,6 +134,10 @@
         "module": "adapters/neo4j/fixtures/probe.mjs",
         "export": "observeTransport"
       },
+      "ObserveNeo4jCredentials": {
+        "module": "adapters/neo4j/fixtures/probe.mjs",
+        "export": "observeCredentials"
+      },
       "ObserveKafka": {
         "module": "adapters/kafka/fixtures/probe.mjs",
         "export": "observe"
