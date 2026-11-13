@@ -1,4 +1,4 @@
-// @mmmnt/feat-adapter-kurrent (SPEC-ADPKUR-001, -002, -003, -004) — KurrentDB as a Feat service.
+// @mmmnt/feat-adapter-kurrent (SPEC-ADPKUR-001, -002, -003, -004, -005) — KurrentDB as a Feat service.
 //
 // The `$all` log is the change feed: it is totally ordered by log position, and the position of an
 // append (AppendResult.position) is a position in that same log. That is the whole of settle: append a
@@ -16,7 +16,9 @@ import {
   jsonEvent,
   streamNameFilter,
 } from "@kurrent/kurrentdb-client";
+import { readFileSync, statSync } from "node:fs";
 import { isIP } from "node:net";
+import path from "node:path";
 import { createFaultProxy } from "@mmmnt/feat-fault-proxy";
 import type { FaultProxy, OpenProxy } from "@mmmnt/feat-fault-proxy";
 import type { ReadPosition } from "@kurrent/kurrentdb-client";
@@ -29,7 +31,7 @@ import type {
   SeedRecord,
 } from "@mmmnt/feat-types";
 
-export type KurrentAdapterErrorCode = "NAMESPACE_INVALID" | "ALL_READ_DENIED" | "FAULT_UNSUPPORTED" | "TLS_HOST_UNSUPPORTED" | "OPTIONS_INVALID";
+export type KurrentAdapterErrorCode = "NAMESPACE_INVALID" | "ALL_READ_DENIED" | "FAULT_UNSUPPORTED" | "TLS_HOST_UNSUPPORTED" | "OPTIONS_INVALID" | "CREDENTIAL_FILE_UNREADABLE";
 
 export class KurrentAdapterError extends Error {
   constructor(
@@ -54,12 +56,30 @@ export interface KurrentProxyOptions {
   runtime?: string;
 }
 
+/** The instrument's credentials named by environment variables (SPEC-ADPKUR-001). */
+export interface KurrentSystemFromEnv {
+  /** Name of the environment variable holding the login name. */
+  username: string;
+  /** Name of the environment variable holding the password. */
+  password: string;
+}
+
+/** The instrument's credentials with the password in a file (SPEC-ADPKUR-005). */
+export interface KurrentSystemFromFile {
+  /** The login name itself (not a secret). */
+  user: string;
+  /** Path of a file whose content is the password; a relative path is resolved against the working directory. */
+  passwordFile: string;
+}
+
 export interface KurrentOptions {
   connectionString?: string;
   /** Name of the environment variable holding the connection string. */
   connectionStringEnv?: string;
-  /** Names of the environment variables holding the instrument's credentials. */
-  system?: { username: string; password: string };
+  /** Path of a file whose content is the connection string (SPEC-ADPKUR-005); relative to the working directory. */
+  connectionStringFile?: string;
+  /** The instrument's credentials: environment-variable names, or a literal user and a password file. Never both forms. */
+  system?: KurrentSystemFromEnv | KurrentSystemFromFile;
   settleTimeoutMs?: number;
   proxy?: KurrentProxyOptions;
   /** The Node major the TLS host rule judges by (SPEC-ADPKUR-004). Default: the running Node's. */
@@ -138,6 +158,43 @@ function tlsOn(raw: string): boolean {
   return true;
 }
 
+/**
+ * SPEC-ADPKUR-005: a file the options name by path. Relative to the working directory; exactly one trailing LF or CRLF is
+ * removed and nothing else. The refusal's detail names the option, the path and the cause, never the content.
+ */
+function readCredentialFile(option: string, file: string): { value?: string; refusal?: KurrentAdapterError } {
+  const at = path.resolve(process.cwd(), file);
+  const refuse = (cause: string) => ({
+    refusal: new KurrentAdapterError("CREDENTIAL_FILE_UNREADABLE", `options.${option} names ${at}, which ${cause}`),
+  });
+  let content: string;
+  try {
+    if (statSync(at).isDirectory()) return refuse("is a directory");
+    content = readFileSync(at, "utf8");
+  } catch (e) {
+    const code = typeof e === "object" && e !== null && "code" in e ? String((e as { code: unknown }).code) : "";
+    if (code === "ENOENT") return refuse("is missing");
+    if (code === "EISDIR") return refuse("is a directory");
+    return refuse(`cannot be read (${code || "unknown error"})`);
+  }
+  const value = content.endsWith("\r\n") ? content.slice(0, -2) : content.endsWith("\n") ? content.slice(0, -1) : content;
+  if (value === "") return refuse("is empty");
+  return { value };
+}
+
+/** The user info of a connection string, percent-decoded; undefined when it names none. */
+function decodedCredentials(raw: string): { username: string; password: string } | undefined {
+  const m = /^[a-z][a-z0-9+.-]*:\/\/([^@/?#]*)@/i.exec(raw);
+  if (m === null) return undefined;
+  const colon = m[1]!.indexOf(":");
+  if (colon < 0) return undefined;
+  try {
+    return { username: decodeURIComponent(m[1]!.slice(0, colon)), password: decodeURIComponent(m[1]!.slice(colon + 1)) };
+  } catch {
+    return undefined;
+  }
+}
+
 function errorType(e: unknown): string | undefined {
   return typeof e === "object" && e !== null && "type" in e && typeof (e as { type: unknown }).type === "string"
     ? (e as { type: string }).type
@@ -166,6 +223,7 @@ class KurrentAdapter implements FeatServiceAdapter {
   private readonly options: KurrentOptions;
   private readonly settleTimeoutMs: number;
   private client: KurrentDBClient | undefined;
+  private readCredentials: { username: string; password: string } | undefined;
   private proxy: FaultProxy | undefined;
   private opened: OpenProxy | undefined;
 
@@ -262,14 +320,58 @@ class KurrentAdapter implements FeatServiceAdapter {
     return { target: parts.head + hosts.join(",") + parts.tail, ...(refusal !== undefined ? { refusal } : {}) };
   }
 
+  /**
+   * SPEC-ADPKUR-005, in this order: two connection sources or a mixed `system` are OPTIONS_INVALID before any file is read;
+   * then each named file is read (CREDENTIAL_FILE_UNREADABLE before any connection); then the TLS host rule and the credentials.
+   */
   private resolveConnection(): { target: string; refusal?: KurrentAdapterError } {
     const o = this.options;
-    const raw = o.connectionString ?? (o.connectionStringEnv !== undefined ? process.env[o.connectionStringEnv] : undefined);
+    const optionsRefusal = this.optionsRule();
+    if (optionsRefusal !== undefined) return { target: "", refusal: optionsRefusal };
+    let raw: string | undefined;
+    if (o.connectionStringFile !== undefined) {
+      const read = readCredentialFile("connectionStringFile", o.connectionStringFile);
+      if (read.refusal !== undefined) return { target: "", refusal: read.refusal };
+      raw = read.value;
+    } else {
+      raw = o.connectionString ?? (o.connectionStringEnv !== undefined ? process.env[o.connectionStringEnv] : undefined);
+    }
+    let password: string | undefined;
+    if (o.system !== undefined && "passwordFile" in o.system) {
+      const read = readCredentialFile("system.passwordFile", o.system.passwordFile);
+      if (read.refusal !== undefined) return { target: "", refusal: read.refusal };
+      password = read.value;
+    }
     if (raw === undefined || raw === "") {
-      throw new Error(`the kurrent service '${"key"}' has no connectionString (or connectionStringEnv naming a set variable)`);
+      throw new Error(`the kurrent service '${"key"}' has no connectionString (or connectionStringEnv naming a set variable, or connectionStringFile)`);
     }
     const { target, refusal } = this.tlsHostRule(raw);
-    return { target: this.withCredentials(target), ...(refusal !== undefined ? { refusal } : {}) };
+    return { target: this.withCredentials(target, password), ...(refusal !== undefined ? { refusal } : {}) };
+  }
+
+  /** One connection source, and one form of `system` (SPEC-ADPKUR-005); no file is read here. */
+  private optionsRule(): KurrentAdapterError | undefined {
+    const o = this.options;
+    // connectionString and connectionStringEnv together keep SPEC-ADPKUR-001's rule (the literal wins); a file with either is two sources.
+    const sources = (["connectionString", "connectionStringEnv", "connectionStringFile"] as const).filter((k) => o[k] !== undefined);
+    if (o.connectionStringFile !== undefined && sources.length > 1) {
+      return new KurrentAdapterError("OPTIONS_INVALID", `the options name more than one connection source: ${sources.join(", ")}; give exactly one`);
+    }
+    const s = o.system as Partial<KurrentSystemFromEnv & KurrentSystemFromFile> | undefined;
+    if (s !== undefined) {
+      const env = s.username !== undefined || s.password !== undefined;
+      const file = s.user !== undefined || s.passwordFile !== undefined;
+      if (env && file) {
+        return new KurrentAdapterError(
+          "OPTIONS_INVALID",
+          "options.system mixes the variable names (username, password) with user and passwordFile; use one form",
+        );
+      }
+      if (file && (s.user === undefined || s.passwordFile === undefined)) {
+        return new KurrentAdapterError("OPTIONS_INVALID", "options.system with a passwordFile needs both user and passwordFile");
+      }
+    }
+    return undefined;
   }
 
   /** The string the client is created from, no network; a refused host stays as written (setup() throws for it). */
@@ -288,13 +390,21 @@ class KurrentAdapter implements FeatServiceAdapter {
     return target;
   }
 
-  private withCredentials(raw: string): string {
+  private withCredentials(raw: string, passwordFromFile?: string): string {
     const o = this.options;
     if (o.system === undefined) return raw;
-    const user = process.env[o.system.username];
-    const pass = process.env[o.system.password];
+    let user: string | undefined;
+    let pass: string | undefined;
+    if ("passwordFile" in o.system) {
+      user = o.system.user;
+      pass = passwordFromFile;
+    } else {
+      user = process.env[o.system.username];
+      pass = process.env[o.system.password];
+    }
     if (user === undefined || pass === undefined) {
-      throw new Error(`options.system names the variables ${o.system.username} and ${o.system.password}, which are not both set`);
+      const named = "passwordFile" in o.system ? "user and passwordFile" : `the variables ${o.system.username} and ${o.system.password}`;
+      throw new Error(`options.system names ${named}, which do not both give a value`);
     }
     const url = new URL(raw);
     url.username = user;
@@ -303,8 +413,23 @@ class KurrentAdapter implements FeatServiceAdapter {
   }
 
   private db(): KurrentDBClient {
-    if (this.client === undefined) this.client = KurrentDBClient.connectionString(this.connectionString());
+    if (this.client === undefined) {
+      const target = this.connectionString();
+      this.client = KurrentDBClient.connectionString(target);
+      this.readCredentials = decodedCredentials(target);
+    }
     return this.client;
+  }
+
+  /**
+   * The instrument's credentials on every read, decoded (SPEC-ADPKUR-005). @kurrent/kurrentdb-client 1.3.2 reads through a native
+   * bridge that is handed the connection string and does not percent-decode its user info, so a password holding a character the
+   * string must encode (a space, `%`) is refused there although appends, which decode, succeed. Passing the decoded pair per call
+   * gives both paths the same identity.
+   */
+  private readAuth(): { credentials?: { username: string; password: string } } {
+    this.db();
+    return this.readCredentials !== undefined ? { credentials: this.readCredentials } : {};
   }
 
   async setup(): Promise<void> {
@@ -318,7 +443,7 @@ class KurrentAdapter implements FeatServiceAdapter {
     }
     const db = this.db();
     try {
-      for await (const _ of db.readAll({ fromPosition: START, maxCount: 1 })) break;
+      for await (const _ of db.readAll({ fromPosition: START, maxCount: 1, ...this.readAuth() })) break;
     } catch (e) {
       if (errorType(e) === "access-denied") {
         throw new KurrentAdapterError("ALL_READ_DENIED", "the instrument credentials cannot read the $all stream");
@@ -359,6 +484,7 @@ class KurrentAdapter implements FeatServiceAdapter {
       maxCount: WHOLE_LOG,
       filter: streamNameFilter({ prefixes }),
       ...(deadlineMs !== undefined ? { deadline: deadlineMs } : {}),
+      ...this.readAuth(),
     };
     let last: Position | undefined;
     for await (const resolved of db.readAll(options)) {
@@ -451,6 +577,7 @@ class KurrentAdapter implements FeatServiceAdapter {
       fromPosition: START,
       maxCount: WHOLE_LOG,
       filter: streamNameFilter({ prefixes: [this.prefix, this.metaPrefix] }),
+      ...this.readAuth(),
     })) {
       const id = resolved.event?.streamId;
       if (id === undefined) continue;
@@ -472,7 +599,7 @@ class KurrentAdapter implements FeatServiceAdapter {
     const records: CapturedRecord[] = [];
     for (const name of names) {
       try {
-        for await (const resolved of this.db().readStream(name, { maxCount: WHOLE_LOG })) {
+        for await (const resolved of this.db().readStream(name, { maxCount: WHOLE_LOG, ...this.readAuth() })) {
           const event = resolved.event;
           if (event === undefined || this.isInstrument(event.metadata)) continue;
           if (event.type.startsWith("$") || event.isJson === false) continue;

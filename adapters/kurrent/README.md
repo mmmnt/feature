@@ -125,10 +125,12 @@ connection string must be supplied one way or the other.
     "options": {
       "connectionStringEnv": "FEAT_KURRENT_URL",        // name of the variable holding the connection string
       // "connectionString": "kurrentdb://localhost:2113?tls=false",   // or a literal; wins over connectionStringEnv
+      // "connectionStringFile": "secrets/kurrent-url",  // or a PATH to a file holding the string (0.2.0)
       "system": {                                        // env-var NAMES for the instrument's credentials
         "username": "FEAT_KURRENT_USER",
         "password": "FEAT_KURRENT_PASSWORD"
       },
+      // "system": { "user": "admin", "passwordFile": "/run/secrets/kurrent" },   // or a literal user and a password FILE (0.2.0)
       "settleTimeoutMs": 5000,                           // default 5000
       "nodeMajor": 24,                                   // the Node major the TLS host rule judges by; default the running Node's
       "proxy": {                                         // transport faults on the system's path
@@ -148,7 +150,8 @@ connection string must be supplied one way or the other.
 | --- | --- |
 | `connectionString` | A literal `kurrentdb://` or `kurrentdb+discover://` string. |
 | `connectionStringEnv` | The name of an environment variable holding the string. Used when `connectionString` is absent. Neither set, or the variable unset or empty, is a configuration error at `setup()`. |
-| `system` | `{ username, password }`: the **names** of two environment variables. Their values replace the credentials in the connection string. Both must be set. The config carries references, never secrets. |
+| `connectionStringFile` | The path of a file whose content is the whole connection string (0.2.0). Given with `connectionString` or `connectionStringEnv`, it is refused at `setup()` with `OPTIONS_INVALID`. |
+| `system` | Either `{ username, password }`: the **names** of two environment variables, both of which must be set; or `{ user, passwordFile }` (0.2.0): a literal login name and the path of a file whose content is the password. The two forms are never mixed in one `system` (`OPTIONS_INVALID`). The values replace the credentials in the connection string. The config carries references, never secrets. |
 | `settleTimeoutMs` | How long `settle()` may take to read its fence marker back. Default 5000. Keep `convergenceTimeout` at or above it. |
 | `nodeMajor` | An integer, 1 or more (anything else is refused at `setup()` with `OPTIONS_INVALID`), that overrides the Node major the TLS host rule uses, so a scenario can put the adapter "on Node 24 or 26" without a second Node. Default: the running Node's major. |
 | `proxy` | A Toxiproxy in front of KurrentDB for `Connection` faults. `api` and `upstream` are required. See below. |
@@ -156,6 +159,21 @@ connection string must be supplied one way or the other.
 The adapter does not reject unknown keys under `options`; a misspelled option is
 ignored. `connectionString` and `connectionStringEnv` may both appear; the
 literal wins.
+
+### Credentials and connection strings in files (SPEC-ADPKUR-005)
+
+For secrets that live in files (Docker secrets, a mounted secrets directory), name the file, never the secret:
+
+- A relative path is resolved against the working directory of the run (the project root `feat run` starts in).
+- The file is read when the connection is resolved, before any connection. Exactly one trailing line ending (`\n` or
+  `\r\n`) is removed; nothing else is trimmed, so a password with leading or inner spaces is kept as written.
+- A file that is missing, is a directory, cannot be read, or is empty after that line ending is removed is refused at
+  `setup()` with `CREDENTIAL_FILE_UNREADABLE`, before the adapter connects to anything. The detail names the option, the
+  path and the cause, never the content. `connectionRefusal()` reports the same code without connecting.
+- To trust a certificate authority, put the client's own `tlsCAFile=<path>` parameter in the connection string; the
+  adapter passes every parameter through unchanged.
+- The instrument's reads pass the decoded credentials on every call, so a password holding a character the connection
+  string must percent-encode (a space, `%`) works on the client's read path as well as its append path.
 
 The adapter's own client (capture, fence, read, seed, reset) connects to the
 node **directly** and never through the proxy.

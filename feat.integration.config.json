@@ -18,7 +18,8 @@
       "schema-json/**",
       "*/observe.feat",
       "dynamodb/query-mode.feat",
-      "kurrent/node26-tls-host.feat"
+      "kurrent/node26-tls-host.feat",
+      "kurrent/credential-files.feat"
     ]
   },
   "environment": "integration"

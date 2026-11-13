@@ -1,5 +1,5 @@
-// The probe behind `ObserveKurrent`, `ObserveKurrentTransport`, `ObserveKurrentBrokerLoss` and `ObserveKurrentTlsHost`
-// (SPEC-ADPKUR-001, -002, -003, -004). Part of the build, inside touches, not shipped.
+// The probe behind `ObserveKurrent`, `ObserveKurrentTransport`, `ObserveKurrentBrokerLoss`, `ObserveKurrentTlsHost` and
+// `ObserveKurrentCredentials` (SPEC-ADPKUR-001, -002, -003, -004, -005). Part of the build, inside touches, not shipped.
 //
 // It starts, once per process, the throwaway containers the scenarios need and removes them on exit:
 //   feat-kurrent-test-kdb-<id>   KurrentDB (pinned image), single node, dev certificate (secure: ACLs and
@@ -16,6 +16,8 @@
 // the system's default), `writer` (non-admin: the system that an ACL can deny) and `reader` (cannot read $all).
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import https from "node:https";
 import net from "node:net";
 import path from "node:path";
@@ -40,6 +42,8 @@ const PEER_DEPS = path.join(ROOT, ".feature", "kurrent-peer");
 const CONTROL_PORT = 19002;
 const SYSTEM_DEADLINE_MS = 2000;
 const USERS = { admin: ["admin", "changeit"], writer: ["writer", "Writer-pw-1"], reader: ["reader", "Reader-pw-1"] };
+// SPEC-ADPKUR-005: an admin whose password starts with a space and has one inside, so a trim beyond the line ending would show.
+const SPACED = ["spaced", " spaced pass-1"];
 // UNAVAILABLE, DEADLINE_EXCEEDED and CANCELLED from the client. A broken connection arrives from this client as an
 // error of type "unknown" carrying the gRPC status (14 UNAVAILABLE, 4 DEADLINE_EXCEEDED, 1 CANCELLED), so both count.
 const TRANSPORT_TYPES = new Set(["unavailable", "deadline-exceeded", "cancelled"]);
@@ -178,6 +182,7 @@ function kurrent() {
     await until("the fixture users", async () => {
       await createUser(port, USERS.writer, []).catch((e) => { if (!/HTTP 409/.test(String(e))) throw e; });
       await createUser(port, USERS.reader, []).catch((e) => { if (!/HTTP 409/.test(String(e))) throw e; });
+      await createUser(port, SPACED, ["$admins"]).catch((e) => { if (!/HTTP 409/.test(String(e))) throw e; });
     });
     return { id, name, port, admin };
   })();
@@ -258,9 +263,44 @@ async function containerState(name) {
   return state === "exited" ? "stopped" : state;
 }
 
+/**
+ * SPEC-ADPKUR-005: the options of `ObserveKurrentCredentials`, with the file written into `dir` (a fresh temporary directory the
+ * caller removes). The secret goes only into the file, never into the options or the trace.
+ */
+function credentialOptions(input, kdb, dir) {
+  const source = input.source;
+  const content = input.content ?? "exact";
+  const login = content === "innerSpace" ? SPACED : USERS.admin;
+  const bare = connectionString(kdb.port, login).replace(/\/\/[^@]*@/, "//");
+  let secret = source === "connectionStringFile" ? connectionString(kdb.port, login) : login[1];
+  if (content === "withCaFile") secret += `&tlsCAFile=${path.join(dir, "ca.pem")}`;
+  const body = { exact: secret, innerSpace: secret, withCaFile: secret, lf: `${secret}\n`, crlf: `${secret}\r\n`, empty: "", lfOnly: "\n" }[content];
+  const file = path.join(dir, "credential");
+  writeFileSync(file, body);
+  const where = input.path ?? "absolute";
+  const named =
+    where === "relative" ? path.relative(process.cwd(), file) : where === "missing" ? path.join(dir, "absent") : where === "directory" ? dir : file;
+  switch (source) {
+    case "passwordFile":
+      return { connectionString: bare, system: { user: login[0], passwordFile: named } };
+    case "connectionStringFile":
+      return { connectionStringFile: named };
+    case "connectionStringAndFile":
+      return { connectionString: bare, connectionStringFile: named };
+    case "systemMixed":
+      return {
+        connectionString: bare,
+        system: { username: "FEAT_KURRENT_TEST_USER", password: "FEAT_KURRENT_TEST_PASSWORD", user: login[0], passwordFile: named },
+      };
+    default:
+      throw new Error(`unknown credentials source '${source}'`);
+  }
+}
+
 async function run(input, mode) {
   const kdb = await kurrent();
-  const env = mode === "observe" || mode === "tls-host" ? undefined : await proxyEnvironment();
+  const env = mode === "observe" || mode === "tls-host" || mode === "credentials" ? undefined : await proxyEnvironment();
+  const credentialDir = mode === "credentials" ? mkdtempSync(path.join(os.tmpdir(), "feat-kurrent-cred-")) : undefined;
   if ((await containerState(kdb.name)) === "paused") await dockerAsync(["unpause", kdb.name]);
   if (env !== undefined) {
     const all = await (await fetch(`${env.api}/proxies`)).json();
@@ -288,9 +328,15 @@ async function run(input, mode) {
   };
   const nsOf = (l) => (l.startsWith("raw=") ? l.slice(4) : namespaceOf(l));
   const make = (l) => {
+    const connection =
+      credentialDir !== undefined
+        ? credentialOptions(input, kdb, credentialDir)
+        : {
+            connectionStringEnv: "FEAT_KURRENT_TEST_CONNECTION",
+            system: { username: "FEAT_KURRENT_TEST_USER", password: "FEAT_KURRENT_TEST_PASSWORD" },
+          };
     const options = {
-      connectionStringEnv: "FEAT_KURRENT_TEST_CONNECTION",
-      system: { username: "FEAT_KURRENT_TEST_USER", password: "FEAT_KURRENT_TEST_PASSWORD" },
+      ...connection,
       ...(input.settleTimeoutMs !== undefined ? { settleTimeoutMs: input.settleTimeoutMs } : {}),
       ...(input.nodeMajor !== undefined ? { nodeMajor: input.nodeMajor } : {}),
       ...(env !== undefined
@@ -450,6 +496,7 @@ async function run(input, mode) {
       await a.teardown().catch(() => {});
     }
     for (const w of writers.values()) await w.dispose().catch(() => {});
+    if (credentialDir !== undefined) rmSync(credentialDir, { recursive: true, force: true });
   }
 }
 
@@ -457,6 +504,7 @@ export const observe = (input) => run(input, "observe");
 export const observeTransport = (input) => run(input, "transport");
 export const observeBrokerLoss = (input) => run(input, "broker-loss");
 export const observeTlsHost = (input) => run(input, "tls-host");
+export const observeCredentials = (input) => run(input, "credentials");
 
 // SPEC-ADPHND-003 (founder ruling ba21abb2, "Transport envs start at load"): every one-time start-up of this
 // probe, the KurrentDB server and the transport environment (Toxiproxy and the peer agent; the peer install already runs above), runs when the module is evaluated. The handler adapter imports the module in setup(), in the

@@ -106,6 +106,10 @@
         "module": "adapters/kurrent/fixtures/probe.mjs",
         "export": "observeTlsHost"
       },
+      "ObserveKurrentCredentials": {
+        "module": "adapters/kurrent/fixtures/probe.mjs",
+        "export": "observeCredentials"
+      },
       "ObserveKms": {
         "module": "adapters/kms/fixtures/probe.mjs",
         "export": "observe"
