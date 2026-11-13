@@ -26,6 +26,12 @@ That's the whole setup. Watch starts automatically (disable via
 `feat.watch.autoStart`); `Feat: Start watch` / `Feat: Stop watch` control it
 manually.
 
+The extension runs your project's own `feat`: the `@mmmnt/feature` found in
+the workspace folder's `node_modules` or a parent's, with the `node` on your
+PATH. It never fetches one with `npx`. Without `@mmmnt/feature` it shows a
+message asking you to install it as a dev dependency
+(`npm install --save-dev @mmmnt/feature`) and starts nothing.
+
 ## The language in one glance
 
 ```

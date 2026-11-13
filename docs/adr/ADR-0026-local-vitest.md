@@ -54,3 +54,9 @@ The same rule holds wherever Feature starts a tool on the user's behalf:
    upward as the runner finds vitest, runs its `cdk` bin with `process.execPath`, and otherwise throws
    `Configuration error (exit 2): [AWS_CDK_NOT_INSTALLED] ...` before writing or spawning anything. An
    explicit `invoke.cdkBin` is the user's own choice and still runs (SPEC-CDK-001).
+2. The VS Code extension ran `npx feat watch --json`, which without a local `@mmmnt/feature` fetches the
+   unrelated npm package `feat`. It now finds `@mmmnt/feature` from the workspace folder upward, runs its
+   `feat` bin with the `node` on PATH (not the editor's Electron Node, which may be older than Feature
+   supports), and otherwise shows a message telling the user to install `@mmmnt/feature` and spawns nothing.
+   The extension is outside the spec tree (`editors/**`), so a `node:test` suite on its resolver stands in
+   for a spec (`npm test` in editors/vscode).

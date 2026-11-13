@@ -2,12 +2,16 @@
 // feat.config.json and paints its NDJSON run events as diagnostics IN THE SPEC —
 // a failing prediction squiggles the `scenario "<name>"` line of the .feat file,
 // not the generated test. Zero configuration: the local @mmmnt/feature install
-// is resolved from the project; nothing else to set up.
+// is resolved from the project; nothing else to set up. Its `feat` bin runs
+// with the `node` on PATH; without @mmmnt/feature the extension says so and
+// spawns nothing — it never runs npx, which would fetch the unrelated npm
+// package `feat` (ADR-0026, amended).
 
 import { ChildProcess, spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import * as vscode from "vscode";
+import { featNotInstalledMessage, resolveFeatBin } from "./resolve-feat";
 
 interface RunEvent {
   event: string;
@@ -62,9 +66,25 @@ function handleEvent(root: string, ev: RunEvent) {
 
 function start(root: string, output: vscode.OutputChannel) {
   if (child) return;
+  const bin = resolveFeatBin(root);
+  if (bin === null) {
+    const message = featNotInstalledMessage(root);
+    output.appendLine(message);
+    status.text = "$(circle-slash) feat: not installed";
+    status.show();
+    void vscode.window.showErrorMessage(message);
+    return;
+  }
   status.text = "$(sync~spin) feat: starting";
   status.show();
-  child = spawn("npx", ["feat", "watch", "--json"], { cwd: root, env: process.env });
+  // The project's Node, not the editor's (Electron's Node may be older than Feature supports); no shell.
+  child = spawn("node", [bin, "watch", "--json"], { cwd: root, env: process.env });
+  child.on("error", (e) => {
+    output.appendLine(`feat watch could not start: ${e.message} (is node on PATH?)`);
+    void vscode.window.showErrorMessage(`Feat: could not start \`node ${bin} watch\`: ${e.message}. Is node on PATH?`);
+    status.text = "$(circle-slash) feat: stopped";
+    child = null;
+  });
   let buffer = "";
   child.stdout!.on("data", (chunk: Buffer) => {
     buffer += chunk.toString();

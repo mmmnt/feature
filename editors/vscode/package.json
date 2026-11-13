@@ -65,6 +65,7 @@
   },
   "scripts": {
     "build": "node scripts-sync-grammar.mjs && tsc -p tsconfig.json",
+    "test": "npm run build && node --test \"test/**/*.test.mjs\"",
     "package": "vsce package"
   },
   "devDependencies": {
