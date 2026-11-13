@@ -1,0 +1,82 @@
+feat 1.0
+
+# SPEC-RT-010 — the runner runs the project's own vitest and never fetches one (founder ruling 9ec54eb1,
+# 2026-11-13, "Fix in Feature (Recommended)"; ADR-0026).
+#
+# Until now runTests spawned `npx vitest run` from the project root. When the project had no vitest
+# installed, npx did not fail: it printed `npm warn exec The following package was not found and will be
+# installed: vitest@<latest>` and fetched the latest vitest from the registry at run time, outside the
+# project's lockfile, its release-age policy and any supply-chain review (found by a consumer on pnpm with a
+# strict lockfile). A test run must execute only code the project installed.
+#
+# WHAT CHANGES (and nothing else):
+#  1. runTests resolves vitest from the project root, as an ES module import from a file at that root
+#     finds it (the root's node_modules, then each parent's, so a hoisted workspace install is found; not
+#     NODE_PATH): `node_modules/vitest/package.json`, then its `bin.vitest` (or a string `bin`). It runs that file with the Node
+#     binary running the runner (process.execPath), so no npx, npm exec, pnpm dlx or shell is involved on
+#     any platform.
+#  2. When vitest does not resolve from the root, runTests spawns nothing, writes nothing, prints
+#     `Configuration error (exit 2): [VITEST_NOT_INSTALLED] ...` to stderr, telling the user to add vitest
+#     as a dev dependency of the project, and returns exitCode 2, configurationError true and refusal
+#     { code: "VITEST_NOT_INSTALLED", message }. `feat run` exits 2 with that line in its output.
+#  3. vitest becomes a peer dependency of @mmmnt/feat-runner and @mmmnt/feature, range >=3.2.0.
+# Unchanged: the run config, the reporters, the passes, the environment handed to vitest, the zero-files
+# refusal (exit 1).
+#
+# Driven through packages/feat-runner/fixtures/probe.mjs (part of the build). `RunVitest { vitest }` builds
+# a throwaway project in the temporary directory, with a stub vitest package (version 3.2.99, its bin
+# records that it ran and exits 0) at the root (`installed`), in the parent directory of the root, as a
+# workspace root hoists it (`hoisted`), or nowhere (`missing`). It puts stubs named npx, npm, pnpm, yarn and
+# bunx first on PATH, each of which records that it was called, then calls runTests over one file. It
+# answers `ran` (the version of the vitest that ran, "" if none) and `fetched` (whether any stub was
+# called), with the result's exit code; a refusal answers ERR with its code and message.
+
+spec SPEC-RT-010 "Runner: vitest resolves from the project, never fetched"
+context Toolchain
+aggregate Runner
+type infrastructure
+status agreed
+
+construct:
+  handler at packages/feat-runner/src/index.ts
+  touches packages/feat-runner/**
+  touches packages/feature/src/commands/run.ts
+  touches packages/feature/package.json
+  touches packages/feature/README.md
+  touches packages/feature/run-exit-codes.test.ts
+  needs SPEC-RT-005
+  resolveVitest(root) takes the first <dir>/node_modules/vitest/package.json from root upward, takes its
+  bin (`bin.vitest`, or `bin` when a string), and returns { bin, version }; it throws VitestNotInstalled
+  (code VITEST_NOT_INSTALLED) when vitest does not resolve or names no bin. runTests calls it once, after
+  the zero-files check and before any pass writes or spawns anything, and spawns each pass as
+  process.execPath with the bin and vitest's arguments, without a shell. On VITEST_NOT_INSTALLED it prints
+  the refusal to stderr and returns { exitCode: 2, configurationError: true, refusal: { code, message } }.
+
+enforce:
+  rejects VITEST_NOT_INSTALLED when vitest does not resolve from the project root
+  run the vitest the project installed, resolved from the root, never one fetched by npx, npm exec or pnpm dlx
+  spawn nothing and write nothing when vitest is not installed
+  tell the user to add vitest as a dev dependency in the refusal
+
+contract:
+  input RunVitestInput
+  response RunVitestResult
+  error RunVitestError
+
+scenario "vitest installed at the project root is the one that runs":
+  when: RunVitest { vitest: "installed" }
+  predict success:
+    response OK RunVitestResult { exit: 0, ran: "3.2.99", fetched: false }
+    filesystem has []
+
+scenario "vitest hoisted to a parent directory, as a workspace installs it, is found":
+  when: RunVitest { vitest: "hoisted" }
+  predict success:
+    response OK RunVitestResult { exit: 0, ran: "3.2.99", fetched: false }
+    filesystem has []
+
+scenario "a project without vitest is refused before anything runs, and nothing is fetched":
+  when: RunVitest { vitest: "missing" }
+  predict rejection VITEST_NOT_INSTALLED:
+    response ERR RunVitestError { code: "VITEST_NOT_INSTALLED", detail: matching "add vitest as a dev dependency", exit: 2, ran: "", fetched: false }
+    filesystem has []

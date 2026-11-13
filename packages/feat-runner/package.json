@@ -19,10 +19,13 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --exclude '**/serial-faults.test.ts' --passWithNoTests"
+    "test": "vitest run --exclude '**/serial-faults.test.ts' --exclude '**/local-vitest.test.ts' --passWithNoTests"
   },
   "dependencies": {
     "@mmmnt/feat-types": "workspace:^"
+  },
+  "peerDependencies": {
+    "vitest": ">=3.2.0"
   },
   "repository": {
     "type": "git",
@@ -37,6 +40,7 @@
     "access": "public"
   },
   "devDependencies": {
-    "@mmmnt/feat-runtime": "workspace:^"
+    "@mmmnt/feat-runtime": "workspace:^",
+    "vitest": "^3.2.0"
   }
 }

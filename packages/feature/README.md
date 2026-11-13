@@ -41,8 +41,11 @@ npm install --save-dev @mmmnt/feature
 Requirements:
 
 - **Node 20 or later** (the repository's `engines` field).
-- **Vitest** in the project. Generated suites are ordinary Vitest files and
-  `feat run` spawns `npx vitest run`. `feat init` installs it.
+- **Vitest** in the project, as a dev dependency (`>=3.2.0`, a peer dependency;
+  `feat init` installs it). Generated suites are ordinary Vitest files and
+  `feat run` runs the vitest your project installed, found from the project root
+  upward. It never fetches one with `npx`: without vitest, `feat run` exits `2`
+  with `VITEST_NOT_INSTALLED`.
 - **`@mmmnt/feat-runtime`** in the project. Every generated test imports it.
 - **The adapters your config names**, installed in the project that owns
   `feat.config.json`. An npm adapter resolves from the project's own
@@ -326,7 +329,10 @@ What it does, in order:
 5. Derives every file's [namespace](#namespaces), from its path under the base
    config's directory (the one the harness uses), and stops on a collision.
 6. Stops with `NOT_GENERATED` (exit `1`) if a generated file is missing.
-7. Computes timeouts from the active config and spawns Vitest. Files that arm an
+7. Computes timeouts from the active config and spawns the project's own Vitest,
+   found in the `node_modules` of the project root or a parent directory; it never
+   fetches one. Without it the run stops with `VITEST_NOT_INSTALLED` (exit `2`):
+   add vitest as a dev dependency. Files that arm an
    exclusive fault run last, alone (see [Faults](#faults-and-the-serial-pass)).
 8. Prints `junit: <path>` when a JUnit file was written.
 
@@ -877,7 +883,7 @@ description is
 | --- | --- |
 | `0` | success |
 | `1` | validation failure: a parse error, a seed violation, drift (`verify`), a failed prediction, a failed audit, a change outside its `touches` (`audit --changed`: `OUTSIDE_TOUCHES`, `HANDLER_OUTSIDE_FEATURE`, `SPEC_UNPARSEABLE`), a failed `fmt --check` |
-| `2` | configuration error: a refused config (`CONFIG_NOT_FOUND`, `INVALID_CONFIG`, the `EXTENDS_*` codes, `TIER_SPACE_MISMATCH`, ...), a module named as an adapter that cannot be resolved or loaded (`INVALID_CONFIG`), no environment to name (`NO_ENVIRONMENT`), a harness refusal during `run` (`CLOCK_UNSUPPORTED`, `MODE_UNSUPPORTED`, `FAULT_*`, `NAMESPACE_*`, `SEED_UNSUPPORTED`, `DELIVER_UNSUPPORTED`), `NO_REPORT`, `ALREADY_INITIALIZED`, `CONFIG_MULTIPLE` (`audit`), and the `audit --changed` refusals that are not a violation (`PATH_OUTSIDE_ROOT`, `NO_SPECS_FOUND`, `GIT_UNAVAILABLE`, `NOT_A_GIT_REPO`, `BASE_NOT_FOUND`, `NO_MERGE_BASE`) |
+| `2` | configuration error: a refused config (`CONFIG_NOT_FOUND`, `INVALID_CONFIG`, the `EXTENDS_*` codes, `TIER_SPACE_MISMATCH`, ...), a module named as an adapter that cannot be resolved or loaded (`INVALID_CONFIG`), no environment to name (`NO_ENVIRONMENT`), a harness refusal during `run` (`CLOCK_UNSUPPORTED`, `MODE_UNSUPPORTED`, `FAULT_*`, `NAMESPACE_*`, `SEED_UNSUPPORTED`, `DELIVER_UNSUPPORTED`), no vitest installed in the project (`VITEST_NOT_INSTALLED`, `run`), `NO_REPORT`, `ALREADY_INITIALIZED`, `CONFIG_MULTIPLE` (`audit`), and the `audit --changed` refusals that are not a violation (`PATH_OUTSIDE_ROOT`, `NO_SPECS_FOUND`, `GIT_UNAVAILABLE`, `NOT_A_GIT_REPO`, `BASE_NOT_FOUND`, `NO_MERGE_BASE`) |
 
 Each exit `2` prints a `[CODE]`.
 
@@ -895,6 +901,17 @@ with the environment set (`ENVIRONMENT=ci`). Add `feat audit` to gate on
 buildability, and `feat report --evidence` to archive the bundle as a build
 artifact. For the integration tier add
 `feat run --config feat.integration.config.json`.
+
+## What changed in the next release
+
+- **`feat run` runs the project's own Vitest, never a fetched one (SPEC-RT-010,
+  ADR-0026).** It used to spawn `npx vitest run`, and npx fetched the latest
+  vitest from the registry when the project had none (`npm warn exec The
+  following package was not found and will be installed: vitest@...`), outside
+  the project's lockfile and release-age policy. It now runs the vitest found in
+  the project's `node_modules` (or a parent's). Without one, `feat run` exits
+  `2` with `VITEST_NOT_INSTALLED`: add vitest as a dev dependency. vitest is a
+  peer dependency, `>=3.2.0`.
 
 ## What changed in 0.5.0
 
@@ -965,12 +982,16 @@ The toolchain is specified in `.feat` and built with itself.
   exclusive faults run in a serial pass
 - [SPEC-RT-006](https://github.com/mmmnt/feature/blob/main/packages/feat-runtime/harness-namespace.feat):
   one namespace per spec file
+- [SPEC-RT-010](https://github.com/mmmnt/feature/blob/main/packages/feat-runner/local-vitest.feat):
+  `feat run` runs the project's own vitest, never a fetched one
 - [ADR-0022](https://github.com/mmmnt/feature/blob/main/docs/adr/ADR-0022-uppercamel-rejection-ids.md):
   rejection ids, `UPPER_SNAKE` or `UpperCamel`
 - [ADR-0023](https://github.com/mmmnt/feature/blob/main/docs/adr/ADR-0023-adapter-interface-v2.md):
   observation modes, the scenario clock, fault injection
 - [ADR-0024](https://github.com/mmmnt/feature/blob/main/docs/adr/ADR-0024-tier-bindings.md):
   tier bindings
+- [ADR-0026](https://github.com/mmmnt/feature/blob/main/docs/adr/ADR-0026-local-vitest.md):
+  the runner runs the project's vitest and never fetches one
 - [Grammar reference](https://github.com/mmmnt/feature/blob/main/docs/grammar-reference.md)
 - [Evidence bundle](https://github.com/mmmnt/feature/blob/main/docs/evidence-bundle.md)
 

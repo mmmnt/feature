@@ -2,11 +2,11 @@
 // empty runs fatal. The dashboard incident this guards against: a root vitest
 // config scoped to its unit layer silently collected ZERO generated suites
 // and passWithNoTests turned the gate green.
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { runConfigSource, runTests } from "./src/index.js";
+import { resolveVitest, runConfigSource, runTests, VitestNotInstalledError } from "./src/index.js";
 
 describe("runConfigSource", () => {
   it("without a consumer config: bare base, forced include, fatal-on-empty", () => {
@@ -47,5 +47,29 @@ describe("runTests guardrails", () => {
   it("zero files is a loud failure, never an empty green run", () => {
     const r = runTests({ files: [], root: tmpdir() });
     expect(r.exitCode).toBe(1);
+  });
+});
+
+// SPEC-RT-010: the bin forms of vitest's package.json; the probe of the spec covers the run itself.
+describe("resolveVitest", () => {
+  const withVitest = (manifest: object, files: string[] = []) => {
+    const root = mkdtempSync(path.join(tmpdir(), "feat-runner-vitest-"));
+    const pkg = path.join(root, "node_modules", "vitest");
+    mkdirSync(pkg, { recursive: true });
+    writeFileSync(path.join(pkg, "package.json"), JSON.stringify({ name: "vitest", ...manifest }));
+    for (const f of files) writeFileSync(path.join(pkg, f), "");
+    return { root, pkg };
+  };
+
+  it("takes bin.vitest, and a bin given as a string", () => {
+    const a = withVitest({ version: "3.2.4", bin: { vitest: "./vitest.mjs" } }, ["vitest.mjs"]);
+    expect(resolveVitest(a.root)).toEqual({ bin: path.join(a.pkg, "vitest.mjs"), version: "3.2.4" });
+    const b = withVitest({ version: "5.1.0", bin: "./cli.mjs" }, ["cli.mjs"]);
+    expect(resolveVitest(b.root)).toEqual({ bin: path.join(b.pkg, "cli.mjs"), version: "5.1.0" });
+  });
+
+  it("refuses a vitest that names no bin, or whose bin is not there, as not installed", () => {
+    expect(() => resolveVitest(withVitest({ version: "3.2.4" }).root)).toThrow(VitestNotInstalledError);
+    expect(() => resolveVitest(withVitest({ version: "3.2.4", bin: { vitest: "./gone.mjs" } }).root)).toThrow(/\[VITEST_NOT_INSTALLED\]/);
   });
 });

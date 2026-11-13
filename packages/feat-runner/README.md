@@ -8,7 +8,8 @@ two JUnit reports, collects coverage when asked, and says whether the run failed
 refused its configuration. It never lets a run that selected no tests pass.
 
 It is deliberately thin. Generated tests own their lifecycle, so the runner starts vitest, passes
-the exit code through and points the reporters at the configured outputs.
+the exit code through and points the reporters at the configured outputs. The vitest it starts is the
+one your project installed; it never fetches one.
 
 ## Where it sits
 
@@ -34,8 +35,14 @@ npm install @mmmnt/feat-runner
 ```
 
 - Node 20 or later. The package is ESM only.
-- `vitest` must be installed in the project you run from. The runner calls `npx vitest run` with the
-  project root as the working directory. This repository tests against vitest 3.2.
+- `vitest` must be installed in the project you run from: add it as a dev dependency
+  (`npm install --save-dev vitest`, `pnpm add -D vitest`). It is a peer dependency, range `>=3.2.0`;
+  this repository tests against vitest 3.2. The runner finds it as an `import "vitest"` from a file at
+  the project root would, in `<root>/node_modules` and then each parent directory's `node_modules`
+  (so a vitest hoisted to a workspace root is found), and runs its `bin` with the Node that runs the
+  runner. It never calls `npx`, `npm exec` or `pnpm dlx`, which would fetch a missing vitest from the
+  registry at run time, outside your lockfile. Without vitest the run is refused with
+  `VITEST_NOT_INSTALLED` (see [Errors](#errors)) (SPEC-RT-010, ADR-0026).
 - `--coverage` needs a vitest coverage provider installed in the project.
 - The only runtime dependency is `@mmmnt/feat-types`, which supplies the `EXCLUSIVE_FAULTS` list.
 - The generated files you pass must be Feature's (`@mmmnt/feat-emit-ts` output). They import
@@ -83,7 +90,7 @@ For each pass the runner:
    generated suites, and a pass that collects none fails.
 2. Applies `testTimeoutMs` and `hookTimeoutMs` as `test.testTimeout` and `test.hookTimeout` when you
    pass them.
-3. Spawns `npx vitest run --config <that file>` from `root`, with a reporter that records
+3. Spawns `<node> <your vitest's bin> run --config <that file>` from `root`, with a reporter that records
    configuration errors (see below). Unless `quiet` is set it adds vitest's default reporter and
    inherits stdio. With `quiet`, vitest's output is discarded.
 4. Adds `--coverage` when `coverage` is set.
@@ -96,7 +103,8 @@ The environment of the subprocess is yours plus:
 | `FEAT_SERIAL` | the serial pass | `1`. The harness refuses an exclusive fault when it is not `1`. |
 | `FEAT_CONFIG_ERROR_MARKER` | always | Internal. The path where the reporter leaves its marker. |
 
-On Windows the runner calls `npx.cmd` through a shell and quotes the arguments.
+vitest is resolved once per `runTests` call, before the first pass writes or spawns anything. No shell
+is involved on any platform.
 
 ## Passes: parallel, then serial (SPEC-RT-005)
 
@@ -176,6 +184,7 @@ loader raise carries it: an adapter module that cannot be resolved or loaded, or
 
 ```ts
 function runTests(opts: RunOptions): RunResult;
+function resolveVitest(root: string): { bin: string; version: string }; // throws VitestNotInstalledError
 function plan(specs: readonly PlannedSpec[], exclusive?: readonly string[]): Plan;
 function runPlan(p: Plan, runPass: (files: string[], opts: { serial: boolean }) => number): { exitCode: number };
 function runConfigSource(root: string, absFiles: string[], timeouts?: { testTimeoutMs?: number; hookTimeoutMs?: number }): string;
@@ -197,8 +206,12 @@ const CONFIG_ERROR_REPORTER_SOURCE: string;
 | `testTimeoutMs`, `hookTimeoutMs` | Per-test and per-hook timeouts. `feat run` computes them from the active config with `timingEnvelope` from `@mmmnt/feat-emit-ts`. |
 | `configPath` | Absolute path of the active config, handed to the suites as `FEAT_CONFIG`. |
 
-`RunResult`: `exitCode`, `configurationError?`, `junitPath?`, `jsonPath?` (absolute paths, present
-when the matching option was set).
+`RunResult`: `exitCode`, `configurationError?`, `refusal?`, `junitPath?`, `jsonPath?` (absolute paths,
+present when the matching option was set). `refusal` is `{ code, message }` when the runner refused
+before any pass; `message` is the line it printed.
+
+`resolveVitest(root)` returns the project's vitest (`bin`, the absolute path of its CLI entry, and
+`version`) or throws `VitestNotInstalledError` (`code: "VITEST_NOT_INSTALLED"`).
 
 `Plan`: `parallel`, `serial`, `order` (`"parallel"`, `"serial"` or `"parallel then serial"`) and
 `serialWorkers` (1 when there is a serial pass, else 0). `PlannedSpec`: `{ path, faults }`. `plan`'s
@@ -209,14 +222,24 @@ and `CONFIG_ERROR_REPORTER_SOURCE` the text of the reporter. Both are exported f
 
 ## Errors
 
-The runner has no error codes of its own.
+The runner has one error code of its own, `VITEST_NOT_INSTALLED`.
 
 | Condition | Result |
 | --- | --- |
 | `files` is empty | Prints `feat-runner: zero generated test files to execute — refusing a silently empty run.` to stderr and returns `exitCode: 1`. |
+| vitest is not installed in `root` or a parent's `node_modules` | Spawns and writes nothing, prints `Configuration error (exit 2): [VITEST_NOT_INSTALLED] ... add vitest as a dev dependency of the project ...` to stderr and returns `exitCode: 2`, `configurationError: true` and `refusal`. `feat run` exits `2`. |
 | vitest collects no file in a pass | The pass fails (`passWithNoTests: false`). |
 | A pass fails | Its exit code counts. The other pass still runs. |
 | A harness refused its configuration | `configurationError: true`. |
+
+## What changed in the next release
+
+- **The project's own vitest, never a fetched one (SPEC-RT-010, ADR-0026).** The runner used to spawn
+  `npx vitest run`, and npx fetched the latest vitest from the registry when the project had none
+  (`npm warn exec The following package was not found and will be installed: vitest@...`), outside the
+  project's lockfile. It now resolves vitest from the project root and runs its bin with Node; a
+  project without vitest is refused with `VITEST_NOT_INSTALLED`, exit `2` through `feat run`. vitest is
+  a peer dependency (`>=3.2.0`). New: `resolveVitest`, `VitestNotInstalledError`, `RunResult.refusal`.
 
 ## What changed in 0.2.0
 
@@ -233,6 +256,8 @@ The runner has no error codes of its own.
 ## Specs and decisions
 
 - [SPEC-RT-005](https://github.com/mmmnt/feature/blob/main/packages/feat-runner/serial-faults.feat): the runner's serial pass for exclusive faults.
+- [SPEC-RT-010](https://github.com/mmmnt/feature/blob/main/packages/feat-runner/local-vitest.feat): the project's own vitest, never fetched.
+- [ADR-0026](https://github.com/mmmnt/feature/blob/main/docs/adr/ADR-0026-local-vitest.md): the runner runs the project's vitest and never fetches one.
 - [SPEC-RT-003](https://github.com/mmmnt/feature/blob/main/packages/feat-runtime/harness-faults.feat): fault arming, consumption and refusal in the harness.
 - [SPEC-RT-006](https://github.com/mmmnt/feature/blob/main/packages/feat-runtime/harness-namespace.feat): one namespace per spec file.
 - [ADR-0023](https://github.com/mmmnt/feature/blob/main/docs/adr/ADR-0023-adapter-interface-v2.md): fault injection and the observation modes.

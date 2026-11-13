@@ -2,6 +2,11 @@
 // Generated tests own their lifecycle; the runner spawns `vitest run`, passes
 // through the exit code, and points reporters at the configured outputs.
 //
+// The vitest it spawns is the project's own, resolved from the root and run
+// with this Node (SPEC-RT-010, ADR-0026). It never runs npx, npm exec or
+// pnpm dlx, which fetch a missing package from the registry at run time,
+// outside the project's lockfile; a project without vitest is refused.
+//
 // The runner OWNS test selection: it writes a run config that extends the
 // project's own vitest config (coverage settings survive) but forces
 // `include` to exactly the generated files and makes an empty run FATAL. A
@@ -43,10 +48,64 @@ export interface RunOptions {
 
 export interface RunResult {
   exitCode: number;
+  /** Set when the runner refused to run before any pass (SPEC-RT-010): exitCode is 2 and configurationError true. */
+  refusal?: RunnerRefusal;
   /** True when a failure was a harness configuration error (message "Configuration error (exit 2): …"): the caller exits 2. */
   configurationError?: boolean;
   junitPath?: string;
   jsonPath?: string;
+}
+
+/** The runner's own refusals, each a configuration error (exit 2). */
+export type RunnerRefusalCode = "VITEST_NOT_INSTALLED";
+
+export interface RunnerRefusal {
+  code: RunnerRefusalCode;
+  /** The full line, `Configuration error (exit 2): [CODE] ...`, as printed to stderr. */
+  message: string;
+}
+
+/** Thrown by resolveVitest when the project has no vitest (SPEC-RT-010). */
+export class VitestNotInstalledError extends Error {
+  public readonly code = "VITEST_NOT_INSTALLED" as const;
+  constructor(root: string, cause?: string) {
+    super(
+      `Configuration error (exit 2): [VITEST_NOT_INSTALLED] vitest is not installed in the project at ${root}` +
+        `${cause ? ` (${cause})` : ""}. feat run runs the project's own vitest and never fetches one; ` +
+        `add vitest as a dev dependency of the project (for example \`npm install --save-dev vitest\`, ` +
+        `\`pnpm add -D vitest\`), then run again.`,
+    );
+    this.name = "VitestNotInstalledError";
+  }
+}
+
+export interface ResolvedVitest {
+  /** Absolute path of vitest's CLI entry (its package.json `bin`). */
+  bin: string;
+  /** The installed vitest's version. */
+  version: string;
+}
+
+/**
+ * The project's own vitest: the first `node_modules/vitest/package.json` found from `root` upward, as an
+ * ES module import from a file at `root` finds it, and the file its `bin` names. Throws
+ * VitestNotInstalledError when vitest does not resolve or names no bin. Nothing is fetched (SPEC-RT-010).
+ */
+export function resolveVitest(root: string): ResolvedVitest {
+  // The node_modules directories an `import "vitest"` from a file at root searches: root's, then each parent's.
+  // Not NODE_PATH or the global folders, which an ES module import (a generated suite's) never reads.
+  let manifestPath: string | undefined;
+  for (let dir = path.resolve(root); manifestPath === undefined; dir = path.dirname(dir)) {
+    const candidate = path.join(dir, "node_modules", "vitest", "package.json");
+    if (existsSync(candidate)) manifestPath = candidate;
+    else if (path.dirname(dir) === dir) throw new VitestNotInstalledError(root);
+  }
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as { version?: string; bin?: string | Record<string, string> };
+  const rel = typeof manifest.bin === "string" ? manifest.bin : manifest.bin?.vitest;
+  if (rel === undefined) throw new VitestNotInstalledError(root, `${manifestPath} names no vitest bin`);
+  const bin = path.resolve(path.dirname(manifestPath), rel);
+  if (!existsSync(bin)) throw new VitestNotInstalledError(root, `${bin} does not exist`);
+  return { bin, version: manifest.version ?? "" };
 }
 
 const CONSUMER_CONFIGS = ["vitest.config.ts", "vitest.config.mts", "vitest.config.js", "vitest.config.mjs"];
@@ -102,6 +161,15 @@ export function runTests(opts: RunOptions): RunResult {
     console.error("feat-runner: zero generated test files to execute — refusing a silently empty run.");
     return { exitCode: 1 };
   }
+  // Resolved once, before any pass writes or spawns anything: a missing vitest is refused, never fetched.
+  let vitest: ResolvedVitest;
+  try {
+    vitest = resolveVitest(opts.root);
+  } catch (e) {
+    if (!(e instanceof VitestNotInstalledError)) throw e;
+    console.error(e.message);
+    return { exitCode: 2, configurationError: true, refusal: { code: e.code, message: e.message } };
+  }
   const serial = new Set(opts.serialFiles ?? []);
   const serialFiles = opts.files.filter((f) => serial.has(f));
   const parallelFiles = opts.files.filter((f) => !serial.has(f));
@@ -120,7 +188,7 @@ export function runTests(opts: RunOptions): RunResult {
     const junit = junitMain === undefined ? undefined : writesSeparately ? `${junitMain}.serial` : junitMain;
     first.ran = true;
     // The JSON report is the main pass's: the parallel pass, or the serial pass when it is the only one.
-    return runOnce(opts, files, pass.serial, junit, seen, !pass.serial || parallelFiles.length === 0);
+    return runOnce(opts, vitest, files, pass.serial, junit, seen, !pass.serial || parallelFiles.length === 0);
   });
   if (junitMain !== undefined && existsSync(`${junitMain}.serial`)) {
     writeFileSync(junitMain, mergeJunit(readFileSync(junitMain, "utf8"), readFileSync(`${junitMain}.serial`, "utf8")));
@@ -149,7 +217,7 @@ export const CONFIG_ERROR_REPORTER_SOURCE = [
   "",
 ].join("\n");
 
-function runOnce(opts: RunOptions, files: string[], serial: boolean, junitAbs: string | undefined, seen: { configurationError: boolean }, writesJson: boolean): number {
+function runOnce(opts: RunOptions, vitest: ResolvedVitest, files: string[], serial: boolean, junitAbs: string | undefined, seen: { configurationError: boolean }, writesJson: boolean): number {
   const absFiles = files.map((f) => path.resolve(opts.root, f));
   // Lives under node_modules/.cache so `vitest/config` and the consumer's own
   // imports resolve exactly as they would from the project root.
@@ -169,7 +237,7 @@ function runOnce(opts: RunOptions, files: string[], serial: boolean, junitAbs: s
   writeFileSync(reporterPath, CONFIG_ERROR_REPORTER_SOURCE);
   rmSync(markerPath, { force: true });
 
-  const args = ["vitest", "run", "--config", configPath, `--reporter=${reporterPath}`];
+  const args = [vitest.bin, "run", "--config", configPath, `--reporter=${reporterPath}`];
   if (serial) args.push("--no-file-parallelism", "--maxWorkers=1");
   if (!opts.quiet) args.push("--reporter=default");
   if (opts.coverage) args.push("--coverage");
@@ -183,10 +251,8 @@ function runOnce(opts: RunOptions, files: string[], serial: boolean, junitAbs: s
     args.push(`--reporter=${reporter}`);
     args.push(outputs.length > 1 ? `--outputFile.${reporter}=${file}` : `--outputFile=${file}`);
   }
-  // npx is a .cmd shim on Windows — execFile/spawn refuse it without a shell.
-  const win = process.platform === "win32";
-  const quote = (a: string) => (/[\s"]/.test(a) ? `"${a.replace(/"/g, '""')}"` : a);
-  const result = spawnSync(win ? "npx.cmd" : "npx", win ? args.map(quote) : args, {
+  // The project's vitest, run by this Node: no npx, no package manager, no shell on any platform.
+  const result = spawnSync(process.execPath, args, {
     cwd: opts.root,
     stdio: opts.quiet ? "ignore" : "inherit",
     env: {
@@ -196,7 +262,6 @@ function runOnce(opts: RunOptions, files: string[], serial: boolean, junitAbs: s
       // The serial pass is the only place an exclusive fault may be armed (SPEC-RT-005).
       ...(serial ? { FEAT_SERIAL: "1" } : {}),
     },
-    shell: win,
   });
   if (existsSync(markerPath)) seen.configurationError = true;
   return result.status ?? 1;

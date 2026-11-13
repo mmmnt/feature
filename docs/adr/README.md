@@ -8,3 +8,4 @@ we can worry about publication later").
 - [ADR-0023](ADR-0023-adapter-interface-v2.md): adapter interface v2: observation modes, the scenario clock, fault injection.
 - [ADR-0024](ADR-0024-tier-bindings.md): tier bindings: one set of specs, an overlay config per environment.
 - [ADR-0025](ADR-0025-given-written-order.md): a given's seed and execute lines run in written order, recorded in the IR as `given.order`.
+- [ADR-0026](ADR-0026-local-vitest.md): the runner runs the project's own vitest, resolved from the root, and never fetches one; no vitest is VITEST_NOT_INSTALLED, exit 2.

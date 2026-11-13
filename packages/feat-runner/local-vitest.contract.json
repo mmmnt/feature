@@ -1,0 +1,68 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-RT-010",
+  "schemas": {
+    "RunVitestInput": {
+      "type": "object",
+      "required": [
+        "vitest"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "vitest": {
+          "enum": [
+            "installed",
+            "hoisted",
+            "missing"
+          ]
+        }
+      }
+    },
+    "RunVitestResult": {
+      "type": "object",
+      "required": [
+        "exit",
+        "ran",
+        "fetched"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "exit": {
+          "type": "integer"
+        },
+        "ran": {
+          "type": "string"
+        },
+        "fetched": {
+          "type": "boolean"
+        }
+      }
+    },
+    "RunVitestError": {
+      "type": "object",
+      "required": [
+        "code"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "enum": [
+            "VITEST_NOT_INSTALLED"
+          ]
+        },
+        "detail": {
+          "type": "string"
+        },
+        "exit": {
+          "type": "integer"
+        },
+        "ran": {
+          "type": "string"
+        },
+        "fetched": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

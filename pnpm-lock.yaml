@@ -424,6 +424,9 @@ importers:
       '@mmmnt/feat-runtime':
         specifier: workspace:^
         version: link:../feat-runtime
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)
 
   packages/feat-runtime:
     dependencies:
