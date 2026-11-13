@@ -15,9 +15,12 @@ function stubCdk(dir, ranFile) {
   writeFileSync(
     path.join(pkg, "bin", "cdk"),
     [
-      'const { cpSync, writeFileSync } = require("node:fs");',
+      'const { mkdirSync, readdirSync, readFileSync, writeFileSync } = require("node:fs");',
+      'const path = require("node:path");',
       'const out = process.argv[process.argv.indexOf("--output") + 1];',
-      `cpSync(${JSON.stringify(ASSEMBLY)}, out, { recursive: true });`,
+      // File by file: fs.cpSync is refused with EACCES on the Docker Desktop bind mount ci-local runs the tree from.
+      "const copy = (from, to) => { mkdirSync(to, { recursive: true }); for (const e of readdirSync(from, { withFileTypes: true })) { const f = path.join(from, e.name), t = path.join(to, e.name); if (e.isDirectory()) copy(f, t); else writeFileSync(t, readFileSync(f)); } };",
+      `copy(${JSON.stringify(ASSEMBLY)}, out);`,
       `writeFileSync(${JSON.stringify(ranFile)}, "2.999.0-stub");`,
       "",
     ].join("\n"),
