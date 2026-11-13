@@ -1,6 +1,6 @@
 {
   "name": "@mmmnt/feat-adapter-neo4j",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Neo4j service adapter for Feat: a snapshot diff of the namespace label's graph, a transaction-aware settle, state by keyed MATCH or namespace scan, and a unique-constraint fault",
   "type": "module",
   "main": "dist/index.js",
