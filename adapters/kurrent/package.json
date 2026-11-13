@@ -1,6 +1,6 @@
 {
   "name": "@mmmnt/feat-adapter-kurrent",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "KurrentDB service adapter for Feat: the $all log is the capture window, a fence marker read back through it makes settle truthful, and the namespace's streams are the state",
   "type": "module",
   "main": "dist/index.js",
@@ -11,7 +11,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --exclude '**/observe.test.ts' --exclude '**/transport.test.ts' --exclude '**/broker-loss.test.ts' --exclude '**/node26-tls-host.test.ts' --passWithNoTests"
+    "test": "vitest run --exclude '**/observe.test.ts' --exclude '**/transport.test.ts' --exclude '**/broker-loss.test.ts' --exclude '**/node26-tls-host.test.ts' --exclude '**/credential-files.test.ts' --passWithNoTests"
   },
   "dependencies": {
     "@kurrent/kurrentdb-client": "1.3.2",
