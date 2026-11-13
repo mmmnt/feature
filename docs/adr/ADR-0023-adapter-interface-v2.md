@@ -122,6 +122,10 @@ implementing commit is named and the id is cited from FEATURES.md.
 - **"Fault shape B"**: the stdio adapter maps the harness arm onto the protocol's fault request with
   `kind = operation.fault`; its catalog declares only `once` and `times n`; a reset count or a
   detail is refused. Built in 69d9e62 (SPEC-RPC-001 amendment).
+- **"Fault shape C"** (founder ruling 2026-11-13, "Fix in Feature (Recommended)", superseding shape
+  B): the protocol's fault request gains optional `untilReset` and `detail` (exclusive with `times`
+  for the former); the stdio adapter carries both and offers its catalog as declared. Protocol
+  version stays 2. Built in the SPEC-RPC-001 amendment that cites it.
 - **"RPC-002 A"**: one spec host per spec file, shared by the response and service roles. Built in
   0dcd910.
 - **FPX "reset defaults upstream" and "listen= follows traces"**: in the fault-proxy library,

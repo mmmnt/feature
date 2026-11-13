@@ -3,7 +3,7 @@
 // host; later roles join it; each role's teardown leaves; the last one out ends the host.
 
 import type {
-  CapturedRecord, CapturedResponse, FaultArm, FaultCatalog, FaultCount, FeatResponseAdapter, FeatServiceAdapter, ObservationSupport, ReadQuery, SeedRecord,
+  CapturedRecord, CapturedResponse, FaultArm, FaultCatalog, FeatResponseAdapter, FeatServiceAdapter, ObservationSupport, ReadQuery, SeedRecord,
 } from "@mmmnt/feat-types";
 import { ExchangeError } from "./protocol.js";
 import { defaultRegistry, type HostConfig, type HostConnection, type HostRegistry } from "./host.js";
@@ -94,30 +94,25 @@ export class StdioServiceAdapter extends Role implements FeatServiceAdapter {
   readonly observes: ObservationSupport = { diff: "native", state: true };
 
   /**
-   * Fault shape B: the protocol's fault request is { service, kind, times }, so this adapter offers only
-   * what it can carry — the configured catalog (options.faults) with `until reset` dropped — and no detail.
+   * Fault shape C (founder ruling 2026-11-13, "Fix in Feature", superseding shape B): the protocol's fault
+   * request is { service, kind, times? | untilReset?, detail? }, so this adapter offers the configured catalog
+   * (options.faults) as declared, `until reset` included, and carries a detail to the host.
    */
   readonly faults: FaultCatalog;
-  readonly acceptsFaultDetail = false;
+  readonly acceptsFaultDetail = true;
 
   constructor(config: RoleConfig, hostConfig: HostConfig, private readonly key: string, catalog: FaultCatalog = {}) {
     super(config, hostConfig);
-    const carried: Record<string, Record<string, readonly FaultCount[]>> = {};
-    for (const [operation, entry] of Object.entries(catalog)) {
-      const faults = Array.isArray(entry) ? Object.fromEntries((entry as string[]).map((f) => [f, ["once", "times", "reset"] as FaultCount[]])) : (entry as Record<string, readonly FaultCount[]>);
-      carried[operation] = Object.fromEntries(
-        Object.entries(faults)
-          .map(([fault, counts]) => [fault, counts.filter((c) => c !== "reset")] as const)
-          .filter(([, counts]) => counts.length > 0),
-      );
-    }
-    this.faults = carried;
+    this.faults = catalog;
   }
-  /** Arm a fault: kind = "<operation>.<fault>", times = the count (the harness refused `until reset` and a detail already). */
+  /** Arm a fault: kind = "<operation>.<fault>"; a count of n is times n, `until reset` is untilReset; the detail goes as is. */
   async fault(arm: FaultArm): Promise<void> {
-    if (arm.times === "reset" || arm.detail !== undefined)
-      throw new ExchangeError("INVALID_REQUEST", "the protocol's fault request carries neither `until reset` nor a detail", true);
-    await this.call("fault", { service: this.key, kind: `${arm.operation}.${arm.fault}`, times: arm.times });
+    await this.call("fault", {
+      service: this.key,
+      kind: `${arm.operation}.${arm.fault}`,
+      ...(arm.times === "reset" ? { untilReset: true } : { times: arm.times }),
+      ...(arm.detail !== undefined ? { detail: arm.detail } : {}),
+    });
   }
   protected services(): string[] {
     return [this.key];

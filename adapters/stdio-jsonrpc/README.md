@@ -135,7 +135,7 @@ line on stdout is a `PROTOCOL_VIOLATION`.
 | `settle` | `{ service }` | `{ settled: boolean }` | service roles |
 | `read` | `{ service, query }` | `null` or an array of objects | service roles |
 | `deliver` | `{ service, event, payload }` | `{}` | service roles |
-| `fault` | `{ service, kind, times? }` | `{}` | service roles |
+| `fault` | `{ service, kind, times? \| untilReset?, detail? }` | `{}` | service roles |
 
 - A `CapturedRecord` is `{ type, key?, payload, timestamp, metadata? }`.
   `timestamp` is a number.
@@ -231,21 +231,23 @@ the host is called.
 
 ## Faults
 
-The protocol's `fault` request is `{ service, kind, times }`. The adapter maps a
-harness arm onto it:
+The protocol's `fault` request is `{ service, kind, times? | untilReset?, detail? }`
+(fault shape C). The adapter maps a harness arm onto it:
 
 ```
-fault store Place Reject once      ->  { "service": "store", "kind": "Place.Reject", "times": 1 }
-fault store Place Reject times 3   ->  { "service": "store", "kind": "Place.Reject", "times": 3 }
+fault store Place Reject once                     ->  { "service": "store", "kind": "Place.Reject", "times": 1 }
+fault store Place Reject times 3                  ->  { "service": "store", "kind": "Place.Reject", "times": 3 }
+fault store Place Reject until reset              ->  { "service": "store", "kind": "Place.Reject", "untilReset": true }
+fault log Append Conflict { stream: "a" } once    ->  { "service": "log", "kind": "Append.Conflict", "times": 1, "detail": { "stream": "a" } }
 ```
 
 `kind` is `"<operation>.<fault>"`. The operation and fault names are your
-vocabulary, declared in `options.faults`.
-
-The protocol carries neither `until reset` nor a detail, so the adapter's
-catalog offers only `once` and `times n`, and takes no detail
-(`acceptsFaultDetail` is `false`). The harness refuses an arm outside that
-catalog with `FAULT_UNSUPPORTED` before the case has any effect:
+vocabulary, declared in `options.faults`. `times` and `untilReset` never travel
+together. The detail is carried as is (`acceptsFaultDetail` is `true`): what it
+means is the host's business, for example applying the fault only to the stream
+the detail names. The harness refuses an arm outside the catalog, or with a
+count the catalog does not declare for that fault, with `FAULT_UNSUPPORTED`
+before the case has any effect:
 
 ```
 [FAULT_UNSUPPORTED] ... the fault 'Place/Reject' of 'store' declares only once | times n, not until reset.
@@ -258,15 +260,15 @@ catalog with `FAULT_UNSUPPORTED` before the case has any effect:
 "faults": { "Place": ["Reject", "Timeout"] }                      // fault names: all counts
 ```
 
-Whatever you declare, **`reset` is dropped**, and a fault left with no count is
-not offered. The two forms above both end as `once` and `times n`.
+The counts are carried as declared; the array form offers all three.
 
-The host arms the fault, applies it to the next `times` calls, and clears it on
-`reset`. The adapter has no `firedFaults`, so the harness does not check that the
+The host arms the fault, applies it to the next `times` calls (or to every call
+until the next `reset` when `untilReset` is set), and clears it on `reset`. The adapter has no `firedFaults`, so the harness does not check that the
 fault was consumed.
 
-Called directly rather than through the harness, `fault()` refuses `until reset`
-or a detail with `INVALID_REQUEST`. `FAULT_UNSUPPORTED` is the harness's code.
+Called directly rather than through the harness, `fault()` sends the arm as is;
+a request carrying both a count and `untilReset` is `INVALID_REQUEST`.
+`FAULT_UNSUPPORTED` is the harness's code.
 
 ## Writing a host
 
@@ -643,9 +645,19 @@ Every refusal is an `ExchangeError` with a `code` and a `detail`.
 | `NAMESPACE_NOT_HONOURED` | The host's `setup` result names a namespace other than the one sent. |
 | `INVALID_CLOCK` | `setClock` was given a string that is not an ISO-8601 instant with a zone designator. |
 | `HOST_CONFIG_MISMATCH` | A role's host configuration differs from the host already open for its file. |
-| `FAULT_UNSUPPORTED` | The harness refuses an arm outside the service's fault catalog, with `until reset`, or with a detail. Raised by the runner before the case has any effect. |
+| `FAULT_UNSUPPORTED` | The harness refuses an arm outside the service's fault catalog, or with a count the catalog does not declare for that fault. Raised by the runner before the case has any effect. |
 
-## This release (0.1.0, Feature v0.1.48)
+## This release (0.2.0)
+
+- **Fault shape C** (SPEC-RPC-001 amended, founder ruling 2026-11-13). The
+  `fault` request gains `untilReset` and `detail`, both optional; `times` and
+  `untilReset` are exclusive. The adapter carries `until reset` and a fault
+  detail to the host, and its catalog is offered as declared, so a line such as
+  `fault log AppendToStream WRONG_EXPECTED_VERSION { stream: "x" } until reset`
+  reaches a spec host exactly as a native adapter takes it. The protocol
+  version stays 2: a request without the new fields is unchanged.
+
+## 0.1.0 (Feature v0.1.48)
 
 New package, specified by SPEC-RPC-001 (one exchange) and SPEC-RPC-002 (one
 shared host per spec file). Amendments it carries:

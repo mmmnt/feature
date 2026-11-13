@@ -4,14 +4,18 @@ feat 1.0
 # answer, over the Feat Host Protocol (JSON-RPC 2.0 over stdio; contract
 # schemas/feat-host-protocol.schema.json). Successor of the draft SPEC-WIRE-001.
 # Agreed and ordered built by Sift decision 58a4ac88 (2026-11-09). AMENDED by founder ruling 2026-11-09,
-# fault shape B: the protocol's `fault` request stays { service, kind, times }; the stdio adapter's
-# fault() MAPS the harness arm onto it as kind = "<operation>.<fault>", and its fault catalog declares
-# only `once` and `times n` (the protocol has no `until reset` and no detail), so the harness refuses
-# an arm with either as FAULT_UNSUPPORTED before the case has any effect. `ArmFault` (fixtures/arm-fault.mjs,
-# part of the build) creates the service adapter against the fake host with a configured catalog
-# (options.faults: operation -> fault -> counts; whatever the config declares, `reset` is dropped),
-# asks the harness's own check (faultProblem) whether the arm is offered, arms it when it is, and answers
-# what the HOST received (the fake host logs `fault <kind> <times>`).
+# fault shape B, and AMENDED again by founder ruling 2026-11-13, "Fix in Feature (Recommended)" (fault
+# shape C, superseding B): the protocol's `fault` request is { service, kind, times? | untilReset?, detail? };
+# the stdio adapter's fault() MAPS the harness arm onto it as kind = "<operation>.<fault>", a count of n as
+# times n, `until reset` as untilReset: true, and the arm's detail as is. Its fault catalog is the configured
+# one as declared (`once`, `times n` and `until reset` all carried) and it accepts a detail, so a spec line such
+# as `fault log AppendToStream WRONG_EXPECTED_VERSION { stream: "x" } until reset` reaches a stdio host exactly
+# as a native adapter takes it. times and untilReset together are not a valid request. The protocol version
+# stays 2: both fields are optional, and a request without them is the shape-B request unchanged.
+# `ArmFault` (fixtures/arm-fault.mjs, part of the build) creates the service adapter against the fake host with
+# a configured catalog (options.faults: operation -> fault -> counts), asks the harness's own check
+# (faultProblem) whether the arm is offered, arms it when it is, and answers what the HOST received (the fake
+# host logs `fault <kind> <times|reset> <detail JSON>`).
 #
 # Scope: the client side of one exchange (validate, spawn, frame, correlate, check the
 # answer against the CLOSED shape of its method, fail precisely, leave nothing running).
@@ -62,7 +66,7 @@ enforce:
   rejects HOST_TIMEOUT when the host does not answer within timeoutMs (default 30000)
   rejects PROTOCOL_VIOLATION when the host's line is not valid JSON, does not validate against the protocol schema, carries another id, or carries a result that violates the closed shape of the method sent
   rejects HOST_ERROR when the host answers with a JSON-RPC error, relaying its code and message verbatim
-  rejects FAULT_UNSUPPORTED when an arm asks the stdio adapter for a fault outside its configured catalog, for until reset, or with a detail, none of which the protocol can carry
+  rejects FAULT_UNSUPPORTED when an arm asks the stdio adapter for a fault outside its configured catalog, or for a count its catalog does not declare for that fault
   on every outcome leave no host process running
 
 contract:
@@ -217,6 +221,18 @@ scenario "fault relays a logical fault to arm":
     response OK ExchangeResult { method: "fault", sent: { method: "fault", params: { service: "kv", kind: "unavailable", times: 2 } }, hostSpawned: true, hostAlive: false, result: {} }
     filesystem has []
 
+scenario "fault relays until reset and a detail":
+  when: Exchange { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, method: "fault", params: { service: "kv", kind: "AppendToStream.WRONG_EXPECTED_VERSION", untilReset: true, detail: { stream: "a" } } }
+  predict success:
+    response OK ExchangeResult { method: "fault", sent: { method: "fault", params: { service: "kv", kind: "AppendToStream.WRONG_EXPECTED_VERSION", untilReset: true, detail: { stream: "a" } } }, hostSpawned: true, hostAlive: false, result: {} }
+    filesystem has []
+
+scenario "a fault with both a count and until reset never reaches a host":
+  when: Exchange { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, method: "fault", params: { service: "kv", kind: "unavailable", times: 2, untilReset: true } }
+  predict rejection INVALID_REQUEST:
+    response ERR ExchangeError { code: "INVALID_REQUEST", hostSpawned: false, hostAlive: false }
+    filesystem has []
+
 scenario "a setClock with a clock lacking a zone designator never reaches a host":
   when: Exchange { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, method: "setClock", params: { clock: "2026-07-16T00:00:00" } }
   predict rejection INVALID_REQUEST:
@@ -331,10 +347,16 @@ scenario "once is a count of one":
     response OK ArmResult { armed: true, hostSawKind: "AppendToStream.NotLeader", hostSawTimes: 1 }
     filesystem has []
 
-scenario "an until-reset arm is refused as unsupported and never reaches the host":
+scenario "an until-reset arm reaches the host as untilReset":
   when: ArmFault { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, catalog: { AppendToStream: { NotLeader: ["once", "times", "reset"], AccessDenied: ["reset"] } }, arm: { operation: "AppendToStream", fault: "NotLeader", times: "reset" } }
-  predict rejection FAULT_UNSUPPORTED:
-    response ERR ArmError { code: "FAULT_UNSUPPORTED", detail: matching "until reset", hostSawFault: false }
+  predict success:
+    response OK ArmResult { armed: true, hostSawKind: "AppendToStream.NotLeader", hostSawTimes: "reset" }
+    filesystem has []
+
+scenario "a fault the catalog declares only until reset arms until reset":
+  when: ArmFault { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, catalog: { AppendToStream: { NotLeader: ["once", "times", "reset"], AccessDenied: ["reset"] } }, arm: { operation: "AppendToStream", fault: "AccessDenied", times: "reset" } }
+  predict success:
+    response OK ArmResult { armed: true, hostSawKind: "AppendToStream.AccessDenied", hostSawTimes: "reset" }
     filesystem has []
 
 scenario "a fault the catalog declares only until reset is refused for any count":
@@ -343,10 +365,16 @@ scenario "a fault the catalog declares only until reset is refused for any count
     response ERR ArmError { code: "FAULT_UNSUPPORTED", detail: matching "AccessDenied", hostSawFault: false }
     filesystem has []
 
-scenario "an arm with a detail is refused as unsupported and never reaches the host":
+scenario "an arm with a detail reaches the host with its detail":
   when: ArmFault { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, catalog: { AppendToStream: { NotLeader: ["once", "times", "reset"], AccessDenied: ["reset"] } }, arm: { operation: "AppendToStream", fault: "NotLeader", times: 1, detail: { node: "n2" } } }
-  predict rejection FAULT_UNSUPPORTED:
-    response ERR ArmError { code: "FAULT_UNSUPPORTED", detail: matching "detail", hostSawFault: false }
+  predict success:
+    response OK ArmResult { armed: true, hostSawKind: "AppendToStream.NotLeader", hostSawTimes: 1, hostSawDetail: { node: "n2" } }
+    filesystem has []
+
+scenario "a native-shaped line with a detail and until reset reaches the host unchanged":
+  when: ArmFault { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, catalog: { AppendToStream: { WRONG_EXPECTED_VERSION: ["reset"] } }, arm: { operation: "AppendToStream", fault: "WRONG_EXPECTED_VERSION", times: "reset", detail: { stream: "s0599e33863c1.ws::domain" } } }
+  predict success:
+    response OK ArmResult { armed: true, hostSawKind: "AppendToStream.WRONG_EXPECTED_VERSION", hostSawTimes: "reset", hostSawDetail: { stream: "s0599e33863c1.ws::domain" } }
     filesystem has []
 
 scenario "a fault outside the configured catalog is refused naming what is offered":

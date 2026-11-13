@@ -41,7 +41,7 @@ async function canned(req) {
       return { result: { protocol: 2, namespace: p.namespace } };
     }
     case "fault":
-      log(`fault ${p.kind} ${p.times ?? ""}`);
+      log(`fault ${p.kind} ${p.untilReset ? "reset" : (p.times ?? "")} ${p.detail !== undefined ? JSON.stringify(p.detail) : ""}`);
       return { result: {} };
     case "setClock":
       log(`clock ${JSON.stringify(p.clock)}`);

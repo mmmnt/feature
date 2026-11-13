@@ -248,11 +248,15 @@
             "type": "object",
             "required": ["service", "kind"],
             "additionalProperties": false,
+            "description": "Arm a fault (fault shape C, founder ruling 2026-11-13): times n applies it to the next n calls; untilReset holds it until the next reset; neither is once. times and untilReset are exclusive. detail is the spec's fault detail, carried opaquely; the host applies the fault only where the detail matches (e.g. { stream } restricts it to that stream).",
             "properties": {
               "service": { "$ref": "#/definitions/service" },
               "kind": { "type": "string", "minLength": 1 },
-              "times": { "type": "integer", "minimum": 1 }
-            }
+              "times": { "type": "integer", "minimum": 1 },
+              "untilReset": { "const": true },
+              "detail": { "type": "object" }
+            },
+            "not": { "properties": { "times": true, "untilReset": true }, "required": ["times", "untilReset"] }
           }
         }
       }

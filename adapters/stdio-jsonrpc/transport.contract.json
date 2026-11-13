@@ -181,7 +181,17 @@
           "type": "string"
         },
         "hostSawTimes": {
-          "type": "integer"
+          "oneOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "const": "reset"
+            }
+          ]
+        },
+        "hostSawDetail": {
+          "type": "object"
         }
       }
     },

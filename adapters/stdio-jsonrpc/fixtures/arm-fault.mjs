@@ -1,4 +1,4 @@
-// The probe behind `ArmFault` (SPEC-RPC-001, fault shape B): the stdio service adapter against the fake host,
+// The probe behind `ArmFault` (SPEC-RPC-001, fault shape C): the stdio service adapter against the fake host,
 // asked the harness's own question (faultProblem) before arming, and read back from the host's log.
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -24,8 +24,17 @@ export async function armFault(input) {
     const problem = faultProblem(adapter, { service: "kv", ...input.arm });
     if (problem !== undefined) return { status: "ERR", body: { code: "FAULT_UNSUPPORTED", detail: problem, hostSawFault: seen().length > 0 } };
     await adapter.fault(input.arm);
-    const [, kind, times] = seen()[0].split(" ");
-    return { status: "OK", body: { armed: true, hostSawKind: kind, hostSawTimes: Number(times) } };
+    const [, kind, times, ...rest] = seen()[0].split(" ");
+    const detail = rest.join(" ").trim();
+    return {
+      status: "OK",
+      body: {
+        armed: true,
+        hostSawKind: kind,
+        hostSawTimes: times === "reset" ? "reset" : Number(times),
+        ...(detail !== "" ? { hostSawDetail: JSON.parse(detail) } : {}),
+      },
+    };
   } finally {
     await adapter.teardown();
   }
