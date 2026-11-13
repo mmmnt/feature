@@ -76,11 +76,20 @@ export interface Fault {
   times: number | "reset";
 }
 
+/** ADR-0025: one seed or execute line of a given, by kind. */
+export type GivenStep = "seed" | "execute";
+
 export interface Given {
   clock?: string;
   context?: string[];
   executes?: Invocation[];
   seeds?: Seed[];
+  /**
+   * ADR-0025 (SPEC-RT-009): the kinds of the given's seed and execute lines in written order; the n-th
+   * "seed" is seeds[n] and the n-th "execute" is executes[n]. The parser writes it only when the given has
+   * both kinds. Absent, the harness runs every seed, then every execute.
+   */
+  order?: GivenStep[];
   faults?: Fault[];
 }
 

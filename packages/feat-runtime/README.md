@@ -94,19 +94,22 @@ case runs as if the superseded one had never started.
 3. **Reset.** `reset()` on every service, in config order.
 4. **Clock.** `setClock(clock)` to the response adapter, then to each service adapter that has one.
    `clock` is the case's `given.clock`, or `null`, on every case.
-5. **Seeds.** `seed(records)` on each seeded service.
-6. **Executes.** Each `given.executes` runs through the response adapter. A string `@given.response.<path>`
-   in a later payload reads the most recent execute's response body.
-7. **Faults.** Each `given.faults` entry is armed with `fault({ operation, fault, detail, times })`,
+5. **Seeds and executes, in written order** (SPEC-RT-009, ADR-0025). `given.order` lists the kinds as the
+   spec wrote them: a `"seed"` calls `seed(records)` on the next seed's service, an `"execute"` runs the
+   next `given.executes` entry through the response adapter. Without `given.order` (a given of one kind,
+   or an IR an earlier parser wrote) every seed runs, then every execute. A string `@given.response.<path>`
+   in a later payload reads the most recent execute's response body. An order that does not name each
+   seed and each execute once is refused in the preflight with an Error naming the anchor.
+6. **Faults.** Each `given.faults` entry is armed with `fault({ operation, fault, detail, times })`,
    in written order. Arming is never a captured effect.
-8. **Capture window.** `startCapture({ specType })` on every service.
-9. **Stimulus.** The `when` through the response adapter, then each `delivers` to its service. The
+7. **Capture window.** `startCapture({ specType })` on every service.
+8. **Stimulus.** The `when` through the response adapter, then each `delivers` to its service. The
    response adapter's namespace is checked right after the invoke.
-10. **Convergence.** The harness waits for eventual services (below).
-11. **Capture.** `stopCapture()` on every service.
-12. **Fault consumption.** For a service with `firedFaults()`, an armed fault that fired fewer times
+9. **Convergence.** The harness waits for eventual services (below).
+10. **Capture.** `stopCapture()` on every service.
+11. **Fault consumption.** For a service with `firedFaults()`, an armed fault that fired fewer times
     than armed adds a `FAULT_NOT_CONSUMED` violation.
-13. **Diff.** The response, then each service's `records` (`has`) and `contains`. Every violation is
+12. **Diff.** The response, then each service's `records` (`has`) and `contains`. Every violation is
     collected, and the case throws one `PredictionViolation` listing them all.
 
 ## Configuration
@@ -304,7 +307,7 @@ the adapter cannot arm it, or `undefined`:
 
 Any of these refuses the case as `FAULT_UNSUPPORTED`, before the case has any effect.
 
-A fault is armed after the seeds and the `given.executes`, so setup never consumes it, and before the
+A fault is armed after every seed and `given.executes` entry, so setup never consumes it, and before the
 capture window opens, so arming is never a captured effect. After `stopCapture()`, for each service
 that was armed and has `firedFaults()`, a fault armed `times n` must have fired `n` times, and one
 armed `until reset` at least once. Otherwise the case gets the violation

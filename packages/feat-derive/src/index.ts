@@ -190,6 +190,8 @@ function substituteGiven(given: Given | undefined, row: Row, isOutline: boolean)
       payload: substituteValue(e.payload, row) as Record<string, unknown>,
     }));
   if (given.seeds) out.seeds = isOutline ? substituteSeeds(given.seeds, row) : given.seeds;
+  // SPEC-RT-009 (ADR-0025): the written order of the seeds and executes travels with every case.
+  if (given.order) out.order = [...given.order];
   if (given.faults)
     out.faults = given.faults.map((f) =>
       f.detail === undefined ? f : { ...f, detail: substituteValue(f.detail, row) as Record<string, unknown> },

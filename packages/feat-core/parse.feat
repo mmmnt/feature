@@ -11,6 +11,11 @@ feat 1.0
 #
 # AMENDMENT (ADR-0023, `fault` in given:; Sift founder rulings 05537e6e (3) "reserved inside given:
 # in feat 1.0" and 0026e0ea, 2026-11-09).
+#
+# AMENDMENT (ADR-0025, given steps in written order; founder ruling cd1ed65b, 2026-11-12, "Feature:
+# written order (Recommended)"). A given that has both seed and execute lines records their written
+# order as given.order; the harness runs them in it (SPEC-RT-009). One new exemplar, corpus/given-order;
+# every other scenario and every other exemplar's IR is unchanged.
 
 spec SPEC-CORE-001 "Parse a .feat file to BuiltSpec IR"
 context Toolchain
@@ -40,6 +45,9 @@ construct:
   always present (1 for the default and for once, n, or "reset"). Anything else that begins with the
   reserved word is MALFORMED_SYNTAX. A word that merely begins with the letters, such as `faults` or
   `faultline`, is not reserved and stays freeform. The fault's service joins the closed service space.
+  A given whose lines include both a seed and an execute records their kinds in written order as
+  given.order, an array of "seed" and "execute", one per line, the n-th "seed" naming given.seeds[n] and
+  the n-th "execute" given.executes[n] (ADR-0025). A given with only one of the two kinds has no order.
 
 enforce:
   read the version pragma before anything else
@@ -143,6 +151,12 @@ scenario "parses the fault exemplar (given-fault, ADR-0023)":
   when: Parse { spec: "corpus/given-fault/given-fault.feat", config: "corpus/given-fault/feat.config.json" }
   predict success:
     response OK BuiltSpec equals fixture "../../corpus/given-fault/given-fault.ir.json"
+    filesystem has []
+
+scenario "parses the given-order exemplar (given-order, ADR-0025)":
+  when: Parse { spec: "corpus/given-order/given-order.feat", config: "corpus/given-order/feat.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "../../corpus/given-order/given-order.ir.json"
     filesystem has []
 
 scenario "a word that merely begins with fault stays freeform context":

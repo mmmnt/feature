@@ -1,0 +1,16 @@
+{
+  "featVersion": "1.0",
+  "schemas": { "adapter": "@mmmnt/feat-schema-json" },
+  "response": {
+    "adapter": "@mmmnt/feat-adapter-handler",
+    "commands": {
+      "EnableWorkspace": { "module": "features/enable-workspace/handler.ts", "export": "enableWorkspace" },
+      "ReviewWorkspace": { "module": "features/review-workspace/handler.ts", "export": "reviewWorkspace" }
+    }
+  },
+  "services": {
+    "eventStore": { "adapter": "@mmmnt/feat-adapter-memory", "consistency": "strong" }
+  },
+  "specs": { "dir": ".", "pattern": "*.feat", "contractPattern": "*.contract.json", "outputPattern": "{name}.test.ts" },
+  "report": { "format": ["console"] }
+}

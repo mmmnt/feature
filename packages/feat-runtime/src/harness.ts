@@ -133,6 +133,8 @@ export interface HarnessCase {
     context?: string[];
     executes?: { command: string; actor?: string; payload: Record<string, unknown> }[];
     seeds?: ({ service: string; records: { type: string; schemaName?: string; values: Record<string, unknown> }[] } | { service: string; fixture: string })[];
+    /** ADR-0025 (SPEC-RT-009): the seeds and executes in written order, by kind; absent = seeds, then executes. */
+    order?: ("seed" | "execute")[];
   };
   when?: { command: string; actor?: string; payload: Record<string, unknown> };
   delivers?: { event: string; payload: Record<string, unknown>; service: string }[];
@@ -278,6 +280,17 @@ export async function createHarness(opts: { configPath: string; specPath?: strin
 
   // ADR-0023: what the case needs from its adapters, checked before anything runs.
   function preflight(c: HarnessCase): void {
+    // SPEC-RT-009: a written order names each seed and each execute exactly once, or the IR is malformed.
+    const order = c.given?.order;
+    if (order !== undefined) {
+      const seeds = c.given?.seeds?.length ?? 0;
+      const executes = c.given?.executes?.length ?? 0;
+      const count = (k: string) => order.filter((s) => s === k).length;
+      if (order.some((s) => s !== "seed" && s !== "execute") || count("seed") !== seeds || count("execute") !== executes)
+        throw new Error(
+          `${c.anchor}: given.order [${order.join(", ")}] does not name each of the ${seeds} seed(s) and ${executes} execute(s) once.`,
+        );
+    }
     if (c.given?.clock !== undefined) {
       const reached = response ? typeof response.setClock === "function" : [...services.values()].some((a) => typeof a.setClock === "function");
       if (!reached)
@@ -361,20 +374,31 @@ export async function createHarness(opts: { configPath: string; specPath?: strin
     for (const adapter of services.values()) if (adapter.setClock) await adapter.setClock(clock);
 
     // ── Preconditions: before the capture window (INV-9) ──
-    for (const seed of c.given?.seeds ?? []) {
-      const adapter = services.get(seed.service);
-      if (!adapter) throw new Error(`${c.anchor}: seed targets unknown service '${seed.service}'`);
-      if (!adapter.seed) throw new HarnessConfigurationError("SEED_UNSUPPORTED", `${c.anchor}: adapter for '${seed.service}' does not support seed().`, seed.service);
-      if ("fixture" in seed) throw new Error(`${c.anchor}: fixture seeds require generate-time inlining (not yet wired)`);
-      await adapter.seed(seed.records);
-    }
+    // SPEC-RT-009 (ADR-0025): the seeds and executes run in written order; without one (an IR from an
+    // earlier parser, or a given of one kind) every seed runs, then every execute, as before.
+    const seeds = c.given?.seeds ?? [];
+    const executes = c.given?.executes ?? [];
+    const steps: ("seed" | "execute")[] =
+      c.given?.order ?? [...seeds.map(() => "seed" as const), ...executes.map(() => "execute" as const)];
+    let nextSeed = 0;
+    let nextExecute = 0;
     // Each execute may reference the one before it, so the reference target advances
     // as the preconditions run.
     let givenResponse: CapturedResponse | undefined;
-    for (const pre of c.given?.executes ?? []) {
-      if (!response) throw new Error(`${c.anchor}: execute precondition requires a response adapter`);
-      const payload = resolveGivenRefs(pre.payload, givenResponse, c.anchor);
-      givenResponse = await response.invoke(pre.command, payload, pre.actor);
+    for (const step of steps) {
+      if (step === "seed") {
+        const seed = seeds[nextSeed++]!;
+        const adapter = services.get(seed.service);
+        if (!adapter) throw new Error(`${c.anchor}: seed targets unknown service '${seed.service}'`);
+        if (!adapter.seed) throw new HarnessConfigurationError("SEED_UNSUPPORTED", `${c.anchor}: adapter for '${seed.service}' does not support seed().`, seed.service);
+        if ("fixture" in seed) throw new Error(`${c.anchor}: fixture seeds require generate-time inlining (not yet wired)`);
+        await adapter.seed(seed.records);
+      } else {
+        const pre = executes[nextExecute++]!;
+        if (!response) throw new Error(`${c.anchor}: execute precondition requires a response adapter`);
+        const payload = resolveGivenRefs(pre.payload, givenResponse, c.anchor);
+        givenResponse = await response.invoke(pre.command, payload, pre.actor);
+      }
     }
 
     // ADR-0023: faults are armed after the seeds and the given executes (setup never consumes them)

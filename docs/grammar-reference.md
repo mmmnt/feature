@@ -206,7 +206,11 @@ additionally stamps optional `loc` (line/column) on IR nodes for editor jump-to-
 
 ### 5.1 `given:` — the hybrid zone
 
-Four line kinds, freely mixed:
+Four line kinds, freely mixed. The `seed` and `execute` lines run in the order they are written
+(ADR-0025), so a given states history in sequence: `execute EnableX { … }` then `seed s [ XDisabled … ]`
+leaves the seeded event as the latest. A given with both kinds records their written order in the IR as
+`given.order`, an array of `"seed"` and `"execute"` (the n-th of a kind names `seeds[n]` or
+`executes[n]`); a given with one kind has no `order`. Faults are armed after every seed and execute.
 
 | Kind | Form | Semantics |
 | --- | --- | --- |

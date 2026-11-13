@@ -1,0 +1,105 @@
+feat 1.0
+
+# SPEC-RT-009 — the harness runs a case's given steps, its seeds and its executes, in the order the spec
+# writes them (founder ruling cd1ed65b, 2026-11-12, "Feature: written order (Recommended)"; ADR-0025).
+# Until now runCase ran every seed of a given before every execute, whatever the order of the lines: a
+# given that wrote "execute EnableSift, then seed SiftDisabled" ended with the execute's event as the
+# latest, the opposite of what it says (found by a consumer's Wave 1 build). The IR kept the two kinds in
+# two arrays and lost their interleaving; SPEC-CORE-001 (amended by ADR-0025) now records it as
+# given.order, and this spec makes the harness honour it.
+#
+# WHAT CHANGES (and nothing else):
+#  1. feat-types: Given gains order?: ("seed" | "execute")[], the kinds of the given's seed and execute
+#     lines in written order; the n-th "seed" is seeds[n] and the n-th "execute" is executes[n]. The
+#     parser writes it only when a given has both kinds (with one kind the arrays are already in order).
+#  2. runCase runs the given steps in that order, each seed through its service adapter's seed() and each
+#     execute through the response adapter, a `@given.response.<path>` reading the most recent execute
+#     before it, as today. With no order it runs the seeds, then the executes, as before: that is what an
+#     IR an earlier parser wrote means, and with one kind it is the written order.
+#  3. An order that does not name each seed and each execute exactly once is refused in the preflight,
+#     before any adapter call: a plain Error naming the anchor (a malformed IR, like a fixture seed that was
+#     not inlined). The probe answers an Error it does not otherwise know as ERR code CASE_THREW, the
+#     probe's label (the harness's error is uncoded), with the calls so far and the message as detail.
+#  4. derive (feat-derive) carries given.order into every derived case, an outline row's included.
+# Unchanged: the clock first, the resets, the preflight checks, the faults armed after every given step
+# and before the capture window (SPEC-RT-003), the anchors `given › seed[i]` and `given › execute[i]`.
+#
+# Driven through the probe of SPEC-RT-002 (`RunHarnessCase { config, cases }`) with the fixture config
+# no-fault.config.json (response stub with Ping, service `store`, strong, no fault()). The calls string
+# records each seed as seed:store and each given execute as execute:Ping, in the order they reach the stubs.
+
+spec SPEC-RT-009 "Harness: given steps run in written order"
+context Toolchain
+aggregate Runtime
+type infrastructure
+status agreed
+
+construct:
+  handler at packages/feat-runtime/src/harness.ts
+  touches packages/feat-runtime/**
+  touches packages/feat-types/**
+  touches packages/feat-derive/src/index.ts
+  needs SPEC-RT-003
+  needs SPEC-CORE-001
+  Types (feat-types): Given.order?: ("seed" | "execute")[], and the harness's HarnessCase.given the same.
+  runCase, after the resets and the clock and before arming the faults, walks given.order: a "seed" runs
+  the next seed of given.seeds through its service adapter's seed(), an "execute" the next execute of
+  given.executes through the response adapter, `@given.response.<path>` resolving against the most recent
+  execute before it. Without given.order it runs every seed, then every execute, as before. In the preflight,
+  before any adapter call, an order whose count of "seed" differs from given.seeds' length or whose count of "execute" differs
+  from given.executes' length, or that holds any other value, throws an Error naming the anchor.
+  derive copies given.order into each derived case unchanged.
+
+enforce:
+  run a case's given seeds and executes in the order the spec writes them
+  run every seed and then every execute when the case carries no written order
+  rejects CASE_THREW when a written order does not name each seed and each execute once, before any adapter call
+
+contract:
+  input RunInput
+  response RunResult
+  error HarnessError
+
+scenario "an execute written before a seed runs before it":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/no-fault.config.json"
+    cases: [
+      { anchor: "c1", name: "c1", given: { executes: [ { command: "Ping", payload: {} } ], seeds: [ { service: "store", records: [ { type: "Disabled", values: { n: 1 } } ] } ], order: ["execute", "seed"] }, when: { command: "Ping", payload: {} }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } }
+    ]
+  }
+  predict success:
+    response OK RunResult { outcome: "passed", calls: "reset:store execute:Ping seed:store start:store invoke:Ping stop:store" }
+    filesystem has []
+
+scenario "seeds and executes interleave in the written order":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/no-fault.config.json"
+    cases: [
+      { anchor: "c1", name: "c1", given: { seeds: [ { service: "store", records: [ { type: "A", values: { n: 1 } } ] }, { service: "store", records: [ { type: "B", values: { n: 2 } } ] } ], executes: [ { command: "Ping", payload: {} }, { command: "Ping", payload: {} } ], order: ["seed", "execute", "seed", "execute"] }, when: { command: "Ping", payload: {} }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } }
+    ]
+  }
+  predict success:
+    response OK RunResult { outcome: "passed", calls: "reset:store seed:store execute:Ping seed:store execute:Ping start:store invoke:Ping stop:store" }
+    filesystem has []
+
+scenario "a given with no written order runs its seeds, then its executes, as before":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/no-fault.config.json"
+    cases: [
+      { anchor: "c1", name: "c1", given: { executes: [ { command: "Ping", payload: {} } ], seeds: [ { service: "store", records: [ { type: "A", values: { n: 1 } } ] } ] }, when: { command: "Ping", payload: {} }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } }
+    ]
+  }
+  predict success:
+    response OK RunResult { outcome: "passed", calls: "reset:store seed:store execute:Ping start:store invoke:Ping stop:store" }
+    filesystem has []
+
+scenario "a written order that does not name each seed and each execute once is refused before any adapter call":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/no-fault.config.json"
+    cases: [
+      { anchor: "c1", name: "c1", given: { executes: [ { command: "Ping", payload: {} } ], seeds: [ { service: "store", records: [ { type: "A", values: { n: 1 } } ] } ], order: ["execute"] }, when: { command: "Ping", payload: {} }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } }
+    ]
+  }
+  predict rejection CASE_THREW:
+    response ERR HarnessError { code: "CASE_THREW", calls: "", detail: matching "^c1: given\\.order" }
+    filesystem has []

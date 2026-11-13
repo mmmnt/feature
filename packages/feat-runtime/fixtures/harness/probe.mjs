@@ -24,6 +24,9 @@ export async function runCases(input) {
           if (e.service !== undefined) body.service = e.service;
           if (e.mode !== undefined) body.mode = e.mode;
           return { status: "ERR", body };
+        } else if (e instanceof Error && typeof e.code !== "string") {
+          // SPEC-RT-009: an uncoded Error the harness throws for a malformed case (CASE_THREW is the probe's label).
+          return { status: "ERR", body: { code: "CASE_THREW", calls: state.calls.join(" "), detail: e.message } };
         } else throw e;
       }
     }

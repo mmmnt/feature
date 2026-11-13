@@ -1,0 +1,33 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-WSP-001",
+  "schemas": {
+    "EnableInput": {
+      "type": "object",
+      "required": ["workspaceId"],
+      "additionalProperties": false,
+      "properties": { "workspaceId": { "type": "string", "minLength": 1 } }
+    },
+    "ReviewInput": {
+      "type": "object",
+      "required": ["workspaceId"],
+      "additionalProperties": false,
+      "properties": { "workspaceId": { "type": "string", "minLength": 1 } }
+    },
+    "Review": {
+      "type": "object",
+      "required": ["workspaceId"],
+      "properties": { "workspaceId": { "type": "string" } }
+    },
+    "EnablementEvent": {
+      "type": "object",
+      "required": ["workspaceId"],
+      "properties": { "workspaceId": { "type": "string" } }
+    },
+    "Refusal": {
+      "type": "object",
+      "required": ["code"],
+      "properties": { "code": { "type": "string" }, "message": { "type": "string" } }
+    }
+  }
+}

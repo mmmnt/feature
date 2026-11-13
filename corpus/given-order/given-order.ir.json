@@ -1,0 +1,248 @@
+{
+  "featVersion": "1.0",
+  "identity": {
+    "id": "SPEC-WSP-001",
+    "name": "ReviewWorkspace refuses a disabled workspace",
+    "context": "Workspaces",
+    "aggregate": "Workspace",
+    "type": "command",
+    "status": "agreed"
+  },
+  "construct": [
+    {
+      "kind": "handler",
+      "path": "features/review-workspace/handler.ts"
+    },
+    {
+      "kind": "touches",
+      "glob": "features/review-workspace/**"
+    }
+  ],
+  "enforce": [
+    {
+      "kind": "constraint",
+      "text": "start a review of an enabled workspace"
+    },
+    {
+      "kind": "rejects",
+      "rejectionId": "WORKSPACE_DISABLED",
+      "text": "the workspace's latest enablement event disables it"
+    }
+  ],
+  "contract": [
+    {
+      "kind": "input",
+      "schemaName": "EnableInput"
+    },
+    {
+      "kind": "input",
+      "schemaName": "ReviewInput"
+    },
+    {
+      "kind": "response",
+      "schemaName": "Review"
+    },
+    {
+      "kind": "event",
+      "schemaName": "EnablementEvent"
+    },
+    {
+      "kind": "error",
+      "schemaName": "Refusal"
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "a workspace enabled and then disabled is refused",
+      "given": {
+        "context": [
+          "The workspace was enabled by its owner, then disabled by billing."
+        ],
+        "executes": [
+          {
+            "command": "EnableWorkspace",
+            "payload": {
+              "workspaceId": "w-1"
+            }
+          }
+        ],
+        "seeds": [
+          {
+            "service": "eventStore",
+            "records": [
+              {
+                "type": "WorkspaceDisabled",
+                "schemaName": "EnablementEvent",
+                "values": {
+                  "workspaceId": "w-1"
+                }
+              }
+            ]
+          }
+        ],
+        "order": [
+          "execute",
+          "seed"
+        ]
+      },
+      "when": {
+        "command": "ReviewWorkspace",
+        "payload": {
+          "workspaceId": "w-1"
+        }
+      },
+      "prediction": {
+        "type": "rejection",
+        "rejectionId": "WORKSPACE_DISABLED",
+        "response": {
+          "status": 409,
+          "schemaName": "Refusal",
+          "valueBlock": {
+            "code": {
+              "matcher": "literal",
+              "value": "WORKSPACE_DISABLED"
+            }
+          }
+        },
+        "services": {
+          "eventStore": {
+            "records": []
+          }
+        }
+      }
+    },
+    {
+      "name": "a workspace disabled and then enabled starts a review",
+      "given": {
+        "seeds": [
+          {
+            "service": "eventStore",
+            "records": [
+              {
+                "type": "WorkspaceDisabled",
+                "schemaName": "EnablementEvent",
+                "values": {
+                  "workspaceId": "w-2"
+                }
+              }
+            ]
+          },
+          {
+            "service": "eventStore",
+            "records": [
+              {
+                "type": "ReviewNoted",
+                "schemaName": "EnablementEvent",
+                "values": {
+                  "workspaceId": "w-2"
+                }
+              }
+            ]
+          }
+        ],
+        "executes": [
+          {
+            "command": "EnableWorkspace",
+            "payload": {
+              "workspaceId": "w-2"
+            }
+          }
+        ],
+        "order": [
+          "seed",
+          "execute",
+          "seed"
+        ]
+      },
+      "when": {
+        "command": "ReviewWorkspace",
+        "payload": {
+          "workspaceId": "w-2"
+        }
+      },
+      "prediction": {
+        "type": "success",
+        "response": {
+          "status": 202,
+          "schemaName": "Review",
+          "valueBlock": {
+            "workspaceId": {
+              "matcher": "whenRef",
+              "path": "workspaceId"
+            }
+          }
+        },
+        "services": {
+          "eventStore": {
+            "records": [
+              {
+                "type": "ReviewStarted",
+                "schemaName": "EnablementEvent",
+                "valueBlock": {
+                  "workspaceId": {
+                    "matcher": "whenRef",
+                    "path": "workspaceId"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "a given of one kind carries no order",
+      "given": {
+        "executes": [
+          {
+            "command": "EnableWorkspace",
+            "payload": {
+              "workspaceId": "w-3"
+            }
+          },
+          {
+            "command": "EnableWorkspace",
+            "payload": {
+              "workspaceId": "w-3"
+            }
+          }
+        ]
+      },
+      "when": {
+        "command": "ReviewWorkspace",
+        "payload": {
+          "workspaceId": "w-3"
+        }
+      },
+      "prediction": {
+        "type": "success",
+        "response": {
+          "status": 202,
+          "schemaName": "Review",
+          "valueBlock": {
+            "workspaceId": {
+              "matcher": "whenRef",
+              "path": "workspaceId"
+            }
+          }
+        },
+        "services": {
+          "eventStore": {
+            "records": [
+              {
+                "type": "ReviewStarted",
+                "schemaName": "EnablementEvent",
+                "valueBlock": {
+                  "workspaceId": {
+                    "matcher": "whenRef",
+                    "path": "workspaceId"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

@@ -167,20 +167,21 @@ a service) a namespace check. For each case in that file, in this order:
 3. `setClock(clock | null)` on the response adapter if it has one, and on every
    service adapter that has one. Every case gets a call, with `null` when the
    case has no `clock at`.
-4. `seed(records)` for each `seed` in `given:`, in written order. A service
-   adapter with no `seed` is a configuration error: `Configuration error (exit 2):
-   [SEED_UNSUPPORTED] … does not support seed()`, and `feat run` exits 2.
-5. `invoke(...)` on the response adapter for each `execute` in `given:`.
-6. `fault(arm)` for each `fault` in `given:`, in written order. Faults are armed
+4. `seed(records)` for each `seed` in `given:` and `invoke(...)` on the response
+   adapter for each `execute`, interleaved in written order (`given.order`,
+   ADR-0025). A service adapter with no `seed` is a configuration error:
+   `Configuration error (exit 2): [SEED_UNSUPPORTED] … does not support seed()`,
+   and `feat run` exits 2.
+5. `fault(arm)` for each `fault` in `given:`, in written order. Faults are armed
    after the seeds and executes, so setup never consumes one.
-7. `startCapture({ specType })` on every service adapter. This opens the window.
-8. The trigger: `invoke(command, input, actor?)` for `when:`, or
+6. `startCapture({ specType })` on every service adapter. This opens the window.
+7. The trigger: `invoke(command, input, actor?)` for `when:`, or
    `deliver(event, payload)` for each delivery.
-9. The convergence wait (below).
-10. `stopCapture()` on every service adapter closes the window and returns the
+8. The convergence wait (below).
+9. `stopCapture()` on every service adapter closes the window and returns the
     records.
-11. `firedFaults()` for each service that had a fault armed.
-12. The diff against the prediction. For `contains`, `read(query)` is called
+10. `firedFaults()` for each service that had a fault armed.
+11. The diff against the prediction. For `contains`, `read(query)` is called
     here.
 
 After the last case in the file, `teardown()` runs on every service adapter and
@@ -460,7 +461,7 @@ schema's own local pointers. `validate` also checks seed values at generate time
 | `EnforceStep` | `validate`, `load`, `apply`, `onSuccess`, `onRejection`, `constraint`, `rejects` (with `rejectionId`) |
 | `ContractReference` | `input`, `response`, `event`, `record`, `error` with `schemaName`, or `stream` with `pattern` |
 | `Scenario` | `{ name, given?, when?, delivers?, prediction, examples?, loc? }` |
-| `Given` | `{ clock?, context?, executes?, seeds?, faults? }` |
+| `Given` | `{ clock?, context?, executes?, seeds?, order?, faults? }` (`order`: `GivenStep[]`, the seeds and executes in written order, ADR-0025) |
 | `Seed`, `SeedRecord`, `Fault`, `Invocation`, `Delivery` | The preconditions and triggers. A `Seed` is either `{ service, records }` or `{ service, fixture }`. |
 | `Prediction` | `success`, `rejection` (with `rejectionId`) or `error` (with `errorCode`), plus `response` and per-service `services` |
 | `ServicePrediction`, `PredictedRecord`, `ResponsePrediction` | `records` (from `has`), `contains`, `ordering` |

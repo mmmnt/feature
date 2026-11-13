@@ -293,6 +293,19 @@ function collectCaptureServices(block: Record<string, unknown>, into: string[]):
   }
 }
 
+// ── Given steps in written order (ADR-0025) ──────────────────────────────────
+// Every seed and execute line of a given is noted by kind as it is read. The IR carries the list as
+// given.order only once the given holds both kinds: with one kind its array is already in written order,
+// so every IR an earlier parser wrote for such a given is unchanged.
+const givenSteps = new WeakMap<Record<string, unknown>, ("seed" | "execute")[]>();
+
+function recordGivenStep(given: Record<string, unknown>, kind: "seed" | "execute"): void {
+  const steps = givenSteps.get(given) ?? [];
+  steps.push(kind);
+  givenSteps.set(given, steps);
+  if (given.seeds !== undefined && given.executes !== undefined) given.order = [...steps];
+}
+
 // ── Value blocks: field → matcher (ADR-0002/0011/0012/0013) ──────────────────
 type Matcher = Record<string, unknown>;
 
@@ -671,6 +684,7 @@ function parseFeat(source: string, ctx: ConfigContext): Record<string, unknown> 
           inv.payload = parseInlinePayload(m[3]!);
           executes.push(inv);
           given.executes = executes;
+          recordGivenStep(given, "execute");
         } else if (/^fault(?:[ \t]|$)/.test(t)) {
           // ADR-0023: `fault` is reserved as the first word of a given line. A line that starts with it
           // and does not match the form is MALFORMED_SYNTAX, never freeform context.
@@ -681,10 +695,12 @@ function parseFeat(source: string, ctx: ConfigContext): Record<string, unknown> 
           const seeds = (given.seeds as unknown[] | undefined) ?? [];
           seeds.push({ service: m[1], fixture: m[2] });
           given.seeds = seeds;
+          recordGivenStep(given, "seed");
         } else if ((m = /^seed[ \t]+([A-Za-z_][A-Za-z0-9_]*)[ \t]+(\[[\s\S]*\])$/.exec(t))) {
           const seeds = (given.seeds as unknown[] | undefined) ?? [];
           seeds.push({ service: m[1], records: parseRecordList(m[2]!, "seed") });
           given.seeds = seeds;
+          recordGivenStep(given, "seed");
         } else {
           const context = (given.context as string[] | undefined) ?? [];
           context.push(t.replace(/\n/g, " "));

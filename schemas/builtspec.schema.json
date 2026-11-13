@@ -517,9 +517,16 @@
             "$ref": "#/definitions/seed"
           }
         },
+        "order": {
+          "type": "array",
+          "description": "The kinds of the given's seed and execute lines in written order (ADR-0025): the n-th \"seed\" is seeds[n], the n-th \"execute\" is executes[n]. Present only when the given has both kinds; absent, the seeds run, then the executes.",
+          "items": {
+            "enum": ["seed", "execute"]
+          }
+        },
         "faults": {
           "type": "array",
-          "description": "Logical faults the named service's adapter arms as preconditions, in written order (ADR-0023). Armed after seeds and executes, before the capture window.",
+          "description": "Logical faults the named service's adapter arms as preconditions, in written order (ADR-0023). Armed after every seed and execute, before the capture window.",
           "items": {
             "$ref": "#/definitions/fault"
           }

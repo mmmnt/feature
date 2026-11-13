@@ -1,0 +1,58 @@
+feat 1.0
+
+# Corpus exemplar #16 — given steps in written order (ADR-0025). The seed and execute lines of a
+# given run in the order they are written, so a given can state history whose latest fact came
+# from either kind: here the workspace is enabled by a command, then disabled by a seeded event,
+# and the stimulus meets a disabled workspace. The IR keeps the two arrays and adds
+# `given.order`, the kinds in written order, whenever a given has both kinds; a given of one
+# kind (the second scenario) carries no order, since its array is already in written order.
+
+spec SPEC-WSP-001 "ReviewWorkspace refuses a disabled workspace"
+context Workspaces
+aggregate Workspace
+type command
+status agreed
+
+construct:
+  handler at features/review-workspace/handler.ts
+  touches features/review-workspace/**
+
+enforce:
+  start a review of an enabled workspace
+  rejects WORKSPACE_DISABLED when the workspace's latest enablement event disables it
+
+contract:
+  input EnableInput
+  input ReviewInput
+  response Review
+  event EnablementEvent
+  error Refusal
+
+scenario "a workspace enabled and then disabled is refused":
+  given:
+    The workspace was enabled by its owner, then disabled by billing.
+    execute EnableWorkspace { workspaceId: "w-1" }
+    seed eventStore [ WorkspaceDisabled with EnablementEvent { workspaceId: "w-1" } ]
+  when: ReviewWorkspace { workspaceId: "w-1" }
+  predict rejection WORKSPACE_DISABLED:
+    response 409 Refusal { code: "WORKSPACE_DISABLED" }
+    eventStore has []
+
+scenario "a workspace disabled and then enabled starts a review":
+  given:
+    seed eventStore [ WorkspaceDisabled with EnablementEvent { workspaceId: "w-2" } ]
+    execute EnableWorkspace { workspaceId: "w-2" }
+    seed eventStore [ ReviewNoted with EnablementEvent { workspaceId: "w-2" } ]
+  when: ReviewWorkspace { workspaceId: "w-2" }
+  predict success:
+    response 202 Review { workspaceId: @when.workspaceId }
+    eventStore has [ ReviewStarted with EnablementEvent { workspaceId: @when.workspaceId } ]
+
+scenario "a given of one kind carries no order":
+  given:
+    execute EnableWorkspace { workspaceId: "w-3" }
+    execute EnableWorkspace { workspaceId: "w-3" }
+  when: ReviewWorkspace { workspaceId: "w-3" }
+  predict success:
+    response 202 Review { workspaceId: @when.workspaceId }
+    eventStore has [ ReviewStarted with EnablementEvent { workspaceId: @when.workspaceId } ]
