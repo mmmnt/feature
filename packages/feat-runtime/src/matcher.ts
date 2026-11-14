@@ -189,7 +189,104 @@ export function applyMatcher(actual: unknown, present: boolean, m: Matcher, ctx:
     case "placeholder":
       out.push(`${anchor}: unresolved placeholder '<${m.name}>' reached the runtime (derive bug)`);
       return;
+    case "not":
+      applyNegation(actual, present, m.operand, ctx, anchor, out);
+      return;
   }
+}
+
+/** The operand of a negation as the spec writes it, for the violation's words (ADR-0027). */
+function showOperand(m: Matcher): string {
+  switch (m.matcher) {
+    case "literal":
+      return JSON.stringify(m.value);
+    case "whenRef":
+      return `@when.${m.path}`;
+    case "deliverRef":
+      return m.index === undefined ? `@deliver.${m.path}` : `@deliver[${m.index}].${m.path}`;
+    case "captureRef":
+      return `@${m.service}[${m.index ?? 0}].${m.path}`;
+    case "any":
+      return m.ofType ? `any ${m.ofType}` : "any";
+    case "regex":
+      return typeof m.pattern === "string" ? `matching ${JSON.stringify(m.pattern)}` : `matching <${m.pattern.$placeholder}>`;
+    case "placeholder":
+      return `<${m.name}>`;
+    default:
+      return m.matcher;
+  }
+}
+
+type Resolution = { ok: true; value?: unknown } | { ok: false; why: string };
+
+/**
+ * What a reference operand resolves to, or why it does not. A reference that cannot resolve is a
+ * violation under `not` exactly as it is without it (ADR-0021): a negation must never pass because the
+ * thing it points at failed to happen. A non-reference operand resolves to nothing to show.
+ */
+function resolveOperand(m: Matcher, ctx: MatchContext): Resolution {
+  switch (m.matcher) {
+    case "whenRef": {
+      const value = pathGet(ctx.when ?? {}, m.path);
+      return value === undefined
+        ? { ok: false, why: `@when.${m.path} resolved to nothing — that field is absent from the when: payload` }
+        : { ok: true, value };
+    }
+    case "deliverRef": {
+      const value = pathGet((ctx.delivers ?? [])[m.index ?? 0] ?? {}, m.path);
+      return value === undefined
+        ? { ok: false, why: `${showOperand(m)} resolved to nothing — that field is absent from the delivered stimulus` }
+        : { ok: true, value };
+    }
+    case "captureRef": {
+      const index = m.index ?? 0;
+      const ref = `@${m.service}[${index}].${m.path}`;
+      const records = ctx.captures?.get(m.service);
+      if (records === undefined) return { ok: false, why: `${ref} names a service that captured nothing in this case` };
+      const record = records[index];
+      if (record === undefined) return { ok: false, why: `${ref} is out of range — ${m.service} captured ${records.length} record(s)` };
+      const value = pathGet((record.payload ?? {}) as Record<string, unknown>, m.path);
+      return value === undefined
+        ? { ok: false, why: `${ref} resolved to nothing — that field is absent on the captured record` }
+        : { ok: true, value };
+    }
+    case "placeholder":
+      return { ok: false, why: `unresolved placeholder '<${m.name}>' reached the runtime (derive bug)` };
+    case "regex":
+      return typeof m.pattern === "string"
+        ? { ok: true }
+        : { ok: false, why: "unresolved placeholder in matching-argument reached the runtime (derive bug)" };
+    default:
+      return { ok: true };
+  }
+}
+
+const REFUSED_OPERANDS = new Set(["absent", "not", "nested", "goldenFixture"]);
+
+/**
+ * `not M` (ADR-0027, SPEC-RT-011): passes when the field is present and M fails on its value. An absent
+ * field fails whatever M is; an operand the language refuses, or one that cannot resolve, is a violation.
+ */
+function applyNegation(actual: unknown, present: boolean, operand: Matcher, ctx: MatchContext, anchor: string, out: string[]) {
+  if (REFUSED_OPERANDS.has(operand.matcher) || (operand.matcher === "any" && operand.ofType === undefined)) {
+    out.push(`${anchor}: 'not ${operand.matcher}' is not a negation the language takes (a malformed IR)`);
+    return;
+  }
+  const shown = showOperand(operand);
+  if (!present) {
+    out.push(`${anchor}: expected a value that is not ${shown}, field is absent`);
+    return;
+  }
+  const resolution = resolveOperand(operand, ctx);
+  if (!resolution.ok) {
+    out.push(`${anchor}: not ${shown}: ${resolution.why}`);
+    return;
+  }
+  const probe: string[] = [];
+  applyMatcher(actual, true, operand, ctx, anchor, probe);
+  if (probe.length > 0) return;
+  const resolved = "value" in resolution ? ` (= ${JSON.stringify(resolution.value)})` : "";
+  out.push(`${anchor}: expected not ${shown}${resolved}, got ${JSON.stringify(actual)}`);
 }
 
 export function applyValueBlock(actual: Record<string, unknown>, block: ValueBlock, ctx: MatchContext, anchor: string, out: string[]) {

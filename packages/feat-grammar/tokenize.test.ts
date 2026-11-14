@@ -69,6 +69,10 @@ describe("feat grammar tokenization", () => {
   it("highlights matchers and stimulus references", () => {
     expect(scopesAt("      id: any uuid", "any")).toContain("support.function.matcher.feat");
     expect(scopesAt("      deletedAt: absent", "absent")).toContain("support.function.matcher.feat");
+    // ADR-0027 — the negation matcher, in a field's value position; the word stays prose elsewhere.
+    expect(scopesAt('      status: not "Failed"', "not")).toContain("support.function.matcher.feat");
+    expect(scopesAt("      cycleId: not @log[0].cycleId", "not")).toContain("support.function.matcher.feat");
+    expect(scopesAt("  rejects CYCLE_NOT_FAILED when the cycle has not failed", "not")).not.toContain("support.function.matcher.feat");
     expect(scopesAt("      email: @when.email", "@when.email")).toContain("variable.language.stimulus-ref.feat");
     expect(scopesAt("      id: @deliver[1].orderId", "@deliver[1].orderId")).toContain("variable.language.stimulus-ref.feat");
     // ADR-0021 — a cross-surface capture reference names a service, and reads like every other

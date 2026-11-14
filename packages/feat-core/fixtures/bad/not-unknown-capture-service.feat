@@ -1,0 +1,27 @@
+feat 1.0
+
+# ADR-0027 with ADR-0021: a capture reference inside `not` names a service like any other, so `not @ghostStore[0].id` is UNKNOWN_SERVICE_KEY, listing the configured services.
+
+spec SPEC-BAD-022 "Unknown capture-reference service inside not"
+context Bad
+aggregate Thing
+type command
+status draft
+
+construct:
+  handler at src/do-thing.ts
+  touches src/**
+
+enforce:
+  do the thing
+
+contract:
+  input ThingInput
+  response ThingResult
+  record ThingRow
+
+scenario "does the thing":
+  when: DoThing { value: 1 }
+  predict success:
+    response OK ThingResult
+    eventStore has [ Wrote with ThingRow { ref: not @ghostStore[0].id } ]

@@ -954,6 +954,42 @@
               "$ref": "#/definitions/valueBlock"
             }
           }
+        },
+        {
+          "type": "object",
+          "required": [
+            "matcher",
+            "operand"
+          ],
+          "additionalProperties": false,
+          "description": "Negation (ADR-0027): passes when the field is present and the operand fails on its value. The operand is never absent, not, nested, goldenFixture, or any without ofType.",
+          "properties": {
+            "matcher": {
+              "const": "not"
+            },
+            "operand": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/matcher"
+                },
+                {
+                  "not": {
+                    "type": "object",
+                    "required": ["matcher"],
+                    "properties": { "matcher": { "enum": ["not", "absent", "nested", "goldenFixture"] } }
+                  }
+                },
+                {
+                  "not": {
+                    "type": "object",
+                    "required": ["matcher"],
+                    "properties": { "matcher": { "const": "any" } },
+                    "not": { "required": ["ofType"] }
+                  }
+                }
+              ]
+            }
+          }
         }
       ]
     }

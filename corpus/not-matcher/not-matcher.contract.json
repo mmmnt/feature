@@ -1,0 +1,44 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-CYC-001",
+  "schemas": {
+    "RedoInput": {
+      "type": "object",
+      "required": ["cycleId"],
+      "additionalProperties": false,
+      "properties": { "cycleId": { "type": "string", "minLength": 1 } }
+    },
+    "CycleReceipt": {
+      "type": "object",
+      "required": ["cycleId", "ref", "attempt"],
+      "properties": {
+        "cycleId": { "type": "string" },
+        "ref": { "type": "string" },
+        "attempt": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "CycleEvent": {
+      "type": "object",
+      "required": ["cycleId", "redoOf", "previousCycleId", "status"],
+      "properties": {
+        "cycleId": { "type": "string" },
+        "redoOf": { "type": "string" },
+        "previousCycleId": { "type": "string" },
+        "status": { "type": "string" }
+      }
+    },
+    "NodeEvent": {
+      "type": "object",
+      "required": ["cycleId", "previousCycleId"],
+      "properties": {
+        "cycleId": { "type": "string" },
+        "previousCycleId": { "type": "string" }
+      }
+    },
+    "Refusal": {
+      "type": "object",
+      "required": ["code"],
+      "properties": { "code": { "type": "string" }, "message": { "type": "string" } }
+    }
+  }
+}

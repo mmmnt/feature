@@ -137,6 +137,7 @@ substituted in:
   including nested blocks;
 - a rejection id written as `<name>`;
 - a `matching` regex argument written as a placeholder;
+- the operand of a negation, `not <name>` or `not matching <name>` (ADR-0027);
 - every inline seed record in `given.seeds` (SPEC-DRV-001, below).
 
 A `<name>` that is only part of a string, as in `"Item-<n>"`, is not a placeholder. It stays as

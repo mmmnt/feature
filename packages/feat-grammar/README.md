@@ -133,7 +133,7 @@ spec reads as structure.
 | `entity.name.type.schema.feat` | the schema name after `response` status, and after `with` |
 | `variable.other.service.feat`, `keyword.other.assertion.feat`, `entity.name.type.record.feat` | the service key; `has` and `contains`; the record type (`INSERT`, `OrderPlaced`, ...) |
 | `keyword.other.with.feat`, `keyword.other.ordering.feat` | `with`; `ordered`, `unordered` |
-| `support.function.matcher.feat`, `support.type.matcher.feat` | `any`, `matching`, `absent`, `equals fixture`; the `uuid`, `timestamp`, `string`, `number`, `boolean` qualifiers |
+| `support.function.matcher.feat`, `support.type.matcher.feat` | `any`, `matching`, `absent`, `not` (in a field's value position, ADR-0027), `equals fixture`; the `uuid`, `timestamp`, `string`, `number`, `boolean` qualifiers |
 | `variable.language.stimulus-ref.feat` | `@when.email`, `@deliver[1].orderId`, `@payments[0].id` |
 | `variable.parameter.placeholder.feat` | outline placeholders such as `<email>` |
 | `string.quoted.double.feat`, `constant.numeric.feat` | string and number literals, including a response's status code |

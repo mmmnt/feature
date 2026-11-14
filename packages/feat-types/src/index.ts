@@ -103,7 +103,13 @@ export type Matcher =
   | { matcher: "absent" }
   | { matcher: "placeholder"; name: string }
   | { matcher: "goldenFixture"; path: string }
-  | { matcher: "nested"; fields: ValueBlock };
+  | { matcher: "nested"; fields: ValueBlock }
+  /**
+   * ADR-0027 (SPEC-RT-011): the negation `not <operand>` passes when the field is present and the operand
+   * fails on its value. The language never writes an operand that is absent, not, nested, goldenFixture or
+   * an any without ofType; a reference operand that cannot resolve is a violation.
+   */
+  | { matcher: "not"; operand: Matcher };
 
 export interface ValueBlock {
   [field: string]: Matcher;

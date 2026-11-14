@@ -1,0 +1,288 @@
+{
+  "featVersion": "1.0",
+  "identity": {
+    "id": "SPEC-CYC-001",
+    "name": "RedoCycle starts a new cycle",
+    "context": "Execution",
+    "aggregate": "Cycle",
+    "type": "command",
+    "status": "agreed"
+  },
+  "construct": [
+    {
+      "kind": "handler",
+      "path": "features/redo-cycle/handler.ts"
+    },
+    {
+      "kind": "touches",
+      "glob": "features/redo-cycle/**"
+    }
+  ],
+  "enforce": [
+    {
+      "kind": "constraint",
+      "text": "start a new cycle that redoes a failed one, under a new cycle id"
+    },
+    {
+      "kind": "rejects",
+      "rejectionId": "CYCLE_NOT_FAILED",
+      "text": "the cycle to redo has not failed"
+    }
+  ],
+  "contract": [
+    {
+      "kind": "input",
+      "schemaName": "RedoInput"
+    },
+    {
+      "kind": "response",
+      "schemaName": "CycleReceipt"
+    },
+    {
+      "kind": "event",
+      "schemaName": "CycleEvent"
+    },
+    {
+      "kind": "event",
+      "schemaName": "NodeEvent"
+    },
+    {
+      "kind": "error",
+      "schemaName": "Refusal"
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "a redo runs under a new cycle id",
+      "when": {
+        "command": "RedoCycle",
+        "payload": {
+          "cycleId": "c-1"
+        }
+      },
+      "prediction": {
+        "type": "success",
+        "response": {
+          "status": 202,
+          "schemaName": "CycleReceipt",
+          "valueBlock": {
+            "cycleId": {
+              "matcher": "not",
+              "operand": {
+                "matcher": "whenRef",
+                "path": "cycleId"
+              }
+            },
+            "ref": {
+              "matcher": "not",
+              "operand": {
+                "matcher": "regex",
+                "pattern": "^tmp-"
+              }
+            },
+            "attempt": {
+              "matcher": "not",
+              "operand": {
+                "matcher": "any",
+                "ofType": "string"
+              }
+            }
+          }
+        },
+        "services": {
+          "log": {
+            "records": [
+              {
+                "type": "CycleRedone",
+                "schemaName": "CycleEvent",
+                "valueBlock": {
+                  "cycleId": {
+                    "matcher": "not",
+                    "operand": {
+                      "matcher": "whenRef",
+                      "path": "cycleId"
+                    }
+                  },
+                  "redoOf": {
+                    "matcher": "whenRef",
+                    "path": "cycleId"
+                  },
+                  "previousCycleId": {
+                    "matcher": "whenRef",
+                    "path": "cycleId"
+                  },
+                  "status": {
+                    "matcher": "not",
+                    "operand": {
+                      "matcher": "literal",
+                      "value": "Failed"
+                    }
+                  }
+                }
+              },
+              {
+                "type": "NodeChanged",
+                "schemaName": "NodeEvent",
+                "valueBlock": {
+                  "cycleId": {
+                    "matcher": "captureRef",
+                    "service": "log",
+                    "path": "cycleId",
+                    "index": 0
+                  },
+                  "previousCycleId": {
+                    "matcher": "not",
+                    "operand": {
+                      "matcher": "captureRef",
+                      "service": "log",
+                      "path": "cycleId",
+                      "index": 0
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "a cycle that has not failed is not redone",
+      "when": {
+        "command": "RedoCycle",
+        "payload": {
+          "cycleId": "c-9"
+        }
+      },
+      "prediction": {
+        "type": "rejection",
+        "rejectionId": "CYCLE_NOT_FAILED",
+        "response": {
+          "status": 409,
+          "schemaName": "Refusal",
+          "valueBlock": {
+            "code": {
+              "matcher": "literal",
+              "value": "CYCLE_NOT_FAILED"
+            },
+            "message": {
+              "matcher": "not",
+              "operand": {
+                "matcher": "literal",
+                "value": ""
+              }
+            }
+          }
+        },
+        "services": {
+          "log": {
+            "records": []
+          }
+        }
+      }
+    },
+    {
+      "name": "a redo's cycle never takes a refused status or prefix",
+      "when": {
+        "command": "RedoCycle",
+        "payload": {
+          "cycleId": {
+            "$placeholder": "cycleId"
+          }
+        }
+      },
+      "examples": [
+        {
+          "cycleId": "c-2",
+          "status": "Failed",
+          "prefix": "^tmp-"
+        },
+        {
+          "cycleId": "c-3",
+          "status": "Aborted",
+          "prefix": "^draft"
+        }
+      ],
+      "prediction": {
+        "type": "success",
+        "response": {
+          "status": 202,
+          "schemaName": "CycleReceipt",
+          "valueBlock": {
+            "cycleId": {
+              "matcher": "not",
+              "operand": {
+                "matcher": "placeholder",
+                "name": "cycleId"
+              }
+            },
+            "ref": {
+              "matcher": "not",
+              "operand": {
+                "matcher": "regex",
+                "pattern": {
+                  "$placeholder": "prefix"
+                }
+              }
+            }
+          }
+        },
+        "services": {
+          "log": {
+            "records": [
+              {
+                "type": "CycleRedone",
+                "schemaName": "CycleEvent",
+                "valueBlock": {
+                  "cycleId": {
+                    "matcher": "not",
+                    "operand": {
+                      "matcher": "whenRef",
+                      "path": "cycleId"
+                    }
+                  },
+                  "redoOf": {
+                    "matcher": "whenRef",
+                    "path": "cycleId"
+                  },
+                  "previousCycleId": {
+                    "matcher": "whenRef",
+                    "path": "cycleId"
+                  },
+                  "status": {
+                    "matcher": "not",
+                    "operand": {
+                      "matcher": "placeholder",
+                      "name": "status"
+                    }
+                  }
+                }
+              },
+              {
+                "type": "NodeChanged",
+                "schemaName": "NodeEvent",
+                "valueBlock": {
+                  "cycleId": {
+                    "matcher": "captureRef",
+                    "service": "log",
+                    "path": "cycleId",
+                    "index": 0
+                  },
+                  "previousCycleId": {
+                    "matcher": "not",
+                    "operand": {
+                      "matcher": "captureRef",
+                      "service": "log",
+                      "path": "cycleId",
+                      "index": 0
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

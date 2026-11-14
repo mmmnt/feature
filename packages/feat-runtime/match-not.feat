@@ -1,0 +1,198 @@
+feat 1.0
+
+# SPEC-RT-011 — the runtime evaluates the negation matcher `not <matcher>` (founder ruling 9959cfbc,
+# 2026-11-13, "Add `not` to Feature (Recommended)"; ADR-0027). A value block could say what a field is
+# or that it is absent, never what it is not: a consumer's redo must carry a cycleId that differs from the
+# first attempt's, and no literal (both ids are minted), `any` (pins nothing) or reference (asserts the
+# opposite) could state it. SPEC-CORE-001 (amended by ADR-0027) parses `not <operand>` to
+# { matcher: "not", operand }; this spec makes applyMatcher evaluate it.
+#
+# WHAT CHANGES (and nothing else):
+#  1. feat-types: Matcher gains { matcher: "not"; operand: Matcher }.
+#  2. applyMatcher: `not M` passes when the field is present and M fails on its value. An absent field is a
+#     violation whatever M is.
+#  3. A reference operand that cannot resolve is a violation, never a pass, as a plain reference is
+#     (ADR-0021): an `@<service>[i]` whose service captured nothing or whose index is out of range, and a
+#     path absent on its referent (`@when`, `@deliver[i]`, the captured record). So is an operand derive
+#     should have resolved (a placeholder), and an operand the language refuses (`absent`, `not`, a nested
+#     block, a golden fixture, `any` without a type) found in an IR.
+#  4. Each violation names the negated matcher as the spec writes it and, for a reference, the value it
+#     resolved to.
+#  5. derive (feat-derive) substitutes an outline placeholder inside `not` as it does outside it.
+# Unchanged: every other matcher, the record and response diffs, the anchors.
+#
+# Driven through the probe `MatchValue { value?, matcher, when?, delivers?, captures? }`
+# (packages/feat-runtime/fixtures/matcher/probe.mjs): it runs applyMatcher once at the anchor "a", the
+# field present exactly when the input has a `value` key, and answers the outcome, the count of
+# violations and the first one.
+
+spec SPEC-RT-011 "Matcher: the negation not <matcher>"
+context Toolchain
+aggregate Runtime
+type infrastructure
+status agreed
+
+construct:
+  handler at packages/feat-runtime/src/matcher.ts
+  touches packages/feat-runtime/**
+  touches packages/feat-types/**
+  touches packages/feat-derive/src/index.ts
+  touches feat.config.json
+  needs SPEC-CORE-001
+  Types (feat-types): Matcher gains { matcher: "not"; operand: Matcher }.
+  applyMatcher on a not matcher: absent field, one violation "<anchor>: expected a value that is not <shown>,
+  field is absent". An operand that is absent, not, nested, goldenFixture or any without ofType: one violation
+  "<anchor>: 'not <kind>' is not a negation the language takes (a malformed IR)". A placeholder operand or a
+  regex operand whose pattern is still a placeholder: the derive-bug violation, prefixed "not <shown>: ". A
+  reference operand that does not resolve: "<anchor>: not <shown>: <why>", <why> the plain reference's own
+  words for a capture reference, "<ref> resolved to nothing — that field is absent from the when: payload"
+  for @when and "<ref> resolved to nothing — that field is absent from the delivered stimulus" for @deliver.
+  Otherwise the operand is run on the value: if it passes, one violation "<anchor>: expected not <shown>, got
+  <value as JSON>", with " (= <resolved value as JSON>)" after <shown> for a reference; if it fails, no
+  violation. <shown> is the operand as written: a literal as JSON, @when.<path>, @deliver.<path> or
+  @deliver[i].<path> as written, @<service>[i].<path> with the index always shown, any <type>,
+  matching "<pattern>" with the pattern as a JSON string, <name> for a placeholder.
+  derive substitutes a placeholder inside not's operand per outline row.
+
+enforce:
+  pass a negation when the field is present and its operand fails on the value
+  report a negation whose operand passes, naming the negated matcher and the value a reference resolved to
+  report a negation on an absent field
+  report a negation whose reference operand cannot resolve, never pass it
+
+contract:
+  input MatchInput
+  response MatchResult
+
+scenario "not a literal passes on a different value":
+  when: MatchValue { value: "Done", matcher: { matcher: "not", operand: { matcher: "literal", value: "Failed" } } }
+  predict success:
+    response OK MatchResult { outcome: "passed", count: 0, violation: absent }
+    filesystem has []
+
+scenario "not a literal fails on that value, naming the negated literal":
+  when: MatchValue { value: "Failed", matcher: { matcher: "not", operand: { matcher: "literal", value: "Failed" } } }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a: expected not \"Failed\", got \"Failed\"" }
+    filesystem has []
+
+scenario "not null passes on a present value that is not null and fails on null":
+  when: MatchValue { value: null, matcher: { matcher: "not", operand: { matcher: "literal", value: null } } }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a: expected not null, got null" }
+    filesystem has []
+
+scenario "a negation fails on an absent field whatever its operand":
+  when: MatchValue { matcher: { matcher: "not", operand: { matcher: "literal", value: "Failed" } } }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a: expected a value that is not \"Failed\", field is absent" }
+    filesystem has []
+
+scenario "not a capture reference passes when the value differs from the captured one":
+  when: MatchValue { value: "c-2", matcher: { matcher: "not", operand: { matcher: "captureRef", service: "log", path: "data.cycleId", index: 0 } }, captures: { log: [ { data: { cycleId: "c-1" } } ] } }
+  predict success:
+    response OK MatchResult { outcome: "passed", count: 0, violation: absent }
+    filesystem has []
+
+scenario "not a capture reference fails on the captured value, naming the reference and its value":
+  when: MatchValue { value: "c-1", matcher: { matcher: "not", operand: { matcher: "captureRef", service: "log", path: "data.cycleId" } }, captures: { log: [ { data: { cycleId: "c-1" } } ] } }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a: expected not @log[0].data.cycleId (= \"c-1\"), got \"c-1\"" }
+    filesystem has []
+
+scenario "not a capture reference whose index is out of range is a violation":
+  when: MatchValue { value: "c-2", matcher: { matcher: "not", operand: { matcher: "captureRef", service: "log", path: "data.cycleId", index: 1 } }, captures: { log: [ { data: { cycleId: "c-1" } } ] } }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a: not @log[1].data.cycleId: @log[1].data.cycleId is out of range — log captured 1 record(s)" }
+    filesystem has []
+
+scenario "not a capture reference on a service that captured nothing is a violation":
+  when: MatchValue { value: "c-2", matcher: { matcher: "not", operand: { matcher: "captureRef", service: "log", path: "data.cycleId" } } }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a: not @log[0].data.cycleId: @log[0].data.cycleId names a service that captured nothing in this case" }
+    filesystem has []
+
+scenario "not a capture reference whose path is absent on the captured record is a violation":
+  when: MatchValue { value: "c-2", matcher: { matcher: "not", operand: { matcher: "captureRef", service: "log", path: "data.cycleId" } }, captures: { log: [ { data: {} } ] } }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a: not @log[0].data.cycleId: @log[0].data.cycleId resolved to nothing — that field is absent on the captured record" }
+    filesystem has []
+
+scenario "not @when fails on the value sent, naming the reference and its value":
+  when: MatchValue { value: "c-1", matcher: { matcher: "not", operand: { matcher: "whenRef", path: "cycleId" } }, when: { cycleId: "c-1" } }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a: expected not @when.cycleId (= \"c-1\"), got \"c-1\"" }
+    filesystem has []
+
+scenario "not @when passes on a value that differs from the one sent":
+  when: MatchValue { value: "c-2", matcher: { matcher: "not", operand: { matcher: "whenRef", path: "cycleId" } }, when: { cycleId: "c-1" } }
+  predict success:
+    response OK MatchResult { outcome: "passed", count: 0, violation: absent }
+    filesystem has []
+
+scenario "not @when whose path the when payload lacks is a violation":
+  when: MatchValue { value: "c-2", matcher: { matcher: "not", operand: { matcher: "whenRef", path: "cycleId" } }, when: {} }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a: not @when.cycleId: @when.cycleId resolved to nothing — that field is absent from the when: payload" }
+    filesystem has []
+
+scenario "not @deliver passes on a value that differs from the delivered one":
+  when: MatchValue { value: "o-2", matcher: { matcher: "not", operand: { matcher: "deliverRef", path: "orderId", index: 1 } }, delivers: [ { orderId: "o-2" }, { orderId: "o-1" } ] }
+  predict success:
+    response OK MatchResult { outcome: "passed", count: 0, violation: absent }
+    filesystem has []
+
+scenario "not @deliver whose delivery is missing is a violation":
+  when: MatchValue { value: "o-2", matcher: { matcher: "not", operand: { matcher: "deliverRef", path: "orderId", index: 1 } }, delivers: [ { orderId: "o-1" } ] }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a: not @deliver[1].orderId: @deliver[1].orderId resolved to nothing — that field is absent from the delivered stimulus" }
+    filesystem has []
+
+scenario "not matching fails on a string the pattern matches, naming the pattern":
+  when: MatchValue { value: "tmp-1", matcher: { matcher: "not", operand: { matcher: "regex", pattern: "^tmp-" } } }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a: expected not matching \"^tmp-\", got \"tmp-1\"" }
+    filesystem has []
+
+scenario "not matching passes on a string the pattern does not match":
+  when: MatchValue { value: "c-1", matcher: { matcher: "not", operand: { matcher: "regex", pattern: "^tmp-" } } }
+  predict success:
+    response OK MatchResult { outcome: "passed", count: 0, violation: absent }
+    filesystem has []
+
+scenario "not matching passes on a present value that is not a string, since matching fails on it":
+  when: MatchValue { value: 42, matcher: { matcher: "not", operand: { matcher: "regex", pattern: "^tmp-" } } }
+  predict success:
+    response OK MatchResult { outcome: "passed", count: 0, violation: absent }
+    filesystem has []
+
+scenario "not any uuid fails on a uuid and passes on anything else present":
+  when: MatchValue { value: "0b7c3c1e-3f4a-4d8e-9a51-2a7c5e9d1f00", matcher: { matcher: "not", operand: { matcher: "any", ofType: "uuid" } } }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a: expected not any uuid, got \"0b7c3c1e-3f4a-4d8e-9a51-2a7c5e9d1f00\"" }
+    filesystem has []
+
+scenario "not any number passes on a string":
+  when: MatchValue { value: "7", matcher: { matcher: "not", operand: { matcher: "any", ofType: "number" } } }
+  predict success:
+    response OK MatchResult { outcome: "passed", count: 0, violation: absent }
+    filesystem has []
+
+scenario outline "an operand the language refuses, found in an IR, is a violation":
+  when: MatchValue { value: "x", matcher: { matcher: "not", operand: <operand> } }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: <violation> }
+    filesystem has []
+  examples:
+    | operand                                                          | violation                                                                       |
+    | { matcher: "absent" }                                            | "a: 'not absent' is not a negation the language takes (a malformed IR)"        |
+    | { matcher: "not", operand: { matcher: "literal", value: "y" } }  | "a: 'not not' is not a negation the language takes (a malformed IR)"           |
+    | { matcher: "nested", fields: {} }                                | "a: 'not nested' is not a negation the language takes (a malformed IR)"        |
+    | { matcher: "goldenFixture", path: "g.json" }                     | "a: 'not goldenFixture' is not a negation the language takes (a malformed IR)" |
+    | { matcher: "any" }                                               | "a: 'not any' is not a negation the language takes (a malformed IR)"           |
+
+scenario "a placeholder operand that reached the runtime is a violation, never a pass":
+  when: MatchValue { value: "x", matcher: { matcher: "not", operand: { matcher: "placeholder", name: "status" } } }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a: not <status>: unresolved placeholder '<status>' reached the runtime (derive bug)" }
+    filesystem has []

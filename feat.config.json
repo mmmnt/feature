@@ -161,6 +161,10 @@
       "ReadChanged": {
         "module": "packages/feature/fixtures/changed/probe.mjs",
         "export": "readChanged"
+      },
+      "MatchValue": {
+        "module": "packages/feat-runtime/fixtures/matcher/probe.mjs",
+        "export": "matchValue"
       }
     }
   },

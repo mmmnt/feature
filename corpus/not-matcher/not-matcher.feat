@@ -1,0 +1,58 @@
+feat 1.0
+
+# Corpus exemplar #17 — the negation matcher `not <matcher>` (ADR-0027). `not M` passes when the
+# field is present and M fails on its value. A redo mints a new Cycle id that must differ from the
+# id it redoes (`not @when.cycleId`), and the node change it records must carry the redo's id and
+# not the first attempt's (`not @log[0].previousCycleId` beside `@log[0].cycleId`: a capture
+# reference inside `not` is checked against the configured services like any other). The operands
+# shown: a literal, `@when`, `@<service>[i]`, `any <type>`, `matching "<regex>"`, and in the outline a
+# placeholder and a `matching` placeholder. The IR is { matcher: "not", operand: <matcher> }.
+
+spec SPEC-CYC-001 "RedoCycle starts a new cycle"
+context Execution
+aggregate Cycle
+type command
+status agreed
+
+construct:
+  handler at features/redo-cycle/handler.ts
+  touches features/redo-cycle/**
+
+enforce:
+  start a new cycle that redoes a failed one, under a new cycle id
+  rejects CYCLE_NOT_FAILED when the cycle to redo has not failed
+
+contract:
+  input RedoInput
+  response CycleReceipt
+  event CycleEvent
+  event NodeEvent
+  error Refusal
+
+scenario "a redo runs under a new cycle id":
+  when: RedoCycle { cycleId: "c-1" }
+  predict success:
+    response 202 CycleReceipt { cycleId: not @when.cycleId, ref: not matching "^tmp-", attempt: not any string }
+    log has [
+      CycleRedone with CycleEvent { cycleId: not @when.cycleId, redoOf: @when.cycleId, previousCycleId: @when.cycleId, status: not "Failed" },
+      NodeChanged with NodeEvent { cycleId: @log[0].cycleId, previousCycleId: not @log[0].cycleId }
+    ]
+
+scenario "a cycle that has not failed is not redone":
+  when: RedoCycle { cycleId: "c-9" }
+  predict rejection CYCLE_NOT_FAILED:
+    response 409 Refusal { code: "CYCLE_NOT_FAILED", message: not "" }
+    log has []
+
+scenario outline "a redo's cycle never takes a refused status or prefix":
+  when: RedoCycle { cycleId: <cycleId> }
+  predict success:
+    response 202 CycleReceipt { cycleId: not <cycleId>, ref: not matching <prefix> }
+    log has [
+      CycleRedone with CycleEvent { cycleId: not @when.cycleId, redoOf: @when.cycleId, previousCycleId: @when.cycleId, status: not <status> },
+      NodeChanged with NodeEvent { cycleId: @log[0].cycleId, previousCycleId: not @log[0].cycleId }
+    ]
+  examples:
+    | cycleId | status    | prefix   |
+    | "c-2"   | "Failed"  | "^tmp-"  |
+    | "c-3"   | "Aborted" | "^draft" |

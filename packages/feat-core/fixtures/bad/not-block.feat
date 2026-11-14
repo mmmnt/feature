@@ -1,0 +1,27 @@
+feat 1.0
+
+# ADR-0027: the negation of a partial value block is ambiguous (which field differs?); refused as MALFORMED_SYNTAX with a hint to negate a field inside the block.
+
+spec SPEC-BAD-020 "Negated value block"
+context Bad
+aggregate Thing
+type command
+status draft
+
+construct:
+  handler at src/do-thing.ts
+  touches src/**
+
+enforce:
+  do the thing
+
+contract:
+  input ThingInput
+  response ThingResult
+  record ThingRow
+
+scenario "does the thing":
+  when: DoThing { value: 1 }
+  predict success:
+    response OK ThingResult
+    eventStore has [ Wrote with ThingRow { ref: not { id: "x" } } ]

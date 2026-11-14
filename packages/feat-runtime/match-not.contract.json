@@ -1,0 +1,31 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-RT-011",
+  "schemas": {
+    "MatchInput": {
+      "type": "object",
+      "required": ["matcher"],
+      "additionalProperties": false,
+      "properties": {
+        "value": {},
+        "matcher": { "type": "object", "required": ["matcher"] },
+        "when": { "type": "object" },
+        "delivers": { "type": "array", "items": { "type": "object" } },
+        "captures": {
+          "type": "object",
+          "additionalProperties": { "type": "array", "items": { "type": "object" } }
+        }
+      }
+    },
+    "MatchResult": {
+      "type": "object",
+      "required": ["outcome", "count"],
+      "additionalProperties": false,
+      "properties": {
+        "outcome": { "enum": ["passed", "failed"] },
+        "count": { "type": "integer", "minimum": 0 },
+        "violation": { "type": "string" }
+      }
+    }
+  }
+}

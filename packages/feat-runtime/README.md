@@ -459,10 +459,17 @@ console.log(out); // [ 'response › id: expected any uuid, got "nope"' ]
 
 Matchers: `literal`, `whenRef` (`@when.<path>`), `deliverRef` (`@deliver.<path>`), `captureRef`
 (`@<service>[i].<path>`, a value captured on another surface), `any` (optionally `uuid`, `timestamp`,
-`string`, `number` or `boolean`), `regex`, `absent`, `goldenFixture` and `nested`. `@when` and
+`string`, `number` or `boolean`), `regex`, `absent`, `goldenFixture`, `nested` and `not`. `@when` and
 `@deliver` equal the values actually sent, after `@given.response.*` resolved. A `captureRef` whose
 service captured nothing, or whose index is out of range, is a violation, never a pass. A
 `placeholder` matcher that reaches the runtime is a violation too: derive should have replaced it.
+
+`not` (SPEC-RT-011, ADR-0027) passes when the field is present and its operand fails on the value. An
+absent field is a violation, whatever the operand. A reference operand that cannot resolve (a service that
+captured nothing, an index out of range, a path absent from the `when:` payload, the delivered stimulus or
+the captured record) is a violation too, never a pass, and so is an operand the language refuses (`absent`,
+`not`, `nested`, `goldenFixture`, `any` without a type) found in an IR. A violation names the operand as
+written and, for a reference, the value it resolved to: `expected not @log[0].cycleId (= "c-1"), got "c-1"`.
 
 `contains` is a subset check against `read()`: every predicted record must match a distinct state
 record, and extra state is not a violation. Exclusivity belongs to `has`.

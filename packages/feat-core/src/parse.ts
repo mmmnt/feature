@@ -290,6 +290,8 @@ function collectCaptureServices(block: Record<string, unknown>, into: string[]):
     if (!m || typeof m !== "object") continue;
     if (m.matcher === "captureRef") into.push(m.service as string);
     if (m.matcher === "nested") collectCaptureServices(m.fields as Record<string, unknown>, into);
+    // ADR-0027: a reference inside a negation names a service like one outside it.
+    if (m.matcher === "not") collectCaptureServices({ operand: m.operand }, into);
   }
 }
 
@@ -309,10 +311,33 @@ function recordGivenStep(given: Record<string, unknown>, kind: "seed" | "execute
 // ── Value blocks: field → matcher (ADR-0002/0011/0012/0013) ──────────────────
 type Matcher = Record<string, unknown>;
 
+/**
+ * The negation `not <operand>` (ADR-0027). The operand is any matcher but these, each refused with the
+ * spelling to use: a double negation is its operand, `not absent` is `any`, a bare `not any` can never
+ * pass, and the negation of a partial block does not say which field differs.
+ */
+function parseNegation(c: ValueCursor): Matcher {
+  const at = c.src.slice(c.pos);
+  if (/^not(?:[\s,}]|$)/.test(at) && !/^not[ \t]+[^\s,}]/.test(at))
+    throw new ParseFailure("MALFORMED_SYNTAX", "'not' takes a matcher, and none follows it.", undefined, "Write 'not' and one matcher on the same line: 'not \"Failed\"', 'not @when.id', 'not matching \"^tmp-\"', 'not any uuid'.");
+  c.pos += /^not[ \t]+/.exec(at)![0].length;
+  if (/^not(?:[\s,}]|$)/.test(c.src.slice(c.pos)))
+    throw new ParseFailure("MALFORMED_SYNTAX", "'not not' is refused: a negation takes one matcher, never another negation.", undefined, "Write the operand itself: 'not not M' is 'M'.");
+  if (c.peek() === "{")
+    throw new ParseFailure("MALFORMED_SYNTAX", "'not { … }' is refused: the negation of a partial value block does not say which field differs.", undefined, "Negate a field inside the block instead: '{ field: not <matcher> }'.");
+  const operand = parseMatcher(c);
+  if (operand.matcher === "absent")
+    throw new ParseFailure("MALFORMED_SYNTAX", "'not absent' is refused: it means a value is present, which 'any' says.", undefined, "Write 'any' for a field that must be present.");
+  if (operand.matcher === "any" && operand.ofType === undefined)
+    throw new ParseFailure("MALFORMED_SYNTAX", "'not any' is refused: 'any' passes on every present value, so its negation can never pass.", undefined, "Write 'absent' for a field that must not exist; 'not any <type>' negates a type check.");
+  return { matcher: "not", operand };
+}
+
 function parseMatcher(c: ValueCursor): Matcher {
   c.skipWs();
   const rest = () => c.src.slice(c.pos);
   if (c.peek() === "{") return { matcher: "nested", fields: parseValueBlock(c) };
+  if (/^not(?:[\s,}]|$)/.test(rest())) return parseNegation(c);
   let m: RegExpExecArray | null;
   if ((m = /^@when\.([A-Za-z0-9_.\-]+)/.exec(rest()))) {
     c.pos += m[0].length;

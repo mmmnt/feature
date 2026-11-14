@@ -9,3 +9,4 @@ we can worry about publication later").
 - [ADR-0024](ADR-0024-tier-bindings.md): tier bindings: one set of specs, an overlay config per environment.
 - [ADR-0025](ADR-0025-given-written-order.md): a given's seed and execute lines run in written order, recorded in the IR as `given.order`.
 - [ADR-0026](ADR-0026-local-vitest.md): the runner runs the project's own vitest, resolved from the root, and never fetches one; no vitest is VITEST_NOT_INSTALLED, exit 2.
+- [ADR-0027](ADR-0027-not-matcher.md): the negation matcher `not <matcher>`: present and the operand fails; `not not`, `not absent`, bare `not any` and `not { … }` refused; an unresolvable reference operand is a violation.

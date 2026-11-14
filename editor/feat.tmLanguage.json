@@ -288,6 +288,14 @@
           "name": "support.function.matcher.feat"
         },
         {
+          "match": "(?<=:)\\s*\\b(not)\\b(?=[ \\t])",
+          "captures": {
+            "1": {
+              "name": "support.function.matcher.feat"
+            }
+          }
+        },
+        {
           "match": "\\b(equals fixture)\\b",
           "name": "support.function.matcher.feat"
         }

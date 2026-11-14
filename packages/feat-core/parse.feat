@@ -16,6 +16,11 @@ feat 1.0
 # written order (Recommended)"). A given that has both seed and execute lines records their written
 # order as given.order; the harness runs them in it (SPEC-RT-009). One new exemplar, corpus/given-order;
 # every other scenario and every other exemplar's IR is unchanged.
+#
+# AMENDMENT (ADR-0027, the negation matcher `not <matcher>`; founder ruling 9959cfbc, 2026-11-13, "Add
+# `not` to Feature (Recommended)"). A value block's matcher may be `not <operand>`, recorded as
+# { matcher: "not", operand }; the runtime evaluates it (SPEC-RT-011). One new exemplar, corpus/not-matcher,
+# and six refusal fixtures; every other scenario and every other exemplar's IR is unchanged.
 
 spec SPEC-CORE-001 "Parse a .feat file to BuiltSpec IR"
 context Toolchain
@@ -48,12 +53,18 @@ construct:
   A given whose lines include both a seed and an execute records their kinds in written order as
   given.order, an array of "seed" and "execute", one per line, the n-th "seed" naming given.seeds[n] and
   the n-th "execute" given.executes[n] (ADR-0025). A given with only one of the two kinds has no order.
+  In a value block's matcher position, `not` followed by a space or tab and one operand is the negation
+  matcher (ADR-0027), recorded as { matcher: "not", operand } with the operand parsed as a matcher. The
+  operand is a literal, `@when.<path>`, `@deliver[i].<path>`, `@<service>[i].<path>`, `any <type>`,
+  `matching "<regex>"` or an outline placeholder (`<name>`, `matching <name>`). `not not`, `not absent`,
+  `not any` without a type, `not { ... }` and a `not` with no operand are MALFORMED_SYNTAX, each with a hint
+  naming the spelling to use. A capture reference inside `not` joins the closed service space.
 
 enforce:
   read the version pragma before anything else
   rejects MISSING_PRAGMA when the first non-comment line is not a feat version pragma
   rejects UNSUPPORTED_VERSION when the pragma names a version this toolchain does not support
-  rejects MALFORMED_SYNTAX when a compiler-zone block violates the grammar, a fault line in given: included (ADR-0023)
+  rejects MALFORMED_SYNTAX when a compiler-zone block violates the grammar, a fault line in given: included (ADR-0023), and a negation whose operand is not a matcher it takes (ADR-0027)
   rejects UNKNOWN_SERVICE_KEY when a prediction or a given fault targets a service absent from the config services, or a cross-surface capture reference names one (ADR-0021 — a reference names a service, so it shares the closed space)
   rejects UNKNOWN_COMMAND when a when or execute names a command absent from response.commands
   rejects UNDECLARED_SCHEMA when a scenario references a schema absent from the contract block
@@ -159,6 +170,12 @@ scenario "parses the given-order exemplar (given-order, ADR-0025)":
     response OK BuiltSpec equals fixture "../../corpus/given-order/given-order.ir.json"
     filesystem has []
 
+scenario "parses the negation exemplar (not-matcher, ADR-0027)":
+  when: Parse { spec: "corpus/not-matcher/not-matcher.feat", config: "corpus/not-matcher/feat.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "../../corpus/not-matcher/not-matcher.ir.json"
+    filesystem has []
+
 scenario "a word that merely begins with fault stays freeform context":
   when: Parse { spec: "packages/feat-core/fixtures/ok/fault-prefix-word.feat", config: "packages/feat-core/fixtures/parse.config.json" }
   predict success:
@@ -195,3 +212,22 @@ scenario outline "rejects invalid specs with the precise code":
     | "packages/feat-core/fixtures/bad/fault-trailing-junk.feat"          | "MALFORMED_SYNTAX"        |
     | "packages/feat-core/fixtures/bad/fault-bare-keyword.feat"           | "MALFORMED_SYNTAX"        |
     | "packages/feat-core/fixtures/bad/fault-unknown-service.feat"        | "UNKNOWN_SERVICE_KEY"     |
+    | "packages/feat-core/fixtures/bad/not-not.feat"                      | "MALFORMED_SYNTAX"        |
+    | "packages/feat-core/fixtures/bad/not-absent.feat"                   | "MALFORMED_SYNTAX"        |
+    | "packages/feat-core/fixtures/bad/not-bare-any.feat"                 | "MALFORMED_SYNTAX"        |
+    | "packages/feat-core/fixtures/bad/not-block.feat"                    | "MALFORMED_SYNTAX"        |
+    | "packages/feat-core/fixtures/bad/not-bare.feat"                     | "MALFORMED_SYNTAX"        |
+    | "packages/feat-core/fixtures/bad/not-unknown-capture-service.feat"  | "UNKNOWN_SERVICE_KEY"     |
+
+scenario outline "refuses a negation of a matcher it does not take, naming the spelling to use":
+  when: Parse { spec: <spec>, config: "packages/feat-core/fixtures/parse.config.json" }
+  predict rejection MALFORMED_SYNTAX:
+    response ERR ParseError { code: "MALFORMED_SYNTAX", message: matching <message>, hint: matching <hint> }
+    filesystem has []
+  examples:
+    | spec                                                  | message                 | hint                                |
+    | "packages/feat-core/fixtures/bad/not-not.feat"        | "^'not not' is refused" | "^Write the operand itself"         |
+    | "packages/feat-core/fixtures/bad/not-absent.feat"     | "^'not absent' is refused" | "^Write 'any'"                   |
+    | "packages/feat-core/fixtures/bad/not-bare-any.feat"   | "^'not any' is refused" | "^Write 'absent'"                   |
+    | "packages/feat-core/fixtures/bad/not-block.feat"      | "^'not \\{ … \\}' is refused" | "^Negate a field inside the block" |
+    | "packages/feat-core/fixtures/bad/not-bare.feat"       | "^'not' takes a matcher" | "^Write 'not' and one matcher"     |

@@ -1,0 +1,15 @@
+{
+  "featVersion": "1.0",
+  "schemas": { "adapter": "@mmmnt/feat-schema-json" },
+  "response": {
+    "adapter": "@mmmnt/feat-adapter-handler",
+    "commands": {
+      "RedoCycle": { "module": "features/redo-cycle/handler.ts", "export": "redoCycle" }
+    }
+  },
+  "services": {
+    "log": { "adapter": "@mmmnt/feat-adapter-memory", "consistency": "strong" }
+  },
+  "specs": { "dir": ".", "pattern": "*.feat", "contractPattern": "*.contract.json", "outputPattern": "{name}.test.ts" },
+  "report": { "format": ["console"] }
+}

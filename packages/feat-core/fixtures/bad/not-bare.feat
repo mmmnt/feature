@@ -1,0 +1,27 @@
+feat 1.0
+
+# ADR-0027: `not` takes one matcher; a `not` with nothing after it is MALFORMED_SYNTAX.
+
+spec SPEC-BAD-021 "Negation without an operand"
+context Bad
+aggregate Thing
+type command
+status draft
+
+construct:
+  handler at src/do-thing.ts
+  touches src/**
+
+enforce:
+  do the thing
+
+contract:
+  input ThingInput
+  response ThingResult
+  record ThingRow
+
+scenario "does the thing":
+  when: DoThing { value: 1 }
+  predict success:
+    response OK ThingResult
+    eventStore has [ Wrote with ThingRow { ref: not } ]

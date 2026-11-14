@@ -465,7 +465,7 @@ schema's own local pointers. `validate` also checks seed values at generate time
 | `Seed`, `SeedRecord`, `Fault`, `Invocation`, `Delivery` | The preconditions and triggers. A `Seed` is either `{ service, records }` or `{ service, fixture }`. |
 | `Prediction` | `success`, `rejection` (with `rejectionId`) or `error` (with `errorCode`), plus `response` and per-service `services` |
 | `ServicePrediction`, `PredictedRecord`, `ResponsePrediction` | `records` (from `has`), `contains`, `ordering` |
-| `Matcher`, `ValueBlock` | `literal`, `whenRef`, `deliverRef`, `captureRef`, `any`, `regex`, `absent`, `placeholder`, `goldenFixture`, `nested` |
+| `Matcher`, `ValueBlock` | `literal`, `whenRef`, `deliverRef`, `captureRef`, `any`, `regex`, `absent`, `placeholder`, `goldenFixture`, `nested`, `not` (ADR-0027: `{ matcher: "not", operand }`) |
 | `SpecVariable`, `VariableDefinition`, `VariableType` | The `variables:` block; a source call is `now`, `iso` or `unique`, and `now` and `iso` take an optional `offsetMs` |
 
 `FeatConfig` mirrors `feat.config.json`: `featVersion`, `extends`,
