@@ -73,7 +73,7 @@ for tool in git node docker tar shasum; do
 done
 
 SHA=$(git -C "$REPO" rev-parse --verify "$REF^{commit}")
-RUNNER=$(cat "$REPO/scripts/ci-local.sh" "$REPO/scripts/ci-local-plan.mjs" "$REPO/scripts/ci-local.images.json" "$REPO/scripts/docker-sweep.sh" | shasum -a 256 | cut -c1-16)
+RUNNER=$(cat "$REPO/scripts/ci-local.sh" "$REPO/scripts/ci-local-plan.mjs" "$REPO/scripts/ci-local.images.json" "$REPO/scripts/docker-sweep.sh" "$REPO/scripts/ci-local-lock.sh" "$REPO/scripts/ci-local-watchdog.sh" | shasum -a 256 | cut -c1-16)
 GIT_COMMON=$(cd "$REPO" && cd "$(git rev-parse --git-common-dir)" && pwd -P)
 RECORD="$GIT_COMMON/feat-ci-local/passed/$SHA-$RUNNER"
 if [ "$RECORD_PATH" = 1 ]; then echo "$RECORD"; exit 0; fi
@@ -83,6 +83,14 @@ if [ "$SKIP_PASSED" = 1 ] && [ -f "$RECORD" ]; then
 fi
 
 docker info >/dev/null 2>&1 || { echo "ci-local: the Docker daemon is not reachable" >&2; exit 2; }
+
+# The host rule every runner on this daemon keeps (scripts/ci-local-lock.sh, flmnt decision 8ea670d4): wait for
+# another runner's test container or lock at most 15 minutes, then run only under a 1-minute load of 30; one
+# container per runner; at most 30 minutes per run (the watchdog below). The lock is held until this run exits,
+# however it exits; a run that waits says for what.
+CLI_IMAGE=$(node -p 'require(process.argv[1]).dockerCli' "$REPO/scripts/ci-local.images.json")
+bash "$REPO/scripts/ci-local-lock.sh" acquire $$ "$CLI_IMAGE" || exit 2
+trap 'bash "$REPO/scripts/ci-local-lock.sh" release $$' EXIT
 
 # A run killed outright (SIGKILL) cannot clean up. Its job container and every container its tests started carry
 # the runner's pid (feat-test.owner-pid; the tests read it from FEAT_CI_LOCAL_PID), so a later run removes what a
@@ -95,11 +103,15 @@ BASE=$(cd "$BASE" && pwd -P)
 ID=$(date +%Y%m%d%H%M%S)-$(od -An -N3 -tx1 /dev/urandom | tr -d ' \n')
 RUN="$BASE/run-$ID"
 mkdir -p "$RUN/tree" "$RUN/logs"
+: > "$RUN/current"
+bash "$REPO/scripts/ci-local-watchdog.sh" "${CI_LOCAL_MAX_SECONDS:-1800}" $$ "$RUN/current" &
+WATCHDOG=$!
 
 CURRENT=""
 TREES=()
 cleanup() {
   local rc=$?
+  kill "$WATCHDOG" 2>/dev/null || true
   if [ -n "$CURRENT" ]; then docker rm -f -v "$CURRENT" >/dev/null 2>&1 || true; fi
   bash "$REPO/scripts/docker-sweep.sh" --run $$ | sed 's/^/ci-local: /'
   if [ "$KEEP" = 0 ] && [ "${#TREES[@]}" -gt 0 ]; then
@@ -107,6 +119,7 @@ cleanup() {
   fi
   rm -f "$RUN/source.tar"
   if [ "$LIST" = 1 ]; then rm -rf "$RUN"; fi
+  bash "$REPO/scripts/ci-local-lock.sh" release $$
   exit "$rc"
 }
 trap cleanup EXIT
@@ -139,7 +152,6 @@ if [ "$LIST" = 1 ]; then
   exit 0
 fi
 
-CLI_IMAGE=$(node -p 'require(process.argv[1]).dockerCli' "$REPO/scripts/ci-local.images.json")
 # The job image: the pinned node image, the pinned docker CLI binary, and apt keeping what it downloads (the
 # apt cache volume). Built once per pin pair.
 RECIPE='RUN rm -f /etc/apt/apt.conf.d/docker-clean && echo '"'"'Binary::apt::APT::Keep-Downloaded-Packages "true";'"'"' > /etc/apt/apt.conf.d/10keep-downloads'
@@ -196,12 +208,14 @@ for gi in "${!GROUPS_NODE[@]}"; do
   echo "ci-local: RUN   Node $node in $name (logs $RUN/logs)"
   t0=$(date +%s)
   CURRENT=$name
-  if docker run --rm --name "$name" --label "feat-test.owner-pid=$$" -e FEAT_CI_LOCAL_PID=$$ --network host \
+  echo "$name" > "$RUN/current"
+  if docker run --rm --name "$name" --label "feat-test.owner-pid=$$" -e FEAT_CI_LOCAL_PID=$$ -e FEAT_CI_LOCAL_CONTAINER="$name" --network host \
       -v /var/run/docker.sock:/var/run/docker.sock \
       -v "$tree:$tree" -v "$RUN/plan:$RUN/plan:ro" -v "$RUN/logs:$RUN/logs" "${mounts[@]}" \
       -w "$tree/src" -e CI=true -e GITHUB_ACTIONS=true -e TMPDIR="$tree/tmp" -e npm_config_store_dir=/ci-cache/pnpm-store \
       "$tag" bash "${GROUPS_DRIVER[$gi]}" "$RUN/logs" > "$out" 2>&1 < /dev/null; then crc=0; else crc=$?; fi
   CURRENT=""
+  : > "$RUN/current"
   secs=$(( $(date +%s) - t0 ))
   # What this run's tests started and left behind (CI's runner is discarded): removed by this run's label, with the
   # containers' anonymous volumes, and said. Removal is label-scoped: another ci-local run, in another clone or

@@ -29,8 +29,8 @@ import {
 import { createAdapter, DynamoAdapterError } from "../src/index.ts";
 
 // Every container this file starts carries the pid of the run that owns it (ci-local's, passed in as
-// FEAT_CI_LOCAL_PID, else this process), so scripts/docker-sweep.sh can remove what a killed run left.
-const OWNER = ["--label", `feat-test.owner-pid=${process.env.FEAT_CI_LOCAL_PID ?? process.pid}`];
+// FEAT_CI_LOCAL_PID, else this process; scripts/test-owner.mjs adds the container it runs in), so scripts/docker-sweep.sh can remove what a killed run left.
+import { OWNER } from "../../../scripts/test-owner.mjs";
 
 export const DYNAMODB_IMAGE = "amazon/dynamodb-local:2.6.1";
 export const TOXIPROXY_IMAGE = "ghcr.io/shopify/toxiproxy:2.12.0";

@@ -10,6 +10,12 @@
 // thing (docker is present on ubuntu runners).
 import { execFile as execFileCb } from "node:child_process";
 import { promisify } from "node:util";
+import { randomBytes } from "node:crypto";
+import net from "node:net";
+
+// Every docker call is asynchronous: a synchronous one stops the worker's event loop, and one that outlasts vitest's
+// 60 s worker RPC timeout (an image pull) ends the run with "Timeout calling onTaskUpdate".
+const execFile = promisify(execFileCb);
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -29,23 +35,21 @@ import { createHarness, PredictionViolation, type Harness, type HarnessCase } fr
 import { createAdapter } from "./src/index.js";
 
 // Every container this file starts carries the pid of the run that owns it (ci-local's, passed in as
-// FEAT_CI_LOCAL_PID, else this process), so scripts/docker-sweep.sh can remove what a killed run left.
-const OWNER = ["--label", `feat-test.owner-pid=${process.env.FEAT_CI_LOCAL_PID ?? process.pid}`];
+// FEAT_CI_LOCAL_PID, else this process; scripts/test-owner.mjs adds the container it runs in), so scripts/docker-sweep.sh can remove what a killed run left.
+import { OWNER } from "../../scripts/test-owner.mjs";
 
 const PKG = path.dirname(fileURLToPath(import.meta.url));
 const E2E = path.join(PKG, "fixtures", "e2e");
-// Every docker call is asynchronous: a synchronous one stops the worker's event loop, and one that outlasts vitest's
-// 60 s worker RPC timeout (an image pull) ends the run with "Timeout calling onTaskUpdate".
-const execFile = promisify(execFileCb);
-
-const PORT = 8321;
-const CONTAINER = "feat-ddb-local-test";
+// A name and a host port of this run's own: two runs at once (two clones, two sessions) never meet. The port is a
+// free loopback port found here and published explicitly, as the other fixtures do: on Docker Desktop the port
+// Docker picks itself is not reachable from ci-local's host-network job container.
+const CONTAINER = `feat-ddb-local-test-${randomBytes(4).toString("hex")}`;
 
 process.env.AWS_ACCESS_KEY_ID ??= "local";
 process.env.AWS_SECRET_ACCESS_KEY ??= "local";
 
 const presetEndpoint = process.env.FEAT_DDB_TEST_ENDPOINT;
-let endpoint = presetEndpoint ?? `http://127.0.0.1:${PORT}`;
+let endpoint = presetEndpoint ?? "";
 let startedContainer = false;
 
 const dockerAvailable = await execFile("docker", ["version"]).then(
@@ -53,6 +57,17 @@ const dockerAvailable = await execFile("docker", ["version"]).then(
   () => false,
 );
 const available = Boolean(presetEndpoint) || dockerAvailable;
+
+function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const s = net.createServer();
+    s.on("error", reject);
+    s.listen(0, "127.0.0.1", () => {
+      const { port } = s.address() as net.AddressInfo;
+      s.close(() => resolve(port));
+    });
+  });
+}
 
 function client(): DynamoDBClient {
   return new DynamoDBClient({ region: "us-east-1", endpoint });
@@ -105,9 +120,10 @@ const options = () => ({ table: TABLE, region: "us-east-1", endpoint });
 describe.runIf(available)("dynamodb adapter against real DynamoDB (Local)", () => {
   beforeAll(async () => {
     if (!presetEndpoint) {
-      await execFile("docker", ["rm", "-f", "-v", CONTAINER]).catch(() => {});
-      await execFile("docker", ["run", "-d", "--rm", ...OWNER, "--name", CONTAINER, "-p", `${PORT}:8000`, "amazon/dynamodb-local"]);
+      const port = await freePort();
+      await execFile("docker", ["run", "-d", "--rm", ...OWNER, "--name", CONTAINER, "-p", `127.0.0.1:${port}:8000`, "amazon/dynamodb-local"]);
       startedContainer = true;
+      endpoint = `http://127.0.0.1:${port}`;
     }
     await waitReady();
     await createTable(TABLE, true);

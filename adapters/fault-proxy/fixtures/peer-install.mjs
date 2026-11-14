@@ -20,8 +20,9 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync 
 import path from "node:path";
 
 // Every container this file starts carries the pid of the run that owns it (ci-local's, passed in as
-// FEAT_CI_LOCAL_PID, else this process), so scripts/docker-sweep.sh can remove what a killed run left.
-const OWNER = ["--label", `feat-test.owner-pid=${process.env.FEAT_CI_LOCAL_PID ?? process.pid}`];
+// FEAT_CI_LOCAL_PID, else this process; scripts/test-owner.mjs adds the container it runs in), so scripts/docker-sweep.sh can remove what a killed run left.
+import { OWNER } from "../../../scripts/test-owner.mjs";
+import { dockerAsync } from "./docker-async.mjs";
 
 const MARKER = ".peer-install-complete";
 

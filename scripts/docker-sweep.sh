@@ -4,37 +4,54 @@
 # its jobs as FEAT_CI_LOCAL_PID, else the test process's). Nothing unlabelled is touched, and nothing is pruned
 # globally: other repositories and sessions share the daemon.
 #
+# A test process that runs inside a container (ci-local's job container, or a person's own) also labels what it
+# starts feat-test.owner-container=<that container's id or name> (scripts/test-owner.mjs). Its own pid is the
+# container's, meaningless to a sweep on the host, so for such an object the owner is alive while that container
+# runs, and the pid is not consulted. Otherwise the owner is alive while its pid exists on this machine: `ps -p`,
+# which also sees a process this user may not signal (kill -0 answers EPERM there, which read as dead).
+#
 # A container is removed with -v: an image that declares VOLUME (KurrentDB, Neo4j, Kafka) gets an anonymous
 # volume per container, which `docker rm` alone leaves behind, and which outlives any label filter.
 #
-# usage: scripts/docker-sweep.sh --gone        what a run whose pid is no longer alive left (a run killed outright)
+# usage: scripts/docker-sweep.sh --gone        what a run whose owner is no longer alive left (a run killed outright)
 #        scripts/docker-sweep.sh --run <pid>   what the run <pid> left (ci-local, after each Node version)
 set -uo pipefail
 
 LABEL=feat-test.owner-pid
+CLABEL=feat-test.owner-container
 case "${1:-}" in
   --gone) MODE=gone ;;
   --run) MODE=run; WANT=${2:?--run needs a pid} ;;
   *) echo "usage: scripts/docker-sweep.sh --gone | --run <pid>" >&2; exit 2 ;;
 esac
 
-# stdin: "<name>\t<owner pid>" per object; prints the names this mode removes.
+# Whether an owner is alive: its container runs, or (with no container named) its pid exists on this machine.
+alive() {
+  local pid=$1 container=$2
+  if [ -n "$container" ]; then
+    [ "$(docker inspect -f '{{.State.Running}}' "$container" 2>/dev/null)" = true ]
+  else
+    ps -p "$pid" >/dev/null 2>&1
+  fi
+}
+
+# stdin: "<name>\t<owner pid>\t<owner container>" per object; prints the names this mode removes.
 pick() {
-  local name owner
-  while IFS=$'\t' read -r name owner; do
+  local name owner container
+  while IFS=$'\t' read -r name owner container; do
     [ -n "$name" ] && [ -n "$owner" ] || continue
     if [ "$MODE" = run ]; then
       [ "$owner" = "$WANT" ] && echo "$name"
-    elif ! kill -0 "$owner" 2>/dev/null; then
+    elif ! alive "$owner" "${container:-}"; then
       echo "$name"
     fi
   done
   return 0
 }
 
-FORMAT="{{.Name}}	{{.Label \"$LABEL\"}}"
+FORMAT="{{.Name}}	{{.Label \"$LABEL\"}}	{{.Label \"$CLABEL\"}}"
 # containers first: a network or volume in use by one cannot be removed
-containers=$(docker ps -a --filter "label=$LABEL" --format "{{.Names}}	{{.Label \"$LABEL\"}}" 2>/dev/null | pick)
+containers=$(docker ps -a --filter "label=$LABEL" --format "{{.Names}}	{{.Label \"$LABEL\"}}	{{.Label \"$CLABEL\"}}" 2>/dev/null | pick)
 networks=$(docker network ls --filter "label=$LABEL" --format "$FORMAT" 2>/dev/null | pick)
 volumes=$(docker volume ls --filter "label=$LABEL" --format "$FORMAT" 2>/dev/null | pick)
 

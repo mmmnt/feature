@@ -145,7 +145,7 @@ scripts/ci-local.sh --list          # what would run
 fails. A default run that passes leaves a pass record in the clone's git directory
 (`scripts/ci-local.sh --record-path` prints where), and the hook passes `--skip-passed`, so a commit that
 already passed, such as a release commit whose tag is pushed after the branch, is not run again. Changing
-`ci-local.sh`, `ci-local-plan.mjs`, `ci-local.images.json` or `docker-sweep.sh` makes every record stale. Enable the hook once
+`ci-local.sh`, `ci-local-plan.mjs`, `ci-local.images.json`, `docker-sweep.sh`, `ci-local-lock.sh` or `ci-local-watchdog.sh` makes every record stale. Enable the hook once
 per clone:
 
 ```sh
@@ -162,7 +162,18 @@ hands its own to the jobs as `FEAT_CI_LOCAL_PID`), and is removed with `-v`, so 
 (KurrentDB, Neo4j, Kafka) leave no anonymous volume behind. After each Node version, ci-local removes what its
 own run left (`scripts/docker-sweep.sh --run <pid>`), and at the start of a run, what a run that is gone left
 (`--gone`, for a run killed outright). Both go by the label only: nothing else on the daemon is touched and
-nothing is pruned, since other clones and sessions share it.
+nothing is pruned, since other clones and sessions share it. A test process inside a container (ci-local's job
+container, or your own) also labels `feat-test.owner-container` (`scripts/test-owner.mjs`): its pid means nothing
+on the host, so what it started counts as alive while that container runs. A host owner is alive while `ps -p`
+finds its pid.
+
+ci-local keeps the host rule every runner sharing the Docker daemon keeps (`scripts/ci-local-lock.sh`): it waits
+for another runner's test container (`feat-*-test-*`, `feat-ci-test-*`, or a flmnt gate) or another ci-local's
+lock at most 15 minutes (`CI_LOCAL_LOCK_WAIT`), then runs only while the 1-minute load average is under 30
+(`CI_LOCAL_LOAD_MAX`), and otherwise keeps waiting, saying for what. It runs one container at a time, and
+`scripts/ci-local-watchdog.sh` stops a run that passes 30 minutes (`CI_LOCAL_MAX_SECONDS`), removing its container
+and releasing the lock. The lock is a created, never started container named `feat-ci-local-lock` carrying its
+holder's pid; a holder that is gone loses it to the next run.
 
 ## License
 

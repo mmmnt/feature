@@ -26,8 +26,8 @@ import { faultProblem } from "@mmmnt/feat-runtime";
 import { createAdapter, KmsAdapterError } from "../src/index.ts";
 
 // Every container this file starts carries the pid of the run that owns it (ci-local's, passed in as
-// FEAT_CI_LOCAL_PID, else this process), so scripts/docker-sweep.sh can remove what a killed run left.
-const OWNER = ["--label", `feat-test.owner-pid=${process.env.FEAT_CI_LOCAL_PID ?? process.pid}`];
+// FEAT_CI_LOCAL_PID, else this process; scripts/test-owner.mjs adds the container it runs in), so scripts/docker-sweep.sh can remove what a killed run left.
+import { OWNER } from "../../../scripts/test-owner.mjs";
 
 process.env.AWS_EC2_METADATA_DISABLED = "true";
 process.env.FEAT_KMS_TEST_ACCESS_KEY_ID = "local";

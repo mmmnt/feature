@@ -28,8 +28,8 @@ import { ensurePeerInstall } from "../../fault-proxy/fixtures/peer-install.mjs";
 import { dockerAsync } from "../../fault-proxy/fixtures/docker-async.mjs";
 
 // Every container this file starts carries the pid of the run that owns it (ci-local's, passed in as
-// FEAT_CI_LOCAL_PID, else this process), so scripts/docker-sweep.sh can remove what a killed run left.
-const OWNER = ["--label", `feat-test.owner-pid=${process.env.FEAT_CI_LOCAL_PID ?? process.pid}`];
+// FEAT_CI_LOCAL_PID, else this process; scripts/test-owner.mjs adds the container it runs in), so scripts/docker-sweep.sh can remove what a killed run left.
+import { OWNER } from "../../../scripts/test-owner.mjs";
 
 export const KURRENTDB_IMAGE = "kurrentplatform/kurrentdb:26.2.3";
 export const TOXIPROXY_IMAGE = "ghcr.io/shopify/toxiproxy:2.12.0";
