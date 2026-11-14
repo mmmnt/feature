@@ -1,0 +1,217 @@
+feat 1.0
+
+# SPEC-ADPMODEL-001 — the model adapter (@mmmnt/feat-adapter-model): a recorded judge for a consumer's judgment
+# port. The spec seeds the answers the judge gives and predicts the asks the system makes; nothing goes over a
+# network and no model is ever called (ADR-0028).
+# Agreed by founder ruling 95a72156 (2026-11-14), chosen verbatim: "Judgment-port adapter (Recommended)": seeds
+# recorded answers and captures asks; no network, never calls a real model; a consumer adopts it at both tiers with
+# no change to its specs (the record shapes are the consumer's own and pass through unchanged).
+# Spec tier only: the adapter has no product, so the integration config leaves this file out (its `*/observe.feat`
+# exclusion) and it runs once.
+#
+# The record file (ADR-0028): `<dir>/<namespace>.jsonl`, one record per line, each a JSON object
+# `{ "type": <non-empty string>, "payload": <object> }` with optional `key` (string), `timestamp` (number) and
+# `metadata` (object), ending in LF. A last line without its LF is a write in progress and not yet a record.
+#
+# Driven through a probe, adapters/model/fixtures/probe.mjs (part of the build, inside touches, not shipped).
+# `ObserveModel { script, options?, namespace? }` creates the adapter in a fresh temporary project root (removed
+# after the call) and runs the script, a space-separated list of steps. The probe plays the system under test
+# where a step says so, by writing and reading the record file directly, as another process would:
+#   options (default "absolute")  "absolute": { dir: <an absolute path> }; "relative": { dir: "judge" }, read
+#                                 from the project root; "missing": {}; "unknownKey": { dir, url }; "notString":
+#                                 { dir: 5 }
+#   namespace (default "valid")   "valid": s0123456789ab; "none": no namespace; "bad": "Bad"
+#   steps   setup, teardown, reset, start, stop, peek, settle, read  the adapter's own methods
+#           seed:<Type>    seed() one record of <Type>, with the payload the table below gives it
+#           ask:<Type>     the system appends one line { type: <Type>, payload } (the table) to the record file
+#           partial        the system appends the first half of a judgment.ask line, without its LF
+#           complete       the system appends the rest of that line and its LF
+#           malformed      the system appends the line `not json`
+#           systemReads    the system reads the record file: the types of its complete lines, comma-joined
+#           exists         whether the record file exists
+#           where          the record file's path relative to the directory `dir` names
+# The payloads are those of the consumer's specs (Sift: extraction, preparer, on_candidate_matched, gate_run,
+# on_gap_opened):
+#   judgment.answer     { purpose: "extraction", unitId: "ws:ws-1/entry:e-42", chunk: 0, candidates: [{ type: "Aggregate", name: "Order", context: "Sales" }] }
+#   judgment.answered   { unit: "u-1", chunk: 0, ask: 0, answer: { outcome: { kind: "New" }, rationale: "no live construct states this rule", alternatives: [] } }
+#   CoherenceVerdict    { pair: ["con-1", "con-2"], verdict: "Same" }
+#   RecordLagJudgment   { requestKey: "evt-go-1", holds: true, field: "owner", passage: { customerWorkspace: "ws-1", kind: "section", position: 33 }, documentVersion: "v2" }
+#   MeaningAnswer       { pair: ["con-1", "con-2"], definitionHashes: ["h-1", "h-2"], verdict: "Same", rationale: "both define an order" }
+#   judgment.ask        { purpose: "extraction", unitId: "ws:ws-1/entry:e-42", chunk: 0, judgmentId: "0123456789abcdef0123456789abcdef" }
+#   judgment.requested  { step: 4, unit: "u-1", chunk: 0, ask: 0, offerSet: ["con-1"], budgetCap: 3 }
+#   MeaningJudgmentAsked { pair: ["con-1", "con-2"], definitionHashes: ["h-1", "h-2"], budgetCap: { bound: 1 } }
+# It answers `trace` (each step; with the record count for peek, stop and read, true or false for settle and
+# exists, the types for systemReads and the path for where), `lastTypes` (the types of the last peek, stop or read,
+# comma-joined) and `lastPayload` (the payload of that call's last record). An error is answered as
+# ERR { code, detail }.
+
+spec SPEC-ADPMODEL-001 "Model adapter: a recorded judge in one JSON Lines file per namespace"
+context Toolchain
+aggregate Adapters
+type infrastructure
+status agreed
+
+construct:
+  handler at adapters/model/src/index.ts
+  touches adapters/model/**
+  touches feat.config.json
+  touches feat.integration.config.json
+  touches docs/adr/ADR-0028-model-adapter-judgment-file.md
+  touches docs/adr/README.md
+  needs SPEC-RT-002
+  needs SPEC-RT-006
+  A new package, @mmmnt/feat-adapter-model, exporting createAdapter(config) and ModelAdapterError { code, detail }.
+  At creation: the options are exactly { dir } with dir a non-empty string, else OPTIONS_INVALID naming the offending
+  key; the namespace must match ^s[0-9a-f]{12}$, else NAMESPACE_INVALID. dir is resolved against the project root
+  (config.projectRoot, the directory holding the config). The record file is <dir>/<namespace>.jsonl.
+  setup() creates dir and the file, empty. reset() empties the file and closes the window. teardown() removes the
+  file. seed() appends one line { type, payload: values } per record. startCapture() notes how many complete lines
+  the file holds; stopCapture() and peekCapture() return the complete lines after that, in written order, and only
+  stopCapture() closes the window; with no window open both return []. read() returns every complete line. A record
+  keeps the line's type, payload, key, timestamp and metadata; one without key is keyed by its 1-based line number
+  as a string, one without timestamp is stamped with that number. A last line without its LF is not read. A
+  complete line that is not a JSON object with a non-empty string type and an object payload is RECORD_MALFORMED,
+  naming the file and the line number. observes = { diff: "native", state: true }; settle() resolves true with a
+  window open and false without one; reportedNamespace() is the namespace. No fault catalog. The adapter imports
+  only node:fs, node:path and @mmmnt/feat-types. Document the options, the record file and the errors in the README.
+
+enforce:
+  rejects OPTIONS_INVALID when the options are not exactly { dir } with dir a non-empty string, at creation
+  rejects NAMESPACE_INVALID when the namespace is absent or does not match ^s[0-9a-f]{12}$, at creation
+  rejects RECORD_MALFORMED when a complete line of the record file is not a record, naming the file and the line number
+  the record file is <dir>/<namespace>.jsonl, dir read from the project root when relative
+  a seeded record is a line the system can read and is never in the capture window
+  the capture window is the complete lines appended after startCapture, in written order, with their payload unchanged
+  a last line without its line ending is not yet a record
+  peekCapture consumes nothing, and with no window open peek and stop return nothing
+  settle resolves true only with a window open
+  reset empties the record file and teardown removes it
+  the adapter opens no network connection and calls no model
+
+contract:
+  input ObserveInput
+  response ObserveResult
+  error ObserveError
+
+scenario "an ask the system writes in the window is captured with its payload unchanged":
+  when: ObserveModel { script: "setup start ask:judgment.ask stop" }
+  predict success:
+    response OK ObserveResult { trace: "setup start ask:judgment.ask stop=1", lastTypes: "judgment.ask", lastPayload: { purpose: "extraction", unitId: "ws:ws-1/entry:e-42", chunk: 0, judgmentId: "0123456789abcdef0123456789abcdef" } }
+    filesystem has []
+
+scenario outline "every ask type of the consumer's port is captured":
+  when: ObserveModel { script: <script> }
+  predict success:
+    response OK ObserveResult { trace: <trace>, lastTypes: <type> }
+    filesystem has []
+  examples:
+    | script                                      | trace                                             | type                   |
+    | "setup start ask:judgment.ask stop"         | "setup start ask:judgment.ask stop=1"             | "judgment.ask"         |
+    | "setup start ask:judgment.requested stop"   | "setup start ask:judgment.requested stop=1"       | "judgment.requested"   |
+    | "setup start ask:MeaningJudgmentAsked stop" | "setup start ask:MeaningJudgmentAsked stop=1"     | "MeaningJudgmentAsked" |
+
+scenario outline "a seeded answer is a line the system reads, and is never in the window":
+  when: ObserveModel { script: <script> }
+  predict success:
+    response OK ObserveResult { trace: <trace> }
+    filesystem has []
+  examples:
+    | script                                                  | trace                                                                    |
+    | "setup seed:judgment.answer systemReads start stop"     | "setup seed:judgment.answer systemReads=judgment.answer start stop=0"     |
+    | "setup seed:judgment.answered systemReads start stop"   | "setup seed:judgment.answered systemReads=judgment.answered start stop=0" |
+    | "setup seed:CoherenceVerdict systemReads start stop"    | "setup seed:CoherenceVerdict systemReads=CoherenceVerdict start stop=0"   |
+    | "setup seed:RecordLagJudgment systemReads start stop"   | "setup seed:RecordLagJudgment systemReads=RecordLagJudgment start stop=0" |
+    | "setup seed:MeaningAnswer systemReads start stop"       | "setup seed:MeaningAnswer systemReads=MeaningAnswer start stop=0"         |
+
+scenario "read is every record in the file, the seeded answer and the ask in written order":
+  when: ObserveModel { script: "setup seed:judgment.answer start ask:judgment.ask stop read" }
+  predict success:
+    response OK ObserveResult { trace: "setup seed:judgment.answer start ask:judgment.ask stop=1 read=2", lastTypes: "judgment.answer,judgment.ask", lastPayload: { purpose: "extraction", unitId: "ws:ws-1/entry:e-42", chunk: 0, judgmentId: "0123456789abcdef0123456789abcdef" } }
+    filesystem has []
+
+scenario "a seeded answer keeps the consumer's payload as written":
+  when: ObserveModel { script: "setup seed:judgment.answered read" }
+  predict success:
+    response OK ObserveResult { trace: "setup seed:judgment.answered read=1", lastTypes: "judgment.answered", lastPayload: { unit: "u-1", chunk: 0, ask: 0, answer: { outcome: { kind: "New" }, rationale: "no live construct states this rule", alternatives: [] } } }
+    filesystem has []
+
+scenario "an ask written before the window opened is not in it":
+  when: ObserveModel { script: "setup ask:judgment.ask start ask:judgment.requested stop" }
+  predict success:
+    response OK ObserveResult { trace: "setup ask:judgment.ask start ask:judgment.requested stop=1", lastTypes: "judgment.requested" }
+    filesystem has []
+
+scenario "a line still being written is not a record until its line ending lands":
+  when: ObserveModel { script: "setup start partial peek complete stop" }
+  predict success:
+    response OK ObserveResult { trace: "setup start partial peek=0 complete stop=1", lastTypes: "judgment.ask" }
+    filesystem has []
+
+scenario "a peek consumes nothing":
+  when: ObserveModel { script: "setup start ask:judgment.ask peek peek stop" }
+  predict success:
+    response OK ObserveResult { trace: "setup start ask:judgment.ask peek=1 peek=1 stop=1", lastTypes: "judgment.ask" }
+    filesystem has []
+
+scenario "with no window open, peek and stop return nothing":
+  when: ObserveModel { script: "setup ask:judgment.ask peek stop" }
+  predict success:
+    response OK ObserveResult { trace: "setup ask:judgment.ask peek=0 stop=0" }
+    filesystem has []
+
+scenario "settle vouches with a window open, which is how an absence is proven":
+  when: ObserveModel { script: "setup start settle stop" }
+  predict success:
+    response OK ObserveResult { trace: "setup start settle=true stop=0" }
+    filesystem has []
+
+scenario "settle declines when no window is open":
+  when: ObserveModel { script: "setup settle" }
+  predict success:
+    response OK ObserveResult { trace: "setup settle=false" }
+    filesystem has []
+
+scenario "reset empties the record file and closes the window":
+  when: ObserveModel { script: "setup seed:CoherenceVerdict start ask:judgment.ask reset systemReads peek read" }
+  predict success:
+    response OK ObserveResult { trace: "setup seed:CoherenceVerdict start ask:judgment.ask reset systemReads= peek=0 read=0" }
+    filesystem has []
+
+scenario "setup creates the record file under the namespace's name and teardown removes it":
+  when: ObserveModel { script: "setup where exists teardown exists" }
+  predict success:
+    response OK ObserveResult { trace: "setup where=s0123456789ab.jsonl exists=true teardown exists=false" }
+    filesystem has []
+
+scenario "a relative dir is read from the project root":
+  when: ObserveModel { options: "relative", script: "setup where exists start ask:judgment.ask stop" }
+  predict success:
+    response OK ObserveResult { trace: "setup where=s0123456789ab.jsonl exists=true start ask:judgment.ask stop=1", lastTypes: "judgment.ask" }
+    filesystem has []
+
+scenario "a line that is not a record is refused, naming the file and the line":
+  when: ObserveModel { script: "setup start ask:judgment.ask malformed stop" }
+  predict rejection RECORD_MALFORMED:
+    response ERR ObserveError { code: "RECORD_MALFORMED", detail: matching "s0123456789ab\\.jsonl line 2" }
+    filesystem has []
+
+scenario outline "options other than exactly { dir } are refused at creation":
+  when: ObserveModel { options: <options>, script: "setup" }
+  predict rejection OPTIONS_INVALID:
+    response ERR ObserveError { code: "OPTIONS_INVALID", detail: matching <detail> }
+    filesystem has []
+  examples:
+    | options     | detail |
+    | "missing"   | "dir"  |
+    | "notString" | "dir"  |
+    | "unknownKey" | "url" |
+
+scenario outline "a namespace the runner did not derive is refused at creation":
+  when: ObserveModel { namespace: <namespace>, script: "setup" }
+  predict rejection NAMESPACE_INVALID:
+    response ERR ObserveError { code: "NAMESPACE_INVALID", detail: matching "s\\[0-9a-f\\]\\{12\\}" }
+    filesystem has []
+  examples:
+    | namespace |
+    | "none"    |
+    | "bad"     |

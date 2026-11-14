@@ -1,0 +1,41 @@
+{
+  "name": "@mmmnt/feat-adapter-model",
+  "version": "0.1.0",
+  "description": "Recorded-judge service adapter for Feat: a judgment port's seeded answers and captured asks in one JSON Lines file per namespace; no network, never calls a model",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --exclude '**/observe.test.ts' --passWithNoTests"
+  },
+  "dependencies": {
+    "@mmmnt/feat-types": "workspace:^"
+  },
+  "devDependencies": {
+    "@mmmnt/feat-adapter-kit": "workspace:^",
+    "@mmmnt/feat-runtime": "workspace:^",
+    "typescript": "^5.8.0",
+    "vitest": "^3.2.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mmmnt/feature.git",
+    "directory": "adapters/model"
+  },
+  "homepage": "https://github.com/mmmnt/feature#readme",
+  "bugs": {
+    "url": "https://github.com/mmmnt/feature/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
