@@ -62,3 +62,14 @@ export function runPlan(
   if (p.serial.length > 0) exitCode = Math.max(exitCode, runPass(p.serial, { serial: true }));
   return { exitCode };
 }
+
+/** runPlan with passes that are awaited: the same order (parallel, then serial) and the same exit code. */
+export async function runPlanAsync(
+  p: Plan,
+  runPass: (files: string[], opts: { serial: boolean }) => Promise<number>,
+): Promise<{ exitCode: number }> {
+  let exitCode = 0;
+  if (p.parallel.length > 0) exitCode = Math.max(exitCode, await runPass(p.parallel, { serial: false }));
+  if (p.serial.length > 0) exitCode = Math.max(exitCode, await runPass(p.serial, { serial: true }));
+  return { exitCode };
+}

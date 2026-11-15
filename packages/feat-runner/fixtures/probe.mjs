@@ -3,7 +3,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { faultsOf, plan, runPlan } from "../src/plan.ts";
-import { runTests } from "../src/index.ts";
+import { runTestsAsync } from "../src/index.ts";
 import { createHarness, HarnessConfigurationError } from "../../feat-runtime/src/index.ts";
 
 export async function planRun(input) {
@@ -97,7 +97,9 @@ export async function runVitest(input) {
   process.env.PATH = `${bin}${path.delimiter}${saved ?? ""}`;
   let r;
   try {
-    r = runTests({ files: ["gen.test.ts"], root, quiet: true });
+    // Awaited: this runs inside a vitest worker, which must keep its event loop turning while the nested vitest
+    // runs (a synchronous run blocked the worker for 137 s under load and it missed vitest's RPC timeout).
+    r = await runTestsAsync({ files: ["gen.test.ts"], root, quiet: true });
   } finally {
     process.env.PATH = saved;
   }

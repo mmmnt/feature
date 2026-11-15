@@ -6,7 +6,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { resolveVitest, runConfigSource, runTests, VitestNotInstalledError } from "./src/index.js";
+import { resolveVitest, runConfigSource, runTests, runTestsAsync, VitestNotInstalledError } from "./src/index.js";
 
 describe("runConfigSource", () => {
   it("without a consumer config: bare base, forced include, fatal-on-empty", () => {
@@ -48,6 +48,42 @@ describe("runTests guardrails", () => {
     const r = runTests({ files: [], root: tmpdir() });
     expect(r.exitCode).toBe(1);
   });
+});
+
+// runTestsAsync runs the same passes as runTests without blocking its caller: a vitest worker that awaits it keeps
+// turning its event loop, so it never misses vitest's RPC timeout ("Timeout calling onTaskUpdate") while the
+// nested vitest runs. Here the stub vitest takes 1.5 s; a timer ticking every 50 ms must keep ticking meanwhile.
+describe("runTestsAsync", () => {
+  const project = (bin: string) => {
+    const root = mkdtempSync(path.join(tmpdir(), "feat-runner-async-"));
+    const pkg = path.join(root, "node_modules", "vitest");
+    mkdirSync(pkg, { recursive: true });
+    writeFileSync(path.join(pkg, "package.json"), JSON.stringify({ name: "vitest", version: "3.2.99", bin: { vitest: "./vitest.mjs" } }));
+    writeFileSync(path.join(pkg, "vitest.mjs"), bin);
+    writeFileSync(path.join(root, "gen.test.ts"), "");
+    return root;
+  };
+
+  it("keeps the caller's event loop turning while the pass runs, and passes its exit code through", async () => {
+    const root = project("setTimeout(() => process.exit(0), 1500);\n");
+    let ticks = 0;
+    const timer = setInterval(() => ticks++, 50);
+    try {
+      const r = await runTestsAsync({ files: ["gen.test.ts"], root, quiet: true });
+      expect(r.exitCode).toBe(0);
+    } finally {
+      clearInterval(timer);
+    }
+    expect(ticks).toBeGreaterThanOrEqual(10);
+  }, 30_000);
+
+  it("reports a failing pass, the zero-files refusal and a missing vitest as runTests does", async () => {
+    expect((await runTestsAsync({ files: ["gen.test.ts"], root: project("process.exit(1);\n"), quiet: true })).exitCode).toBe(1);
+    expect((await runTestsAsync({ files: [], root: tmpdir() })).exitCode).toBe(1);
+    const bare = mkdtempSync(path.join(tmpdir(), "feat-runner-async-bare-"));
+    const r = await runTestsAsync({ files: ["gen.test.ts"], root: bare, quiet: true });
+    expect(r).toMatchObject({ exitCode: 2, configurationError: true, refusal: { code: "VITEST_NOT_INSTALLED" } });
+  }, 30_000);
 });
 
 // SPEC-RT-010: the bin forms of vitest's package.json; the probe of the spec covers the run itself.

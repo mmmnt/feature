@@ -27,7 +27,8 @@ feat 1.0
 # a throwaway project in the temporary directory, with a stub vitest package (version 3.2.99, its bin
 # records that it ran and exits 0) at the root (`installed`), in the parent directory of the root, as a
 # workspace root hoists it (`hoisted`), or nowhere (`missing`). It puts stubs named npx, npm, pnpm, yarn and
-# bunx first on PATH, each of which records that it was called, then calls runTests over one file. It
+# bunx first on PATH, each of which records that it was called, then awaits runTestsAsync (the same passes
+# as runTests, spawned without blocking the vitest worker the probe runs in) over one file. It
 # answers `ran` (the version of the vitest that ran, "" if none) and `fetched` (whether any stub was
 # called), with the result's exit code; a refusal answers ERR with its code and message.
 

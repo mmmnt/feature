@@ -8,7 +8,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { Command, Flags } from "@oclif/core";
 import type { FeatConfig } from "@mmmnt/feat-types";
-import { plan, runTests } from "@mmmnt/feat-runner";
+import { plan, runTestsAsync } from "@mmmnt/feat-runner";
 import { HarnessConfigurationError, variablesSidecarPath } from "@mmmnt/feat-runtime";
 import { rmSync } from "node:fs";
 import { generateAll } from "../pipeline.js";
@@ -94,7 +94,7 @@ export default class Run extends Command {
 
     const junitBase = config.report?.format?.includes("junit") ? config.report.junitOutput : undefined;
     const junit = junitBase !== undefined ? shardJunitPath(junitBase, shard) : undefined;
-    const runOpts: Parameters<typeof runTests>[0] = {
+    const runOpts: Parameters<typeof runTestsAsync>[0] = {
       files: files.map((f) => path.relative(root, f.out)),
       root,
       configPath: path.resolve(root, flags.config),
@@ -109,7 +109,7 @@ export default class Run extends Command {
     }
     if (junit !== undefined) runOpts.junitOutput = junit;
     if (flags.coverage) runOpts.coverage = true;
-    const result = runTests(runOpts);
+    const result = await runTestsAsync(runOpts);
     if (result.junitPath) this.log(`junit: ${path.relative(root, result.junitPath)}`);
     if (result.configurationError) this.exit(2); // the harness refused its configuration (README: exit 2)
     if (result.exitCode !== 0) this.exit(1);

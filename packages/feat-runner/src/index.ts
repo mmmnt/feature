@@ -13,12 +13,12 @@
 // consumer vitest config scoped to its unit layer must never silently eat
 // generated suites — a run that collects zero of them is a failure, loudly.
 
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { runPlan, type Plan } from "./plan.js";
+import { runPlan, runPlanAsync, type Plan } from "./plan.js";
 
-export { faultsOf, plan, runPlan } from "./plan.js";
+export { faultsOf, plan, runPlan, runPlanAsync } from "./plan.js";
 export type { Plan, PlannedSpec, SweptCase } from "./plan.js";
 
 export interface RunOptions {
@@ -156,7 +156,18 @@ export function mergeJunit(a: string, b: string): string {
   return `${prolog}<testsuites${attrs}>${inner(a)}${inner(b)}</testsuites>\n`;
 }
 
-export function runTests(opts: RunOptions): RunResult {
+/** What every pass of one run shares: the plan, the resolved vitest and where the reports go. */
+interface PreparedRun {
+  vitest: ResolvedVitest;
+  plan: Plan;
+  parallelFiles: string[];
+  junitMain: string | undefined;
+  first: { ran?: boolean };
+  seen: { configurationError: boolean };
+}
+
+/** The zero-files and vitest checks, then the plan; a RunResult when the run is refused before any pass. */
+function prepareRun(opts: RunOptions): PreparedRun | RunResult {
   if (opts.files.length === 0) {
     console.error("feat-runner: zero generated test files to execute — refusing a silently empty run.");
     return { exitCode: 1 };
@@ -180,16 +191,27 @@ export function runTests(opts: RunOptions): RunResult {
     serialWorkers: serialFiles.length > 0 ? 1 : 0,
   };
   const junitMain = opts.junitOutput !== undefined ? path.resolve(opts.root, opts.junitOutput) : undefined;
-  const first: { ran?: boolean } = {};
-  const seen = { configurationError: false };
-  const result = runPlan(p, (files, pass) => {
-    // The serial pass writes beside the main report when a parallel pass already wrote it; merged below.
-    const writesSeparately = pass.serial && first.ran === true && junitMain !== undefined;
-    const junit = junitMain === undefined ? undefined : writesSeparately ? `${junitMain}.serial` : junitMain;
-    first.ran = true;
-    // The JSON report is the main pass's: the parallel pass, or the serial pass when it is the only one.
-    return runOnce(opts, vitest, files, pass.serial, junit, seen, !pass.serial || parallelFiles.length === 0);
-  });
+  return { vitest, plan: p, parallelFiles, junitMain, first: {}, seen: { configurationError: false } };
+}
+
+/** One pass's spawn: the vitest command line, its working directory and environment, and the marker it may write. */
+function passFor(opts: RunOptions, run: PreparedRun, files: string[], serial: boolean): PassSpawn {
+  // The serial pass writes beside the main report when a parallel pass already wrote it; merged in finishRun.
+  const writesSeparately = serial && run.first.ran === true && run.junitMain !== undefined;
+  const junit = run.junitMain === undefined ? undefined : writesSeparately ? `${run.junitMain}.serial` : run.junitMain;
+  run.first.ran = true;
+  // The JSON report is the main pass's: the parallel pass, or the serial pass when it is the only one.
+  return passSpawn(opts, run.vitest, files, serial, junit, !serial || run.parallelFiles.length === 0);
+}
+
+/** After a pass: a configuration error is told from a failed test by the marker the reporter writes. */
+function afterPass(run: PreparedRun, pass: PassSpawn, status: number | null): number {
+  if (existsSync(pass.markerPath)) run.seen.configurationError = true;
+  return status ?? 1;
+}
+
+function finishRun(opts: RunOptions, run: PreparedRun, result: { exitCode: number }): RunResult {
+  const { junitMain, seen } = run;
   if (junitMain !== undefined && existsSync(`${junitMain}.serial`)) {
     writeFileSync(junitMain, mergeJunit(readFileSync(junitMain, "utf8"), readFileSync(`${junitMain}.serial`, "utf8")));
     rmSync(`${junitMain}.serial`, { force: true });
@@ -199,6 +221,41 @@ export function runTests(opts: RunOptions): RunResult {
   if (junitMain !== undefined) out.junitPath = junitMain;
   if (opts.jsonOutput !== undefined) out.jsonPath = path.resolve(opts.root, opts.jsonOutput);
   return out;
+}
+
+/**
+ * Run the generated suites: one vitest pass, or a parallel pass then a serial one (SPEC-RT-005). It blocks until
+ * vitest exits (spawnSync), which suits a CLI. A caller that must keep its event loop turning, a test running
+ * inside a vitest worker above all, uses runTestsAsync.
+ */
+export function runTests(opts: RunOptions): RunResult {
+  const run = prepareRun(opts);
+  if (!("plan" in run)) return run;
+  const result = runPlan(run.plan, (files, pass) => {
+    const spawned = passFor(opts, run, files, pass.serial);
+    return afterPass(run, spawned, spawnSync(process.execPath, spawned.args, spawned.options).status);
+  });
+  return finishRun(opts, run, result);
+}
+
+/**
+ * runTests with the same passes, reports and result, without blocking the caller: each pass is awaited, so the
+ * caller's event loop keeps turning while vitest runs. A vitest worker that blocks for 60 s misses vitest's RPC
+ * timeout ("Timeout calling onTaskUpdate"), and a nested vitest run takes that long under load.
+ */
+export async function runTestsAsync(opts: RunOptions): Promise<RunResult> {
+  const run = prepareRun(opts);
+  if (!("plan" in run)) return run;
+  const result = await runPlanAsync(run.plan, async (files, pass) => {
+    const spawned = passFor(opts, run, files, pass.serial);
+    const status = await new Promise<number | null>((resolve) => {
+      const child = spawn(process.execPath, spawned.args, spawned.options);
+      child.on("error", () => resolve(null));
+      child.on("close", (code) => resolve(code));
+    });
+    return afterPass(run, spawned, status);
+  });
+  return finishRun(opts, run, result);
 }
 
 /**
@@ -217,7 +274,13 @@ export const CONFIG_ERROR_REPORTER_SOURCE = [
   "",
 ].join("\n");
 
-function runOnce(opts: RunOptions, vitest: ResolvedVitest, files: string[], serial: boolean, junitAbs: string | undefined, seen: { configurationError: boolean }, writesJson: boolean): number {
+interface PassSpawn {
+  args: string[];
+  options: { cwd: string; stdio: "ignore" | "inherit"; env: NodeJS.ProcessEnv };
+  markerPath: string;
+}
+
+function passSpawn(opts: RunOptions, vitest: ResolvedVitest, files: string[], serial: boolean, junitAbs: string | undefined, writesJson: boolean): PassSpawn {
   const absFiles = files.map((f) => path.resolve(opts.root, f));
   // Lives under node_modules/.cache so `vitest/config` and the consumer's own
   // imports resolve exactly as they would from the project root.
@@ -252,17 +315,19 @@ function runOnce(opts: RunOptions, vitest: ResolvedVitest, files: string[], seri
     args.push(outputs.length > 1 ? `--outputFile.${reporter}=${file}` : `--outputFile=${file}`);
   }
   // The project's vitest, run by this Node: no npx, no package manager, no shell on any platform.
-  const result = spawnSync(process.execPath, args, {
-    cwd: opts.root,
-    stdio: opts.quiet ? "ignore" : "inherit",
-    env: {
-      ...process.env,
-      FEAT_CONFIG_ERROR_MARKER: markerPath,
-      ...(opts.configPath !== undefined ? { FEAT_CONFIG: opts.configPath } : {}),
-      // The serial pass is the only place an exclusive fault may be armed (SPEC-RT-005).
-      ...(serial ? { FEAT_SERIAL: "1" } : {}),
+  return {
+    args,
+    options: {
+      cwd: opts.root,
+      stdio: opts.quiet ? "ignore" : "inherit",
+      env: {
+        ...process.env,
+        FEAT_CONFIG_ERROR_MARKER: markerPath,
+        ...(opts.configPath !== undefined ? { FEAT_CONFIG: opts.configPath } : {}),
+        // The serial pass is the only place an exclusive fault may be armed (SPEC-RT-005).
+        ...(serial ? { FEAT_SERIAL: "1" } : {}),
+      },
     },
-  });
-  if (existsSync(markerPath)) seen.configurationError = true;
-  return result.status ?? 1;
+    markerPath,
+  };
 }
