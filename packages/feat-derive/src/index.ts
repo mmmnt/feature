@@ -185,6 +185,8 @@ function substituteGiven(given: Given | undefined, row: Row, isOutline: boolean)
   if (!given) return undefined;
   const out: Given = {};
   if (given.clock !== undefined) out.clock = given.clock;
+  // ADR-0029 (SPEC-DRV-001 amended): the case's random seed travels into every case, outline rows included.
+  if (given.random !== undefined) out.random = given.random;
   if (given.context) out.context = given.context;
   if (given.executes)
     out.executes = given.executes.map((e) => ({

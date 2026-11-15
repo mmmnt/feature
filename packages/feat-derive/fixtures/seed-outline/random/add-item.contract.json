@@ -1,0 +1,57 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-ITM-001",
+  "schemas": {
+    "AddItemInput": {
+      "type": "object",
+      "required": [
+        "itemId"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "itemId": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    },
+    "ItemEvent": {
+      "type": "object",
+      "required": [
+        "itemId"
+      ],
+      "properties": {
+        "itemId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "name": {
+          "type": "string"
+        }
+      }
+    },
+    "ItemRow": {
+      "type": "object",
+      "required": [
+        "itemId"
+      ],
+      "properties": {
+        "itemId": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    },
+    "ItemError": {
+      "type": "object",
+      "required": [
+        "code"
+      ],
+      "properties": {
+        "code": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

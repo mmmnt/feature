@@ -14,6 +14,11 @@ feat 1.0
 # array. A derive that throws is answered as ERR code DERIVE_THREW (the probe's label: derive's own error is a
 # plain Error today, so the detail carries its message).
 
+# AMENDED (founder ruling 5f05d5e1, 2026-11-14, "Seedable randomness"; ADR-0029): a case's `random seed <n>` is
+# carried into the derived case, in a plain scenario and in every row of an outline. The probe answers `random` on a
+# case only when it has one, so every earlier scenario's answer is unchanged. Found when flmnt's first seeded spec ran:
+# feat-derive 0.4.0 dropped the seed, so the harness never delivered it.
+
 spec SPEC-DRV-001 "Derive substitutes each outline row into its own seeds"
 context Toolchain
 aggregate Derivation
@@ -49,6 +54,7 @@ enforce:
   carry a fixture seed into every row unchanged
   rejects DERIVE_THREW when a seed placeholder has no column in the row, with derive's existing message
   leave the seeds of a scenario that is not an outline untouched
+  carry a case's random seed into the derived case and into every row of an outline (ADR-0029)
 
 contract:
   input DeriveSeedsInput
@@ -91,6 +97,15 @@ scenario "a scenario that is not an outline keeps its seeds as parsed":
   predict success:
     response OK DerivedSeeds {
       cases: [ { name: "plain", seeds: [ { service: "store", records: [ { type: "ItemAdded", schemaName: "ItemEvent", values: { itemId: { $placeholder: "x" }, name: "Item-<n>" } } ] } ] } ]
+      seedsShared: false
+    }
+    filesystem has []
+
+scenario "a case's random seed is carried into the derived case, and into every row of an outline":
+  when: DeriveSeeds { spec: "packages/feat-derive/fixtures/seed-outline/random/add-item.feat", config: "packages/feat-derive/fixtures/seed-outline/random/feat.config.json" }
+  predict success:
+    response OK DerivedSeeds {
+      cases: [ { name: "seeded", seeds: [], random: 7 }, { name: "seeded rows › row[1]", seeds: [], random: 42 }, { name: "seeded rows › row[2]", seeds: [], random: 42 } ]
       seedsShared: false
     }
     filesystem has []

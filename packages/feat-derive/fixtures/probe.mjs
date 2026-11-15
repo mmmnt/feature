@@ -21,6 +21,9 @@ export async function deriveSeeds(input) {
   const seedsShared = arrays.some((a, i) => arrays.indexOf(a) !== i);
   return {
     status: "OK",
-    body: { cases: topology.cases.map((c) => ({ name: c.name, seeds: c.given?.seeds ?? [] })), seedsShared },
+    body: {
+      cases: topology.cases.map((c) => ({ name: c.name, seeds: c.given?.seeds ?? [], ...(c.given?.random !== undefined ? { random: c.given.random } : {}) })),
+      seedsShared,
+    },
   };
 }

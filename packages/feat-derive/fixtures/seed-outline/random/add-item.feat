@@ -1,0 +1,43 @@
+feat 1.0
+
+# Fixture workspace for SPEC-DRV-001 (amended, ADR-0029): a case's random seed travels into the derived case, in a
+# plain scenario and in every row of an outline.
+
+spec SPEC-ITM-001 "Add an item"
+context Catalog
+aggregate Item
+type command
+status agreed
+
+construct:
+  handler at src/add-item.ts
+  touches src/**
+
+enforce:
+  rejects ITEM_EXISTS when the item id is already present
+
+contract:
+  input AddItemInput
+  event ItemEvent
+  record ItemRow
+  error ItemError
+
+scenario "seeded":
+  given:
+    random seed 7
+  when: AddItem { itemId: "22222222-0000-4000-8000-000000000009" }
+  predict rejection ITEM_EXISTS:
+    response 409 ItemError
+    store has []
+
+scenario outline "seeded rows":
+  given:
+    random seed 42
+  when: AddItem { itemId: <id> }
+  predict rejection ITEM_EXISTS:
+    response 409 ItemError
+    store has []
+  examples:
+    | id                                     |
+    | "22222222-0000-4000-8000-000000000001" |
+    | "22222222-0000-4000-8000-000000000002" |

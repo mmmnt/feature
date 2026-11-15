@@ -23,7 +23,8 @@
             "required": ["name", "seeds"],
             "properties": {
               "name": { "type": "string" },
-              "seeds": { "type": "array", "items": { "type": "object" } }
+              "seeds": { "type": "array", "items": { "type": "object" } },
+              "random": { "type": "integer", "minimum": 0 }
             }
           }
         },
