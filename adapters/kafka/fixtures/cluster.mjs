@@ -26,7 +26,7 @@
 // does not depend on replica.lag.time.max.ms (lowered anyway, for the same reason as the rest of the timers below).
 // Restoring starts broker 2 and waits until the ISR holds both brokers again. Both waits are polls with a ceiling
 // (WAIT_MS); neither is a behaviour of the adapter.
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { KafkaJS } from "@confluentinc/kafka-javascript";
 import { dockerAsync } from "../../fault-proxy/fixtures/docker-async.mjs";
@@ -60,10 +60,10 @@ const WAIT_MS = 90_000;
 const created = [];
 let hooked = false;
 
-export function docker(args) {
-  return execFileSync("docker", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
-}
-
+// Every docker call of this file is asynchronous (docker-async.mjs), the start-up ones too: the cluster starts while
+// the probe module loads inside a vitest worker, and under load one `docker run` takes seconds; a worker that does
+// not turn its event loop for 60 s misses vitest's RPC timeout ("Timeout calling onTaskUpdate"). The one synchronous
+// call left is the removal on exit, where no event loop runs any more.
 function removeAll() {
   // One call for every container this fixture created, so a worker killed mid-cleanup cannot leave half.
   // -v: the broker image declares anonymous volumes, which `docker rm` alone leaves behind.
@@ -86,7 +86,7 @@ export function hook() {
 export function start(name, args) {
   hook();
   created.push(name);
-  return docker(["run", "-d", ...OWNER, "--name", name, ...args]);
+  return dockerAsync(["run", "-d", ...OWNER, "--name", name, ...args]);
 }
 
 export function track(name) {
@@ -94,8 +94,8 @@ export function track(name) {
   created.push(name);
 }
 
-export function hostPort(name, inner) {
-  return Number(docker(["port", name, `${inner}/tcp`]).split("\n")[0].split(":").pop());
+export async function hostPort(name, inner) {
+  return Number((await dockerAsync(["port", name, `${inner}/tcp`])).split("\n")[0].split(":").pop());
 }
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -116,7 +116,6 @@ export async function until(what, fn, ms = WAIT_MS, every = 200) {
   throw new Error(`${what} did not come up: ${last}`);
 }
 
-// Asynchronous, like every docker call a case makes: a blocking one starves the worker's event loop (docker-async.mjs).
 export async function containerState(name) {
   const state = await dockerAsync(["inspect", "--format", "{{.State.Status}}", name]);
   return state === "exited" ? "stopped" : state;
@@ -145,9 +144,11 @@ const COMMON_ENV = [
 
 const startedCount = async (name) => ((await dockerAsync(["logs", name])).match(/Kafka Server started/g) ?? []).length;
 
+/** The container's output, stdout and stderr together (the broker logs to both). */
 function logs(name) {
-  const r = spawnSync("docker", ["logs", name], { encoding: "utf8" });
-  return `${r.stdout}${r.stderr}`;
+  return new Promise((resolve) => {
+    execFile("docker", ["logs", name], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }, (_e, stdout, stderr) => resolve(`${stdout}${stderr}`));
+  });
 }
 
 export function quietKafka(brokers, extra = {}) {
@@ -161,7 +162,7 @@ export function cluster() {
     const tox = `feat-kafka-test-tox-${id}`;
     const b1 = `feat-kafka-test-b1-${id}`;
     const b2 = `feat-kafka-test-b2-${id}`;
-    start(tox, [
+    await start(tox, [
       "--rm",
       "-p", `127.0.0.1:0:${PORTS.api}`,
       "-p", `127.0.0.1:0:${PORTS.direct1}`,
@@ -172,15 +173,14 @@ export function cluster() {
       "-host=0.0.0.0",
       "-proxy-metrics",
     ]);
-    const api = `http://127.0.0.1:${hostPort(tox, PORTS.api)}`;
-    const directPort = hostPort(tox, PORTS.direct1);
-    const directPort2 = hostPort(tox, PORTS.direct2);
-    const saslPort = hostPort(tox, PORTS.sasl1);
+    const [apiPort, directPort, directPort2, saslPort, controlPort] = await Promise.all(
+      [PORTS.api, PORTS.direct1, PORTS.direct2, PORTS.sasl1, PORTS.control].map((p) => hostPort(tox, p)),
+    );
+    const api = `http://127.0.0.1:${apiPort}`;
     // Throwaway credentials of this cluster only: generated here, held in memory, handed to the broker's environment and
     // to the probe, never printed and never written to a file.
     const sasl = { username: `u${randomBytes(6).toString("hex")}`, password: randomBytes(18).toString("hex") };
-    const controlPort = hostPort(tox, PORTS.control);
-    start(b1, [
+    await start(b1, [
       `--network=container:${tox}`,
       ...COMMON_ENV,
       "-e", "KAFKA_NODE_ID=1",
@@ -224,7 +224,7 @@ export function cluster() {
       /** Start (creating it the first time) broker 2 and wait until it is registered and unfenced. */
       async startSecond() {
         if (!self.secondCreated) {
-          start(b2, [
+          await start(b2, [
             `--network=container:${tox}`,
             ...COMMON_ENV,
             "-e", "KAFKA_NODE_ID=2",
@@ -236,7 +236,7 @@ export function cluster() {
           self.secondCreated = true;
           await until("broker 2", async () => {
             if ((await startedCount(b2)) >= 1) return true;
-            if ((await containerState(b2)) !== "running") throw new Error(`broker 2 exited: ${logs(b2).slice(-1500)}`);
+            if ((await containerState(b2)) !== "running") throw new Error(`broker 2 exited: ${(await logs(b2)).slice(-1500)}`);
             return false;
           });
           return;

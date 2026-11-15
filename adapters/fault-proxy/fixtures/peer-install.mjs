@@ -9,7 +9,12 @@
 //     client loaded inside the container, so the cache directory is never half made
 //   - a completion marker, written last, names the client and the image; `package.json` alone proves nothing
 //     (an interrupted npm leaves it behind), and a cache without the marker is rebuilt
-import { execFileSync } from "node:child_process";
+//   - the installer container is awaited, never waited on synchronously: the install runs while the probe module
+//     loads inside a vitest worker, and a cold npm install in a container takes tens of seconds, more under load. A
+//     worker that does not turn its event loop for 60 s misses vitest's RPC timeout ("Timeout calling onTaskUpdate")
+//     and the run ends with an unhandled error, every test passed (docker-async.mjs). The cache is always cold in a
+//     fresh tree (CI, ci-local), so the install runs on every such run.
+import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -19,6 +24,16 @@ import path from "node:path";
 const OWNER = ["--label", `feat-test.owner-pid=${process.env.FEAT_CI_LOCAL_PID ?? process.pid}`];
 
 const MARKER = ".peer-install-complete";
+
+/** A command run to completion without blocking the event loop; rejects with its stderr when it fails. */
+function run(file, args) {
+  return new Promise((resolve, reject) => {
+    execFile(file, args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }, (error, stdout, stderr) => {
+      if (error) reject(new Error(`${file} ${args.slice(0, 2).join(" ")} failed: ${String(stderr).trim() || error.message}`));
+      else resolve(stdout);
+    });
+  });
+}
 
 const alive = (pid) => {
   try {
@@ -63,7 +78,7 @@ export async function ensurePeerInstall({ dir, pkg, version, image, name, track 
   const stamp = `${pkg}@${version} ${image}`;
   const complete = () => existsSync(path.join(dir, MARKER)) && readFileSync(path.join(dir, MARKER), "utf8") === stamp;
   if (complete()) return;
-  await withLock(`${dir}.lock`, () => {
+  await withLock(`${dir}.lock`, async () => {
     if (complete()) return;
     const work = `${dir}.tmp-${process.pid}-${randomBytes(4).toString("hex")}`;
     rmSync(dir, { recursive: true, force: true });
@@ -71,11 +86,10 @@ export async function ensurePeerInstall({ dir, pkg, version, image, name, track 
     try {
       track(name);
       // The client is loaded inside the container, so a binding that did not build fails here, not in a spec.
-      execFileSync(
+      await run(
         "docker",
         ["run", "--rm", ...OWNER, "--name", name, "-v", `${work}:/work`, "-w", "/work", image, "sh", "-c",
           `npm install --no-audit --no-fund --prefix /work ${pkg}@${version} && node -e "require('${pkg}')"`],
-        { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
       );
       writeFileSync(path.join(work, MARKER), stamp);
       renameSync(work, dir);

@@ -53,7 +53,7 @@ function proxyEnvironment() {
   proxyPromise ??= (async () => {
     const c = await cluster();
     const peer = `feat-kafka-test-peer-${c.id}`;
-    start(peer, [
+    await start(peer, [
       `--network=container:${c.tox}`,
       "-v", `${PEER_DEPS}:/deps:ro`,
       "-v", `${path.join(HERE, "peer-agent.cjs")}:/agent.cjs:ro`,
