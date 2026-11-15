@@ -49,8 +49,8 @@ export interface RedisAuthFromEnv {
 
 /** The instrument's credentials with the password in a file. */
 export interface RedisAuthFromFile {
-  /** The ACL user name itself (not a secret); omit for the `default` user (a `requirepass` server). */
-  user?: string;
+  /** The ACL user name itself (not a secret); `default` for a `requirepass` server. */
+  user: string;
   /** Path of a file whose content is the password; a relative path is resolved against the working directory. */
   passwordFile: string;
 }
@@ -206,7 +206,10 @@ class RedisAdapter implements FeatServiceAdapter {
       }
       if (!env && !file) return new RedisAdapterError("OPTIONS_INVALID", "options.auth names neither a password variable nor a passwordFile");
       if (env && a.password === undefined) return new RedisAdapterError("OPTIONS_INVALID", "options.auth with a username variable needs a password variable");
-      if (file && a.passwordFile === undefined) return new RedisAdapterError("OPTIONS_INVALID", "options.auth with a user needs a passwordFile");
+      // founder ruling 2026-11-15 ("Require a user"): the file form always names its user, as SPEC-ADPNEO-003's does
+      if (file && (a.user === undefined || a.passwordFile === undefined)) {
+        return new RedisAdapterError("OPTIONS_INVALID", "options.auth with a passwordFile needs both user and passwordFile (a requirepass server's user is `default`)");
+      }
     }
     return undefined;
   }

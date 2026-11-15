@@ -28,7 +28,9 @@
             "authMixed",
             "urlWithCredentials",
             "tlsCAFilePlain",
-            "tlsCAFile"
+            "tlsCAFile",
+            "authNoUser",
+            "tlsCAFileOther"
           ]
         },
         "content": {

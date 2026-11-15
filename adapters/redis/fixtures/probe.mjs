@@ -5,6 +5,10 @@
 //                             environment and written into a config file inside the container, never an argument; the
 //                             port published on a free loopback port. An ACL user whose password starts with a space and
 //                             has one inside is created after start (the credential-file trim check).
+//   feat-redis-test-tls-<id>  the same image serving TLS only (founder ruling 2026-11-15, "Add TLS test now"), with a
+//                             server certificate for 127.0.0.1 and localhost signed by a throwaway CA the probe mints
+//                             (@peculiar/x509, a dev dependency); the certificate and key reach the container through
+//                             the environment, never a mount. A second throwaway CA signs nothing the server holds.
 // Only containers this probe created, by name, are ever touched.
 import { execFile, spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
@@ -12,6 +16,10 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { webcrypto } from "node:crypto";
+// @peculiar/x509 resolves its providers through tsyringe, which needs the Reflect metadata polyfill loaded first.
+import "reflect-metadata";
+import * as x509 from "@peculiar/x509";
 import { createClient } from "redis";
 import { createAdapter, RedisAdapterError } from "../src/index.ts";
 
@@ -122,6 +130,94 @@ function redisServer() {
   return serverPromise;
 }
 
+x509.cryptoProvider.set(webcrypto);
+const EC = { name: "ECDSA", namedCurve: "P-256", hash: "SHA-256" };
+
+function pemKey(der) {
+  const b64 = Buffer.from(der).toString("base64").replace(/.{64}/g, "$&\n");
+  return `-----BEGIN PRIVATE KEY-----\n${b64}\n-----END PRIVATE KEY-----\n`;
+}
+
+/** A throwaway CA, and (with `server`) a server certificate for 127.0.0.1 and localhost it signs. */
+async function mintCa(cn) {
+  const keys = await webcrypto.subtle.generateKey(EC, true, ["sign", "verify"]);
+  const now = Date.now();
+  const cert = await x509.X509CertificateGenerator.createSelfSigned({
+    serialNumber: randomBytes(8).toString("hex"),
+    name: `CN=${cn}`,
+    notBefore: new Date(now - 60_000),
+    notAfter: new Date(now + 86_400_000),
+    keys,
+    signingAlgorithm: EC,
+    extensions: [
+      new x509.BasicConstraintsExtension(true, undefined, true),
+      new x509.KeyUsagesExtension(x509.KeyUsageFlags.keyCertSign | x509.KeyUsageFlags.cRLSign, true),
+      await x509.SubjectKeyIdentifierExtension.create(keys.publicKey),
+    ],
+  });
+  return { keys, cert, pem: cert.toString("pem") + "\n" };
+}
+
+async function mintServer(ca) {
+  const keys = await webcrypto.subtle.generateKey(EC, true, ["sign", "verify"]);
+  const now = Date.now();
+  const cert = await x509.X509CertificateGenerator.create({
+    serialNumber: randomBytes(8).toString("hex"),
+    subject: "CN=127.0.0.1",
+    issuer: ca.cert.subject,
+    notBefore: new Date(now - 60_000),
+    notAfter: new Date(now + 86_400_000),
+    signingKey: ca.keys.privateKey,
+    publicKey: keys.publicKey,
+    signingAlgorithm: EC,
+    extensions: [
+      new x509.SubjectAlternativeNameExtension([{ type: "ip", value: "127.0.0.1" }, { type: "dns", value: "localhost" }]),
+      new x509.ExtendedKeyUsageExtension(["1.3.6.1.5.5.7.3.1"]),
+      await x509.AuthorityKeyIdentifierExtension.create(ca.keys.publicKey),
+    ],
+  });
+  return { pem: cert.toString("pem") + "\n", key: pemKey(await webcrypto.subtle.exportKey("pkcs8", keys.privateKey)) };
+}
+
+let tlsPromise;
+function tlsServer() {
+  tlsPromise ??= (async () => {
+    const db = await redisServer();
+    const ca = await mintCa("feat-redis-test-ca");
+    const other = await mintCa("feat-redis-test-other-ca");
+    const server = await mintServer(ca);
+    const name = `feat-redis-test-tls-${db.id}`;
+    const port = await freePort();
+    await start(
+      name,
+      [
+        "--rm",
+        "-p", `127.0.0.1:${port}:6379`,
+        "-e", "FEAT_REDIS_PASS", "-e", "FEAT_TLS_CERT", "-e", "FEAT_TLS_KEY", "-e", "FEAT_TLS_CA",
+        "--entrypoint", "sh",
+        REDIS_IMAGE,
+        "-c",
+        'umask 077; printf "%s" "$FEAT_TLS_CERT" > /tmp/s.crt; printf "%s" "$FEAT_TLS_KEY" > /tmp/s.key; printf "%s" "$FEAT_TLS_CA" > /tmp/ca.crt; ' +
+          'printf "port 0\ntls-port 6379\ntls-cert-file /tmp/s.crt\ntls-key-file /tmp/s.key\ntls-ca-cert-file /tmp/ca.crt\ntls-auth-clients no\nrequirepass %s\nsave \"\"\nappendonly no\n" "$FEAT_REDIS_PASS" > /tmp/r.conf; ' +
+          "unset FEAT_REDIS_PASS FEAT_TLS_KEY; exec redis-server /tmp/r.conf",
+      ],
+      { FEAT_REDIS_PASS: db.password, FEAT_TLS_CERT: server.pem, FEAT_TLS_KEY: server.key, FEAT_TLS_CA: ca.pem },
+    );
+    await until("Redis over TLS", async () => {
+      const c = createClient({ url: `rediss://127.0.0.1:${port}`, password: db.password, socket: { tls: true, ca: ca.pem, reconnectStrategy: false, connectTimeout: 2000 } });
+      c.on("error", () => {});
+      try {
+        await c.connect();
+        await c.sendCommand(["PING"]);
+      } finally {
+        if (c.isOpen) await c.quit().catch(() => {});
+      }
+    });
+    return { port, ca: ca.pem, other: other.pem };
+  })();
+  return tlsPromise;
+}
+
 // A script label (a, b) is mapped to `s` + 12 hex of a sha256 that also covers a per-call salt: the container is shared
 // by every scenario of a test file, so a fresh namespace per call isolates the scenarios from each other.
 const SALT = randomBytes(4).toString("hex");
@@ -132,11 +228,11 @@ const namespaceOf = (label, call) => `s${createHash("sha256").update(`${label}:$
  * The connection options of a credentials case, with the files written into `dir` (a fresh temporary directory the caller
  * removes). The secret goes only into a file, never into the options or the trace.
  */
-function credentialOptions(input, db, dir, direct) {
+function credentialOptions(input, db, dir, direct, tls) {
   const source = input.source;
   const content = input.content ?? "exact";
-  const login = content === "innerSpace" ? SPACED : [undefined, db.password];
-  const subject = source === "urlFile" ? direct : source === "tlsCAFile" ? "-----BEGIN CERTIFICATE-----\n" : login[1];
+  const login = content === "innerSpace" ? SPACED : ["default", db.password];
+  const subject = source === "urlFile" ? direct : source === "tlsCAFile" ? tls.ca : source === "tlsCAFileOther" ? tls.other : login[1];
   const body = { exact: subject, innerSpace: subject, lf: `${subject}\n`, crlf: `${subject}\r\n`, empty: "", lfOnly: "\n" }[content];
   const file = path.join(dir, "subject");
   writeFileSync(file, body);
@@ -145,10 +241,12 @@ function credentialOptions(input, db, dir, direct) {
     where === "relative" ? path.relative(process.cwd(), file) : where === "missing" ? path.join(dir, "absent") : where === "directory" ? dir : file;
   const passwordFile = path.join(dir, "password");
   writeFileSync(passwordFile, db.password);
-  const fileAuth = { passwordFile };
+  const fileAuth = { user: "default", passwordFile };
   switch (source) {
     case "passwordFile":
-      return { url: direct, auth: { ...(login[0] !== undefined ? { user: login[0] } : {}), passwordFile: named } };
+      return { url: direct, auth: { user: login[0], passwordFile: named } };
+    case "authNoUser":
+      return { url: direct, auth: { passwordFile: named } };
     case "urlFile":
       return { urlFile: named, auth: fileAuth };
     case "urlAndFile":
@@ -162,7 +260,8 @@ function credentialOptions(input, db, dir, direct) {
     case "tlsCAFilePlain":
       return { url: direct, tlsCAFile: named, auth: fileAuth };
     case "tlsCAFile":
-      return { url: `rediss://127.0.0.1:${db.port}`, tlsCAFile: named, auth: fileAuth };
+    case "tlsCAFileOther":
+      return { url: `rediss://127.0.0.1:${tls.port}`, tlsCAFile: named, auth: fileAuth };
     default:
       throw new Error(`unknown credentials source '${source}'`);
   }
@@ -171,6 +270,7 @@ function credentialOptions(input, db, dir, direct) {
 export async function observe(input) {
   const db = await redisServer();
   const credentialDir = input.source !== undefined ? mkdtempSync(path.join(os.tmpdir(), "feat-redis-cred-")) : undefined;
+  const tls = input.source === "tlsCAFile" || input.source === "tlsCAFileOther" ? await tlsServer() : undefined;
   const steps = input.script.trim().split(/\s+/);
   const direct = `redis://127.0.0.1:${db.port}`;
   process.env.FEAT_REDIS_TEST_URL = input.url === "unreachable" ? "redis://127.0.0.1:1" : direct;
@@ -182,7 +282,7 @@ export async function observe(input) {
   const make = (l) => {
     const options =
       credentialDir !== undefined
-        ? credentialOptions(input, db, credentialDir, direct)
+        ? credentialOptions(input, db, credentialDir, direct, tls)
         : { urlEnv: "FEAT_REDIS_TEST_URL", auth: { password: "FEAT_REDIS_TEST_PASSWORD" } };
     return createAdapter({ key: "cache", namespace: nsOf(l), options });
   };

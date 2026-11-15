@@ -17,8 +17,11 @@ SPEC-ADPRDS-001, agreed in advance by founder ruling a78f0662 (HELD-78, "Build t
 - **Faults.** None. Every Redis-level fault (CONFIG, ACL, CLIENT PAUSE, maxmemory) is server-wide and would fault every
   other namespace's run on a shared server. The catalog is empty; any arm is FAULT_UNSUPPORTED.
 - **Credentials from files.** url/urlEnv/urlFile, auth `{ username?, password }` (variable names) or
-  `{ user?, passwordFile }`, `tlsCAFile` with rediss://. Files are read at setup before any connection, one trailing
+  `{ user, passwordFile }`, `tlsCAFile` with rediss://. Files are read at setup before any connection, one trailing
   LF/CRLF removed (the CA file as is). The password is passed to the client apart from the URL, and a URL carrying
   credentials is refused, so no percent-decoding of user info is involved.
-- **Not proven live:** a TLS connection verified against `tlsCAFile` (the probe's server has no TLS); the spec proves
-  the CA file is read and refused before any connection.
+- **TLS, proven live** (founder ruling 2026-11-15, "Add TLS test now"): the probe mints a throwaway CA and a server
+  certificate for 127.0.0.1 with @peculiar/x509 (dev dependency, fixtures only) and starts a TLS-only Redis with them;
+  a connection verified against `tlsCAFile` succeeds, and one against another CA is refused at setup.
+- **The file form of auth names its user** (founder ruling 2026-11-15, "Require a user"), as SPEC-ADPNEO-003's does;
+  a requirepass server's user is `default`.

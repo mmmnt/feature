@@ -2,7 +2,10 @@ feat 1.0
 
 # SPEC-ADPRDS-001 — the Redis service adapter (@mmmnt/feat-adapter-redis, built on the official node-redis client,
 # `redis` 6.3.1). Agreed in advance by founder ruling a78f0662 (HELD-78, "Build the adapter": a Feature cache adapter,
-# mirroring the Kurrent and Neo4j adapters, with its credential and CA read from files from day one).
+# mirroring the Kurrent and Neo4j adapters, with its credential and CA read from files from day one); amended before
+# its first publish by founder ruling 2026-11-15: "Require a user" (the file form of auth always names its user) and
+# "Add TLS test now" (a TLS server whose certificate a throwaway CA signs proves a verified connection, and a server
+# certificate from another CA is refused).
 #
 # Driven through adapters/redis/fixtures/probe.mjs (part of the build, inside touches, not shipped) against a Redis
 # container the TEST starts (redis 7.4.12 pinned by digest, `requirepass` set from the environment inside the
@@ -24,13 +27,15 @@ feat 1.0
 # `TYPE:key` joined by comma, in key order; `payloads` is the JSON of the last stop's payloads; `read` is the last read as
 # `kind:key`; `readVia` is KeyedLookup or NamespaceScan.
 # Credentials (`source` set): the probe writes a file in a fresh temporary directory and creates the adapter from it:
-#   source "passwordFile"        { url, auth: { passwordFile: <the file> } } (with content "innerSpace": { user: spaced, ... })
-#   source "urlFile"             { urlFile: <the file>, auth: { passwordFile: <a second file> } }; the file holds the URL
+#   source "passwordFile"        { url, auth: { user: default, passwordFile: <the file> } } (content "innerSpace": user spaced)
+#   source "authNoUser"          { url, auth: { passwordFile } } with no user
+#   source "urlFile"             { urlFile: <the file>, auth: { user: default, passwordFile: <a second file> } }
 #   source "urlAndFile" / "urlEnvAndFile"   url (or urlEnv) and urlFile both
 #   source "authMixed"           auth { password: <var>, passwordFile }
 #   source "urlWithCredentials"  a url that carries a password
 #   source "tlsCAFilePlain"      tlsCAFile with a redis:// url
-#   source "tlsCAFile"           tlsCAFile with a rediss:// url; the file holds a certificate header only
+#   source "tlsCAFile"           tlsCAFile with the TLS server's rediss:// url; the file holds the CA that signed its certificate
+#   source "tlsCAFileOther"      the same, the file holding another throwaway CA's certificate
 #   content (default "exact")    "exact", "lf", "crlf", "empty", "lfOnly", "innerSpace" (passwordFile only)
 #   path (default "absolute")    "absolute", "relative", "missing", "directory"
 # The probe never prints a secret; the files and their directory are removed after the case.
@@ -53,8 +58,9 @@ construct:
   Declare `observes = { diff: "snapshot", state: true }` and an empty fault catalog: Redis has no fault an adapter can
   arm for one namespace alone (a server-wide setting would fault every other namespace's run).
   Options: `url` (redis:// or rediss://, never carrying credentials), `urlEnv` (a variable's name), `urlFile` (a path),
-  `auth` (either `{ username?, password }` variable names or `{ user?, passwordFile }`; no user means the `default`
-  user of a requirepass server), `tlsCAFile` (a PEM file, only with rediss://).
+  `auth` (either `{ username?, password }` variable names or `{ user, passwordFile }`; the file form always names its
+  user, `default` for a requirepass server), `tlsCAFile` (a PEM file, only with rediss://, against which the server's
+  certificate is verified).
   Namespace: received from the runner (SPEC-RT-006) as the config's top-level `namespace`. Every key the system writes
   for the namespace starts with `<ns>:`; the prefix is never reported.
   startCapture(): SCAN the keys matching `<ns>:*` and read each by its type. peekCapture()/stopCapture(): read again and
@@ -79,7 +85,8 @@ enforce:
   rejects KIND_UNSUPPORTED when a namespaced key holds a type the adapter does not read
   rejects SEED_INVALID when a seed record's type is no kind, or its key or value does not fit the kind
   rejects FAULT_UNSUPPORTED when any fault is armed (the catalog is empty)
-  rejects OPTIONS_INVALID when urlFile is given with another url source, auth mixes its two forms, the url carries credentials, or tlsCAFile is given without rediss://
+  rejects OPTIONS_INVALID when urlFile is given with another url source, auth mixes its two forms, the file form names no user, the url carries credentials, or tlsCAFile is given without rediss://
+  a rediss:// connection verifies the server's certificate against tlsCAFile, and one signed by another CA does not connect
   rejects CREDENTIAL_FILE_UNREADABLE when a file the options name is missing, a directory, unreadable or empty
   capture and read are restricted to keys carrying the namespace prefix
   the namespace prefix is never reported
@@ -264,9 +271,22 @@ scenario outline "conflicting connection options are refused before any file is 
     | "authMixed"          | "mixes"          |
     | "urlWithCredentials" | "carries credentials" |
     | "tlsCAFilePlain"     | "rediss://"      |
+    | "authNoUser"         | "needs both user and passwordFile" |
 
 scenario "a CA file is read before any connection, and a missing one is refused naming its option":
   when: ObserveRedis { script: "setup:a", source: "tlsCAFile", path: "missing" }
   predict rejection CREDENTIAL_FILE_UNREADABLE:
     response ERR ObserveError { code: "CREDENTIAL_FILE_UNREADABLE", detail: matching "tlsCAFile" }
+    filesystem has []
+
+scenario "a TLS server is verified against the CA read from tlsCAFile, and the instrument reads through it":
+  when: ObserveRedis { script: "setup:a read:a", source: "tlsCAFile" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a read:a=0", read: "", readVia: "NamespaceScan" }
+    filesystem has []
+
+scenario "a server certificate signed by another CA is refused at setup":
+  when: ObserveRedis { script: "setup:a", source: "tlsCAFileOther" }
+  predict rejection REDIS_UNREACHABLE:
+    response ERR ObserveError { code: "REDIS_UNREACHABLE", detail: matching "certificate" }
     filesystem has []

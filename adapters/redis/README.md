@@ -10,7 +10,7 @@ scan, seeding, reset, and the instrument's credential and CA read from files.
       "adapter": "@mmmnt/feat-adapter-redis",
       "options": {
         "urlFile": "secrets/redis.url",
-        "auth": { "passwordFile": "secrets/redis.password" }
+        "auth": { "user": "default", "passwordFile": "secrets/redis.password" }
       }
     }
   }
@@ -18,7 +18,7 @@ scan, seeding, reset, and the instrument's credential and CA read from files.
 ```
 
 Options: `url` | `urlEnv` | `urlFile` (redis:// or rediss://, never with credentials in it); `auth` either
-`{ username?, password }` (environment-variable names) or `{ user?, passwordFile }` (no user = the `default` user);
+`{ username?, password }` (environment-variable names) or `{ user, passwordFile }` (`default` for a requirepass server);
 `tlsCAFile` (PEM, rediss:// only).
 
 The system under test writes every key under the namespace prefix `<namespace>:`. Records:
