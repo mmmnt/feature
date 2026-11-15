@@ -126,6 +126,10 @@
         "module": "adapters/kms/fixtures/probe.mjs",
         "export": "observeTransport"
       },
+      "ObserveRedis": {
+        "module": "adapters/redis/fixtures/probe.mjs",
+        "export": "observe"
+      },
       "ObserveNeo4j": {
         "module": "adapters/neo4j/fixtures/probe.mjs",
         "export": "observe"

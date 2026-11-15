@@ -1,0 +1,42 @@
+{
+  "name": "@mmmnt/feat-adapter-redis",
+  "version": "0.1.0",
+  "description": "Redis service adapter for Feat: a snapshot diff of the namespace's keys, state by key or namespace scan, and credentials and a CA read from files",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --exclude '**/observe.test.ts' --passWithNoTests"
+  },
+  "dependencies": {
+    "@mmmnt/feat-types": "workspace:^",
+    "redis": "6.3.1"
+  },
+  "devDependencies": {
+    "@mmmnt/feat-adapter-kit": "workspace:^",
+    "@mmmnt/feat-runtime": "workspace:^",
+    "typescript": "^5.8.0",
+    "vitest": "^3.2.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mmmnt/feature.git",
+    "directory": "adapters/redis"
+  },
+  "homepage": "https://github.com/mmmnt/feature#readme",
+  "bugs": {
+    "url": "https://github.com/mmmnt/feature/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
