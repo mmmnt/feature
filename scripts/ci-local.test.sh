@@ -312,5 +312,16 @@ if [ -z "$blocking" ] && [ "$sync_sites" -ge 6 ] && [ "$async_sites" -ge 6 ]; th
 else bad "no test process makes a synchronous docker call but its exit-time cleanup" "cleanups read: $sync_sites, asynchronous calls: $async_sites
 $blocking"; fi
 
+# ci-local runs its job container with the parallelism of the runner it stands in for. Vitest gives a pool
+# availableParallelism - 1 workers: 3 on a 4-vCPU ubuntu-latest runner, 15 in a 16-CPU Docker Desktop VM. Measured on
+# 2026-11-14 inside ci-local's container, 15 workers beside the ~30 product containers their specs start were
+# descheduled 20-54 s at a time (feat-core/parse.test.ts, whose file runs in 3 s alone), their IPC to vitest's main
+# process queued behind them, and past 60 s a worker's RPC timed out ("Timeout calling onTaskUpdate", every test
+# passed). The job container gets VITEST_MAX_FORKS and VITEST_MAX_THREADS (default 3, CI_LOCAL_MAX_WORKERS).
+if grep -q -- '-e VITEST_MAX_FORKS="$MAX_WORKERS" -e VITEST_MAX_THREADS="$MAX_WORKERS"' "$SRC/scripts/ci-local.sh" \
+  && grep -q '^MAX_WORKERS=${CI_LOCAL_MAX_WORKERS:-3}$' "$SRC/scripts/ci-local.sh"; then
+  ok "ci-local gives its job container the runner's vitest parallelism (3 workers, CI_LOCAL_MAX_WORKERS)"
+else bad "ci-local gives its job container the runner's vitest parallelism (3 workers, CI_LOCAL_MAX_WORKERS)" "no VITEST_MAX_FORKS/THREADS from MAX_WORKERS in scripts/ci-local.sh"; fi
+
 echo "ci-local.test: $((CASES - FAILS)) passed, $FAILS failed"
 [ "$FAILS" = 0 ]

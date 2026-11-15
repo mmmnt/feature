@@ -175,6 +175,11 @@ lock at most 15 minutes (`CI_LOCAL_LOCK_WAIT`), then runs only while the 1-minut
 and releasing the lock. The lock is a created, never started container named `feat-ci-local-lock` carrying its
 holder's pid; a holder that is gone loses it to the next run.
 
+The job container runs vitest with the runner's parallelism, 3 workers as on a 4-vCPU `ubuntu-latest` runner
+(`CI_LOCAL_MAX_WORKERS`): with the 15 a 16-CPU Docker Desktop VM would give it, workers beside the product containers
+their specs start were descheduled for up to 54 s, and past 60 s a worker's RPC timed out ("Timeout calling
+onTaskUpdate", every test passed).
+
 ## License
 
 Every published `@mmmnt/*` package is MIT-licensed and ships its own `LICENSE`; the repository as a whole is BSD-3-Clause (see `LICENSE`).

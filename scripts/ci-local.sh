@@ -172,6 +172,12 @@ cache_mount() {
   printf '%s:%s' "$name" "$p"
 }
 
+# The runner's parallelism: vitest gives a pool availableParallelism - 1 workers, 3 on a 4-vCPU ubuntu-latest runner
+# and 15 in a 16-CPU Docker Desktop VM, where 15 workers beside the product containers their specs start were
+# descheduled for up to 54 s at a time and a worker's RPC timed out past 60 s ("Timeout calling onTaskUpdate",
+# every test passed; measured 2026-11-14). Override with CI_LOCAL_MAX_WORKERS.
+MAX_WORKERS=${CI_LOCAL_MAX_WORKERS:-3}
+
 SUMMARY="$RUN/summary.txt"
 : > "$SUMMARY"
 echo "ci-local: commit $SHA ($(git -C "$REPO" log -1 --format=%s "$SHA" | cut -c1-72))"
@@ -209,7 +215,7 @@ for gi in "${!GROUPS_NODE[@]}"; do
   t0=$(date +%s)
   CURRENT=$name
   echo "$name" > "$RUN/current"
-  if docker run --rm --name "$name" --label "feat-test.owner-pid=$$" -e FEAT_CI_LOCAL_PID=$$ -e FEAT_CI_LOCAL_CONTAINER="$name" --network host \
+  if docker run --rm --name "$name" --label "feat-test.owner-pid=$$" -e FEAT_CI_LOCAL_PID=$$ -e FEAT_CI_LOCAL_CONTAINER="$name" -e VITEST_MAX_FORKS="$MAX_WORKERS" -e VITEST_MAX_THREADS="$MAX_WORKERS" --network host \
       -v /var/run/docker.sock:/var/run/docker.sock \
       -v "$tree:$tree" -v "$RUN/plan:$RUN/plan:ro" -v "$RUN/logs:$RUN/logs" "${mounts[@]}" \
       -w "$tree/src" -e CI=true -e GITHUB_ACTIONS=true -e TMPDIR="$tree/tmp" -e npm_config_store_dir=/ci-cache/pnpm-store \
