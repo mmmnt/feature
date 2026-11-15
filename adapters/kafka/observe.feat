@@ -50,6 +50,10 @@ feat 1.0
 # exactly like an open one: stopCapture, which consumes to the current last stable offset and does not wait, may
 # return without it. Waiting for that gap to close is settle's job. Under load the scenario without settle failed with
 # `stop:a=0`.
+# For the same reason the open-transaction scenario's settleTimeoutMs is 3000, not 500: its second settle runs right
+# after txclose returned and must see the COMMIT marker land and consume to it inside the timeout, which took more than
+# 500 ms under load (`settle:a=false` after txclose). The first settle declines whatever the timeout, because nothing
+# closes that transaction until txclose.
 
 spec SPEC-ADPKFK-001 "Kafka adapter: namespaced capture, state, settle, reset and faults"
 context Toolchain
@@ -224,7 +228,7 @@ scenario "settle declines when no window is open":
     filesystem has []
 
 scenario "settle declines while a transaction is open, because that effect is not yet decided":
-  when: ObserveKafka { script: "setup:a start:a txopen:a:orders:Pending settle:a txclose:a settle:a stop:a", settleTimeoutMs: 500 }
+  when: ObserveKafka { script: "setup:a start:a txopen:a:orders:Pending settle:a txclose:a settle:a stop:a", settleTimeoutMs: 3000 }
   predict success:
     response OK ObserveResult {
       trace: "setup:a start:a txopen:a settle:a=false txclose:a settle:a=true stop:a=1",
