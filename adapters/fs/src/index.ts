@@ -4,7 +4,7 @@
 // directory relative to the project root (default "."). node_modules, dist,
 // .turbo, .git and reports are always excluded.
 
-import { readdirSync, statSync } from "node:fs";
+import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import type { CapturedRecord, FeatServiceAdapter, SeedRecord } from "@mmmnt/feat-types";
 
@@ -25,24 +25,39 @@ class FsAdapter implements FeatServiceAdapter {
     this.root = path.resolve(config.projectRoot ?? process.cwd(), config.options?.scope ?? ".");
   }
 
-  private snapshot(): Map<string, number> {
+  /**
+   * Every file under the scope with its mtime. The walk is asynchronous: the harness awaits a capture window case
+   * after case, and a synchronous walk never let a suite's event loop turn between them; on a slow filesystem (a
+   * container's bind mount) a vitest worker went 70 s without a turn and missed vitest's RPC timeout. An entry gone
+   * between the listing and its stat is not in this snapshot, as if it had been listed after it went.
+   */
+  private async snapshot(): Promise<Map<string, number>> {
     const out = new Map<string, number>();
-    const walk = (d: string) => {
+    const walk = async (d: string): Promise<void> => {
       let entries: string[];
       try {
-        entries = readdirSync(d);
+        entries = await readdir(d);
       } catch {
         return;
       }
-      for (const entry of entries) {
-        if (EXCLUDED.has(entry)) continue;
-        const p = path.join(d, entry);
-        const s = statSync(p);
-        if (s.isDirectory()) walk(p);
-        else out.set(p, s.mtimeMs);
-      }
+      await Promise.all(
+        entries
+          .filter((entry) => !EXCLUDED.has(entry))
+          .map(async (entry) => {
+            const p = path.join(d, entry);
+            let s: Awaited<ReturnType<typeof stat>>;
+            try {
+              s = await stat(p);
+            } catch (e) {
+              if ((e as NodeJS.ErrnoException).code === "ENOENT") return;
+              throw e;
+            }
+            if (s.isDirectory()) await walk(p);
+            else out.set(p, s.mtimeMs);
+          }),
+      );
     };
-    walk(this.root);
+    await walk(this.root);
     return out;
   }
 
@@ -54,12 +69,12 @@ class FsAdapter implements FeatServiceAdapter {
 
   // The spec type (ADR-0011) is accepted: a snapshot diff is the same for every spec type.
   async startCapture(_context?: { specType?: string }): Promise<void> {
-    this.before = this.snapshot();
+    this.before = await this.snapshot();
   }
 
   /** The FILE_WRITTEN / FILE_DELETED records between `before` and a snapshot taken now. */
-  private diff(before: Map<string, number>): CapturedRecord[] {
-    const after = this.snapshot();
+  private async diff(before: Map<string, number>): Promise<CapturedRecord[]> {
+    const after = await this.snapshot();
     const records: CapturedRecord[] = [];
     for (const [p, mtime] of after) {
       if (!before.has(p) || before.get(p) !== mtime) {
@@ -87,14 +102,14 @@ class FsAdapter implements FeatServiceAdapter {
   /** With no window open there is nothing to report (SPEC-ADPFS-001), never a diff against an empty baseline. */
   async stopCapture(): Promise<CapturedRecord[]> {
     if (this.before === null) return [];
-    const records = this.diff(this.before);
+    const records = await this.diff(this.before);
     this.before = null;
     return records;
   }
 
   /** ADR-0020: what stopCapture would return now; the baseline stays. [] with no window open. */
   async peekCapture(): Promise<CapturedRecord[]> {
-    return this.before === null ? [] : this.diff(this.before);
+    return this.before === null ? [] : await this.diff(this.before);
   }
 
   /**
