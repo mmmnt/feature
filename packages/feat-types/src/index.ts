@@ -81,6 +81,8 @@ export type GivenStep = "seed" | "execute";
 
 export interface Given {
   clock?: string;
+  /** ADR-0029: `random seed <n>` — the seed for the system's random source in this case. */
+  random?: number;
   context?: string[];
   executes?: Invocation[];
   seeds?: Seed[];
@@ -98,6 +100,12 @@ export type Matcher =
   | { matcher: "whenRef"; path: string }
   | { matcher: "deliverRef"; path: string; index?: number }
   | { matcher: "captureRef"; service: string; path: string; index?: number }
+  /**
+   * ADR-0028 (SPEC-RT-012): `@given.response.<path>` / `@given[i].response.<path>` as a matcher — equals the
+   * value at <path> in the response body of the given's i-th execute (index absent: the last), in written order.
+   * A reference that cannot resolve is a violation, never a pass.
+   */
+  | { matcher: "givenRef"; path: string; index?: number }
   | { matcher: "any"; ofType?: "uuid" | "timestamp" | "string" | "number" | "boolean" }
   | { matcher: "regex"; pattern: string | { $placeholder: string } }
   | { matcher: "absent" }
@@ -246,6 +254,12 @@ export interface FeatResponseAdapter extends ReportsNamespace {
    */
   setClock?(clock: string | null): Promise<void>;
   /**
+   * Optional (ADR-0029): receive the case's random seed, or null for "unseeded". The harness delivers a seed
+   * when the case declares `random seed <n>`, and null on the next case after one that did. A response adapter
+   * without it cannot run a spec that uses `random seed` (RANDOM_UNSUPPORTED).
+   */
+  setSeed?(seed: number | null): Promise<void>;
+  /**
    * `context.commands` (SPEC-RT-008): the commands the spec file's cases invoke, given executes before the
    * stimulus, each once. A harness built without its cases passes no context.
    */
@@ -301,6 +315,8 @@ export interface FeatServiceAdapter extends ReportsNamespace {
   readonly observes?: ObservationSupport;
   /** Optional (ADR-0023): receive the scenario clock, or null; see FeatResponseAdapter.setClock. */
   setClock?(clock: string | null): Promise<void>;
+  /** Optional (ADR-0029): receive the case's random seed, or null; see FeatResponseAdapter.setSeed. */
+  setSeed?(seed: number | null): Promise<void>;
   setup(): Promise<void>;
   teardown(): Promise<void>;
   reset(): Promise<void>;

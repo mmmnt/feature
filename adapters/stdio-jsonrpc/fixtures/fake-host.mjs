@@ -46,6 +46,10 @@ async function canned(req) {
     case "setClock":
       log(`clock ${JSON.stringify(p.clock)}`);
       return { result: {} };
+    case "setSeed":
+      if (mode === "no-seed") return { error: { code: -32601, message: "Method not found: setSeed" } };
+      log(`seed ${JSON.stringify(p.seed)}`);
+      return { result: {} };
     case "startCapture":
       state.captured.set(p.service, []);
       return { result: {} };

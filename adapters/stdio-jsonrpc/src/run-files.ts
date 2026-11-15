@@ -21,6 +21,8 @@ interface FileSpec {
   roleNamespaces?: Record<string, string>;
   cycles?: number;
   clocks?: (string | null)[];
+  /** ADR-0029: a seed per case, sent to the response role after the clocks (absent: no setSeed at all). */
+  seeds?: (number | null)[];
   secondHost?: { command: string[] };
 }
 
@@ -88,7 +90,9 @@ async function runFile(f: FileSpec, tmp: string) {
         const second = make("second", { command: f.secondHost.command, env: { FAKE_HOST_LOG: logFile } });
         await (second.adapter as never as { setup(): Promise<void> }).setup();
       }
+      let caseIndex = 0;
       for (const clock of f.clocks ?? [null]) {
+        const seed = f.seeds?.[caseIndex++];
         casesRun++;
         for (const r of services) await guard(r.name, () => (r.adapter as never as { reset(): Promise<void> }).reset());
         const before = readFileSync(logFile, "utf8").split("\n").filter((l) => l.startsWith("clock ")).length;
@@ -97,6 +101,8 @@ async function runFile(f: FileSpec, tmp: string) {
           clockRoles.push(r.name);
           await (r.adapter as never as { setClock(c: string | null): Promise<void> }).setClock(clock);
         }
+        if (response && seed !== undefined)
+          await (response.adapter as never as { setSeed(s: number | null): Promise<void> }).setSeed(seed);
         for (const r of services) await guard(r.name, () => (r.adapter as never as { startCapture(c: object): Promise<void> }).startCapture({ specType: "command" }));
         if (response) await guard("response", () => (response.adapter as never as { invoke(c: string, i: object): Promise<unknown> }).invoke("Ping", {}));
         for (const r of services) {
@@ -132,6 +138,7 @@ async function runFile(f: FileSpec, tmp: string) {
   const setups = lines.filter((l) => l.startsWith("setup ")).map((l) => JSON.parse(l.slice(l.indexOf(" ", 6) + 1)) as string[]);
   const setupNamespaces = lines.filter((l) => l.startsWith("setup ")).map((l) => l.split(" ")[1]!);
   const clocks = lines.filter((l) => l.startsWith("clock ")).map((l) => JSON.parse(l.slice(6)) as string | null);
+  const seedsSent = lines.filter((l) => l.startsWith("seed ")).map((l) => JSON.parse(l.slice(5)) as number | null);
   await new Promise((r) => setTimeout(r, 20));
   const all = pids();
   const base = { hostsSpawned: all.length, hostsAlive: all.filter(alive).length };
@@ -150,6 +157,7 @@ async function runFile(f: FileSpec, tmp: string) {
     setupNamespaces: setupNamespaces.slice(0, roles.length),
     hostEnvNamespace: (lines.find((l) => l.startsWith("env ")) ?? "env ").slice(4),
     clocks,
+    ...(f.seeds !== undefined ? { seeds: seedsSent } : {}),
     clockRoles,
     resetsBeforeClock,
     settled,

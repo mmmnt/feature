@@ -10,6 +10,10 @@ feat 1.0
 # (`files: { a: { ... } }`), not an array — nested value blocks match partially, so a scenario asserts
 # only the facts it lists; array elements compare exactly, which made two scenarios with one input
 # unsatisfiable. No language change.
+# AMENDED by founder ruling 5f05d5e1 (2026-11-14, "Seedable randomness", ADR-0029): the response role carries a
+# case's random seed to the host by setSeed(seed), a whole number or null; a seed that is not a whole number
+# from 0 to 2^53-1 is INVALID_SEED before any host call; a host that answers method not found leaves the seed
+# refused, never ignored. The harness sends a seed only for a case that declares one and null on the next.
 #
 # Scope: the lifecycle (who spawns, who ends, what a crash does, what a mismatch does) and
 # the protocol semantics the adapter relies on: settle (ADR-0021), peekCapture (ADR-0020),
@@ -62,6 +66,8 @@ enforce:
   rejects PROTOCOL_VIOLATION when the host's setup answer lacks the namespace echo or violates the protocol schema (the SPEC-RPC-001 exchange rule, surfaced for the file)
   rejects HOST_ERROR when the host refuses a role's setup, for instance with -32602 for a namespace other than the file's
   rejects INVALID_CLOCK when setClock is given a time without a zone designator, refused before any setClock reaches the host
+  carry a case's random seed to the host by setSeed on the response role, a null seed unseeding it (ADR-0029)
+  rejects INVALID_SEED when setSeed is given a seed that is not a whole number from 0 to 9007199254740991, refused before any setSeed reaches the host
   rejects HOST_CONFIG_MISMATCH when a role's host configuration differs from the host already open for its file
   on every outcome leave no host process running
 
@@ -200,4 +206,16 @@ scenario "a clock without a zone designator is refused INVALID_CLOCK before any 
   when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, roles: ["response", "log"], clocks: ["2026-07-16T00:00:00"] }] }
   predict rejection INVALID_CLOCK:
     response ERR SharingError { code: "INVALID_CLOCK", hostsSpawned: 1, hostsAlive: 0 }
+    filesystem has []
+
+scenario "a case's random seed reaches the host through setSeed on the response role, and null unseeds it":
+  when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, roles: ["response", "log"], clocks: [null, null], seeds: [42, null] }] }
+  predict success:
+    response OK RunFilesResult { files: { a: { seeds: [42, null], hostsAlive: 0 } } }
+    filesystem has []
+
+scenario "a seed that is not a whole number is refused INVALID_SEED before any host call":
+  when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, roles: ["response", "log"], clocks: [null], seeds: [-1] }] }
+  predict rejection INVALID_SEED:
+    response ERR SharingError { code: "INVALID_SEED", hostsSpawned: 1, hostsAlive: 0 }
     filesystem has []

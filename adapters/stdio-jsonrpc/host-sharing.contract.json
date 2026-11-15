@@ -77,6 +77,19 @@
                   ]
                 }
               },
+              "seeds": {
+                "type": "array",
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
               "cycles": {
                 "type": "integer",
                 "minimum": 1
@@ -160,6 +173,19 @@
                   ]
                 }
               },
+              "seeds": {
+                "type": "array",
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
               "settled": {
                 "type": "object",
                 "additionalProperties": {
@@ -213,6 +239,7 @@
           "enum": [
             "HOST_CONFIG_MISMATCH",
             "INVALID_CLOCK",
+            "INVALID_SEED",
             "NAMESPACE_NOT_HONOURED",
             "PROTOCOL_VIOLATION",
             "HOST_ERROR",

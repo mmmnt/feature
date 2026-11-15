@@ -350,6 +350,17 @@ function parseMatcher(c: ValueCursor): Matcher {
     return out;
   }
   /**
+   * ADR-0028: `@given.response.<path>` / `@given[i].response.<path>` as a matcher — equals a value in the
+   * response body of the given's i-th execute (index absent: the last). Matched before the capture
+   * reference, so `given` is never read as a service key.
+   */
+  if ((m = /^@given(?:\[(\d+)\])?\.response\.([A-Za-z0-9_.\-]+)/.exec(rest()))) {
+    c.pos += m[0].length;
+    const out: Matcher = { matcher: "givenRef", path: m[2] };
+    if (m[1] !== undefined) out.index = Number(m[1]);
+    return out;
+  }
+  /**
    * Cross-surface capture reference: `@<service>[i].<path>` — equals a value captured on
    * ANOTHER surface in this same scenario. `@deliver` and `@when` are matched first, so the
    * service-key space can never shadow them; the key itself is checked against the configured
@@ -702,6 +713,12 @@ function parseFeat(source: string, ctx: ConfigContext): Record<string, unknown> 
         const given = (scenario.given as Record<string, unknown> | undefined) ?? {};
         if ((m = /^clock[ \t]+at[ \t]+"((?:[^"\\]|\\.)*)"$/.exec(t))) {
           given.clock = m[1];
+        } else if (/^random[ \t]+seed(?:[ \t]|$)/.test(t)) {
+          // ADR-0029: `random seed <n>` makes the system's random source deterministic for this case.
+          const sm = /^random[ \t]+seed[ \t]+(\d+)$/.exec(t);
+          if (!sm || !Number.isSafeInteger(Number(sm[1])))
+            throw new ParseFailure("MALFORMED_SYNTAX", `Malformed random seed: '${t}'.`, s.line, "Write 'random seed <n>', n a whole number from 0 to 9007199254740991.");
+          given.random = Number(sm[1]);
         } else if ((m = /^execute(?:[ \t]*\(as[ \t]+([A-Za-z0-9_-]+)\))?[ \t]+([A-Za-z_][A-Za-z0-9_]*)[ \t]+(\{[\s\S]*\})$/.exec(t))) {
           const executes = (given.executes as unknown[] | undefined) ?? [];
           const inv: Record<string, unknown> = { command: m[2] };

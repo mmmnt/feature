@@ -1,7 +1,7 @@
-# ADR-0028 (DRAFT) — the given's response as a matcher, `@given.response.<path>`
+# ADR-0028 — the given's response as a matcher, `@given.response.<path>`
 
-Status: Proposed. Not agreed: the founder flips draft → agreed. Requested by flmnt (founder ruling
-00fd1773, 2026-11-14, "Ask Feature for it").
+Status: Accepted (founder ruling 5f05d5e1, 2026-11-14, "Agree as drafted"; requested by flmnt, ruling 00fd1773,
+"Ask Feature for it"). Built in SPEC-CORE-001 (amended) and SPEC-RT-012 (new).
 
 ## Context
 
@@ -28,7 +28,7 @@ these facts in a unit test beside the spec, outside the evidence chain.
    a response body; its `status` is not addressable (body only).
 4. The IR is `{ "matcher": "givenRef", "index"?: <int>, "path": "<path>" }`; `index` absent means the last.
 5. A violation names the reference as written and the value it resolved to:
-   `expected @given[0].response.inviteId (= "…"), got "…"`.
+   `expected @given[0].response.inviteId = "…", got "…"`; under `not`, `expected not @given.response.code (= "…"), got "…"`.
 
 ## Rejected alternatives
 
@@ -38,8 +38,8 @@ these facts in a unit test beside the spec, outside the evidence chain.
 - **Capturing the `given`'s writes** (dropping INV-9 for executes): would change every existing
   prediction's capture set.
 
-## Out of scope (open question for the founder)
+## Out of scope
 
-A **transform** (e.g. "this field is the SHA-256 of that response's code with dashes removed") is not a
-reference. The language excludes transform functions by design (§5.1b, DP-3). See the open questions in the
-consumer's request.
+A **transform** (e.g. "this field is the SHA-256 of that response's code") is not a reference, and the language
+excludes transform functions by design (§5.1b, DP-3). A system's random draws become predictable literals by
+seeding instead (ADR-0029, founder ruling 5f05d5e1, "Seedable randomness").

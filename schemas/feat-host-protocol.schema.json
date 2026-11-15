@@ -24,6 +24,7 @@
         { "$ref": "#/definitions/requests/teardown" },
         { "$ref": "#/definitions/requests/reset" },
         { "$ref": "#/definitions/requests/setClock" },
+        { "$ref": "#/definitions/requests/setSeed" },
         { "$ref": "#/definitions/requests/invoke" },
         { "$ref": "#/definitions/requests/seed" },
         { "$ref": "#/definitions/requests/startCapture" },
@@ -101,6 +102,27 @@
               "clock": {
                 "description": "RFC 3339 date-time WITH a zone designator freezes the scenario clock; null unfreezes it (the host's wall clock), so one case's freeze never reaches the next.",
                 "anyOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }]
+              }
+            }
+          }
+        }
+      },
+      "setSeed": {
+        "type": "object",
+        "required": ["jsonrpc", "id", "method", "params"],
+        "additionalProperties": false,
+        "properties": {
+          "jsonrpc": { "const": "2.0" },
+          "id": { "$ref": "#/definitions/id" },
+          "method": { "const": "setSeed" },
+          "params": {
+            "type": "object",
+            "required": ["seed"],
+            "additionalProperties": false,
+            "properties": {
+              "seed": {
+                "description": "ADR-0029: a whole number seeds the host's random source, so what the system draws is the same on every run of the case; null unseeds it (the host's own randomness). Sent only for a case that declares `random seed <n>`, and as null on the next case after one, so a host that does not implement setSeed runs every spec that does not seed; such a host answers method not found when a spec seeds.",
+                "anyOf": [{ "type": "integer", "minimum": 0, "maximum": 9007199254740991 }, { "type": "null" }]
               }
             }
           }
@@ -337,6 +359,7 @@
       "teardown": { "$ref": "#/definitions/empty" },
       "reset": { "$ref": "#/definitions/empty" },
       "setClock": { "$ref": "#/definitions/empty" },
+      "setSeed": { "$ref": "#/definitions/empty" },
       "seed": { "$ref": "#/definitions/empty" },
       "startCapture": { "$ref": "#/definitions/empty" },
       "deliver": { "$ref": "#/definitions/empty" },

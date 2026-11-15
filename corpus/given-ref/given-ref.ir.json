@@ -1,0 +1,193 @@
+{
+  "featVersion": "1.0",
+  "identity": {
+    "id": "SPEC-INV-001",
+    "name": "CreateInvite mints a one-use code",
+    "context": "Access",
+    "aggregate": "Invite",
+    "type": "command",
+    "status": "agreed"
+  },
+  "construct": [
+    {
+      "kind": "handler",
+      "path": "features/create-invite/handler.ts"
+    },
+    {
+      "kind": "touches",
+      "glob": "features/create-invite/**"
+    }
+  ],
+  "enforce": [
+    {
+      "kind": "constraint",
+      "text": "mint an invite with a fresh code for a workspace"
+    }
+  ],
+  "contract": [
+    {
+      "kind": "input",
+      "schemaName": "InviteInput"
+    },
+    {
+      "kind": "response",
+      "schemaName": "InviteReceipt"
+    },
+    {
+      "kind": "event",
+      "schemaName": "InviteEvent"
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "a keyed retry answers the first invite's id",
+      "given": {
+        "executes": [
+          {
+            "command": "CreateInvite",
+            "payload": {
+              "workspace": "w-1",
+              "key": "k-1"
+            }
+          }
+        ]
+      },
+      "when": {
+        "command": "CreateInvite",
+        "payload": {
+          "workspace": "w-1",
+          "key": "k-1"
+        }
+      },
+      "prediction": {
+        "type": "success",
+        "response": {
+          "status": 200,
+          "schemaName": "InviteReceipt",
+          "valueBlock": {
+            "inviteId": {
+              "matcher": "givenRef",
+              "path": "inviteId"
+            },
+            "code": {
+              "matcher": "absent"
+            }
+          }
+        },
+        "services": {
+          "log": {
+            "records": []
+          }
+        }
+      }
+    },
+    {
+      "name": "a second invite draws a different code",
+      "given": {
+        "executes": [
+          {
+            "command": "CreateInvite",
+            "payload": {
+              "workspace": "w-1"
+            }
+          },
+          {
+            "command": "CreateInvite",
+            "payload": {
+              "workspace": "w-1"
+            }
+          }
+        ]
+      },
+      "when": {
+        "command": "CreateInvite",
+        "payload": {
+          "workspace": "w-1"
+        }
+      },
+      "prediction": {
+        "type": "success",
+        "response": {
+          "status": 201,
+          "schemaName": "InviteReceipt",
+          "valueBlock": {
+            "code": {
+              "matcher": "not",
+              "operand": {
+                "matcher": "givenRef",
+                "path": "code"
+              }
+            },
+            "inviteId": {
+              "matcher": "not",
+              "operand": {
+                "matcher": "givenRef",
+                "path": "inviteId",
+                "index": 0
+              }
+            }
+          }
+        },
+        "services": {
+          "log": {
+            "records": [
+              {
+                "type": "InviteCreated",
+                "schemaName": "InviteEvent",
+                "valueBlock": {
+                  "inviteId": {
+                    "matcher": "captureRef",
+                    "service": "log",
+                    "path": "inviteId",
+                    "index": 0
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "a seeded invite draws a known code",
+      "given": {
+        "random": 42
+      },
+      "when": {
+        "command": "CreateInvite",
+        "payload": {
+          "workspace": "w-1"
+        }
+      },
+      "prediction": {
+        "type": "success",
+        "response": {
+          "status": 201,
+          "schemaName": "InviteReceipt",
+          "valueBlock": {
+            "code": {
+              "matcher": "literal",
+              "value": "ABCD-EFGH-JKLM"
+            }
+          }
+        },
+        "services": {
+          "log": {
+            "records": [
+              {
+                "type": "InviteCreated",
+                "schemaName": "InviteEvent",
+                "valueBlock": {
+                  "codeHash": {
+                    "matcher": "any",
+                    "ofType": "string"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

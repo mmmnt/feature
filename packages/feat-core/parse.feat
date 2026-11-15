@@ -21,6 +21,13 @@ feat 1.0
 # `not` to Feature (Recommended)"). A value block's matcher may be `not <operand>`, recorded as
 # { matcher: "not", operand }; the runtime evaluates it (SPEC-RT-011). One new exemplar, corpus/not-matcher,
 # and six refusal fixtures; every other scenario and every other exemplar's IR is unchanged.
+#
+# AMENDMENT (ADR-0028 and ADR-0029; founder ruling 5f05d5e1, 2026-11-14, "Agree as drafted" and "Seedable
+# randomness"). In a value block's matcher position, `@given.response.<path>` and `@given[i].response.<path>`
+# are the given-response reference, recorded as { matcher: "givenRef", path, index? } (alone and as the
+# operand of `not`); the runtime evaluates it (SPEC-RT-012). A given line `random seed <n>` is recorded as
+# given.random; the harness delivers it (SPEC-RT-013). One new exemplar, corpus/given-ref, and two refusal
+# fixtures; every other scenario and every other exemplar's IR is unchanged.
 
 spec SPEC-CORE-001 "Parse a .feat file to BuiltSpec IR"
 context Toolchain
@@ -59,12 +66,17 @@ construct:
   `matching "<regex>"` or an outline placeholder (`<name>`, `matching <name>`). `not not`, `not absent`,
   `not any` without a type, `not { ... }` and a `not` with no operand are MALFORMED_SYNTAX, each with a hint
   naming the spelling to use. A capture reference inside `not` joins the closed service space.
+  In a value block's matcher position, `@given.response.<path>` and `@given[i].response.<path>` are the
+  given-response reference (ADR-0028), recorded as { matcher: "givenRef", path } with `index` when written;
+  `given` is never read as a service key. A given line `random seed <n>`, n a whole number from 0 to
+  9007199254740991, is recorded as given.random (ADR-0029); any other line beginning `random seed` is
+  MALFORMED_SYNTAX.
 
 enforce:
   read the version pragma before anything else
   rejects MISSING_PRAGMA when the first non-comment line is not a feat version pragma
   rejects UNSUPPORTED_VERSION when the pragma names a version this toolchain does not support
-  rejects MALFORMED_SYNTAX when a compiler-zone block violates the grammar, a fault line in given: included (ADR-0023), and a negation whose operand is not a matcher it takes (ADR-0027)
+  rejects MALFORMED_SYNTAX when a compiler-zone block violates the grammar, a fault line in given: included (ADR-0023), a negation whose operand is not a matcher it takes (ADR-0027), and a random seed that is not a whole number in range (ADR-0029)
   rejects UNKNOWN_SERVICE_KEY when a prediction or a given fault targets a service absent from the config services, or a cross-surface capture reference names one (ADR-0021 — a reference names a service, so it shares the closed space)
   rejects UNKNOWN_COMMAND when a when or execute names a command absent from response.commands
   rejects UNDECLARED_SCHEMA when a scenario references a schema absent from the contract block
@@ -176,6 +188,12 @@ scenario "parses the negation exemplar (not-matcher, ADR-0027)":
     response OK BuiltSpec equals fixture "../../corpus/not-matcher/not-matcher.ir.json"
     filesystem has []
 
+scenario "parses the given-response and random-seed exemplar (given-ref, ADR-0028, ADR-0029)":
+  when: Parse { spec: "corpus/given-ref/given-ref.feat", config: "corpus/given-ref/feat.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "../../corpus/given-ref/given-ref.ir.json"
+    filesystem has []
+
 scenario "a word that merely begins with fault stays freeform context":
   when: Parse { spec: "packages/feat-core/fixtures/ok/fault-prefix-word.feat", config: "packages/feat-core/fixtures/parse.config.json" }
   predict success:
@@ -213,6 +231,8 @@ scenario outline "rejects invalid specs with the precise code":
     | "packages/feat-core/fixtures/bad/fault-bare-keyword.feat"           | "MALFORMED_SYNTAX"        |
     | "packages/feat-core/fixtures/bad/fault-unknown-service.feat"        | "UNKNOWN_SERVICE_KEY"     |
     | "packages/feat-core/fixtures/bad/not-not.feat"                      | "MALFORMED_SYNTAX"        |
+    | "packages/feat-core/fixtures/bad/random-seed-negative.feat"         | "MALFORMED_SYNTAX"        |
+    | "packages/feat-core/fixtures/bad/random-seed-missing.feat"          | "MALFORMED_SYNTAX"        |
     | "packages/feat-core/fixtures/bad/not-absent.feat"                   | "MALFORMED_SYNTAX"        |
     | "packages/feat-core/fixtures/bad/not-bare-any.feat"                 | "MALFORMED_SYNTAX"        |
     | "packages/feat-core/fixtures/bad/not-block.feat"                    | "MALFORMED_SYNTAX"        |

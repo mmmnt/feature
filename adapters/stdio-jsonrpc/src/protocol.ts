@@ -31,7 +31,7 @@ export const DEFAULT_TIMEOUT_MS = 30_000;
 export type ExchangeFailure =
   | "INVALID_REQUEST" | "HOST_SPAWN_FAILED" | "HOST_EXITED" | "HOST_TIMEOUT" | "PROTOCOL_VIOLATION" | "HOST_ERROR"
   // SPEC-RPC-002: the shared host
-  | "HOST_CRASHED" | "PROTOCOL_MISMATCH" | "NAMESPACE_NOT_HONOURED" | "INVALID_CLOCK" | "HOST_CONFIG_MISMATCH";
+  | "HOST_CRASHED" | "PROTOCOL_MISMATCH" | "NAMESPACE_NOT_HONOURED" | "INVALID_CLOCK" | "INVALID_SEED" | "HOST_CONFIG_MISMATCH";
 
 /** What an exchange raises, as data: code, detail, and where the host stood. */
 export class ExchangeError extends Error {

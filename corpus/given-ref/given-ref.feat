@@ -1,0 +1,50 @@
+feat 1.0
+
+# Corpus exemplar #18 — the given's response as a matcher (ADR-0028) and the case's random seed (ADR-0029).
+# A keyed retry answers the id the first call minted (`@given.response.inviteId`); a second invite draws a
+# different code than the first (`not @given.response.code`); an indexed reference reads a named execute
+# (`@given[0].response.inviteId`). Under `random seed 42` the drawn code is a literal. The IR is
+# { matcher: "givenRef", path, index? } and given.random.
+
+spec SPEC-INV-001 "CreateInvite mints a one-use code"
+context Access
+aggregate Invite
+type command
+status agreed
+
+construct:
+  handler at features/create-invite/handler.ts
+  touches features/create-invite/**
+
+enforce:
+  mint an invite with a fresh code for a workspace
+
+contract:
+  input InviteInput
+  response InviteReceipt
+  event InviteEvent
+
+scenario "a keyed retry answers the first invite's id":
+  given:
+    execute CreateInvite { workspace: "w-1", key: "k-1" }
+  when: CreateInvite { workspace: "w-1", key: "k-1" }
+  predict success:
+    response 200 InviteReceipt { inviteId: @given.response.inviteId, code: absent }
+    log has []
+
+scenario "a second invite draws a different code":
+  given:
+    execute CreateInvite { workspace: "w-1" }
+    execute CreateInvite { workspace: "w-1" }
+  when: CreateInvite { workspace: "w-1" }
+  predict success:
+    response 201 InviteReceipt { code: not @given.response.code, inviteId: not @given[0].response.inviteId }
+    log has [ InviteCreated with InviteEvent { inviteId: @log[0].inviteId } ]
+
+scenario "a seeded invite draws a known code":
+  given:
+    random seed 42
+  when: CreateInvite { workspace: "w-1" }
+  predict success:
+    response 201 InviteReceipt { code: "ABCD-EFGH-JKLM" }
+    log has [ InviteCreated with InviteEvent { codeHash: any string } ]

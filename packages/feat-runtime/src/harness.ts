@@ -129,6 +129,8 @@ export interface HarnessCase {
   variables?: CaseVariable[];
   given?: {
     clock?: string;
+    /** ADR-0029: `random seed <n>`. */
+    random?: number;
     faults?: Fault[];
     context?: string[];
     executes?: { command: string; actor?: string; payload: Record<string, unknown> }[];
@@ -299,6 +301,11 @@ export async function createHarness(opts: { configPath: string; specPath?: strin
           `${c.anchor}: 'clock at' needs a response adapter with setClock() — the configured response adapter cannot honour it.`,
         );
     }
+    if (c.given?.random !== undefined && typeof response?.setSeed !== "function")
+      throw new HarnessConfigurationError(
+        "RANDOM_UNSUPPORTED",
+        `${c.anchor}: 'random seed' needs a response adapter with setSeed() — the configured response adapter cannot honour it.`,
+      );
     for (const f of c.given?.faults ?? []) {
       const problem = faultProblem(services.get(f.service), f);
       if (problem !== undefined)
@@ -342,6 +349,7 @@ export async function createHarness(opts: { configPath: string; specPath?: strin
       },
     });
 
+  let seededLastCase = false;
   async function runCase(rawCase: HarnessCase, inline: InlineData): Promise<void> {
     const gen = ++generation;
     currentAnchor = rawCase.anchor;
@@ -372,6 +380,14 @@ export async function createHarness(opts: { configPath: string; specPath?: strin
     const clock = c.given?.clock ?? null;
     if (response?.setClock) await response.setClock(clock);
     for (const adapter of services.values()) if (adapter.setClock) await adapter.setClock(clock);
+    // ADR-0029: the random seed reaches the response adapter when the case declares one, and null on the
+    // first case after a seeded one, so one case's seed never reaches the next. A case that never seeds
+    // sends nothing, so a host without setSeed runs every spec that does not use `random seed`.
+    const seed = c.given?.random ?? null;
+    if (seed !== null || seededLastCase) {
+      if (response?.setSeed) await response.setSeed(seed);
+      seededLastCase = seed !== null;
+    }
 
     // ── Preconditions: before the capture window (INV-9) ──
     // SPEC-RT-009 (ADR-0025): the seeds and executes run in written order; without one (an IR from an
@@ -385,6 +401,8 @@ export async function createHarness(opts: { configPath: string; specPath?: strin
     // Each execute may reference the one before it, so the reference target advances
     // as the preconditions run.
     let givenResponse: CapturedResponse | undefined;
+    // ADR-0028: every execute's response body, in written order, for `@given[i].response.<path>` matchers.
+    const givenBodies: unknown[] = [];
     for (const step of steps) {
       if (step === "seed") {
         const seed = seeds[nextSeed++]!;
@@ -398,6 +416,7 @@ export async function createHarness(opts: { configPath: string; specPath?: strin
         if (!response) throw new Error(`${c.anchor}: execute precondition requires a response adapter`);
         const payload = resolveGivenRefs(pre.payload, givenResponse, c.anchor);
         givenResponse = await response.invoke(pre.command, payload, pre.actor);
+        givenBodies.push(givenResponse.body);
       }
     }
 
@@ -472,6 +491,7 @@ export async function createHarness(opts: { configPath: string; specPath?: strin
       // Every surface's capture, before any of them is diffed — so `@<service>[i].<path>`
       // resolves the same whatever order the diffs run in.
       captures: capturedRecords,
+      given: givenBodies,
       inline,
     };
     if (c.prediction.response)

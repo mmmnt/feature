@@ -1,6 +1,6 @@
 // A recording stub for the harness probe (SPEC-RT-002). Every adapter in the fixture configs is this
 // module: it appends each call it receives to one shared log and answers what its options say.
-// Options: clock (bool, offers setClock), observes ({diff,state}, absent = a legacy adapter),
+// Options: clock (bool, offers setClock), seed (bool, offers setSeed; ADR-0029), observes ({diff,state}, absent = a legacy adapter),
 // state (records read() answers), faults (its catalog; absent = no fault() at all), observed (offers
 // firedFaults(); default true). The response stub's Ping { appends: n } makes n calls of AppendToStream
 // on the `store` service stub, each answering ok or the name of the fault that was consumed.
@@ -23,6 +23,7 @@ export function createAdapter(config) {
   const adapter = {};
   if (o.observes !== undefined) adapter.observes = o.observes;
   if (o.clock === true) adapter.setClock = async (c) => note(`clock:${key}=${c}`);
+  if (o.seed === true) adapter.setSeed = async (s) => note(`seed:${key}=${s}`);
   if (config.key === undefined) {
     // the response adapter. SPEC-RT-008: its setup() records the commands it was handed (none without a
     // context); with the invoke option setupThrows: <code> it throws an Error with that code.

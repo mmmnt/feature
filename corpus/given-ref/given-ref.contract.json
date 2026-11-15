@@ -1,0 +1,9 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-INV-001",
+  "schemas": {
+    "InviteInput": { "type": "object", "required": ["workspace"], "properties": { "workspace": { "type": "string" }, "key": { "type": "string" } } },
+    "InviteReceipt": { "type": "object", "properties": { "inviteId": { "type": "string" }, "code": { "type": "string" } } },
+    "InviteEvent": { "type": "object", "properties": { "inviteId": { "type": "string" }, "codeHash": { "type": "string" } } }
+  }
+}

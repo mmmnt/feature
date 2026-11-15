@@ -6,6 +6,7 @@ import type { ConfigErrorCode } from "./load-config.js";
 export type HarnessConfigurationCode =
   | ConfigErrorCode // a config createHarness cannot load keeps the loader's code (loadConfig's ERR body)
   | "CLOCK_UNSUPPORTED"
+  | "RANDOM_UNSUPPORTED"
   | "MODE_UNSUPPORTED"
   | "FAULT_UNSUPPORTED"
   | "FAULT_REQUIRES_SERIAL"

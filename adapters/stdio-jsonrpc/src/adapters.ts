@@ -73,6 +73,12 @@ abstract class Role {
     await this.call("setClock", { clock });
   }
 
+  async setSeed(seed: number | null): Promise<void> {
+    if (seed !== null && (!Number.isSafeInteger(seed) || seed < 0))
+      throw new ExchangeError("INVALID_SEED", `'${seed}' is not a whole number from 0 to 9007199254740991`, true);
+    await this.call("setSeed", { seed });
+  }
+
   reportedNamespace(): string | undefined {
     return this.echoed;
   }

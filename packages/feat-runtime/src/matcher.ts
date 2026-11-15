@@ -44,6 +44,11 @@ export interface MatchContext {
    * depends on which surface is diffed first.
    */
   captures?: Map<string, CapturedRecord[]> | undefined;
+  /**
+   * The response bodies of the given's executes, in written order — the subject of
+   * `@given.response.<path>` and `@given[i].response.<path>` (ADR-0028).
+   */
+  given?: unknown[] | undefined;
   inline: InlineData;
 }
 
@@ -146,6 +151,17 @@ export function applyMatcher(actual: unknown, present: boolean, m: Matcher, ctx:
         out.push(`${anchor}: expected ${ref} = ${JSON.stringify(expected)}, got ${present ? JSON.stringify(actual) : "(absent)"}`);
       return;
     }
+    case "givenRef": {
+      const resolution = resolveGivenRef(m, ctx);
+      if (!resolution.ok) {
+        out.push(`${anchor}: ${resolution.why}`);
+        return;
+      }
+      const expected = "value" in resolution ? resolution.value : undefined;
+      if (!present || !deepEqual(actual, expected))
+        out.push(`${anchor}: expected ${showGivenRef(m)} = ${JSON.stringify(expected)}, got ${present ? JSON.stringify(actual) : "(absent)"}`);
+      return;
+    }
     case "any": {
       if (!present) {
         out.push(`${anchor}: expected a value (any${m.ofType ? ` ${m.ofType}` : ""}), field is absent`);
@@ -206,6 +222,8 @@ function showOperand(m: Matcher): string {
       return m.index === undefined ? `@deliver.${m.path}` : `@deliver[${m.index}].${m.path}`;
     case "captureRef":
       return `@${m.service}[${m.index ?? 0}].${m.path}`;
+    case "givenRef":
+      return showGivenRef(m);
     case "any":
       return m.ofType ? `any ${m.ofType}` : "any";
     case "regex":
@@ -250,6 +268,8 @@ function resolveOperand(m: Matcher, ctx: MatchContext): Resolution {
         ? { ok: false, why: `${ref} resolved to nothing — that field is absent on the captured record` }
         : { ok: true, value };
     }
+    case "givenRef":
+      return resolveGivenRef(m, ctx);
     case "placeholder":
       return { ok: false, why: `unresolved placeholder '<${m.name}>' reached the runtime (derive bug)` };
     case "regex":
@@ -259,6 +279,23 @@ function resolveOperand(m: Matcher, ctx: MatchContext): Resolution {
     default:
       return { ok: true };
   }
+}
+
+
+/** Where a `@given` reference points (ADR-0028): the body, or why it cannot resolve. */
+function resolveGivenRef(m: { path: string; index?: number }, ctx: MatchContext): Resolution {
+  const bodies = ctx.given ?? [];
+  const ref = showGivenRef(m);
+  if (bodies.length === 0) return { ok: false, why: `${ref} resolved to nothing — the given ran no execute` };
+  const index = m.index ?? bodies.length - 1;
+  if (index < 0 || index >= bodies.length) return { ok: false, why: `${ref} resolved to nothing — the given ran ${bodies.length} execute(s)` };
+  const body = bodies[index];
+  const value = typeof body === "object" && body !== null ? pathGet(body as Record<string, unknown>, m.path) : undefined;
+  return value === undefined ? { ok: false, why: `${ref} resolved to nothing — that field is absent on the response` } : { ok: true, value };
+}
+
+function showGivenRef(m: { path: string; index?: number }): string {
+  return m.index === undefined ? `@given.response.${m.path}` : `@given[${m.index}].response.${m.path}`;
 }
 
 const REFUSED_OPERANDS = new Set(["absent", "not", "nested", "goldenFixture"]);

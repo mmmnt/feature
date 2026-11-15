@@ -498,6 +498,12 @@
           "type": "string",
           "description": "ISO-8601 timestamp freezing scenario time (ADR-0012); v1 honored by the handler adapter only."
         },
+        "random": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "`random seed <n>` (ADR-0029): the seed for the system's random source in this case."
+        },
         "context": {
           "type": "array",
           "items": {
@@ -836,6 +842,27 @@
               "type": "integer",
               "minimum": 0,
               "description": "Which record captured on that service, in CAPTURE order. Defaults to 0."
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "matcher",
+            "path"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "matcher": {
+              "const": "givenRef"
+            },
+            "path": {
+              "type": "string"
+            },
+            "index": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Which execute of the given, 0-based in written order (ADR-0025). Absent: the last (ADR-0028)."
             }
           }
         },

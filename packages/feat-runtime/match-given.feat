@@ -1,9 +1,10 @@
 feat 1.0
 
-# SPEC-RT-012 (DRAFT) — the runtime evaluates `@given.response.<path>` and `@given[i].response.<path>` as
-# matchers (ADR-0028 draft; requested by flmnt, founder ruling 00fd1773, 2026-11-14, "Ask Feature for it").
+# SPEC-RT-012 — the runtime evaluates `@given.response.<path>` and `@given[i].response.<path>` as
+# matchers (ADR-0028; requested by flmnt, founder rulings 00fd1773 "Ask Feature for it" and 5f05d5e1 "Agree as drafted",
+# 2026-11-14).
 # Today the reference is input-side only, so a prediction cannot say a retry answers the id the first call
-# minted, or that a second call draws a different secret. SPEC-CORE-001 (to be amended with ADR-0028) parses
+# minted, or that a second call draws a different secret. SPEC-CORE-001 (amended with ADR-0028) parses
 # the reference in a value block to { matcher: "givenRef", index?, path }; this spec makes applyMatcher
 # evaluate it, alone and as the operand of `not` (ADR-0027).
 #
@@ -23,7 +24,7 @@ spec SPEC-RT-012 "Matcher: a reference to the given's response"
 context Toolchain
 aggregate Runtime
 type infrastructure
-status draft
+status agreed
 
 construct:
   handler at packages/feat-runtime/src/matcher.ts
@@ -34,7 +35,7 @@ construct:
   needs SPEC-RT-011
   Types (feat-types): Matcher gains { matcher: "givenRef"; index?: number; path: string }.
   applyMatcher on givenRef: resolve the body of given[index] (index absent: the last); equal passes, else one
-  violation "<anchor>: expected <shown> (= <resolved as JSON>), got <value as JSON>". Unresolvable: one
+  violation "<anchor>: expected <shown> = <resolved as JSON>, got <value as JSON>" (got "(absent)" for an absent field). Unresolvable: one
   violation "<anchor>: <shown> resolved to nothing — <why>", <why> one of "the given ran no execute",
   "the given ran <n> execute(s)" for an index out of range, "that field is absent on the response".
   <shown> is @given.response.<path> without an index, @given[<i>].response.<path> with one.
@@ -58,7 +59,7 @@ scenario "a given reference passes on the value the last execute answered":
 scenario "a given reference fails on a different value, naming the reference and its value":
   when: MatchValue { value: "inv-2", matcher: { matcher: "givenRef", path: "inviteId" }, given: [ { inviteId: "inv-1" } ] }
   predict success:
-    response OK MatchResult { outcome: "failed", count: 1, violation: "a: expected @given.response.inviteId (= \"inv-1\"), got \"inv-2\"" }
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a: expected @given.response.inviteId = \"inv-1\", got \"inv-2\"" }
     filesystem has []
 
 scenario "an indexed given reference reads that execute, not the last":

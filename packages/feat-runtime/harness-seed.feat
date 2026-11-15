@@ -1,0 +1,91 @@
+feat 1.0
+
+# SPEC-RT-013 — the harness delivers a case's random seed (founder ruling 5f05d5e1, 2026-11-14, "Seedable
+# randomness"; ADR-0029). A system that draws a secret (an invite code) or an id at random cannot be predicted
+# by a literal, so a spec could only say `any string`. `random seed <n>` in a given makes the system's random
+# source deterministic for that case: the harness hands the seed to the response adapter's optional
+# setSeed(seed), which a spec host honours (SPEC-RPC-002 carries it over the Feat Host Protocol). The seed is
+# sent only for a case that declares one, and null on the first case after one, so one case's seed never
+# reaches the next and an adapter or host without setSeed runs every spec that does not seed.
+#
+# Driven through RunHarnessCase (SPEC-RT-002's probe) with seed.config.json: clock.config.json whose
+# response stub also offers setSeed, recorded as seed:response=<n>; no-clock-response.config.json has none.
+
+spec SPEC-RT-013 "Harness: the case's random seed"
+context Toolchain
+aggregate Runtime
+type infrastructure
+status agreed
+
+construct:
+  handler at packages/feat-runtime/src/harness.ts
+  touches packages/feat-runtime/**
+  touches packages/feat-types/**
+  touches packages/feat-core/**
+  needs SPEC-RT-002
+  Types (feat-types): Given gains `random?: number`; FeatResponseAdapter and FeatServiceAdapter gain
+  `setSeed?(seed: number | null): Promise<void>`.
+  Check, before any adapter call: a case with `given.random` and a response adapter without setSeed is refused
+  RANDOM_UNSUPPORTED (HarnessConfigurationError) naming the response adapter.
+  Deliver, after the clock: setSeed(given.random) to the response adapter when the case has a seed; setSeed(null)
+  on a case without one only when the previous case of this harness sent a seed; otherwise no call.
+
+enforce:
+  deliver a case's random seed to the response adapter after the clock
+  unseed with null on the first case after a seeded one, so a seed never leaks into the next case
+  send nothing to an adapter on a case that neither seeds nor follows a seeded case
+  rejects RANDOM_UNSUPPORTED when a case with random seed meets a response adapter that cannot honour it
+
+contract:
+  input RunInput
+  response RunResult
+  error HarnessError
+
+scenario "random seed reaches the response adapter after the clock and before anything is invoked":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/seed.config.json"
+    cases: [ { anchor: "c1", name: "c1", given: { random: 42 }, when: { command: "Ping", payload: {} }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } } ]
+  }
+  predict success:
+    response OK RunResult {
+      outcome: "passed"
+      calls: "reset:store clock:response=null clock:store=null seed:response=42 start:store invoke:Ping stop:store"
+    }
+    filesystem has []
+
+scenario "the case after a seeded one is unseeded with null, and a later unseeded case sends nothing":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/seed.config.json"
+    cases: [
+      { anchor: "c1", name: "c1", given: { random: 7 }, when: { command: "Ping", payload: {} }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } },
+      { anchor: "c2", name: "c2", when: { command: "Ping", payload: {} }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } },
+      { anchor: "c3", name: "c3", when: { command: "Ping", payload: {} }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } }
+    ]
+  }
+  predict success:
+    response OK RunResult {
+      outcome: "passed"
+      calls: "reset:store clock:response=null clock:store=null seed:response=7 start:store invoke:Ping stop:store reset:store clock:response=null clock:store=null seed:response=null start:store invoke:Ping stop:store reset:store clock:response=null clock:store=null start:store invoke:Ping stop:store"
+    }
+    filesystem has []
+
+scenario "a case without random seed needs no seed hook":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/no-clock-response.config.json"
+    cases: [ { anchor: "c1", name: "c1", when: { command: "Ping", payload: {} }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } } ]
+  }
+  predict success:
+    response OK RunResult {
+      outcome: "passed"
+      calls: "reset:store start:store invoke:Ping stop:store"
+    }
+    filesystem has []
+
+scenario "random seed against a response adapter that cannot honour it is refused before any effect":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/no-clock-response.config.json"
+    cases: [ { anchor: "c1", name: "c1", given: { random: 42 }, when: { command: "Ping", payload: {} }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } } ]
+  }
+  predict rejection RANDOM_UNSUPPORTED:
+    response ERR HarnessError { code: "RANDOM_UNSUPPORTED", calls: "", detail: matching "response" }
+    filesystem has []
