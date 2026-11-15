@@ -195,6 +195,10 @@ const AGENT_FILE = path.join(HERE, "peer-agent.cjs");
 // The peer's client install is made when the probe loads, not inside the first case, so a cold install (npm in a
 // container, while the other spec files do the same) is not charged to a case's timeout.
 // The host's install carries only the host's binding: the peer needs the linux build of the pinned client.
+// The KurrentDB node starts while the peer client installs: both are slow under load and neither needs the other, so
+// the suite's beforeAll waits for the longer of the two, not their sum. The promise is the memoized one awaited at the
+// end of this module; the catch only keeps an early failure from being reported as unhandled before that await.
+kurrent().catch(() => {});
 await ensurePeerInstall({
   dir: PEER_DEPS,
   pkg: "@kurrent/kurrentdb-client",
