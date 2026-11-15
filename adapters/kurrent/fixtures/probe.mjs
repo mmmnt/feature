@@ -14,7 +14,7 @@
 //                                .feature/kurrent-peer (the host's install carries only the host's binding)
 // Only containers this probe created, by name, are ever touched. Fixture users: admin (the instrument and
 // the system's default), `writer` (non-admin: the system that an ACL can deny) and `reader` (cannot read $all).
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
@@ -53,9 +53,10 @@ const isTransport = (o) => TRANSPORT_TYPES.has(o.type) || TRANSPORT_CODES.has(o.
 const created = [];
 let hooked = false;
 
-function docker(args) {
-  return execFileSync("docker", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
-}
+// Every docker call a worker makes is asynchronous (docker-async.mjs), the start-up ones too: the environment starts
+// while the probe module loads inside a vitest worker, and under load one `docker run` takes seconds; a worker that
+// does not turn its event loop for 60 s misses vitest's RPC timeout ("Timeout calling onTaskUpdate"). The one
+// synchronous call left is the removal on exit, where no event loop runs any more.
 
 function removeAll() {
   // One call for every container this probe created, so a worker killed mid-cleanup cannot leave half.
@@ -78,11 +79,11 @@ function hook() {
 function start(name, args) {
   hook();
   created.push(name);
-  return docker(["run", "-d", ...OWNER, "--name", name, ...args]);
+  return dockerAsync(["run", "-d", ...OWNER, "--name", name, ...args]);
 }
 
-function hostPort(name, inner) {
-  return Number(docker(["port", name, `${inner}/tcp`]).split("\n")[0].split(":").pop());
+async function hostPort(name, inner) {
+  return Number((await dockerAsync(["port", name, `${inner}/tcp`])).split("\n")[0].split(":").pop());
 }
 
 async function until(what, fn, ms = 60_000) {
@@ -161,14 +162,14 @@ function kurrent() {
     for (let attempt = 0; attempt < 3 && !published; attempt++) {
       const free = await freePort();
       try {
-        run(["-p", `127.0.0.1:${free}:2113`, "-p", `[::1]:${free}:2113`]);
+        await run(["-p", `127.0.0.1:${free}:2113`, "-p", `[::1]:${free}:2113`]);
         published = true;
       } catch {
-        spawnSync("docker", ["rm", "-f", "-v", name], { stdio: "ignore" });
+        await dockerAsync(["rm", "-f", "-v", name]).catch(() => {});
       }
     }
-    if (!published) run(["-p", "127.0.0.1:0:2113"]);
-    const port = hostPort(name, 2113);
+    if (!published) await run(["-p", "127.0.0.1:0:2113"]);
+    const port = await hostPort(name, 2113);
     // A fresh client per attempt: one that failed while the node was starting keeps its failed channel.
     await until("KurrentDB", async () => {
       const probeClient = KurrentDBClient.connectionString(clientString(port, USERS.admin));
@@ -212,10 +213,10 @@ function proxyEnvironment() {
     const kdb = await kurrent();
     const tox = `feat-kurrent-test-tox-${kdb.id}`;
     const peer = `feat-kurrent-test-peer-${kdb.id}`;
-    start(tox, ["--rm", "-p", "127.0.0.1:0:8474", "-p", `127.0.0.1:0:${CONTROL_PORT}`, TOXIPROXY_IMAGE, "-host=0.0.0.0", "-proxy-metrics"]);
-    start(peer, ["--rm", `--network=container:${tox}`, "-v", `${PEER_DEPS}:/deps:ro`, "-v", `${AGENT_FILE}:/agent.cjs:ro`, NODE_IMAGE, "node", "/agent.cjs"]);
-    const api = `http://127.0.0.1:${hostPort(tox, 8474)}`;
-    const controlPort = hostPort(tox, CONTROL_PORT);
+    await start(tox, ["--rm", "-p", "127.0.0.1:0:8474", "-p", `127.0.0.1:0:${CONTROL_PORT}`, TOXIPROXY_IMAGE, "-host=0.0.0.0", "-proxy-metrics"]);
+    await start(peer, ["--rm", `--network=container:${tox}`, "-v", `${PEER_DEPS}:/deps:ro`, "-v", `${AGENT_FILE}:/agent.cjs:ro`, NODE_IMAGE, "node", "/agent.cjs"]);
+    const [apiPort, controlPort] = await Promise.all([hostPort(tox, 8474), hostPort(tox, CONTROL_PORT)]);
+    const api = `http://127.0.0.1:${apiPort}`;
     await until("the Toxiproxy API", async () => {
       const r = await fetch(`${api}/version`);
       if (!r.ok) throw new Error(String(r.status));

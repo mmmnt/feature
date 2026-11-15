@@ -10,7 +10,8 @@
 // refused or reset connection; in the shared namespace it sees what a real client of the product would see.
 // The adapter's own clients use the published port directly, never the proxy. Only containers this probe
 // created, by name, are ever touched. Credentials are fake and static; no real AWS endpoint is ever named.
-import { execFileSync, spawn, spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { dockerAsync } from "../../fault-proxy/fixtures/docker-async.mjs";
 import { createHash, randomBytes } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
@@ -66,9 +67,11 @@ const created = [];
 let hooked = false;
 let bundleDir;
 
-function docker(args) {
-  return execFileSync("docker", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
-}
+// Every docker call a worker makes is asynchronous (docker-async.mjs), the start-up ones too: the environment starts
+// while the probe module loads inside a vitest worker, and under load one `docker run` takes seconds; a worker that
+// does not turn its event loop for 60 s misses vitest's RPC timeout ("Timeout calling onTaskUpdate"). The one
+// synchronous call left is the removal on exit, where no event loop runs any more.
+const docker = dockerAsync;
 
 function removeAll() {
   // One call for every container this probe created, so a worker killed mid-cleanup cannot leave half.
@@ -117,8 +120,8 @@ async function until(what, fn) {
   throw new Error(`${what} did not come up: ${last}`);
 }
 
-function hostPort(name, inner) {
-  return Number(docker(["port", name, `${inner}/tcp`]).split("\n")[0].split(":").pop());
+async function hostPort(name, inner) {
+  return Number((await docker(["port", name, `${inner}/tcp`])).split("\n")[0].split(":").pop());
 }
 
 const KEY = (name, type) => [{ AttributeName: name, AttributeType: type }];
@@ -173,11 +176,11 @@ function environment(withProxy) {
         const names = withProxy ? [ddb, tox, peer] : [ddb];
         names.forEach(track);
         watchdog(names);
-        docker([
+        await docker([
           "run", "-d", "--rm", ...OWNER, "--name", ddb, "-p", "127.0.0.1:0:8000", ...(withProxy ? ["-p", "127.0.0.1:0:8474"] : []),
           DYNAMODB_IMAGE, "-jar", "DynamoDBLocal.jar", "-inMemory", "-sharedDb",
         ]);
-        const endpoint = `http://127.0.0.1:${hostPort(ddb, 8000)}`;
+        const endpoint = `http://127.0.0.1:${await hostPort(ddb, 8000)}`;
         const client = sysClient(endpoint);
         await until("DynamoDB Local", () => client.send(new ScanCommand({ TableName: "absent" })).catch((e) => {
           if (e.name !== "ResourceNotFoundException") throw e;
@@ -185,8 +188,8 @@ function environment(withProxy) {
         await createTables(client);
         const env = { ddb, endpoint, client, tox: undefined, peer: undefined, api: undefined };
         if (withProxy) {
-          docker(["run", "-d", "--rm", ...OWNER, "--name", tox, `--network=container:${ddb}`, TOXIPROXY_IMAGE, "-host=0.0.0.0"]);
-          const api = `http://127.0.0.1:${hostPort(ddb, 8474)}`;
+          await docker(["run", "-d", "--rm", ...OWNER, "--name", tox, `--network=container:${ddb}`, TOXIPROXY_IMAGE, "-host=0.0.0.0"]);
+          const api = `http://127.0.0.1:${await hostPort(ddb, 8474)}`;
           await until("the Toxiproxy API", async () => {
             const r = await fetch(`${api}/version`);
             if (!r.ok) throw new Error(String(r.status));
@@ -202,9 +205,9 @@ function environment(withProxy) {
             outfile: path.join(bundleDir, "put.cjs"),
             logLevel: "silent",
           });
-          docker(["create", ...OWNER, "--name", peer, `--network=container:${ddb}`, NODE_IMAGE, "sleep", "900"]);
-          docker(["cp", path.join(bundleDir, "put.cjs"), `${peer}:/put.cjs`]);
-          docker(["start", peer]);
+          await docker(["create", ...OWNER, "--name", peer, `--network=container:${ddb}`, NODE_IMAGE, "sleep", "900"]);
+          await docker(["cp", path.join(bundleDir, "put.cjs"), `${peer}:/put.cjs`]);
+          await docker(["start", peer]);
           Object.assign(env, { tox, peer, api });
         }
         return env;
@@ -291,7 +294,7 @@ async function run(input, { transport }) {
           const [pk, sk = "1", v = "x"] = rest;
           if (transport) {
             const listen = (await (await fetch(`${env.api}/proxies/feat-${ns}-${PRODUCT}`)).json()).listen;
-            const out = docker([
+            const out = await docker([
               "exec", env.peer, "node", "/put.cjs", listen.slice(listen.lastIndexOf(":") + 1), tableName, `${ns}#${pk}`, sk, v,
             ]);
             trace.push(out === "ok" ? `put:${label}` : `put:${label}!${out === "TRANSPORT_FAILURE" ? out : `UNEXPECTED(${out})`}`);

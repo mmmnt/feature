@@ -4,7 +4,8 @@
 //   feat-kms-test-kms-<id>   nsmithuk/local-kms, pinned by digest, one random loopback port published
 // Fake static credentials and a localhost endpoint only; nothing here reaches AWS.
 // Only containers this probe created, by name, are ever touched.
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
+import { dockerAsync } from "../../fault-proxy/fixtures/docker-async.mjs";
 import { createHash, randomBytes } from "node:crypto";
 import net from "node:net";
 import path from "node:path";
@@ -43,9 +44,10 @@ const UNREACHABLE = "http://127.0.0.1:1";
 const created = [];
 let hooked = false;
 
-function docker(args) {
-  return execFileSync("docker", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
-}
+// Every docker call a worker makes is asynchronous (docker-async.mjs), the start-up ones too: the environment starts
+// while the probe module loads inside a vitest worker, and under load one `docker run` takes seconds; a worker that
+// does not turn its event loop for 60 s misses vitest's RPC timeout ("Timeout calling onTaskUpdate"). The one
+// synchronous call left is the removal on exit, where no event loop runs any more.
 
 function removeAll() {
   const names = created.splice(0);
@@ -67,15 +69,15 @@ function hook() {
 export function start(name, args) {
   hook();
   created.push(name);
-  return docker(["run", "-d", ...OWNER, "--name", name, ...args]);
+  return dockerAsync(["run", "-d", ...OWNER, "--name", name, ...args]);
 }
 
-export function hostPort(name, inner) {
-  return Number(docker(["port", name, `${inner}/tcp`]).split("\n")[0].split(":").pop());
+export async function hostPort(name, inner) {
+  return Number((await dockerAsync(["port", name, `${inner}/tcp`])).split("\n")[0].split(":").pop());
 }
 
 export function containerIp(name) {
-  return docker(["inspect", "--format", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", name]);
+  return dockerAsync(["inspect", "--format", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", name]);
 }
 
 export async function until(what, fn) {
@@ -102,8 +104,8 @@ export function kmsEnvironment() {
   envPromise ??= (async () => {
     const id = randomBytes(4).toString("hex");
     const name = `feat-kms-test-kms-${id}`;
-    start(name, ["--rm", "-p", "127.0.0.1:0:8080", LOCAL_KMS_IMAGE]);
-    const endpoint = `http://127.0.0.1:${hostPort(name, 8080)}`;
+    await start(name, ["--rm", "-p", "127.0.0.1:0:8080", LOCAL_KMS_IMAGE]);
+    const endpoint = `http://127.0.0.1:${await hostPort(name, 8080)}`;
     const probe = systemClient(endpoint);
     const { ListKeysCommand } = await import("@aws-sdk/client-kms");
     await until("local-kms", () => probe.send(new ListKeysCommand({ Limit: 1 })));
@@ -323,16 +325,16 @@ function transportEnvironment() {
     const id = randomBytes(4).toString("hex");
     const tox = `feat-kms-test-tox-${id}`;
     const peer = `feat-kms-test-peer-${id}`;
-    start(tox, ["--rm", "-p", "127.0.0.1:0:8474", "-p", `127.0.0.1:0:${CONTROL_PORT}`, TOXIPROXY_IMAGE, "-host=0.0.0.0", "-proxy-metrics"]);
-    start(peer, ["--rm", `--network=container:${tox}`, "-v", `${ROOT}:${ROOT}:ro`, "-e", `FEAT_KMS_CONTROL_PORT=${CONTROL_PORT}`, NODE_IMAGE, "node", `${ROOT}/adapters/kms/fixtures/system-agent.mjs`]);
-    const api = `http://127.0.0.1:${hostPort(tox, 8474)}`;
-    const controlPort = hostPort(tox, CONTROL_PORT);
+    await start(tox, ["--rm", "-p", "127.0.0.1:0:8474", "-p", `127.0.0.1:0:${CONTROL_PORT}`, TOXIPROXY_IMAGE, "-host=0.0.0.0", "-proxy-metrics"]);
+    await start(peer, ["--rm", `--network=container:${tox}`, "-v", `${ROOT}:${ROOT}:ro`, "-e", `FEAT_KMS_CONTROL_PORT=${CONTROL_PORT}`, NODE_IMAGE, "node", `${ROOT}/adapters/kms/fixtures/system-agent.mjs`]);
+    const [apiPort, controlPort] = await Promise.all([hostPort(tox, 8474), hostPort(tox, CONTROL_PORT)]);
+    const api = `http://127.0.0.1:${apiPort}`;
     await until("the Toxiproxy API", async () => {
       const r = await fetch(`${api}/version`);
       if (!r.ok) throw new Error(String(r.status));
     });
     await until("the system agent", () => control(controlPort, "ping"));
-    return { api, controlPort, upstream: `${containerIp(kms.name)}:8080`, endpoint: kms.endpoint };
+    return { api, controlPort, upstream: `${await containerIp(kms.name)}:8080`, endpoint: kms.endpoint };
   })();
   return transportPromise;
 }

@@ -12,7 +12,7 @@
 //   feat-neo4j-test-install-<id> a one-off container that installs the pinned driver for linux into
 //                                .feature/neo4j-peer
 // Only containers this probe created, by name, are ever touched.
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import net from "node:net";
@@ -46,8 +46,17 @@ const TRANSPORT_CODES = new Set(["ServiceUnavailable", "SessionExpired"]);
 const created = [];
 let hooked = false;
 
+// Every docker call a worker makes is asynchronous (docker-async.mjs), the start-up ones too: the environment starts
+// while the probe module loads inside a vitest worker, and under load one `docker run` takes seconds; a worker that
+// does not turn its event loop for 60 s misses vitest's RPC timeout ("Timeout calling onTaskUpdate"). The one
+// synchronous call left is the removal on exit, where no event loop runs any more.
 function docker(args, env) {
-  return execFileSync("docker", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], ...(env ? { env: { ...process.env, ...env } } : {}) }).trim();
+  return new Promise((resolve, reject) => {
+    execFile("docker", args, { encoding: "utf8", ...(env ? { env: { ...process.env, ...env } } : {}) }, (error, stdout, stderr) => {
+      if (error) reject(new Error(`docker ${args.slice(0, 2).join(" ")} failed: ${String(stderr).trim() || error.message}`));
+      else resolve(stdout.trim());
+    });
+  });
 }
 
 function removeAll() {
@@ -74,8 +83,8 @@ function start(name, args, env) {
   return docker(["run", "-d", ...OWNER, "--name", name, ...args], env);
 }
 
-function hostPort(name, inner) {
-  return Number(docker(["port", name, `${inner}/tcp`]).split("\n")[0].split(":").pop());
+async function hostPort(name, inner) {
+  return Number((await docker(["port", name, `${inner}/tcp`])).split("\n")[0].split(":").pop());
 }
 
 function freePort() {
@@ -110,7 +119,7 @@ function neo4jServer() {
     const name = `feat-neo4j-test-db-${id}`;
     const password = randomBytes(18).toString("hex");
     const port = await freePort();
-    start(
+    await start(
       name,
       [
         "--rm",
@@ -166,10 +175,10 @@ function proxyEnvironment() {
     const db = await neo4jServer();
     const tox = `feat-neo4j-test-tox-${db.id}`;
     const peer = `feat-neo4j-test-peer-${db.id}`;
-    start(tox, ["--rm", "-p", "127.0.0.1:0:8474", "-p", `127.0.0.1:0:${CONTROL_PORT}`, TOXIPROXY_IMAGE, "-host=0.0.0.0", "-proxy-metrics"]);
-    start(peer, ["--rm", `--network=container:${tox}`, "-v", `${PEER_DEPS}:/deps:ro`, "-v", `${AGENT_FILE}:/agent.cjs:ro`, NODE_IMAGE, "node", "/agent.cjs"]);
-    const api = `http://127.0.0.1:${hostPort(tox, 8474)}`;
-    const controlPort = hostPort(tox, CONTROL_PORT);
+    await start(tox, ["--rm", "-p", "127.0.0.1:0:8474", "-p", `127.0.0.1:0:${CONTROL_PORT}`, TOXIPROXY_IMAGE, "-host=0.0.0.0", "-proxy-metrics"]);
+    await start(peer, ["--rm", `--network=container:${tox}`, "-v", `${PEER_DEPS}:/deps:ro`, "-v", `${AGENT_FILE}:/agent.cjs:ro`, NODE_IMAGE, "node", "/agent.cjs"]);
+    const [apiPort, controlPort] = await Promise.all([hostPort(tox, 8474), hostPort(tox, CONTROL_PORT)]);
+    const api = `http://127.0.0.1:${apiPort}`;
     await until("the Toxiproxy API", async () => {
       const r = await fetch(`${api}/version`);
       if (!r.ok) throw new Error(String(r.status));

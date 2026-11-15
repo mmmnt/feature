@@ -10,7 +10,7 @@
 // hides a TCP reset behind a plain close; in the shared namespace the client sees what a real client
 // of the product would: ECONNREFUSED, ECONNRESET, silence.
 // Only containers this probe created, by name, are ever touched.
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import net from "node:net";
 import { createFaultProxy, FaultProxyError } from "../src/index.ts";
@@ -63,9 +63,10 @@ net.createServer((c) => {
 const created = [];
 let hooked = false;
 
-function docker(args) {
-  return execFileSync("docker", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
-}
+// Every docker call a worker makes is asynchronous (docker-async.mjs), the start-up ones too: the environment starts
+// while the probe module loads inside a vitest worker, and under load one `docker run` takes seconds; a worker that
+// does not turn its event loop for 60 s misses vitest's RPC timeout ("Timeout calling onTaskUpdate"). The one
+// synchronous call left is the removal on exit, where no event loop runs any more.
 
 function removeAll() {
   // One call for every container this probe created, so a worker killed mid-cleanup cannot leave half.
@@ -88,7 +89,7 @@ function hook() {
 function start(name, args) {
   hook();
   created.push(name);
-  return docker(["run", "-d", ...OWNER, "--name", name, ...args]);
+  return dockerAsync(["run", "-d", ...OWNER, "--name", name, ...args]);
 }
 
 let envPromise;
@@ -124,8 +125,8 @@ function control(port, line) {
   });
 }
 
-function hostPort(name, inner) {
-  return Number(docker(["port", name, `${inner}/tcp`]).split("\n")[0].split(":").pop());
+async function hostPort(name, inner) {
+  return Number((await dockerAsync(["port", name, `${inner}/tcp`])).split("\n")[0].split(":").pop());
 }
 
 function environment() {
@@ -134,11 +135,12 @@ function environment() {
     const tox = `feat-fpx-test-tox-${id}`;
     const peer = `feat-fpx-test-peer-${id}`;
     const broker = `feat-fpx-test-broker-${id}`;
-    start(tox, ["--rm", "-p", "127.0.0.1:0:8474", "-p", `127.0.0.1:0:${CONTROL_PORT}`, TOXIPROXY_IMAGE, "-host=0.0.0.0", "-proxy-metrics"]);
-    start(peer, ["--rm", `--network=container:${tox}`, NODE_IMAGE, "node", "-e", AGENT]);
-    start(broker, [NODE_IMAGE, "sleep", "900"]);
-    const apiPort = hostPort(tox, 8474);
-    const controlPort = hostPort(tox, CONTROL_PORT);
+    await start(tox, ["--rm", "-p", "127.0.0.1:0:8474", "-p", `127.0.0.1:0:${CONTROL_PORT}`, TOXIPROXY_IMAGE, "-host=0.0.0.0", "-proxy-metrics"]);
+    await Promise.all([
+      start(peer, ["--rm", `--network=container:${tox}`, NODE_IMAGE, "node", "-e", AGENT]),
+      start(broker, [NODE_IMAGE, "sleep", "900"]),
+    ]);
+    const [apiPort, controlPort] = await Promise.all([hostPort(tox, 8474), hostPort(tox, CONTROL_PORT)]);
     const api = `http://127.0.0.1:${apiPort}`;
     await until("the Toxiproxy API", async () => {
       const r = await fetch(`${api}/version`);
