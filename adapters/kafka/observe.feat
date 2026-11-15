@@ -41,6 +41,15 @@ feat 1.0
 # produces returned, take the last stable offset of every partition of every namespaced topic and
 # consume to it. An open transaction holds the last stable offset below the high watermark, so a
 # gap between the two is an effect the adapter cannot see yet and settle declines.
+#
+# Amended 2026-11-14 (founder ruling "Fix the Kafka flake first"): the aborted-transaction scenario settles before it
+# stops, as the runtime does (SPEC-RT-002: convergence, then stopCapture). A transaction coordinator answers
+# commitTransaction / abortTransaction once the outcome is in its transaction log and writes the COMMIT / ABORT
+# markers to the data partitions afterwards (KIP-98). Until a partition holds its marker, the last stable offset stays
+# at the transaction's first record, so a committed transaction whose marker is not yet written looks, to the offsets,
+# exactly like an open one: stopCapture, which consumes to the current last stable offset and does not wait, may
+# return without it. Waiting for that gap to close is settle's job. Under load the scenario without settle failed with
+# `stop:a=0`.
 
 spec SPEC-ADPKFK-001 "Kafka adapter: namespaced capture, state, settle, reset and faults"
 context Toolchain
@@ -165,9 +174,9 @@ scenario "across partitions only each partition's order is reported":
     filesystem has []
 
 scenario "records of an aborted transaction are not captured, committed ones are":
-  when: ObserveKafka { script: "setup:a start:a txabort:a:orders:Lost txcommit:a:orders:Kept stop:a" }
+  when: ObserveKafka { script: "setup:a start:a txabort:a:orders:Lost txcommit:a:orders:Kept settle:a stop:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a start:a txabort:a txcommit:a stop:a=1", last: "orders/Kept" }
+    response OK ObserveResult { trace: "setup:a start:a txabort:a txcommit:a settle:a=true stop:a=1", last: "orders/Kept" }
     filesystem has []
 
 scenario "a peek reports the window's records and consumes nothing":

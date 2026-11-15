@@ -31,6 +31,13 @@ the second**, so while any partition's two differ settle waits, then declines; o
 offset and vouches. Nothing is written to the product. It does not prove produces the system starts after its handler
 returned, nor acks=0 / unflushed producer buffers (the system's contract).
 
+"Open" includes a transaction that is already decided: the coordinator answers `commitTransaction` /
+`abortTransaction` once the outcome is in its transaction log and writes the COMMIT / ABORT markers to the data
+partitions afterwards (KIP-98). Until the marker is written the last stable offset stays at the transaction's first
+record, so a commit that has returned can still be invisible at read_committed. `stopCapture` and `peekCapture` read
+to the current last stable offset and do not wait; a window that must hold a transaction's records is settled first,
+which is what the runtime does (convergence before stopCapture).
+
 ## Namespace
 From the runner (SPEC-RT-006) as the config's `namespace`; there is no option. Topics are `<ns>.<topic>`. `reset`
 truncates (`deleteTopicRecords` to the high watermark) rather than deleting topics the system created, so topic
