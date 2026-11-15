@@ -1,6 +1,6 @@
 // `feat run` exits 2 when the run failed because the harness refused its configuration (README: exit 2
 // is a configuration error), and the refusal's code is in the output — vitest prints only the message.
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -11,29 +11,35 @@ const PKG = path.dirname(fileURLToPath(import.meta.url));
 const BIN = path.join(PKG, "bin/run.js");
 const ROOT = path.join(PKG, "fixtures/fault");
 
-function feat(args: string[]): { code: number; out: string } {
-  try {
-    const out = execFileSync("node", [BIN, ...args], { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-    return { code: 0, out };
-  } catch (e) {
-    const err = e as { status: number | null; stdout?: string; stderr?: string };
-    return { code: err.status ?? -1, out: `${err.stdout ?? ""}${err.stderr ?? ""}` };
-  }
+// The CLI runs asynchronously: a nested `feat run` takes 5 s on an idle host and far longer under load, which a
+// synchronous call would spend with this worker's event loop stopped, past vitest's 60 s worker RPC timeout
+// ("Timeout calling onTaskUpdate", every test passed).
+function cli(args: string[], opts: { cwd: string; env?: NodeJS.ProcessEnv }): Promise<{ code: number; out: string }> {
+  return new Promise((resolve) => {
+    execFile("node", [BIN, ...args], { cwd: opts.cwd, encoding: "utf8", env: opts.env ?? process.env, maxBuffer: 64 * 1024 * 1024 }, (error, stdout, stderr) => {
+      if (!error) resolve({ code: 0, out: stdout });
+      else resolve({ code: typeof error.code === "number" ? error.code : -1, out: `${stdout ?? ""}${stderr ?? ""}` });
+    });
+  });
+}
+
+function feat(args: string[]): Promise<{ code: number; out: string }> {
+  return cli(args, { cwd: ROOT });
 }
 
 describe("a harness configuration error during feat run", { timeout: 60_000 }, () => {
   afterAll(() => rmSync(path.join(ROOT, "specs/ping.test.ts"), { force: true }));
 
-  it("exits 2 and names its code (a fault the adapter does not offer)", () => {
-    expect(feat(["generate"]).code).toBe(0);
-    const r = feat(["run"]);
+  it("exits 2 and names its code (a fault the adapter does not offer)", async () => {
+    expect((await feat(["generate"])).code).toBe(0);
+    const r = await feat(["run"]);
     expect(r.code).toBe(2);
     expect(r.out).toContain("Configuration error (exit 2): [FAULT_UNSUPPORTED]");
   });
 
-  it("exits 2 when createHarness itself refuses, and the suite's teardown tolerates a harness never created", () => {
-    expect(feat(["generate"]).code).toBe(0);
-    const r = feat(["run", "--config", "feat.namespaced.config.json"]);
+  it("exits 2 when createHarness itself refuses, and the suite's teardown tolerates a harness never created", async () => {
+    expect((await feat(["generate"])).code).toBe(0);
+    const r = await feat(["run", "--config", "feat.namespaced.config.json"]);
     expect(r.code).toBe(2);
     expect(r.out).toContain("Configuration error (exit 2): [NAMESPACE_CONFIGURED]");
     expect(r.out).not.toContain("reading 'teardown'");
@@ -45,48 +51,42 @@ describe("a harness configuration error during feat run", { timeout: 60_000 }, (
 describe("a configuration error before any work exits 2 with its code", { timeout: 60_000 }, () => {
   const TIER = path.join(PKG, "fixtures/tier");
   // an overlay does not inherit `environment`, so this config names none; the process must not either
-  function featIn(args: string[], cwd = TIER, extraEnv: Record<string, string> = {}): { code: number; out: string } {
+  function featIn(args: string[], cwd = TIER, extraEnv: Record<string, string> = {}): Promise<{ code: number; out: string }> {
     const env = { ...process.env };
     delete env.ENVIRONMENT;
     delete env.FEAT_ENVIRONMENT;
     Object.assign(env, extraEnv);
-    try {
-      const out = execFileSync("node", [BIN, ...args], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env });
-      return { code: 0, out };
-    } catch (e) {
-      const err = e as { status: number | null; stdout?: string; stderr?: string };
-      return { code: err.status ?? -1, out: `${err.stdout ?? ""}${err.stderr ?? ""}` };
-    }
+    return cli(args, { cwd, env });
   }
 
-  it("feat run with no environment resolvable exits 2 with NO_ENVIRONMENT", () => {
-    const r = featIn(["run", "--config", "feat.no-environment.config.json"]);
+  it("feat run with no environment resolvable exits 2 with NO_ENVIRONMENT", async () => {
+    const r = await featIn(["run", "--config", "feat.no-environment.config.json"]);
     expect(r.code).toBe(2);
     expect(r.out).toContain("[NO_ENVIRONMENT]");
   });
-  it("feat report --evidence with no environment resolvable exits 2 with NO_ENVIRONMENT", () => {
-    const r = featIn(["report", "--evidence", "--config", "feat.no-environment.config.json"]);
+  it("feat report --evidence with no environment resolvable exits 2 with NO_ENVIRONMENT", async () => {
+    const r = await featIn(["report", "--evidence", "--config", "feat.no-environment.config.json"]);
     expect(r.code).toBe(2);
     expect(r.out).toContain("[NO_ENVIRONMENT]");
   });
-  it("feat diff with a config that does not exist exits 2 with CONFIG_NOT_FOUND", () => {
-    const r = featIn(["diff", "specs/ping.feat", "--config", "feat.nowhere.config.json"]);
+  it("feat diff with a config that does not exist exits 2 with CONFIG_NOT_FOUND", async () => {
+    const r = await featIn(["diff", "specs/ping.feat", "--config", "feat.nowhere.config.json"]);
     expect(r.code).toBe(2);
     expect(r.out).toContain("[CONFIG_NOT_FOUND]");
   });
-  it("feat diff with an overlay that drifts exits 2 with TIER_SPACE_MISMATCH", () => {
-    const r = featIn(["diff", "specs/ping.feat", "--config", "feat.drifting.config.json"]);
+  it("feat diff with an overlay that drifts exits 2 with TIER_SPACE_MISMATCH", async () => {
+    const r = await featIn(["diff", "specs/ping.feat", "--config", "feat.drifting.config.json"]);
     expect(r.code).toBe(2);
     expect(r.out).toContain("[TIER_SPACE_MISMATCH]");
   });
-  it("feat diff of a spec that does not parse stays exit 1 (a validation failure)", () => {
-    const r = featIn(["diff", "specs/no-such.feat", "--config", "feat.config.json"]);
+  it("feat diff of a spec that does not parse stays exit 1 (a validation failure)", async () => {
+    const r = await featIn(["diff", "specs/no-such.feat", "--config", "feat.config.json"]);
     expect(r.code).toBe(1);
   });
   // the schema adapter is named by the config and loaded through the same door as every adapter
   for (const cmd of ["generate", "verify"]) {
-    it(`feat ${cmd} exits 2 with INVALID_CONFIG when schemas.adapter cannot be resolved`, () => {
-      const r = featIn([cmd], path.join(PKG, "fixtures/schema-bundle-missing-adapter"));
+    it(`feat ${cmd} exits 2 with INVALID_CONFIG when schemas.adapter cannot be resolved`, async () => {
+      const r = await featIn([cmd], path.join(PKG, "fixtures/schema-bundle-missing-adapter"));
       expect(r.code).toBe(2);
       expect(r.out).toContain("[INVALID_CONFIG]");
       expect(r.out).toContain("schemas.adapter");
@@ -96,18 +96,18 @@ describe("a configuration error before any work exits 2 with its code", { timeou
   // `feat run` generates in memory first. What fails there is told by its kind: a spec that does not parse and a
   // seed that violates its contract are validation failures (exit 1); an adapter the config cannot use is not.
   const RUN_ENV = { ENVIRONMENT: "spec" };
-  it("feat run exits 2 when schemas.adapter cannot be resolved", () => {
-    const r = featIn(["run"], path.join(PKG, "fixtures/schema-bundle-missing-adapter"), RUN_ENV);
+  it("feat run exits 2 when schemas.adapter cannot be resolved", async () => {
+    const r = await featIn(["run"], path.join(PKG, "fixtures/schema-bundle-missing-adapter"), RUN_ENV);
     expect(r.code).toBe(2);
     expect(r.out).toContain("[INVALID_CONFIG]");
   });
-  it("feat run stays exit 1 when a spec does not parse (a validation failure)", () => {
-    const r = featIn(["run"], path.join(PKG, "fixtures/generation-parse-error"), RUN_ENV);
+  it("feat run stays exit 1 when a spec does not parse (a validation failure)", async () => {
+    const r = await featIn(["run"], path.join(PKG, "fixtures/generation-parse-error"), RUN_ENV);
     expect(r.code).toBe(1);
     expect(r.out).toContain("Parse failed");
   });
-  it("feat run stays exit 1 when a seed violates its contract (a validation failure)", () => {
-    const r = featIn(["run"], path.join(PKG, "fixtures/seed/bad-record"), RUN_ENV);
+  it("feat run stays exit 1 when a seed violates its contract (a validation failure)", async () => {
+    const r = await featIn(["run"], path.join(PKG, "fixtures/seed/bad-record"), RUN_ENV);
     expect(r.code).toBe(1);
   });
 });
@@ -118,7 +118,7 @@ describe("a configuration error before any work exits 2 with its code", { timeou
 // it). The project is built in the temporary directory, so no parent directory of it holds a vitest; its
 // adapters link to the repository's. Stubs of npx, npm and pnpm come first on PATH and record any call.
 describe("feat run in a project without vitest", { timeout: 60_000 }, () => {
-  it("exits 2 with VITEST_NOT_INSTALLED, tells the user to add it, and fetches nothing", () => {
+  it("exits 2 with VITEST_NOT_INSTALLED, tells the user to add it, and fetches nothing", async () => {
     const tmp = mkdtempSync(path.join(tmpdir(), "feat-no-vitest-"));
     try {
       const project = path.join(tmp, "app");
@@ -142,18 +142,11 @@ describe("feat run in a project without vitest", { timeout: 60_000 }, () => {
         chmodSync(path.join(bin, name), 0o755);
       }
       const env = { ...process.env, ENVIRONMENT: "spec", PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}` };
-      const run = (args: string[]) => {
-        try {
-          return { code: 0, out: execFileSync("node", [BIN, ...args], { cwd: project, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env }) };
-        } catch (e) {
-          const err = e as { status: number | null; stdout?: string; stderr?: string };
-          return { code: err.status ?? -1, out: `${err.stdout ?? ""}${err.stderr ?? ""}` };
-        }
-      };
-      const g = run(["generate"]);
+      const run = (args: string[]) => cli(args, { cwd: project, env });
+      const g = await run(["generate"]);
       expect(g.out).toContain("generated");
       expect(g.code).toBe(0);
-      const r = run(["run"]);
+      const r = await run(["run"]);
       expect(r.out).toContain("Configuration error (exit 2): [VITEST_NOT_INSTALLED]");
       expect(r.out).toContain("add vitest as a dev dependency");
       expect(r.out).not.toContain("npm warn exec");

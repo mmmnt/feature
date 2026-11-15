@@ -165,5 +165,21 @@ if [ -z "$unowned" ] && [ "$run_sites" -ge 9 ]; then ok "every container a test 
 else bad "every container a test fixture starts carries the feat-test.owner-pid label" "calls read: $run_sites
 $unowned"; fi
 
+# No test process makes a synchronous docker call: one stops the worker's event loop, and one that outlasts vitest's
+# 60 s worker RPC timeout (a peer client's npm install in a container, an image pull) ends the run with "Timeout
+# calling onTaskUpdate", every test passed. The one exception is the exit-time cleanup (process.once("exit")), which
+# cannot await: `spawnSync("docker", ["rm", "-f", "-v", ...names]` with the names it created. Counted, so a scan that
+# reads no call site fails.
+sync_scan=$(sources fixtures | while read -r f; do
+  perl -0ne 'while (/\b(?:execFileSync|spawnSync|execSync)\(\s*"docker"([^;]*)/g) { my $a = $1; print "SITE\n"; print "$ARGV: $&\n" unless $a =~ /^\s*,\s*\["rm", "-f", "-v", \.\.\.names\]/ }' "$f"
+done)
+sync_sites=$(printf '%s\n' "$sync_scan" | grep -c '^SITE$' || true)
+blocking=$(printf '%s\n' "$sync_scan" | grep -v '^SITE$' | sed '/^$/d' || true)
+async_sites=$(sources fixtures | xargs grep -ho -E '\bdockerAsync\(|execFile\("docker"' 2>/dev/null | wc -l | tr -d ' ')
+if [ -z "$blocking" ] && [ "$sync_sites" -ge 6 ] && [ "$async_sites" -ge 6 ]; then
+  ok "no test process makes a synchronous docker call but its exit-time cleanup ($sync_sites cleanups, $async_sites asynchronous calls)"
+else bad "no test process makes a synchronous docker call but its exit-time cleanup" "cleanups read: $sync_sites, asynchronous calls: $async_sites
+$blocking"; fi
+
 echo "ci-local.test: $((CASES - FAILS)) passed, $FAILS failed"
 [ "$FAILS" = 0 ]

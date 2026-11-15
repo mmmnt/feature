@@ -8,7 +8,8 @@
 // Skip discipline (the playwright lesson): unavailability is LOUD — a visible
 // notice test runs instead, and CI's Node 24 lane is expected to run the real
 // thing (docker is present on ubuntu runners).
-import { execFileSync } from "node:child_process";
+import { execFile as execFileCb } from "node:child_process";
+import { promisify } from "node:util";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -33,6 +34,10 @@ const OWNER = ["--label", `feat-test.owner-pid=${process.env.FEAT_CI_LOCAL_PID ?
 
 const PKG = path.dirname(fileURLToPath(import.meta.url));
 const E2E = path.join(PKG, "fixtures", "e2e");
+// Every docker call is asynchronous: a synchronous one stops the worker's event loop, and one that outlasts vitest's
+// 60 s worker RPC timeout (an image pull) ends the run with "Timeout calling onTaskUpdate".
+const execFile = promisify(execFileCb);
+
 const PORT = 8321;
 const CONTAINER = "feat-ddb-local-test";
 
@@ -43,14 +48,10 @@ const presetEndpoint = process.env.FEAT_DDB_TEST_ENDPOINT;
 let endpoint = presetEndpoint ?? `http://127.0.0.1:${PORT}`;
 let startedContainer = false;
 
-const dockerAvailable = (() => {
-  try {
-    execFileSync("docker", ["version"], { stdio: "ignore" });
-    return true;
-  } catch {
-    return false;
-  }
-})();
+const dockerAvailable = await execFile("docker", ["version"]).then(
+  () => true,
+  () => false,
+);
 const available = Boolean(presetEndpoint) || dockerAvailable;
 
 function client(): DynamoDBClient {
@@ -104,14 +105,8 @@ const options = () => ({ table: TABLE, region: "us-east-1", endpoint });
 describe.runIf(available)("dynamodb adapter against real DynamoDB (Local)", () => {
   beforeAll(async () => {
     if (!presetEndpoint) {
-      try {
-        execFileSync("docker", ["rm", "-f", "-v", CONTAINER], { stdio: "ignore" });
-      } catch {}
-      execFileSync(
-        "docker",
-        ["run", "-d", "--rm", ...OWNER, "--name", CONTAINER, "-p", `${PORT}:8000`, "amazon/dynamodb-local"],
-        { stdio: "ignore" },
-      );
+      await execFile("docker", ["rm", "-f", "-v", CONTAINER]).catch(() => {});
+      await execFile("docker", ["run", "-d", "--rm", ...OWNER, "--name", CONTAINER, "-p", `${PORT}:8000`, "amazon/dynamodb-local"]);
       startedContainer = true;
     }
     await waitReady();
@@ -122,7 +117,7 @@ describe.runIf(available)("dynamodb adapter against real DynamoDB (Local)", () =
   afterAll(async () => {
     if (startedContainer) {
       try {
-        execFileSync("docker", ["rm", "-f", "-v", CONTAINER], { stdio: "ignore" });
+        await execFile("docker", ["rm", "-f", "-v", CONTAINER]);
       } catch {}
     }
     rmSync(E2E, { recursive: true, force: true });
