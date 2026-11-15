@@ -1,0 +1,144 @@
+feat 1.0
+
+# SPEC-ADPNEO-004 — Neo4j adapter: a seed may write a RELATIONSHIP as well as a node (an amendment to SPEC-ADPNEO-001, in a spec of
+# its own, as SPEC-ADPNEO-003 is). Agreed in advance by founder ruling 2026-11-15 on HELD-87, chosen verbatim: "Relationship seeds
+# (Recommended)" — "Feature's Neo4j adapter and the test host's in-memory graph learn to seed edges ... Then the fork and cycle rules
+# are proven in the spec at both tiers." Recorded in flmnt as decision 0c0e3dea.
+#
+# Why: a spec can state a graph the system could never have written itself (a fork, a cycle, a chain longer than any write path
+# produces), as `given` state. The seed form mirrors what the adapter observes, so a spec seeds the same shape it predicts:
+#   seed graph [ SUPERSEDED_BY with Edge { from: "Entry:e2", to: "Entry:e1" } ]
+# The grammar needs no change: a relationship is an ordinary seed record whose values carry `from` and `to`.
+#
+# Spec tier, as SPEC-ADPNEO-003: the integration config leaves this file out so it runs once.
+# Driven through the probe of SPEC-ADPNEO-001 (adapters/neo4j/fixtures/probe.mjs, inside touches, not shipped).
+# `ObserveNeo4jSeeds { script }` runs the steps of SPEC-ADPNEO-001 plus:
+#   seedrel:<ns>:<Label>:<key>:<REL>:<Label2>:<key2>[:<w>]  adapter.seed() of one relationship, property w when given
+#   seedboth:<ns>:<Label>:<key>:<REL>:<Label2>:<key2>       ONE adapter.seed() call: the relationship first, then both nodes
+#   seedrelbad:<ns>:<case>   a relationship record that is not valid: nolabel (from "o1"), undeclared (from "Mystery:m1"),
+#                            reserved (a property named count), badtype (type "NOT-A-TYPE")
+# A read step also returns `readKeys`: each record's key in the adapter's order, a relationship's own properties as {k=v}, and
+# `x<n>` when parallel equal relationships collapse to a count n.
+
+spec SPEC-ADPNEO-004 "Neo4j adapter: a seed writes relationships as well as nodes, in the shape the adapter observes"
+context Toolchain
+aggregate Adapters
+type infrastructure
+status agreed
+
+construct:
+  handler at adapters/neo4j/src/index.ts
+  touches adapters/neo4j/**
+  touches feat.config.json
+  touches feat.integration.config.json
+  needs SPEC-ADPNEO-001
+  seed(records): a record is a RELATIONSHIP when its type is not a label with a declared key (options.keys) and its values carry
+  `from` and `to` as strings. Each end names a namespaced node as the diff names it, `Label:value`, where Label declares a key and
+  value is the key property's value as a string. The record's other values are the relationship's properties; `relType` and
+  `count` are reserved because the adapter reports them. Every other record is a node, exactly as SPEC-ADPNEO-001 seeds it.
+  Every record of the call is validated before anything is written. Then, in ONE write transaction, the nodes are created first
+  and the relationships after them, so a relationship may name a node seeded in the same call wherever its record stands; an end
+  that is not a node of the namespace rolls the whole call back. Seeding the same relationship twice creates two, which the diff
+  reports as one record with count 2. Seeds are written before the window, so they are state and never an effect.
+
+enforce:
+  rejects SEED_RELATIONSHIP_INVALID when a relationship seed's end is not Label:value, names a label with no declared key, sets a reserved property, or its type is not an identifier
+  rejects SEED_END_NOT_FOUND when a relationship seed's end is not a node of the namespace
+  every record of a seed call is validated before anything is written, and the call is one transaction
+  a relationship never joins a node outside the namespace
+  a seeded relationship is state, never an effect of the window
+
+contract:
+  input SeedsInput
+  response SeedsResult
+  error SeedsError
+
+scenario "a seeded relationship is state: the window that follows reports nothing":
+  when: ObserveNeo4jSeeds { script: "setup:a seed:a:Order:o1 seed:a:Customer:c1 seedrel:a:Order:o1:PLACED_BY:Customer:c1 start:a stop:a" }
+  predict success:
+    response OK SeedsResult { trace: "setup:a seed:a seed:a seedrel:a start:a stop:a=0" }
+    filesystem has []
+
+scenario "a read reports a seeded relationship as the diff names it":
+  when: ObserveNeo4jSeeds { script: "setup:a seed:a:Order:o1 seed:a:Customer:c1 seedrel:a:Order:o1:PLACED_BY:Customer:c1 read:a" }
+  predict success:
+    response OK SeedsResult {
+      trace: "setup:a seed:a seed:a seedrel:a read:a=3",
+      readVia: "NamespaceScan",
+      readKeys: "Customer:c1,Order:o1,Order:o1-[PLACED_BY]->Customer:c1"
+    }
+    filesystem has []
+
+scenario "a fork: two relationships of the same type into one node":
+  when: ObserveNeo4jSeeds { script: "setup:a seed:a:Order:o1 seed:a:Order:o2 seed:a:Order:o3 seedrel:a:Order:o2:SUPERSEDED_BY:Order:o1 seedrel:a:Order:o3:SUPERSEDED_BY:Order:o1 read:a" }
+  predict success:
+    response OK SeedsResult {
+      trace: "setup:a seed:a seed:a seed:a seedrel:a seedrel:a read:a=5",
+      readVia: "NamespaceScan",
+      readKeys: "Order:o1,Order:o2,Order:o3,Order:o2-[SUPERSEDED_BY]->Order:o1,Order:o3-[SUPERSEDED_BY]->Order:o1"
+    }
+    filesystem has []
+
+scenario "a cycle: two nodes that point at each other":
+  when: ObserveNeo4jSeeds { script: "setup:a seed:a:Order:o1 seed:a:Order:o2 seedrel:a:Order:o2:SUPERSEDED_BY:Order:o1 seedrel:a:Order:o1:SUPERSEDED_BY:Order:o2 read:a" }
+  predict success:
+    response OK SeedsResult {
+      trace: "setup:a seed:a seed:a seedrel:a seedrel:a read:a=4",
+      readVia: "NamespaceScan",
+      readKeys: "Order:o1,Order:o2,Order:o1-[SUPERSEDED_BY]->Order:o2,Order:o2-[SUPERSEDED_BY]->Order:o1"
+    }
+    filesystem has []
+
+scenario "a relationship's own properties are seeded with it":
+  when: ObserveNeo4jSeeds { script: "setup:a seed:a:Order:o1 seed:a:Customer:c1 seedrel:a:Order:o1:PLACED_BY:Customer:c1:7 read:a" }
+  predict success:
+    response OK SeedsResult {
+      trace: "setup:a seed:a seed:a seedrel:a read:a=3",
+      readVia: "NamespaceScan",
+      readKeys: "Customer:c1,Order:o1,Order:o1-[PLACED_BY]->Customer:c1{w=7}"
+    }
+    filesystem has []
+
+scenario "the same relationship seeded twice is two relationships, reported with a count":
+  when: ObserveNeo4jSeeds { script: "setup:a seed:a:Order:o1 seed:a:Customer:c1 seedrel:a:Order:o1:PLACED_BY:Customer:c1 seedrel:a:Order:o1:PLACED_BY:Customer:c1 read:a" }
+  predict success:
+    response OK SeedsResult {
+      trace: "setup:a seed:a seed:a seedrel:a seedrel:a read:a=3",
+      readVia: "NamespaceScan",
+      readKeys: "Customer:c1,Order:o1,Order:o1-[PLACED_BY]->Customer:c1x2"
+    }
+    filesystem has []
+
+scenario "one seed call writes its nodes before its relationships, wherever the relationship stands":
+  when: ObserveNeo4jSeeds { script: "setup:a seedboth:a:Order:o1:PLACED_BY:Customer:c1 read:a" }
+  predict success:
+    response OK SeedsResult {
+      trace: "setup:a seedboth:a read:a=3",
+      readVia: "NamespaceScan",
+      readKeys: "Customer:c1,Order:o1,Order:o1-[PLACED_BY]->Customer:c1"
+    }
+    filesystem has []
+
+scenario "an end that is not a node of the namespace is refused":
+  when: ObserveNeo4jSeeds { script: "setup:a seed:a:Order:o1 seedrel:a:Order:o1:SUPERSEDED_BY:Order:zz" }
+  predict rejection SEED_END_NOT_FOUND:
+    response ERR SeedsError { code: "SEED_END_NOT_FOUND", detail: matching "Order:zz" }
+    filesystem has []
+
+scenario "a relationship never reaches a node of another namespace":
+  when: ObserveNeo4jSeeds { script: "setup:a setup:b seed:b:Order:o1 seed:a:Order:o2 seedrel:a:Order:o2:SUPERSEDED_BY:Order:o1" }
+  predict rejection SEED_END_NOT_FOUND:
+    response ERR SeedsError { code: "SEED_END_NOT_FOUND", detail: matching "Order:o1" }
+    filesystem has []
+
+scenario outline "a relationship seed that is not valid is refused before anything is written":
+  when: ObserveNeo4jSeeds { script: <script> }
+  predict rejection SEED_RELATIONSHIP_INVALID:
+    response ERR SeedsError { code: "SEED_RELATIONSHIP_INVALID", detail: matching <detail> }
+    filesystem has []
+  examples:
+    | script                       | detail            |
+    | "setup:a seedrelbad:a:nolabel"    | "not Label:value" |
+    | "setup:a seedrelbad:a:undeclared" | "Mystery"         |
+    | "setup:a seedrelbad:a:reserved"   | "count"           |
+    | "setup:a seedrelbad:a:badtype"    | "NOT-A-TYPE"      |

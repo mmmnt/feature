@@ -142,6 +142,10 @@
         "module": "adapters/neo4j/fixtures/probe.mjs",
         "export": "observeCredentials"
       },
+      "ObserveNeo4jSeeds": {
+        "module": "adapters/neo4j/fixtures/probe.mjs",
+        "export": "observeSeeds"
+      },
       "ObserveModel": {
         "module": "adapters/model/fixtures/probe.mjs",
         "export": "observe"

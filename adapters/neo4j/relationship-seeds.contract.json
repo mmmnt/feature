@@ -1,0 +1,60 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-ADPNEO-004",
+  "schemas": {
+    "SeedsInput": {
+      "type": "object",
+      "required": [
+        "script"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "script": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "SeedsResult": {
+      "type": "object",
+      "required": [
+        "trace"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "trace": {
+          "type": "string"
+        },
+        "last": {
+          "type": "string"
+        },
+        "readVia": {
+          "enum": [
+            "KeyedMatch",
+            "NamespaceScan"
+          ]
+        },
+        "readKeys": {
+          "type": "string"
+        }
+      }
+    },
+    "SeedsError": {
+      "type": "object",
+      "required": [
+        "code"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "SEED_RELATIONSHIP_INVALID",
+            "SEED_END_NOT_FOUND"
+          ]
+        },
+        "detail": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

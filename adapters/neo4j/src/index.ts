@@ -32,7 +32,9 @@ export type Neo4jAdapterErrorCode =
   | "NAMESPACE_BREACH"
   | "FAULT_UNSUPPORTED"
   | "OPTIONS_INVALID"
-  | "CREDENTIAL_FILE_UNREADABLE";
+  | "CREDENTIAL_FILE_UNREADABLE"
+  | "SEED_RELATIONSHIP_INVALID"
+  | "SEED_END_NOT_FOUND";
 
 export class Neo4jAdapterError extends Error {
   constructor(
@@ -553,13 +555,71 @@ class Neo4jAdapter implements FeatServiceAdapter {
     ];
   }
 
+  /**
+   * A seed record is a RELATIONSHIP (SPEC-ADPNEO-004) when its type is not a label with a declared key and its values carry `from`
+   * and `to` as strings, each naming a namespaced node the way the diff names it, `Label:value`. Its other values are the
+   * relationship's properties. Every other record is a node, as SPEC-ADPNEO-001 seeds it.
+   */
+  private relationshipOf(r: SeedRecord): { relType: string; from: [string, string, string]; to: [string, string, string]; props: Props } | undefined {
+    const keys = this.options.keys ?? {};
+    const v = (r.values ?? {}) as Props;
+    if (keys[r.type] !== undefined || typeof v.from !== "string" || typeof v.to !== "string") return undefined;
+    if (!IDENTIFIER.test(r.type)) {
+      throw new Neo4jAdapterError("SEED_RELATIONSHIP_INVALID", `the relationship type '${r.type}' is not an identifier`);
+    }
+    const end = (which: "from" | "to", s: string): [string, string, string] => {
+      const at = s.indexOf(":");
+      const label = at < 1 ? "" : s.slice(0, at);
+      const value = at < 1 ? "" : s.slice(at + 1);
+      if (label === "" || value === "") {
+        throw new Neo4jAdapterError("SEED_RELATIONSHIP_INVALID", `a ${r.type} seed's ${which} '${s}' is not Label:value`);
+      }
+      const key = keys[label];
+      if (key === undefined) {
+        throw new Neo4jAdapterError("SEED_RELATIONSHIP_INVALID", `a ${r.type} seed's ${which} names the label ${label}, which declares no key property (options.keys)`);
+      }
+      return [label, key, value];
+    };
+    const { from, to, ...props } = v as Props & { from: string; to: string };
+    for (const reserved of ["relType", "count"]) {
+      if (reserved in props) {
+        throw new Neo4jAdapterError("SEED_RELATIONSHIP_INVALID", `a ${r.type} seed names '${reserved}', which the adapter reports and a seed cannot set`);
+      }
+    }
+    return { relType: r.type, from: end("from", from), to: end("to", to), props };
+  }
+
   async seed(records: SeedRecord[]): Promise<void> {
+    // Validate every record before anything is written, then write nodes first and relationships after them, in one
+    // transaction: a relationship may name a node seeded in the same call, wherever its record stands in the list.
+    const rels = records.map((r) => this.relationshipOf(r));
+    const nodes = records.filter((_, i) => rels[i] === undefined);
+    const ns = quote(this.nsLabel);
     const session = this.db().session({ defaultAccessMode: neo4j.session.WRITE });
     try {
       await session.executeWrite(
         async (tx) => {
-          for (const r of records) {
-            await tx.run(`CREATE (n:${quote(r.type)}:${quote(this.nsLabel)}) SET n = $values`, { values: r.values });
+          for (const r of nodes) {
+            await tx.run(`CREATE (n:${quote(r.type)}:${ns}) SET n = $values`, { values: r.values });
+          }
+          for (const rel of rels) {
+            if (rel === undefined) continue;
+            const ids: string[] = [];
+            for (const [label, key, value] of [rel.from, rel.to]) {
+              const found = await tx.run(
+                `MATCH (n:${quote(label)}:${ns}) WHERE toString(n.${quote(key)}) = $value AND n.${FAULT_MARK} IS NULL RETURN elementId(n) AS id LIMIT 1`,
+                { value },
+              );
+              const id = found.records[0]?.get("id");
+              if (id === undefined) {
+                throw new Neo4jAdapterError("SEED_END_NOT_FOUND", `a ${rel.relType} seed names ${label}:${value}, which is not a node of the namespace`);
+              }
+              ids.push(String(id));
+            }
+            await tx.run(
+              `MATCH (a), (b) WHERE elementId(a) = $a AND elementId(b) = $b CREATE (a)-[r:${quote(rel.relType)}]->(b) SET r = $props`,
+              { a: ids[0], b: ids[1], props: rel.props },
+            );
           }
         },
         { metadata: { app: this.tag } },

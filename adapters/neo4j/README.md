@@ -216,9 +216,32 @@ scenario "a repeated orderId is refused by the graph":
 The seed record's `type` is the node's label; `values` are its properties, set
 with `CREATE (n:<type>:ns_<ns>) SET n = $values` in one transaction before the
 window, so seeds are never in a capture. Include the key property, or the node
-cannot be identified later. **Seeds create nodes only**; a relationship is made
-by the system or by a fixture of your own. The fault line must say
-`until reset` (see the fault table).
+cannot be identified later. The fault line must say `until reset` (see the fault
+table).
+
+A seed may also write a **relationship** (SPEC-ADPNEO-004, 0.3.0), in the shape
+the adapter reports one: a record whose type is not a label with a declared key
+and whose values carry `from` and `to`, each naming a namespaced node as
+`Label:value`. Its other values are the relationship's properties (`relType` and
+`count` are reserved). This is how a spec states a graph the system could never
+write itself, such as a fork or a cycle:
+
+```feat
+seed graph [
+  Order with OrderNode { orderId: "o1" },
+  Order with OrderNode { orderId: "o2" },
+  Order with OrderNode { orderId: "o3" },
+  SUPERSEDED_BY with Edge { from: "Order:o2", to: "Order:o1" },
+  SUPERSEDED_BY with Edge { from: "Order:o3", to: "Order:o1" }
+]
+```
+
+Every record of the call is validated before anything is written; nodes are
+created before relationships in one transaction, so a relationship may name a
+node of the same call wherever it stands. An end that is not a node of the
+namespace is `SEED_END_NOT_FOUND` and the whole call is rolled back; a malformed
+end, a label with no declared key, a reserved property or a type that is not an
+identifier is `SEED_RELATIONSHIP_INVALID`.
 
 ## Namespaces
 
@@ -325,7 +348,7 @@ layer keep the codes of `@mmmnt/feat-fault-proxy` (`PROXY_UNREACHABLE`,
   hints does the same. Keep a namespace small.
 - The `UNIQUE_CONSTRAINT_VIOLATION` value must not already be held by a namespaced
   node, or the constraint or the placeholder cannot be created.
-- Seeds create nodes only.
+- A seeded relationship's ends must be namespaced nodes with a declared key.
 - The system must put the `ns_<ns>` label on every node it writes; how the
   namespace reaches the system is the host's business.
 - Server versions other than the tested Community image, and Enterprise, are not

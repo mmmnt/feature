@@ -279,7 +279,7 @@ function credentialOptions(input, db, dir, direct) {
 
 async function run(input, mode) {
   const db = await neo4jServer();
-  const env = mode === "observe" || mode === "credentials" ? undefined : await proxyEnvironment();
+  const env = mode === "observe" || mode === "credentials" || mode === "seeds" ? undefined : await proxyEnvironment();
   const credentialDir = mode === "credentials" ? mkdtempSync(path.join(os.tmpdir(), "feat-neo4j-cred-")) : undefined;
   if (env !== undefined) {
     const all = await (await fetch(`${env.api}/proxies`)).json();
@@ -355,6 +355,32 @@ async function run(input, mode) {
           await adapter(l).seed([{ type: a, values: { [KEYS[a]]: b } }]);
           trace.push(`seed:${l}`);
           break;
+        // SPEC-ADPNEO-004: relationship seeds. seedrel:<ns>:<Label>:<key>:<REL>:<Label2>:<key2>[:<w>] seeds one relationship
+        // (property w when given); seedboth seeds the relationship and both of its nodes in ONE call, the relationship listed
+        // first; seedrelbad:<ns>:<case> seeds a relationship record that is not valid.
+        case "seedrel":
+          await adapter(l).seed([{ type: c, values: { from: `${a}:${b}`, to: `${d}:${e}`, ...(step.split(":")[7] !== undefined ? { w: step.split(":")[7] } : {}) } }]);
+          trace.push(`seedrel:${l}`);
+          break;
+        case "seedboth":
+          await adapter(l).seed([
+            { type: c, values: { from: `${a}:${b}`, to: `${d}:${e}` } },
+            { type: a, values: { [KEYS[a]]: b } },
+            { type: d, values: { [KEYS[d]]: e } },
+          ]);
+          trace.push(`seedboth:${l}`);
+          break;
+        case "seedrelbad": {
+          const bad = {
+            nolabel: { from: "o1", to: "Order:o2" },
+            undeclared: { from: "Mystery:m1", to: "Order:o2" },
+            reserved: { from: "Order:o1", to: "Order:o2", count: 2 },
+            badtype: { from: "Order:o1", to: "Order:o2" },
+          }[a];
+          await adapter(l).seed([{ type: a === "badtype" ? "NOT-A-TYPE" : "SUPERSEDED_BY", values: bad }]);
+          trace.push(`seedrelbad:${l}`);
+          break;
+        }
         case "create": {
           let outcome = "ok";
           if (env !== undefined) {
@@ -452,6 +478,16 @@ async function run(input, mode) {
           const rs = await x.read(a === undefined ? {} : { expect: [{ type: a, key: { [KEYS[a]]: b } }] });
           trace.push(`read:${l}${a === undefined ? "" : `:${a}:${b}`}=${rs.length}`);
           body.readVia = x.lastReadVia;
+          if (mode === "seeds") {
+            body.readKeys = rs
+              .map((r) => {
+                const { from, to, relType, count, labels, ...props } = r.payload;
+                const own = relType === undefined ? {} : Object.fromEntries(Object.entries(props).sort(([p], [q]) => (p < q ? -1 : 1)));
+                const shown = Object.keys(own).length > 0 ? `{${Object.entries(own).map(([k, v]) => `${k}=${v}`).join(",")}}` : "";
+                return `${r.key}${shown}${typeof count === "number" && count > 1 ? `x${count}` : ""}`;
+              })
+              .join(",");
+          }
           break;
         }
         case "fault": {
@@ -502,6 +538,7 @@ async function run(input, mode) {
 export const observe = (input) => run(input, "observe");
 export const observeTransport = (input) => run(input, "transport");
 export const observeCredentials = (input) => run(input, "credentials");
+export const observeSeeds = (input) => run(input, "seeds");
 
 // SPEC-ADPHND-003 (founder ruling ba21abb2, "Transport envs start at load"): every one-time start-up of this
 // probe, the Neo4j server and the transport environment (Toxiproxy and the peer agent; the peer install already runs above), runs when the module is evaluated. The handler adapter imports the module in setup(), in the

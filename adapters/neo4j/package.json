@@ -1,7 +1,7 @@
 {
   "name": "@mmmnt/feat-adapter-neo4j",
   "version": "0.2.0",
-  "description": "Neo4j service adapter for Feat: a snapshot diff of the namespace label's graph, a transaction-aware settle, state by keyed MATCH or namespace scan, and a unique-constraint fault",
+  "description": "Neo4j service adapter for Feat: a snapshot diff of the namespace label's graph, a transaction-aware settle, state by keyed MATCH or namespace scan, node and relationship seeds, and a unique-constraint fault",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -11,7 +11,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --exclude '**/observe.test.ts' --exclude '**/transport.test.ts' --exclude '**/credential-files.test.ts' --passWithNoTests"
+    "test": "vitest run --exclude '**/observe.test.ts' --exclude '**/transport.test.ts' --exclude '**/credential-files.test.ts' --exclude '**/relationship-seeds.test.ts' --passWithNoTests"
   },
   "dependencies": {
     "@mmmnt/feat-fault-proxy": "workspace:^",
