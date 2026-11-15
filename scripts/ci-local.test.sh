@@ -170,6 +170,7 @@ case "$1" in
   inspect) [ -e "$LOCK_FILE" ] && cat "$LOCK_FILE" || exit 1 ;;
   rm) echo "rm $*" >> "$LOCK_DIR/log"; rm -f "$LOCK_FILE" ;;
   ps) cat "$LOCK_DIR/running" 2>/dev/null ;;
+  run) echo "run $*" >> "$LOCK_DIR/vmlog"; [ -e "$LOCK_DIR/vmload" ] && echo "$(cat "$LOCK_DIR/vmload") 1.00 1.00 1/100 1" ;;
 esac
 exit 0
 STUB
@@ -181,7 +182,7 @@ lock() {
   PATH="$LK/bin:$PATH" LOCK_DIR="$LK" LOCK_FILE="$LK/held" CI_LOCAL_LOCK_WAIT=$w CI_LOCAL_LOCK_GIVE_UP=$g CI_LOCAL_LOCK_POLL=1 \
     bash "$SRC/scripts/ci-local-lock.sh" "$@"
 }
-reset_lock() { rm -f "$LK/held" "$LK/log"; : > "$LK/running"; echo "${1:-1.5}" > "$LK/load"; }
+reset_lock() { rm -f "$LK/held" "$LK/log" "$LK/vmlog"; : > "$LK/running"; echo "${1:-1.5}" > "$LK/load"; echo "${2:-1.5}" > "$LK/vmload"; }
 
 reset_lock
 run "ci-local-lock takes a free lock on an idle daemon" 0 "" lock 900 0 acquire "$ALIVE" img
@@ -205,6 +206,24 @@ reset_lock 12.0
 echo "$ALIVE $(date +%s)" > "$LK/held.other"
 printf 'feat-ci-test-node24-x\t999999\t\n' > "$LK/running"
 run "ci-local-lock runs past the wait once the 1-minute load is under 30" 0 "under 30: running (host rule 8ea670d4)" lock 0 0 acquire "$ALIVE" img
+if grep -q 'run --rm --network none --label feat-test.owner-pid='"$ALIVE"' img cat /proc/loadavg' "$LK/vmlog" 2>/dev/null; then ok "ci-local-lock reads the Docker VM's load through a labelled throwaway container"
+else bad "ci-local-lock reads the Docker VM's load through a labelled throwaway container" "$(cat "$LK/vmlog" 2>/dev/null)"; fi
+reset_lock 12.0 45.0
+echo "999999 $(date +%s)" > "$LK/held"
+printf 'feat-ci-test-node24-x\t999999\t\n' > "$LK/running"
+run "ci-local-lock keeps waiting while the Docker VM's load is 30 or more, however low the host's" 2 "gave up" lock 0 0 acquire "$ALIVE" img
+reset_lock 12.0
+rm -f "$LK/vmload"
+echo "999999 $(date +%s)" > "$LK/held"
+printf 'feat-ci-test-node24-x\t999999\t\n' > "$LK/running"
+run "ci-local-lock keeps waiting when the Docker VM's load cannot be read" 2 "gave up" lock 0 0 acquire "$ALIVE" img
+reset_lock 12.0 45.0
+echo "999999 $(date +%s)" > "$LK/held"
+printf 'feat-ci-test-node24-x\t999999\t\n' > "$LK/running"
+PATH="$LK/bin:$PATH" LOCK_DIR="$LK" LOCK_FILE="$LK/held" CI_LOCAL_LOCK_WAIT=0 CI_LOCAL_LOCK_GIVE_UP=3 CI_LOCAL_LOCK_POLL=1 bash "$SRC/scripts/ci-local-lock.sh" acquire "$ALIVE" img >/dev/null 2>&1 || true
+reads=$(grep -c ' cat /proc/loadavg' "$LK/vmlog" 2>/dev/null || echo 0)
+if [ "$reads" -eq 1 ]; then ok "ci-local-lock reads the Docker VM's load at most once a minute"
+else bad "ci-local-lock reads the Docker VM's load at most once a minute" "$reads reads in ~3 s"; fi
 
 reset_lock
 echo "$DEAD $(date +%s)" > "$LK/held"

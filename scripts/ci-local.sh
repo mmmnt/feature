@@ -85,7 +85,8 @@ fi
 docker info >/dev/null 2>&1 || { echo "ci-local: the Docker daemon is not reachable" >&2; exit 2; }
 
 # The host rule every runner on this daemon keeps (scripts/ci-local-lock.sh, flmnt decision 8ea670d4): wait for
-# another runner's test container or lock at most 15 minutes, then run only under a 1-minute load of 30; one
+# another runner's test container or lock at most 15 minutes, then run only while the 1-minute load is under 30 on
+# the host and in the Docker VM; one
 # container per runner; at most 30 minutes per run (the watchdog below). The lock is held until this run exits,
 # however it exits; a run that waits says for what.
 CLI_IMAGE=$(node -p 'require(process.argv[1]).dockerCli' "$REPO/scripts/ci-local.images.json")

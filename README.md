@@ -170,7 +170,8 @@ finds its pid.
 ci-local keeps the host rule every runner sharing the Docker daemon keeps (`scripts/ci-local-lock.sh`): it waits
 for another runner's test container (`feat-*-test-*`, `feat-ci-test-*`, or a flmnt gate) or another ci-local's
 lock at most 15 minutes (`CI_LOCAL_LOCK_WAIT`), then runs only while the 1-minute load average is under 30
-(`CI_LOCAL_LOAD_MAX`), and otherwise keeps waiting, saying for what. It runs one container at a time, and
+(`CI_LOCAL_LOAD_MAX`) both on the host and inside the Docker VM, which a throwaway container reads from
+`/proc/loadavg` at most once a minute (`CI_LOCAL_VM_LOAD_EVERY`); otherwise it keeps waiting, saying for what. It runs one container at a time, and
 `scripts/ci-local-watchdog.sh` stops a run that passes 30 minutes (`CI_LOCAL_MAX_SECONDS`), removing its container
 and releasing the lock. The lock is a created, never started container named `feat-ci-local-lock` carrying its
 holder's pid; a holder that is gone loses it to the next run.

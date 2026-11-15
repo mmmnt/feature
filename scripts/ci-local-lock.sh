@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # When a ci-local run may use the Docker daemon, under the host rule every runner sharing it keeps (founder ruling
 # 2026-11-13, flmnt decision 8ea670d4): wait for another runner's test container, or another ci-local's lock, at
-# most 15 minutes; after that, run anyway only while the 1-minute load average is under 30, else keep waiting.
+# most 15 minutes; after that, run anyway only while the 1-minute load average is under 30 on the host and in the
+# Docker VM alike (founder 2026-11-15, "Check both"), else keep waiting.
 # One container per runner (ci-local runs its Node versions one after another), and a 30-minute cap per run
 # (scripts/ci-local-watchdog.sh).
 #
@@ -21,7 +22,8 @@
 #
 # usage: scripts/ci-local-lock.sh acquire <pid> <image>   wait as the rule says, then hold the lock for <pid> if free
 #        scripts/ci-local-lock.sh release <pid>           give the lock up, if <pid> holds it
-# env:   CI_LOCAL_LOCK_WAIT (default 900 s), CI_LOCAL_LOAD_MAX (default 30), CI_LOCAL_LOCK_POLL (default 15 s);
+# env:   CI_LOCAL_LOCK_WAIT (default 900 s), CI_LOCAL_LOAD_MAX (default 30), CI_LOCAL_LOCK_POLL (default 15 s),
+#        CI_LOCAL_VM_LOAD_EVERY (default 60 s, the shortest interval between reads of the Docker VM's load);
 #        CI_LOCAL_LOCK_GIVE_UP: seconds after which to stop waiting and exit 2 (default: never)
 set -uo pipefail
 
@@ -60,8 +62,28 @@ load1() {
   echo "${v:-0}"
 }
 
-# Whether the load is under the rule's ceiling.
-load_ok() { awk -v l="$(load1)" -v m="${CI_LOCAL_LOAD_MAX:-30}" 'BEGIN { exit !(l + 0 < m + 0) }'; }
+# The Docker VM's 1-minute load (founder 2026-11-15, "Check both"): Docker Desktop runs containers in a Linux VM whose
+# load macOS's sysctl does not see, and that VM is where the 2026-11-14 starvation happened (15 vitest workers beside
+# ~30 product containers in a 16-CPU VM). /proc/loadavg is not namespaced, so a throwaway container reads the VM's
+# own. It carries the run's sweep label, so a killed run's reader is reaped, and it is read at most once a minute
+# (VM_LOAD caches it; call refresh_vm_load in the main shell, never in a $(...) subshell, or the cache is lost).
+# An unreadable VM load reads as 999: the rule waits rather than guessing.
+VM_LOAD=""; VM_LOAD_AT=0
+refresh_vm_load() {
+  local now v
+  now=$(date +%s)
+  if [ -z "$VM_LOAD" ] || [ $((now - VM_LOAD_AT)) -ge "${CI_LOCAL_VM_LOAD_EVERY:-60}" ]; then
+    v=$(docker run --rm --network none --label "feat-test.owner-pid=$pid" "$image" cat /proc/loadavg 2>/dev/null | awk '{print $1}')
+    VM_LOAD=${v:-999}; VM_LOAD_AT=$now
+  fi
+}
+
+under() { awk -v l="$1" -v m="${CI_LOCAL_LOAD_MAX:-30}" 'BEGIN { exit !(l + 0 < m + 0) }'; }
+
+# Whether both loads, the host's and the Docker VM's, are under the rule's ceiling.
+load_ok() { refresh_vm_load; under "$(load1)" && under "$VM_LOAD"; }
+
+loads() { echo "host $(load1), Docker VM ${VM_LOAD:-unread}"; }
 
 # Other runners' running test containers, by name.
 others() {
@@ -93,14 +115,14 @@ case "${1:-}" in
       if [ "$waited" -ge "$wait_max" ]; then
         if load_ok; then
           for_what=${busy:-"the lock held by pid ${hpid:-?}"}
-          echo "ci-local: waited ${waited}s for ${for_what}; the 1-minute load is $(load1), under ${CI_LOCAL_LOAD_MAX:-30}: running (host rule 8ea670d4)"
+          echo "ci-local: waited ${waited}s for ${for_what}; the 1-minute loads ($(loads)) are under ${CI_LOCAL_LOAD_MAX:-30}: running (host rule 8ea670d4)"
           [ -n "${hpid:-}" ] || docker create --name "$NAME" --label "$OWNER=$pid" --label "$SINCE=$(date +%s)" "$image" true >/dev/null 2>&1 || true
           exit 0
         fi
       fi
       what="${busy:+ test containers: $busy}${hpid:+ the lock (pid $hpid)}"
       if [ "$said" != "$what" ]; then
-        echo "ci-local: waiting for$what (host rule 8ea670d4: at most ${wait_max}s, then only under load ${CI_LOCAL_LOAD_MAX:-30}; load now $(load1))"
+        echo "ci-local: waiting for$what (host rule 8ea670d4: at most ${wait_max}s, then only while the host and Docker VM loads are under ${CI_LOCAL_LOAD_MAX:-30}; host load now $(load1))"
         said=$what
       fi
       if [ -n "$give_up" ] && [ "$waited" -ge "$give_up" ]; then
