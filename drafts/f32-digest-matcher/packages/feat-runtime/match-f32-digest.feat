@@ -1,0 +1,121 @@
+feat 1.0
+
+# SPEC-RT-014 — the runtime evaluates the f32 digest matcher `f32 <dims> sha256 "<hex>"` (founder ruling
+# 2026-11-16, "New Feature matcher (Recommended)"; ADR-0030). A consumer stores an embedding from an encoder it
+# has shown reproducible bit for bit; a literal is exact but 384 numbers long, `any` pins nothing, a tolerance
+# is weaker than the encoder. SPEC-CORE-001 (amended by ADR-0030) parses the matcher to
+# { matcher: "f32Digest", dims, sha256 }; this spec makes applyMatcher evaluate it.
+#
+# WHAT CHANGES (and nothing else):
+#  1. feat-types: Matcher gains { matcher: "f32Digest"; dims: number; sha256: string }.
+#  2. applyMatcher: passes when the field is present, is an array of exactly `dims` numbers, every number is
+#     exactly an f32 (Math.fround(x) === x), and the sha256 of the values as consecutive 4-byte little-endian
+#     f32s is `sha256`. The first failing check is the one violation.
+#  3. An IR whose dims is not a positive integer or whose sha256 is not 64 lowercase hex is a violation (a
+#     malformed IR), never a pass.
+# Unchanged: every other matcher, the record and response diffs, the anchors, derive.
+#
+# Driven through the probe `MatchValue` (SPEC-RT-011, packages/feat-runtime/fixtures/matcher/probe.mjs).
+# The digests below are of [1, 0.5, -2]: little-endian f32 f30b4641…, big-endian f32 d62653c2…, little-endian
+# f64 db82091d…; of [0.25, -0.125, 3]: little-endian f32 044bdfb2….
+
+spec SPEC-RT-014 "Matcher: the f32 digest f32 <dims> sha256 \"<hex>\""
+context Toolchain
+aggregate Runtime
+type infrastructure
+status draft
+
+construct:
+  handler at packages/feat-runtime/src/matcher.ts
+  touches packages/feat-runtime/**
+  touches packages/feat-types/**
+  needs SPEC-CORE-001
+  Types (feat-types): Matcher gains { matcher: "f32Digest"; dims: number; sha256: string }.
+  applyMatcher on an f32Digest matcher, the first failing check reported, one violation:
+  an IR whose dims is not a positive integer or whose sha256 is not 64 lowercase hexadecimal characters:
+  "<anchor>: 'f32Digest' takes dims a positive integer and sha256 64 lowercase hex characters (a malformed IR)";
+  an absent field: "<anchor>: expected f32 <dims> sha256 \"<sha256>\", field is absent";
+  a value that is not an array, or an array holding anything but numbers: "<anchor>: expected an array of <dims>
+  f32 values, got <value as JSON, cut to 80 characters with … appended when longer>";
+  an array whose length is not dims: "<anchor>: expected <dims> f32 values, got <length>";
+  a number that is not exactly an f32, the first one by index: "<anchor>: value [<i>] = <x> is not an f32 (the
+  nearest f32 is <Math.fround(x)>)", numbers shown as JavaScript prints them;
+  a digest of the little-endian f32 bytes that is not sha256: "<anchor>: expected f32 sha256 \"<sha256>\", got
+  \"<actual digest>\"", both in full. Otherwise no violation. The digest is node:crypto sha256, lowercase hex.
+
+enforce:
+  pass an array of dims f32 values whose little-endian f32 bytes hash to the predicted sha256
+  report a digest that differs, naming both digests in full
+  report an absent field, a value that is not an array of numbers, and a wrong length, before any digest
+  report a number that is not exactly an f32 rather than hashing it rounded
+  report a malformed IR, never pass it
+
+contract:
+  input MatchInput
+  response MatchResult
+
+scenario "the little-endian f32 digest of the values passes":
+  when: MatchValue { value: [1, 0.5, -2], matcher: { matcher: "f32Digest", dims: 3, sha256: "f30b4641cce164af520d3f24cee9f1ec8132c22bd991618f849bf024231d50b0" } }
+  predict success:
+    response OK MatchResult { outcome: "passed", count: 0, violation: absent }
+    filesystem has []
+
+scenario "the big-endian f32 digest of the same values fails":
+  when: MatchValue { value: [1, 0.5, -2], matcher: { matcher: "f32Digest", dims: 3, sha256: "d62653c27ce3f04d03c40300dd30246e4a689ab39fbd499f0bdf44454f1b8f35" } }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a: expected f32 sha256 \"d62653c27ce3f04d03c40300dd30246e4a689ab39fbd499f0bdf44454f1b8f35\", got \"f30b4641cce164af520d3f24cee9f1ec8132c22bd991618f849bf024231d50b0\"" }
+    filesystem has []
+
+scenario "the f64 digest of the same values fails":
+  when: MatchValue { value: [1, 0.5, -2], matcher: { matcher: "f32Digest", dims: 3, sha256: "db82091db2eab09a7181effaeb1a3574afd7cd386d694e393203719fbc14e9d4" } }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a: expected f32 sha256 \"db82091db2eab09a7181effaeb1a3574afd7cd386d694e393203719fbc14e9d4\", got \"f30b4641cce164af520d3f24cee9f1ec8132c22bd991618f849bf024231d50b0\"" }
+    filesystem has []
+
+scenario "different values fail, naming both digests":
+  when: MatchValue { value: [0.25, -0.125, 3], matcher: { matcher: "f32Digest", dims: 3, sha256: "f30b4641cce164af520d3f24cee9f1ec8132c22bd991618f849bf024231d50b0" } }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a: expected f32 sha256 \"f30b4641cce164af520d3f24cee9f1ec8132c22bd991618f849bf024231d50b0\", got \"044bdfb2048c0269d4c7b14b711d00b3a55d60a5fc77cce6289fc5b1eedf7eda\"" }
+    filesystem has []
+
+scenario "an absent field fails":
+  when: MatchValue { matcher: { matcher: "f32Digest", dims: 3, sha256: "f30b4641cce164af520d3f24cee9f1ec8132c22bd991618f849bf024231d50b0" } }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a: expected f32 3 sha256 \"f30b4641cce164af520d3f24cee9f1ec8132c22bd991618f849bf024231d50b0\", field is absent" }
+    filesystem has []
+
+scenario "a value that is not an array fails":
+  when: MatchValue { value: "1,0.5,-2", matcher: { matcher: "f32Digest", dims: 3, sha256: "f30b4641cce164af520d3f24cee9f1ec8132c22bd991618f849bf024231d50b0" } }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a: expected an array of 3 f32 values, got \"1,0.5,-2\"" }
+    filesystem has []
+
+scenario "an array holding a string fails":
+  when: MatchValue { value: [1, "0.5", -2], matcher: { matcher: "f32Digest", dims: 3, sha256: "f30b4641cce164af520d3f24cee9f1ec8132c22bd991618f849bf024231d50b0" } }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a: expected an array of 3 f32 values, got [1,\"0.5\",-2]" }
+    filesystem has []
+
+scenario "a short array fails on its length before any digest":
+  when: MatchValue { value: [1, 0.5], matcher: { matcher: "f32Digest", dims: 3, sha256: "f30b4641cce164af520d3f24cee9f1ec8132c22bd991618f849bf024231d50b0" } }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a: expected 3 f32 values, got 2" }
+    filesystem has []
+
+scenario "a number that is not exactly an f32 fails rather than being hashed rounded":
+  when: MatchValue { value: [1, 0.1, -2], matcher: { matcher: "f32Digest", dims: 3, sha256: "f30b4641cce164af520d3f24cee9f1ec8132c22bd991618f849bf024231d50b0" } }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a: value [1] = 0.1 is not an f32 (the nearest f32 is 0.10000000149011612)" }
+    filesystem has []
+
+scenario "an IR whose digest is not 64 lowercase hex is a violation":
+  when: MatchValue { value: [1, 0.5, -2], matcher: { matcher: "f32Digest", dims: 3, sha256: "F30B4641CCE164AF520D3F24CEE9F1EC8132C22BD991618F849BF024231D50B0" } }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a: 'f32Digest' takes dims a positive integer and sha256 64 lowercase hex characters (a malformed IR)" }
+    filesystem has []
+
+scenario "an IR whose dims is zero is a violation":
+  when: MatchValue { value: [], matcher: { matcher: "f32Digest", dims: 0, sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" } }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a: 'f32Digest' takes dims a positive integer and sha256 64 lowercase hex characters (a malformed IR)" }
+    filesystem has []
