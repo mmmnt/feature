@@ -256,6 +256,9 @@ else bad "ci-local-watchdog removes the run's container and stops the run past t
 : > "$WD/log"
 sleep 30 & VICTIM=$!
 PATH="$WD/bin:$PATH" bash "$SRC/scripts/ci-local-watchdog.sh" 5 "$VICTIM" "$WD/current" & DOG=$!
+# Stop it once its timer runs (its trap is in by then): a stop sent while bash is still starting up is the shell's to
+# lose, not the watchdog's, and on a loaded runner that once let the 5s cap fire.
+for _ in $(seq 1 50); do pgrep -P "$DOG" -x sleep >/dev/null && break; sleep 0.1; done
 kill "$DOG"; wait "$DOG" 2>/dev/null || true
 if ps -p "$VICTIM" >/dev/null 2>&1 && [ ! -s "$WD/log" ]; then ok "ci-local-watchdog stopped in time removes nothing and stops nothing"
 else bad "ci-local-watchdog stopped in time removes nothing and stops nothing" "$(cat "$WD/log")"; fi

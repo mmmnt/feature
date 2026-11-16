@@ -9,8 +9,10 @@ set -uo pipefail
 cap=${1:?seconds}; pid=${2:?run pid}; current=${3:?current file}
 
 # Stopped (the run ended in time): take the sleep down too, so no timer outlives the run and fires on a reused pid.
+# The trap goes in before the timer starts, so a stop that lands as soon as the timer exists is never missed.
+timer=
+trap '[ -z "$timer" ] || kill "$timer" 2>/dev/null; exit 0' TERM INT
 sleep "$cap" & timer=$!
-trap 'kill "$timer" 2>/dev/null; exit 0' TERM INT
 wait "$timer"
 ps -p "$pid" >/dev/null 2>&1 || exit 0
 echo "ci-local: the run passed the ${cap}s cap (host rule 8ea670d4); stopping it" >&2
