@@ -1,0 +1,27 @@
+feat 1.0
+
+# ADR-0030: a negated digest passes on every other array, which pins nothing; 'not f32 …' is refused as MALFORMED_SYNTAX with the form.
+
+spec SPEC-BAD-128 "negated f32 digest"
+context Bad
+aggregate Thing
+type command
+status draft
+
+construct:
+  handler at src/do-thing.ts
+  touches src/**
+
+enforce:
+  do the thing
+
+contract:
+  input ThingInput
+  response ThingResult
+  record ThingRow
+
+scenario "does the thing":
+  when: DoThing { value: 1 }
+  predict success:
+    response OK ThingResult
+    eventStore has [ Wrote with ThingRow { ref: not f32 3 sha256 "f30b4641cce164af520d3f24cee9f1ec8132c22bd991618f849bf024231d50b0" } ]

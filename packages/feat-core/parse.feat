@@ -28,6 +28,12 @@ feat 1.0
 # operand of `not`); the runtime evaluates it (SPEC-RT-012). A given line `random seed <n>` is recorded as
 # given.random; the harness delivers it (SPEC-RT-013). One new exemplar, corpus/given-ref, and two refusal
 # fixtures; every other scenario and every other exemplar's IR is unchanged.
+#
+# AMENDMENT (ADR-0030, the f32 digest matcher; founder ruling 2026-11-16, "New Feature matcher
+# (Recommended)", agreed "Agree as drafted (Recommended)"). A value block's matcher may be
+# `f32 <dims> sha256 "<hex>"`, recorded as { matcher: "f32Digest", dims, sha256 }; the runtime evaluates it
+# (SPEC-RT-014). One new exemplar, corpus/f32-digest, and seven refusal fixtures; every other scenario and every
+# other exemplar's IR is unchanged.
 
 spec SPEC-CORE-001 "Parse a .feat file to BuiltSpec IR"
 context Toolchain
@@ -71,12 +77,16 @@ construct:
   `given` is never read as a service key. A given line `random seed <n>`, n a whole number from 0 to
   9007199254740991, is recorded as given.random (ADR-0029); any other line beginning `random seed` is
   MALFORMED_SYNTAX.
+  In a value block's matcher position, `f32` followed by a positive integer, `sha256` and a string of 64
+  lowercase hexadecimal characters is the f32 digest matcher (ADR-0030), recorded as { matcher: "f32Digest",
+  dims, sha256 }. A length that is not a positive integer, a digest that is not 64 lowercase hex, a missing
+  part, and `not f32 ...` are MALFORMED_SYNTAX, each with a hint giving the form.
 
 enforce:
   read the version pragma before anything else
   rejects MISSING_PRAGMA when the first non-comment line is not a feat version pragma
   rejects UNSUPPORTED_VERSION when the pragma names a version this toolchain does not support
-  rejects MALFORMED_SYNTAX when a compiler-zone block violates the grammar, a fault line in given: included (ADR-0023), a negation whose operand is not a matcher it takes (ADR-0027), and a random seed that is not a whole number in range (ADR-0029)
+  rejects MALFORMED_SYNTAX when a compiler-zone block violates the grammar, a fault line in given: included (ADR-0023), a negation whose operand is not a matcher it takes (ADR-0027), a random seed that is not a whole number in range (ADR-0029), and an f32 digest of any other shape (ADR-0030)
   rejects UNKNOWN_SERVICE_KEY when a prediction or a given fault targets a service absent from the config services, or a cross-surface capture reference names one (ADR-0021 — a reference names a service, so it shares the closed space)
   rejects UNKNOWN_COMMAND when a when or execute names a command absent from response.commands
   rejects UNDECLARED_SCHEMA when a scenario references a schema absent from the contract block
@@ -194,6 +204,12 @@ scenario "parses the given-response and random-seed exemplar (given-ref, ADR-002
     response OK BuiltSpec equals fixture "../../corpus/given-ref/given-ref.ir.json"
     filesystem has []
 
+scenario "parses the f32 digest exemplar (f32-digest, ADR-0030)":
+  when: Parse { spec: "corpus/f32-digest/f32-digest.feat", config: "corpus/f32-digest/feat.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "../../corpus/f32-digest/f32-digest.ir.json"
+    filesystem has []
+
 scenario "a word that merely begins with fault stays freeform context":
   when: Parse { spec: "packages/feat-core/fixtures/ok/fault-prefix-word.feat", config: "packages/feat-core/fixtures/parse.config.json" }
   predict success:
@@ -238,6 +254,13 @@ scenario outline "rejects invalid specs with the precise code":
     | "packages/feat-core/fixtures/bad/not-block.feat"                    | "MALFORMED_SYNTAX"        |
     | "packages/feat-core/fixtures/bad/not-bare.feat"                     | "MALFORMED_SYNTAX"        |
     | "packages/feat-core/fixtures/bad/not-unknown-capture-service.feat"  | "UNKNOWN_SERVICE_KEY"     |
+    | "packages/feat-core/fixtures/bad/f32-zero-dims.feat"                | "MALFORMED_SYNTAX"        |
+    | "packages/feat-core/fixtures/bad/f32-fractional-dims.feat"          | "MALFORMED_SYNTAX"        |
+    | "packages/feat-core/fixtures/bad/f32-uppercase-digest.feat"         | "MALFORMED_SYNTAX"        |
+    | "packages/feat-core/fixtures/bad/f32-short-digest.feat"             | "MALFORMED_SYNTAX"        |
+    | "packages/feat-core/fixtures/bad/f32-missing-sha256.feat"           | "MALFORMED_SYNTAX"        |
+    | "packages/feat-core/fixtures/bad/f32-bare.feat"                     | "MALFORMED_SYNTAX"        |
+    | "packages/feat-core/fixtures/bad/not-f32.feat"                      | "MALFORMED_SYNTAX"        |
 
 scenario outline "refuses a negation of a matcher it does not take, naming the spelling to use":
   when: Parse { spec: <spec>, config: "packages/feat-core/fixtures/parse.config.json" }
@@ -251,3 +274,18 @@ scenario outline "refuses a negation of a matcher it does not take, naming the s
     | "packages/feat-core/fixtures/bad/not-bare-any.feat"   | "^'not any' is refused" | "^Write 'absent'"                   |
     | "packages/feat-core/fixtures/bad/not-block.feat"      | "^'not \\{ … \\}' is refused" | "^Negate a field inside the block" |
     | "packages/feat-core/fixtures/bad/not-bare.feat"       | "^'not' takes a matcher" | "^Write 'not' and one matcher"     |
+
+scenario outline "refuses an f32 digest of any other shape, giving the form":
+  when: Parse { spec: <spec>, config: "packages/feat-core/fixtures/parse.config.json" }
+  predict rejection MALFORMED_SYNTAX:
+    response ERR ParseError { code: "MALFORMED_SYNTAX", message: matching <message>, hint: matching "^Write 'f32 <dims> sha256" }
+    filesystem has []
+  examples:
+    | spec                                                     | message                                         |
+    | "packages/feat-core/fixtures/bad/f32-zero-dims.feat"        | "^'f32' takes a positive integer length: '0'"   |
+    | "packages/feat-core/fixtures/bad/f32-fractional-dims.feat"  | "^'f32' takes a positive integer length: '1\\.5'" |
+    | "packages/feat-core/fixtures/bad/f32-uppercase-digest.feat" | "^the digest after 'sha256' must be 64 lowercase" |
+    | "packages/feat-core/fixtures/bad/f32-short-digest.feat"     | "^the digest after 'sha256' must be 64 lowercase" |
+    | "packages/feat-core/fixtures/bad/f32-missing-sha256.feat"   | "^'f32' takes a length, the word 'sha256'"      |
+    | "packages/feat-core/fixtures/bad/f32-bare.feat"             | "^'f32' takes a length, the word 'sha256'"      |
+    | "packages/feat-core/fixtures/bad/not-f32.feat"              | "^'not f32 …' is refused"                       |

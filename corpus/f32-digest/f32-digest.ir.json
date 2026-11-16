@@ -1,0 +1,151 @@
+{
+  "featVersion": "1.0",
+  "identity": {
+    "id": "SPEC-EMB-001",
+    "name": "EncodeEntry stores the entry's vector",
+    "context": "Retrieval",
+    "aggregate": "EntryVector",
+    "type": "command",
+    "status": "agreed"
+  },
+  "construct": [
+    {
+      "kind": "handler",
+      "path": "features/encode-entry/handler.ts"
+    },
+    {
+      "kind": "touches",
+      "glob": "features/encode-entry/**"
+    }
+  ],
+  "enforce": [
+    {
+      "kind": "constraint",
+      "text": "store the encoder's vector of an entry's text on its node"
+    },
+    {
+      "kind": "constraint",
+      "text": "store no vector for an entry with no text"
+    }
+  ],
+  "contract": [
+    {
+      "kind": "input",
+      "schemaName": "EncodeInput"
+    },
+    {
+      "kind": "response",
+      "schemaName": "EncodeReceipt"
+    },
+    {
+      "kind": "record",
+      "schemaName": "NodeRecord"
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "an entry's text is encoded onto its node",
+      "when": {
+        "command": "EncodeEntry",
+        "payload": {
+          "id": "e-1",
+          "text": "Use an event store"
+        }
+      },
+      "prediction": {
+        "type": "success",
+        "response": {
+          "status": 200,
+          "schemaName": "EncodeReceipt",
+          "valueBlock": {
+            "id": {
+              "matcher": "whenRef",
+              "path": "id"
+            },
+            "vector": {
+              "matcher": "f32Digest",
+              "dims": 3,
+              "sha256": "f30b4641cce164af520d3f24cee9f1ec8132c22bd991618f849bf024231d50b0"
+            }
+          }
+        },
+        "services": {
+          "graph": {
+            "records": [
+              {
+                "type": "INSERT",
+                "schemaName": "NodeRecord",
+                "valueBlock": {
+                  "id": {
+                    "matcher": "whenRef",
+                    "path": "id"
+                  },
+                  "embedding": {
+                    "matcher": "f32Digest",
+                    "dims": 3,
+                    "sha256": "f30b4641cce164af520d3f24cee9f1ec8132c22bd991618f849bf024231d50b0"
+                  },
+                  "meta": {
+                    "matcher": "nested",
+                    "fields": {
+                      "embedding": {
+                        "matcher": "f32Digest",
+                        "dims": 3,
+                        "sha256": "044bdfb2048c0269d4c7b14b711d00b3a55d60a5fc77cce6289fc5b1eedf7eda"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "an entry with no text gets no vector",
+      "when": {
+        "command": "EncodeEntry",
+        "payload": {
+          "id": "e-2",
+          "text": ""
+        }
+      },
+      "prediction": {
+        "type": "success",
+        "response": {
+          "status": 200,
+          "schemaName": "EncodeReceipt",
+          "valueBlock": {
+            "id": {
+              "matcher": "whenRef",
+              "path": "id"
+            },
+            "vector": {
+              "matcher": "absent"
+            }
+          }
+        },
+        "services": {
+          "graph": {
+            "records": [
+              {
+                "type": "INSERT",
+                "schemaName": "NodeRecord",
+                "valueBlock": {
+                  "id": {
+                    "matcher": "whenRef",
+                    "path": "id"
+                  },
+                  "embedding": {
+                    "matcher": "absent"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

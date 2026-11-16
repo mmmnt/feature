@@ -1,0 +1,32 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-EMB-001",
+  "schemas": {
+    "EncodeInput": {
+      "type": "object",
+      "required": ["id", "text"],
+      "additionalProperties": false,
+      "properties": { "id": { "type": "string", "minLength": 1 }, "text": { "type": "string" } }
+    },
+    "EncodeReceipt": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string" },
+        "vector": { "type": "array", "items": { "type": "number" } }
+      }
+    },
+    "NodeRecord": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string" },
+        "embedding": { "type": "array", "items": { "type": "number" } },
+        "meta": {
+          "type": "object",
+          "properties": { "embedding": { "type": "array", "items": { "type": "number" } } }
+        }
+      }
+    }
+  }
+}

@@ -296,6 +296,17 @@
           }
         },
         {
+          "match": "\\b(f32)[ \\t]+[0-9]+[ \\t]+(sha256)\\b(?=[ \\t]+\")",
+          "captures": {
+            "1": {
+              "name": "support.function.matcher.feat"
+            },
+            "2": {
+              "name": "support.function.matcher.feat"
+            }
+          }
+        },
+        {
           "match": "\\b(equals fixture)\\b",
           "name": "support.function.matcher.feat"
         }

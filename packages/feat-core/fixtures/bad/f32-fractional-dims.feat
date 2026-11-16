@@ -1,0 +1,27 @@
+feat 1.0
+
+# ADR-0030: the length of an f32 digest is a positive integer; 1.5 is refused as MALFORMED_SYNTAX with the form.
+
+spec SPEC-BAD-123 "f32 digest of a fractional length"
+context Bad
+aggregate Thing
+type command
+status draft
+
+construct:
+  handler at src/do-thing.ts
+  touches src/**
+
+enforce:
+  do the thing
+
+contract:
+  input ThingInput
+  response ThingResult
+  record ThingRow
+
+scenario "does the thing":
+  when: DoThing { value: 1 }
+  predict success:
+    response OK ThingResult
+    eventStore has [ Wrote with ThingRow { ref: f32 1.5 sha256 "f30b4641cce164af520d3f24cee9f1ec8132c22bd991618f849bf024231d50b0" } ]

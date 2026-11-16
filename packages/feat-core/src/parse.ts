@@ -330,7 +330,33 @@ function parseNegation(c: ValueCursor): Matcher {
     throw new ParseFailure("MALFORMED_SYNTAX", "'not absent' is refused: it means a value is present, which 'any' says.", undefined, "Write 'any' for a field that must be present.");
   if (operand.matcher === "any" && operand.ofType === undefined)
     throw new ParseFailure("MALFORMED_SYNTAX", "'not any' is refused: 'any' passes on every present value, so its negation can never pass.", undefined, "Write 'absent' for a field that must not exist; 'not any <type>' negates a type check.");
+  if (operand.matcher === "f32Digest")
+    throw new ParseFailure("MALFORMED_SYNTAX", "'not f32 …' is refused: a negated digest passes on every other array, which pins nothing.", undefined, F32_HINT);
   return { matcher: "not", operand };
+}
+
+const F32_HINT = "Write 'f32 <dims> sha256 \"<64 lowercase hex>\"', e.g. 'embedding: f32 384 sha256 \"9c1e…\"'.";
+
+/**
+ * The f32 digest `f32 <dims> sha256 "<hex>"` (ADR-0030): a positive integer length, the word sha256 and a
+ * string of 64 lowercase hexadecimal characters. Any other shape after `f32` is refused with the form.
+ */
+function parseF32Digest(c: ValueCursor): Matcher {
+  const at = c.src.slice(c.pos);
+  const head = /^f32[ \t]+([^\s,}]+)[ \t]+sha256[ \t]+/.exec(at);
+  if (!head || c.src[c.pos + head[0].length] !== '"') {
+    const dims = /^f32[ \t]+([^\s,}]+)/.exec(at);
+    if (dims && !/^[1-9][0-9]*$/.test(dims[1]!))
+      throw new ParseFailure("MALFORMED_SYNTAX", `'f32' takes a positive integer length: '${dims[1]}' is not one.`, undefined, F32_HINT);
+    throw new ParseFailure("MALFORMED_SYNTAX", "'f32' takes a length, the word 'sha256' and a quoted digest.", undefined, F32_HINT);
+  }
+  if (!/^[1-9][0-9]*$/.test(head[1]!))
+    throw new ParseFailure("MALFORMED_SYNTAX", `'f32' takes a positive integer length: '${head[1]}' is not one.`, undefined, F32_HINT);
+  c.pos += head[0].length;
+  const sha256 = parseString(c);
+  if (!/^[0-9a-f]{64}$/.test(sha256))
+    throw new ParseFailure("MALFORMED_SYNTAX", "the digest after 'sha256' must be 64 lowercase hexadecimal characters.", undefined, F32_HINT);
+  return { matcher: "f32Digest", dims: Number(head[1]), sha256 };
 }
 
 function parseMatcher(c: ValueCursor): Matcher {
@@ -338,6 +364,7 @@ function parseMatcher(c: ValueCursor): Matcher {
   const rest = () => c.src.slice(c.pos);
   if (c.peek() === "{") return { matcher: "nested", fields: parseValueBlock(c) };
   if (/^not(?:[\s,}]|$)/.test(rest())) return parseNegation(c);
+  if (/^f32(?:[\s,}]|$)/.test(rest())) return parseF32Digest(c);
   let m: RegExpExecArray | null;
   if ((m = /^@when\.([A-Za-z0-9_.\-]+)/.exec(rest()))) {
     c.pos += m[0].length;

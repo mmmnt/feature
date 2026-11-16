@@ -459,7 +459,7 @@ console.log(out); // [ 'response › id: expected any uuid, got "nope"' ]
 
 Matchers: `literal`, `whenRef` (`@when.<path>`), `deliverRef` (`@deliver.<path>`), `captureRef`
 (`@<service>[i].<path>`, a value captured on another surface), `any` (optionally `uuid`, `timestamp`,
-`string`, `number` or `boolean`), `regex`, `absent`, `goldenFixture`, `nested` and `not`. `@when` and
+`string`, `number` or `boolean`), `regex`, `absent`, `goldenFixture`, `nested`, `not` and `f32Digest`. `@when` and
 `@deliver` equal the values actually sent, after `@given.response.*` resolved. A `captureRef` whose
 service captured nothing, or whose index is out of range, is a violation, never a pass. A
 `placeholder` matcher that reaches the runtime is a violation too: derive should have replaced it.
@@ -468,8 +468,14 @@ service captured nothing, or whose index is out of range, is a violation, never 
 absent field is a violation, whatever the operand. A reference operand that cannot resolve (a service that
 captured nothing, an index out of range, a path absent from the `when:` payload, the delivered stimulus or
 the captured record) is a violation too, never a pass, and so is an operand the language refuses (`absent`,
-`not`, `nested`, `goldenFixture`, `any` without a type) found in an IR. A violation names the operand as
+`not`, `nested`, `goldenFixture`, `f32Digest`, `any` without a type) found in an IR. A violation names the operand as
 written and, for a reference, the value it resolved to: `expected not @log[0].cycleId (= "c-1"), got "c-1"`.
+
+`f32Digest` (SPEC-RT-014, ADR-0030) passes when the field is an array of exactly `dims` numbers, each exactly
+an f32 (`Math.fround(x) === x`), whose consecutive little-endian f32 bytes hash (sha256, lowercase hex) to
+`sha256`. The first failing check is the one violation: absent, not an array of numbers, a wrong length, a
+value that is not an f32 (it is never hashed rounded), a differing digest (both shown in full). An IR whose
+`dims` is not a positive integer or whose `sha256` is not 64 lowercase hex is a violation, never a pass.
 
 `contains` is a subset check against `read()`: every predicted record must match a distinct state
 record, and extra state is not a violation. Exclusivity belongs to `has`.

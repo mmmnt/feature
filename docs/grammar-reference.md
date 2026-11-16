@@ -381,6 +381,7 @@ matcher     := LITERAL | "@when." PATH | "@deliver" [ "[" INT "]" ] "." PATH
              | "any" [ "uuid"|"timestamp"|"string"|"number"|"boolean" ]
              | "matching" STRING | "absent" | valueBlock
              | "not" operand                                         # ADR-0027: negation
+             | "f32" INT "sha256" STRING                             # ADR-0030: f32 digest
 operand     := LITERAL | "@when." PATH | "@deliver" [ "[" INT "]" ] "." PATH
              | "@" IDENT:serviceKey [ "[" INT "]" ] "." PATH
              | "any" ( "uuid"|"timestamp"|"string"|"number"|"boolean" )
@@ -401,10 +402,11 @@ operand     := LITERAL | "@when." PATH | "@deliver" [ "[" INT "]" ] "." PATH
 | `matching "<regex>"` | String matches pattern |
 | `absent` | Field must not exist |
 | `not <matcher>` | **Negation** (ADR-0027): the field is present and `<matcher>` fails on its value — `cycleId: not @log[0].data.cycleId` (a redo's id differs from the first attempt's), `status: not "Failed"`, `ref: not matching "^tmp-"`, `id: not any uuid`. An absent field fails `not M` whatever `M` is. The operand is a literal, an `@when` / `@deliver` / `@<service>[i]` reference, `any <type>`, `matching "<regex>"`, or an outline placeholder. A reference operand that cannot resolve (a service that captured nothing, an index out of range, a path absent on the referent) is a **violation**, as a plain reference is. Refused as `MALFORMED_SYNTAX`: `not not M` (write `M`), `not absent` (write `any`), `not any` without a type (it can never pass; write `absent`), `not { … }` (negate a field inside the block instead) and a bare `not`. A violation names the negated matcher and, for a reference, the value it resolved to: `expected not @log[0].data.cycleId (= "c-1"), got "c-1"`. IR: `{ "matcher": "not", "operand": <matcher> }`. Corpus exemplar: `corpus/not-matcher/`. |
+| `f32 <dims> sha256 "<hex>"` | **f32 digest** (ADR-0030): the field is an array of exactly `<dims>` numbers, each exactly an IEEE-754 single (`Math.fround(x) === x`), and the sha256 of the values written as consecutive 4-byte little-endian f32s is `<hex>` (64 lowercase hex) — `embedding: f32 384 sha256 "9c1e…"` predicts a pinned encoder's vector exactly in one line. Each check is a violation, the first failing one reported: absent; not an array of numbers; wrong length (`expected 384 f32 values, got 512`); a value that is not an f32 (`value [17] = 0.1 is not an f32 (the nearest f32 is 0.10000000149011612)`); a differing digest (both shown in full). A malformed IR is a violation, never a pass. Refused as `MALFORMED_SYNTAX` with the form as hint: a length that is not a positive integer, a digest that is not 64 lowercase hex, a missing part, and `not f32 …` (a negated digest pins nothing). No outline placeholders. IR: `{ "matcher": "f32Digest", "dims": <int>, "sha256": "<hex>" }`. Corpus exemplar: `corpus/f32-digest/`. |
 | `equals fixture "<path>"` | **Golden fixture** (ADR-0013): deep structural equality against a JSON fixture (key-order insensitive, array-order sensitive). Also valid directly on `response` and on records (`<Type> with <Schema> equals fixture "<path>"`, incl. `contains`) — there it is mutually exclusive with a value block. Fixture resolves relative to the spec, inlines at compile time, and must validate against the position's schema (type-safe goldens). No escape clause — dynamic fields belong in value blocks. |
 | `{ ... }` | Nested value block |
 
-Reserved words (`any`, `matching`, `absent`, `not`, `ordered`, `unordered`) are reserved **inside
+Reserved words (`any`, `matching`, `absent`, `not`, `f32`, `sha256`, `ordered`, `unordered`) are reserved **inside
 compiler-zone blocks only** — agent zones remain fully freeform.
 
 ### 5.5 Ordering (ADR-0004)
@@ -550,7 +552,7 @@ Generated tests import only `@mmmnt/feat-runtime` and run standalone under `npx 
 **Given:** `execute` `seed` `from` `with`
 **Trigger:** `when:` `deliver … to`
 **Predict:** `success` `rejection` `error` `response` `has` `contains` `ordered` `unordered` `with` `equals fixture`
-**Value blocks:** `any` (`uuid` `timestamp` `string` `number` `boolean`) `matching` `absent` `not`
+**Value blocks:** `any` (`uuid` `timestamp` `string` `number` `boolean`) `matching` `absent` `not` `f32 … sha256`
 `@when.<path>`
 **Pragma:** `feat <major>.<minor>`
 

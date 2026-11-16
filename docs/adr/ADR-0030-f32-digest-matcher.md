@@ -1,8 +1,7 @@
 # ADR-0030 — the f32 digest matcher `f32 <dims> sha256 "<hex>"`
 
-Status: Proposed (draft). Founder ruling 2026-11-16, "New Feature matcher (Recommended)": a stored numeric
-array is predicted by its length and the sha256 of its little-endian f32 bytes. This ADR and SPEC-RT-014
-await the founder's flip; SPEC-CORE-001's amendment below is applied when they are agreed.
+Status: Accepted (founder ruling 2026-11-16, "New Feature matcher (Recommended)"; agreed 2026-11-16, "Agree as
+drafted (Recommended)"). Built in SPEC-CORE-001 (amended) and SPEC-RT-014 (new).
 
 ## Context
 
@@ -22,7 +21,8 @@ An exact digest of the values is as strict as the literal and one line long.
    It passes when the field is present, is an array of exactly `<dims>` numbers, each number is exactly
    representable as an IEEE-754 single (`Math.fround(x) === x`), and the sha256 of the values written as
    consecutive 4-byte little-endian f32s equals `<hex>`.
-2. Each check is a violation, never a pass, in this order, the first failing one reported:
+2. Each check is a violation, never a pass, in this order, the first failing one reported (digests are
+   shortened here; a violation shows them in full):
    - absent: `expected f32 384 sha256 "9c1e…4a", field is absent`;
    - not an array of numbers: `expected an array of 384 f32 values, got <JSON, truncated>`;
    - wrong length: `expected 384 f32 values, got 512`;
@@ -45,7 +45,7 @@ An exact digest of the values is as strict as the literal and one line long.
    the change is additive, every existing spec parses to the same IR, and the adapter interface and the Feat
    Host Protocol are unchanged.
 
-## Proposed amendment to SPEC-CORE-001 (applied on agreement)
+## The amendment to SPEC-CORE-001
 
 > AMENDMENT (ADR-0030, the f32 digest matcher). A value block's matcher may be `f32 <dims> sha256 "<hex>"`,
 > recorded as { matcher: "f32Digest", dims, sha256 }; the runtime evaluates it (SPEC-RT-014). One new

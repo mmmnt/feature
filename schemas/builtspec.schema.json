@@ -989,7 +989,7 @@
             "operand"
           ],
           "additionalProperties": false,
-          "description": "Negation (ADR-0027): passes when the field is present and the operand fails on its value. The operand is never absent, not, nested, goldenFixture, or any without ofType.",
+          "description": "Negation (ADR-0027): passes when the field is present and the operand fails on its value. The operand is never absent, not, nested, goldenFixture, f32Digest (ADR-0030), or any without ofType.",
           "properties": {
             "matcher": {
               "const": "not"
@@ -1003,7 +1003,7 @@
                   "not": {
                     "type": "object",
                     "required": ["matcher"],
-                    "properties": { "matcher": { "enum": ["not", "absent", "nested", "goldenFixture"] } }
+                    "properties": { "matcher": { "enum": ["not", "absent", "nested", "goldenFixture", "f32Digest"] } }
                   }
                 },
                 {
@@ -1015,6 +1015,29 @@
                   }
                 }
               ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "matcher",
+            "dims",
+            "sha256"
+          ],
+          "additionalProperties": false,
+          "description": "f32 digest (ADR-0030): an array of exactly dims numbers, each exactly an f32, whose consecutive little-endian f32 bytes hash (sha256, lowercase hex) to sha256.",
+          "properties": {
+            "matcher": {
+              "const": "f32Digest"
+            },
+            "dims": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
             }
           }
         }

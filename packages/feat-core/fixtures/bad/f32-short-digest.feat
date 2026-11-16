@@ -1,0 +1,27 @@
+feat 1.0
+
+# ADR-0030: the digest is 64 lowercase hexadecimal characters; a shorter one is refused as MALFORMED_SYNTAX with the form.
+
+spec SPEC-BAD-125 "f32 digest too short"
+context Bad
+aggregate Thing
+type command
+status draft
+
+construct:
+  handler at src/do-thing.ts
+  touches src/**
+
+enforce:
+  do the thing
+
+contract:
+  input ThingInput
+  response ThingResult
+  record ThingRow
+
+scenario "does the thing":
+  when: DoThing { value: 1 }
+  predict success:
+    response OK ThingResult
+    eventStore has [ Wrote with ThingRow { ref: f32 3 sha256 "f30b4641" } ]

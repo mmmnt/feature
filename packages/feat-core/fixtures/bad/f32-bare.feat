@@ -1,0 +1,27 @@
+feat 1.0
+
+# ADR-0030: 'f32' alone is refused as MALFORMED_SYNTAX with the form.
+
+spec SPEC-BAD-127 "bare f32"
+context Bad
+aggregate Thing
+type command
+status draft
+
+construct:
+  handler at src/do-thing.ts
+  touches src/**
+
+enforce:
+  do the thing
+
+contract:
+  input ThingInput
+  response ThingResult
+  record ThingRow
+
+scenario "does the thing":
+  when: DoThing { value: 1 }
+  predict success:
+    response OK ThingResult
+    eventStore has [ Wrote with ThingRow { ref: f32 } ]

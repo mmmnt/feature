@@ -1,7 +1,7 @@
 feat 1.0
 
 # SPEC-RT-014 — the runtime evaluates the f32 digest matcher `f32 <dims> sha256 "<hex>"` (founder ruling
-# 2026-11-16, "New Feature matcher (Recommended)"; ADR-0030). A consumer stores an embedding from an encoder it
+# 2026-11-16, "New Feature matcher (Recommended)"; agreed 2026-11-16, "Agree as drafted (Recommended)"; ADR-0030). A consumer stores an embedding from an encoder it
 # has shown reproducible bit for bit; a literal is exact but 384 numbers long, `any` pins nothing, a tolerance
 # is weaker than the encoder. SPEC-CORE-001 (amended by ADR-0030) parses the matcher to
 # { matcher: "f32Digest", dims, sha256 }; this spec makes applyMatcher evaluate it.
@@ -23,7 +23,7 @@ spec SPEC-RT-014 "Matcher: the f32 digest f32 <dims> sha256 \"<hex>\""
 context Toolchain
 aggregate Runtime
 type infrastructure
-status draft
+status agreed
 
 construct:
   handler at packages/feat-runtime/src/matcher.ts

@@ -73,6 +73,10 @@ describe("feat grammar tokenization", () => {
     expect(scopesAt('      status: not "Failed"', "not")).toContain("support.function.matcher.feat");
     expect(scopesAt("      cycleId: not @log[0].cycleId", "not")).toContain("support.function.matcher.feat");
     expect(scopesAt("  rejects CYCLE_NOT_FAILED when the cycle has not failed", "not")).not.toContain("support.function.matcher.feat");
+    // ADR-0030 — the f32 digest matcher's two words, in the digest form only.
+    expect(scopesAt('      embedding: f32 384 sha256 "9c1e"', "f32")).toContain("support.function.matcher.feat");
+    expect(scopesAt('      embedding: f32 384 sha256 "9c1e"', "sha256")).toContain("support.function.matcher.feat");
+    expect(scopesAt("  store the f32 vector and its sha256 for audit", "f32")).not.toContain("support.function.matcher.feat");
     expect(scopesAt("      email: @when.email", "@when.email")).toContain("variable.language.stimulus-ref.feat");
     expect(scopesAt("      id: @deliver[1].orderId", "@deliver[1].orderId")).toContain("variable.language.stimulus-ref.feat");
     // ADR-0021 — a cross-surface capture reference names a service, and reads like every other

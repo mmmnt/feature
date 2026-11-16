@@ -117,7 +117,13 @@ export type Matcher =
    * fails on its value. The language never writes an operand that is absent, not, nested, goldenFixture or
    * an any without ofType; a reference operand that cannot resolve is a violation.
    */
-  | { matcher: "not"; operand: Matcher };
+  | { matcher: "not"; operand: Matcher }
+  /**
+   * ADR-0030 (SPEC-RT-014): the f32 digest `f32 <dims> sha256 "<hex>"` passes on an array of exactly `dims`
+   * numbers, each exactly an f32, whose consecutive little-endian f32 bytes hash (sha256, lowercase hex) to
+   * `sha256`. A negation never takes it as its operand.
+   */
+  | { matcher: "f32Digest"; dims: number; sha256: string };
 
 export interface ValueBlock {
   [field: string]: Matcher;

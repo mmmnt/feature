@@ -1,0 +1,27 @@
+feat 1.0
+
+# ADR-0030: the digest is 64 lowercase hexadecimal characters; an uppercase digest is refused as MALFORMED_SYNTAX with the form.
+
+spec SPEC-BAD-124 "f32 digest in uppercase"
+context Bad
+aggregate Thing
+type command
+status draft
+
+construct:
+  handler at src/do-thing.ts
+  touches src/**
+
+enforce:
+  do the thing
+
+contract:
+  input ThingInput
+  response ThingResult
+  record ThingRow
+
+scenario "does the thing":
+  when: DoThing { value: 1 }
+  predict success:
+    response OK ThingResult
+    eventStore has [ Wrote with ThingRow { ref: f32 3 sha256 "F30B4641CCE164AF520D3F24CEE9F1EC8132C22BD991618F849BF024231D50B0" } ]

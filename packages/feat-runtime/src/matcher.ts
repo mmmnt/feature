@@ -2,6 +2,7 @@
 // Pure: returns a list of violations, each carrying its anchor; the harness throws.
 
 import type { CapturedRecord, CapturedResponse, Matcher, PredictedRecord, ValueBlock } from "@mmmnt/feat-types";
+import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
@@ -208,7 +209,55 @@ export function applyMatcher(actual: unknown, present: boolean, m: Matcher, ctx:
     case "not":
       applyNegation(actual, present, m.operand, ctx, anchor, out);
       return;
+    case "f32Digest":
+      applyF32Digest(actual, present, m, anchor, out);
+      return;
   }
+}
+
+const SHA256_HEX = /^[0-9a-f]{64}$/;
+
+/** JSON of a value for a violation, cut to 80 characters with an ellipsis when longer (ADR-0030). */
+function shownCut(value: unknown): string {
+  const json = JSON.stringify(value) ?? String(value);
+  return json.length > 80 ? `${json.slice(0, 80)}…` : json;
+}
+
+/**
+ * ADR-0030 (SPEC-RT-014): an array of exactly `dims` numbers, each exactly an f32, whose consecutive
+ * little-endian f32 bytes hash to `sha256`. The first failing check is the one violation; a malformed IR is
+ * a violation, never a pass.
+ */
+function applyF32Digest(actual: unknown, present: boolean, m: { dims: number; sha256: string }, anchor: string, out: string[]) {
+  if (!Number.isInteger(m.dims) || m.dims <= 0 || typeof m.sha256 !== "string" || !SHA256_HEX.test(m.sha256)) {
+    out.push(`${anchor}: 'f32Digest' takes dims a positive integer and sha256 64 lowercase hex characters (a malformed IR)`);
+    return;
+  }
+  if (!present) {
+    out.push(`${anchor}: expected f32 ${m.dims} sha256 ${JSON.stringify(m.sha256)}, field is absent`);
+    return;
+  }
+  if (!Array.isArray(actual) || !actual.every((x) => typeof x === "number")) {
+    out.push(`${anchor}: expected an array of ${m.dims} f32 values, got ${shownCut(actual)}`);
+    return;
+  }
+  const values = actual as number[];
+  if (values.length !== m.dims) {
+    out.push(`${anchor}: expected ${m.dims} f32 values, got ${values.length}`);
+    return;
+  }
+  const bytes = Buffer.alloc(values.length * 4);
+  for (let i = 0; i < values.length; i++) {
+    const x = values[i]!;
+    const nearest = Math.fround(x);
+    if (!Object.is(nearest, x)) {
+      out.push(`${anchor}: value [${i}] = ${x} is not an f32 (the nearest f32 is ${nearest})`);
+      return;
+    }
+    bytes.writeFloatLE(x, i * 4);
+  }
+  const digest = createHash("sha256").update(bytes).digest("hex");
+  if (digest !== m.sha256) out.push(`${anchor}: expected f32 sha256 ${JSON.stringify(m.sha256)}, got ${JSON.stringify(digest)}`);
 }
 
 /** The operand of a negation as the spec writes it, for the violation's words (ADR-0027). */
@@ -298,7 +347,7 @@ function showGivenRef(m: { path: string; index?: number }): string {
   return m.index === undefined ? `@given.response.${m.path}` : `@given[${m.index}].response.${m.path}`;
 }
 
-const REFUSED_OPERANDS = new Set(["absent", "not", "nested", "goldenFixture"]);
+const REFUSED_OPERANDS = new Set(["absent", "not", "nested", "goldenFixture", "f32Digest"]); // ADR-0030: a negated digest pins nothing
 
 /**
  * `not M` (ADR-0027, SPEC-RT-011): passes when the field is present and M fails on its value. An absent

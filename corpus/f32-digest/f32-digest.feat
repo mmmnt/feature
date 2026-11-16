@@ -1,0 +1,42 @@
+feat 1.0
+
+# Corpus exemplar #19 — the f32 digest matcher `f32 <dims> sha256 "<hex>"` (ADR-0030). A pinned encoder's
+# vector is predicted exactly by its length and the sha256 of its little-endian f32 bytes, one line instead of
+# every value. Shown in a response value block, in a record's value block, inside a nested block, and beside
+# `absent` for an entry with no text. The IR is { matcher: "f32Digest", dims, sha256 }. The digests here are
+# of [1, 0.5, -2] (f30b4641…) and [0.25, -0.125, 3] (044bdfb2…).
+
+spec SPEC-EMB-001 "EncodeEntry stores the entry's vector"
+context Retrieval
+aggregate EntryVector
+type command
+status agreed
+
+construct:
+  handler at features/encode-entry/handler.ts
+  touches features/encode-entry/**
+
+enforce:
+  store the encoder's vector of an entry's text on its node
+  store no vector for an entry with no text
+
+contract:
+  input EncodeInput
+  response EncodeReceipt
+  record NodeRecord
+
+scenario "an entry's text is encoded onto its node":
+  when: EncodeEntry { id: "e-1", text: "Use an event store" }
+  predict success:
+    response 200 EncodeReceipt { id: @when.id, vector: f32 3 sha256 "f30b4641cce164af520d3f24cee9f1ec8132c22bd991618f849bf024231d50b0" }
+    graph has [
+      INSERT with NodeRecord { id: @when.id, embedding: f32 3 sha256 "f30b4641cce164af520d3f24cee9f1ec8132c22bd991618f849bf024231d50b0", meta: { embedding: f32 3 sha256 "044bdfb2048c0269d4c7b14b711d00b3a55d60a5fc77cce6289fc5b1eedf7eda" } }
+    ]
+
+scenario "an entry with no text gets no vector":
+  when: EncodeEntry { id: "e-2", text: "" }
+  predict success:
+    response 200 EncodeReceipt { id: @when.id, vector: absent }
+    graph has [
+      INSERT with NodeRecord { id: @when.id, embedding: absent }
+    ]

@@ -1,0 +1,15 @@
+{
+  "featVersion": "1.0",
+  "schemas": { "adapter": "@mmmnt/feat-schema-json" },
+  "response": {
+    "adapter": "@mmmnt/feat-adapter-handler",
+    "commands": {
+      "EncodeEntry": { "module": "features/encode-entry/handler.ts", "export": "encodeEntry" }
+    }
+  },
+  "services": {
+    "graph": { "adapter": "@mmmnt/feat-adapter-memory", "consistency": "strong" }
+  },
+  "specs": { "dir": ".", "pattern": "*.feat", "contractPattern": "*.contract.json", "outputPattern": "{name}.test.ts" },
+  "report": { "format": ["console"] }
+}
