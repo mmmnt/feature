@@ -28,10 +28,25 @@ Feature tracks scope in its local working ledger; a GitHub project issue follows
 
 - One comment carrying `<!-- feat-pr-report -->`: list issue comments, PATCH the marked one, else POST.
 - One check run `feat report` (`POST /repos/{o}/{r}/check-runs`), conclusion = verdict
-  (`success` / `failure` / `neutral` for incomplete), `output.summary` = the same markdown. If it exceeds the
-  API's 65 535-character limit, whole detail sections (per-spec tables first) are dropped and replaced by a link to
-  the run's full report; the verdict, the chain of evidence and every digest are never cut or shortened.
+  (`success` / `failure` / `neutral` for incomplete), `output.summary` = the same markdown.
 - Also `$GITHUB_STEP_SUMMARY` (free, no permission).
+
+## The comment (founder 2026-11-17: "keep it evidential and focus on the attestation + testing involved … be direct + concise")
+
+Compact, no prose sentences. Sections, in order (see MOCK-REPORT.md):
+
+| Section | Content |
+|---|---|
+| Header | `✅`/`❌` PR #N, the verdict or the first failed check; head commit, built ref @ built commit, run link |
+| Tests | per tier: specs, scenarios passed / total, evidence bundle digest; CI jobs passed / total |
+| Attestations | per artifact: name, full digest, signer `workflow@ref`, source commit, Rekor log index, ✅/❌ |
+| Chain | one row per check: built commit parents = base + head; each source commit = built commit; signer = this repository's workflow, issuer GitHub Actions; pinned images = pin file |
+| Verify | collapsed: the `gh attestation verify` command for the PR's artifact |
+
+On failure only the header and the failing row change. After merge, one line is appended (merged as · merge
+attestation digest · Rekor index · link to the main report). Certificate identity, builder, log entry UUID,
+integrated time and the full provenance are not in the comment; they are in the evidence bundle and the
+attestations, which the Verify command reaches. Digests and SHAs are never shortened.
 
 ## Chain of evidence (what is checked, link by link)
 
