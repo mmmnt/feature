@@ -1,14 +1,24 @@
 #!/usr/bin/env bash
-# Before a push, run the ubuntu jobs of .github/workflows/ci.yml on each commit being pushed, in throwaway Linux
-# containers (scripts/ci-local.sh). A failing job blocks the push. The one-time setup per clone is in
-# README.md ("Local CI before a push"). A commit that already passed is not run again (ci-local's
-# --skip-passed), so pushing a tag after its branch costs no second run.
+# Before a push, every commit being pushed must have passed the full local gate: a pass record that
+# scripts/ci-local.sh (the default selection) or `scripts/ci-local.sh --rebased` left for exactly that commit and the
+# current runner. The hook runs nothing; it only looks, so the push itself takes a moment.
+#
+# Why it no longer runs the gate (founder ruling 2026-11-17, adopting flmnt's b4e3656a for Feature): `git push`
+# opens its connection to the remote (ssh git-receive-pack) before it runs pre-push and holds it idle while the hook
+# works. Measured on 2026-11-16 (flmnt exploration 7858a34f), the session was gone about 6 minutes into a 7.5-minute
+# hook, the push exited after the hook, and the remote never moved: the silent no-land seen on several releases.
+# Run the gate first, then push:
+#
+#   scripts/ci-local.sh            # the full gate on HEAD; a pass leaves the record
+#   git push origin HEAD:main      # instant: this hook checks the record
+#
+# The one-time setup per clone is in README.md ("Local CI before a push").
 set -euo pipefail
 
 ROOT=$(git rev-parse --show-toplevel)
 ZERO=0000000000000000000000000000000000000000
 seen=" "
-commits=()
+missing=()
 # git feeds one line per ref: <local ref> <local oid> <remote ref> <remote oid>
 while read -r local_ref local_oid remote_ref remote_oid; do
   [ -n "${local_oid:-}" ] || continue
@@ -16,11 +26,17 @@ while read -r local_ref local_oid remote_ref remote_oid; do
   commit=$(git rev-parse --verify "$local_oid^{commit}" 2>/dev/null) || continue # a tag of a non-commit
   case "$seen" in *" $commit "*) continue ;; esac
   seen="$seen$commit "
-  commits+=("$commit")
+  record=$("$ROOT/scripts/ci-local.sh" --record-path --ref "$commit")
+  if [ -f "$record" ]; then
+    echo "pre-push: $commit passed the gate ($(head -1 "$record"))"
+  else
+    missing+=("$commit")
+  fi
 done
 
-[ "${#commits[@]}" -gt 0 ] || exit 0
-for commit in "${commits[@]}"; do
-  echo "pre-push: scripts/ci-local.sh --skip-passed --ref $commit"
-  "$ROOT/scripts/ci-local.sh" --skip-passed --ref "$commit"
+[ "${#missing[@]}" -gt 0 ] || exit 0
+for commit in "${missing[@]}"; do
+  echo "pre-push: refused: $commit has no full-gate pass record for this runner." >&2
+  echo "pre-push:   run scripts/ci-local.sh --ref $commit (or --rebased after rebasing a gated commit), then push again" >&2
 done
+exit 1

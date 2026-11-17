@@ -332,7 +332,12 @@ function main() {
     // The shared prefix, numbered as the first job numbers it.
     emitSteps(d, group[0].steps.filter((st) => !st.never).slice(0, shared), dir, "shared ", '"$SH"');
     d.push("shared_secs=$(( $(date +%s) - t_shared ))", `say "$SH" "shared failed=$failed \${shared_secs}s"`, "shared_failed=$failed");
-    for (const [gi, inst] of group.entries()) {
+    // Each job's own steps are a function, called one after another on the same tree. Side by side was measured
+    // on 2026-11-17 (ADR-0031): the spec job's filesystem service observes the tree the test job's suites write
+    // fixtures into, so three spec cases failed with unpredicted FILE_WRITTEN/FILE_DELETED records that a serial run
+    // never shows. CI's jobs run on separate runners and separate trees; one tree cannot be shared that way.
+    const fns = [];
+    for (const inst of group) {
       const own = [];
       let seen = 0;
       for (const st of inst.steps) {
@@ -340,15 +345,23 @@ function main() {
         if (seen++ >= shared) own.push(st);
       }
       const log = `"$LOGS/${inst.key}-${node}.log"`;
+      const fn = `job_${inst.key.replace(/[^A-Za-z0-9_]/g, "_")}`;
+      fns.push(fn);
       d.push(
+        `${fn}() {`,
+        `export GITHUB_OUTPUT="$TMPDIR/github-output-${inst.key}"; cp "$TMPDIR/github-output" "$GITHUB_OUTPUT"`,
         `failed=$shared_failed; t_job=$(date +%s)`,
         `say ${log} ${shq(`job ${inst.key} (${inst.name})`)} "after the shared steps (failed=$shared_failed)"`,
       );
       emitSteps(d, own, dir, `${inst.key} `, log);
       d.push(`say ${log} "result ${inst.key} rc=$failed $(( $(date +%s) - t_job ))s"`);
       d.push(`printf '::ci-local:: =result %s %s %s\\n' ${shq(inst.key)} "$failed" "$(( $(date +%s) - t_job ))"`);
-      if (gi === group.length - 1) d.push("");
+      d.push("}");
     }
+    d.push(
+      ...fns,
+      "",
+    );
     d.push(`printf '::ci-local:: =shared %s %s\\n' "$shared_failed" "$shared_secs"`, "exit 0", "");
     const driver = path.join(dir, "driver.sh");
     writeFileSync(driver, d.join("\n"), { mode: 0o755 });

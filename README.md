@@ -130,23 +130,30 @@ The other Node versions are printed as OFF lines and left to CI; `--node <major>
 The jobs of one Node version share a throwaway Linux container from a pinned `node:<major>-bookworm` image
 (`scripts/ci-local.images.json`), on a fresh `git archive` of the commit, with the Docker socket and the host
 network so the tests' own containers work as they do on a GitHub runner. The steps they all start with
-(Install, Build) run once, then each job's own steps; each job writes a log and gets a PASS or FAIL line. A
-job CI runs on another OS (feat-cdk on Windows) is printed as a GAP line and left to CI. It needs Docker, and
-Node with this workspace installed (`pnpm install`).
+(Install, Build) run once, then each job's own steps, one job after another (side by side in one tree the
+spec job observes the files the test job writes, ADR-0031); each job writes a log and gets a PASS or FAIL line. A job CI runs on another OS (feat-cdk on Windows) is printed
+as a GAP line and left to CI. It needs Docker, and Node with this workspace installed (`pnpm install`). See
+ADR-0031.
 
 ```sh
-scripts/ci-local.sh                 # every ubuntu job at Node 24, on HEAD
+scripts/ci-local.sh                 # the full gate: every ubuntu job at Node 24, on HEAD; run it before a push
+scripts/ci-local.sh --changed       # the loop while working: the packages changed since origin/main + dependents
+scripts/ci-local.sh --rebased       # after rebasing a commit that passed: what differs from it (ORIG_HEAD)
 scripts/ci-local.sh --node 26       # another matrix version; --all runs all of them
 scripts/ci-local.sh --job spec      # a subset; --ref <commit> checks another commit
 scripts/ci-local.sh --list          # what would run
 ```
 
-`.githooks/pre-push` runs the default (Node 24) on every commit you push and blocks the push when a job
-fails. A default run that passes leaves a pass record in the clone's git directory
-(`scripts/ci-local.sh --record-path` prints where), and the hook passes `--skip-passed`, so a commit that
-already passed, such as a release commit whose tag is pushed after the branch, is not run again. Changing
-`ci-local.sh`, `ci-local-plan.mjs`, `ci-local.images.json`, `docker-sweep.sh`, `ci-local-lock.sh` or `ci-local-watchdog.sh` makes every record stale. Enable the hook once
-per clone:
+A full-gate run that passes leaves a pass record in the clone's git directory (`scripts/ci-local.sh
+--record-path` prints where). `.githooks/pre-push` runs nothing: it refuses a push unless every commit pushed has
+its record, so the push itself takes a moment (it used to run the gate, and `git push` held its connection to
+the remote idle for those minutes until the remote dropped it and the push silently did not land). `--changed`
+and `--since <ref>` run every tier for the scope (build, typecheck, workspace tests, `feat verify`/`audit`/`lint`
+and the scope's generated suites) and leave no record; a change to a shared root widens to the full gate, and a
+change that maps to nothing the gate runs is refused. `--rebased` records the rebased commit as passed when the
+check of what differs from ORIG_HEAD, which must have its own record, passes. Changing `ci-local.sh`,
+`ci-local-plan.mjs`, `ci-local.images.json`, `docker-sweep.sh`, `gate-lock.sh` or `ci-local-watchdog.sh` makes
+every record stale. Enable the hook once per clone:
 
 ```sh
 git config core.hooksPath .githooks
@@ -167,19 +174,20 @@ container, or your own) also labels `feat-test.owner-container` (`scripts/test-o
 on the host, so what it started counts as alive while that container runs. A host owner is alive while `ps -p`
 finds its pid.
 
-ci-local keeps the host rule every runner sharing the Docker daemon keeps (`scripts/ci-local-lock.sh`): it waits
-for another runner's test container (`feat-*-test-*`, `feat-ci-test-*`, or a flmnt gate) or another ci-local's
-lock at most 15 minutes (`CI_LOCAL_LOCK_WAIT`), then runs only while the 1-minute load average is under 30
-(`CI_LOCAL_LOAD_MAX`) both on the host and inside the Docker VM, which a throwaway container reads from
-`/proc/loadavg` at most once a minute (`CI_LOCAL_VM_LOAD_EVERY`); otherwise it keeps waiting, saying for what. It runs one container at a time, and
-`scripts/ci-local-watchdog.sh` stops a run that passes 30 minutes (`CI_LOCAL_MAX_SECONDS`), removing its container
-and releasing the lock. The lock is a created, never started container named `feat-ci-local-lock` carrying its
-holder's pid; a holder that is gone loses it to the next run.
+ci-local keeps the host rule every gate on this machine keeps (`scripts/gate-lock.sh`, ADR-0031): one gate at a
+time, through the host-wide lock `~/.flmnt/gate.lock` that flmnt's gate takes too (flock(2), so a gate that dies
+releases it), then it starts while the Docker daemon's containers use under 12 cores (`docker stats`, summed;
+`FLMNT_GATE_CPU_MAX`), saying what it waits for. `scripts/ci-local-watchdog.sh` stops a run that passes 30
+minutes (`CI_LOCAL_MAX_SECONDS`), removing its container and releasing the lock. Turbo's build cache lives in a
+docker volume per lockfile, toolchain and image (`feat-ci-cache-turbo-*`, at most four, the least recently used
+removed past that); only `build` is cached. A run refuses to start while the Docker VM has under 20 GB free
+(`CI_LOCAL_DISK_MIN_GB`).
 
 The job container runs vitest with the runner's parallelism, 3 workers as on a 4-vCPU `ubuntu-latest` runner
 (`CI_LOCAL_MAX_WORKERS`): with the 15 a 16-CPU Docker Desktop VM would give it, workers beside the product containers
 their specs start were descheduled for up to 54 s, and past 60 s a worker's RPC timed out ("Timeout calling
-onTaskUpdate", every test passed).
+onTaskUpdate", every test passed). Workspace tests run two packages at a time locally (`CI_LOCAL_TURBO_CONCURRENCY`, passed as `FEAT_TEST_CONCURRENCY`;
+turbo's default of ten on CI).
 
 ## License
 

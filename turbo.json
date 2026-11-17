@@ -7,11 +7,13 @@
     },
     "test": {
       "dependsOn": ["build"],
-      "outputs": []
+      "outputs": [],
+      "cache": false
     },
     "typecheck": {
       "dependsOn": ["^build"],
-      "outputs": []
+      "outputs": [],
+      "cache": false
     }
   }
 }

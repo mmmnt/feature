@@ -24,7 +24,7 @@ fresh() {
   R="$WORK/repo-$CASES"
   rm -rf "$R"
   mkdir -p "$R/scripts" "$R/.githooks"
-  cp "$SRC/scripts/ci-local.sh" "$SRC/scripts/ci-local-plan.mjs" "$SRC/scripts/ci-local.images.json" "$SRC/scripts/docker-sweep.sh" "$SRC/scripts/ci-local-lock.sh" "$SRC/scripts/ci-local-watchdog.sh" "$R/scripts/"
+  cp "$SRC/scripts/ci-local.sh" "$SRC/scripts/ci-local-plan.mjs" "$SRC/scripts/ci-local.images.json" "$SRC/scripts/docker-sweep.sh" "$SRC/scripts/gate-lock.sh" "$SRC/scripts/ci-local-watchdog.sh" "$R/scripts/"
   cp "$SRC/.githooks/pre-push" "$R/.githooks/"
   git -C "$R" init -q
   git -C "$R" -c user.name=t -c user.email=t@example.invalid add -A
@@ -84,9 +84,15 @@ SHA=$(git -C "$R" rev-parse HEAD)
 ZERO=0000000000000000000000000000000000000000
 LINE="refs/tags/v1 $SHA refs/tags/v1 $ZERO"
 hook() { (cd "$R" && printf '%s\n' "$1" | bash .githooks/pre-push origin git@example.invalid:x.git); }
-run "pre-push runs a commit with no record" 2 "Docker daemon is not reachable" hook "$LINE"
+run "pre-push refuses a commit with no pass record, and runs nothing" 1 "has no full-gate pass record" hook "$LINE"
+if (cd "$R" && printf '%s\n' "$LINE" | bash .githooks/pre-push origin x 2>&1) | grep -q "Docker daemon"; then
+  bad "pre-push never starts the gate" "it reached the Docker check"
+else ok "pre-push never starts the gate"; fi
 plant "$(bash "$R/scripts/ci-local.sh" --record-path)"
-run "pre-push lets a commit that passed through" 0 "not run again" hook "$LINE"
+run "pre-push lets a commit that passed through" 0 "passed the gate" hook "$LINE"
+git -C "$R" -c user.name=t -c user.email=t@example.invalid commit -q --allow-empty -m two
+TWO=$(git -C "$R" rev-parse HEAD)
+run "pre-push refuses when any pushed commit lacks a record" 1 "$TWO has no full-gate pass record" hook "refs/heads/main $TWO refs/heads/main $ZERO"
 
 # scripts/docker-sweep.sh against a recording `docker` stub: listings come from files, every call is logged.
 SW="$WORK/sweep"
@@ -152,92 +158,63 @@ sweep --gone
 if ! grep -q "feat-neo4j-test-db-1" "$SW/log"; then ok "docker-sweep --gone counts a process it may not signal as alive"
 else bad "docker-sweep --gone counts a process it may not signal as alive" "$(cat "$SW/log")"; fi
 
-# scripts/ci-local-lock.sh (host rule 8ea670d4) against stubs: `docker`'s lock is a file (create is refused while it
-# exists), its running containers come from a file, and `sysctl` answers the load a file holds.
-LK="$WORK/lock"
-mkdir -p "$LK/bin"
-cat > "$LK/bin/docker" <<'STUB'
-#!/bin/sh
-case "$1" in
-  create)
-    [ -e "$LOCK_FILE" ] && exit 1
-    owner=""; since=""
-    while [ $# -gt 0 ]; do
-      case "$1" in --label) case "$2" in feat-ci-local.lock-owner=*) owner=${2#*=} ;; feat-ci-local.lock-since=*) since=${2#*=} ;; esac; shift ;; esac
-      shift
-    done
-    echo "$owner $since" > "$LOCK_FILE" ;;
-  inspect) [ -e "$LOCK_FILE" ] && cat "$LOCK_FILE" || exit 1 ;;
-  rm) echo "rm $*" >> "$LOCK_DIR/log"; rm -f "$LOCK_FILE" ;;
-  ps) cat "$LOCK_DIR/running" 2>/dev/null ;;
-  run) echo "run $*" >> "$LOCK_DIR/vmlog"; [ -e "$LOCK_DIR/vmload" ] && echo "$(cat "$LOCK_DIR/vmload") 1.00 1.00 1/100 1" ;;
-esac
-exit 0
-STUB
-printf '#!/bin/sh\necho "{ $(cat "$LOCK_DIR/load") 1.00 1.00 }"\n' > "$LK/bin/sysctl"
-chmod +x "$LK/bin/docker" "$LK/bin/sysctl"
-# lock <wait> <give up> <args...>
-lock() {
-  local w=$1 g=$2; shift 2
-  PATH="$LK/bin:$PATH" LOCK_DIR="$LK" LOCK_FILE="$LK/held" CI_LOCAL_LOCK_WAIT=$w CI_LOCAL_LOCK_GIVE_UP=$g CI_LOCAL_LOCK_POLL=1 \
-    bash "$SRC/scripts/ci-local-lock.sh" "$@"
-}
-reset_lock() { rm -f "$LK/held" "$LK/log" "$LK/vmlog"; : > "$LK/running"; echo "${1:-1.5}" > "$LK/load"; echo "${2:-1.5}" > "$LK/vmload"; }
+# scripts/gate-lock.sh (host rule b4e3656a): the host-wide flock on a lock file (FLMNT_GATE_LOCK points it into the
+# scratch directory) and the CPU check against a `docker stats` stub whose rows come from a file.
+GL="$WORK/gatelock"
+mkdir -p "$GL/bin"
+printf '#!/bin/sh\n[ "$1" = stats ] || exit 0\n[ -e "$GL_DIR/unreadable" ] && exit 1\ncat "$GL_DIR/stats" 2>/dev/null\n' > "$GL/bin/docker"
+chmod +x "$GL/bin/docker"
+gl() { PATH="$GL/bin:$PATH" GL_DIR="$GL" FLMNT_GATE_LOCK="$GL/gate.lock" TMPDIR="$GL" CI_LOCAL_LOCK_POLL=1 bash "$SRC/scripts/gate-lock.sh" "$@"; }
+gl_give_up() { CI_LOCAL_LOCK_GIVE_UP=2 gl "$@"; }
+reset_gl() { rm -f "$GL/gate.lock" "$GL/unreadable"; printf '%s\n' "${@:-0.50%}" > "$GL/stats"; }
 
-reset_lock
-run "ci-local-lock takes a free lock on an idle daemon" 0 "" lock 900 0 acquire "$ALIVE" img
-if [ "$(cut -d' ' -f1 "$LK/held")" = "$ALIVE" ]; then ok "ci-local-lock records its holder's pid"; else bad "ci-local-lock records its holder's pid" "$(cat "$LK/held")"; fi
+reset_gl "120.00%" "30.00%"
+sleep 300 & H1=$!
+run "gate-lock starts at once when the containers use under 12 cores" 0 "" gl acquire "$H1"
+if grep -q "^pid $H1 in " "$GL/gate.lock"; then ok "gate-lock names its holder in the lock file"; else bad "gate-lock names its holder in the lock file" "$(cat "$GL/gate.lock")"; fi
+sleep 300 & H2=$!
+run "gate-lock waits while another gate holds the lock" 2 "another gate holds the lock (pid $H1" gl_give_up acquire $H2
+kill "$H1" 2>/dev/null || true; wait "$H1" 2>/dev/null || true
+run "gate-lock takes the lock once its holder is gone" 0 "" gl acquire "$H2"
+gl release "$H2"; kill "$H2" 2>/dev/null || true; wait "$H2" 2>/dev/null || true
+if perl -MFcntl=:flock -e 'open(my $f, ">>", $ARGV[0]) or exit 2; exit(flock($f, LOCK_EX | LOCK_NB) ? 0 : 1)' "$GL/gate.lock"; then ok "gate-lock release frees the flock"
+else bad "gate-lock release frees the flock" "still held"; fi
+reset_gl "900.00%" "400.00%"
+sleep 300 & H3=$!
+run "gate-lock keeps waiting while the containers use 12 cores or more" 2 "use 13.00 cores; waiting for under 12" gl_give_up acquire $H3
+gl release "$H3"
+reset_gl; touch "$GL/unreadable"
+run "gate-lock keeps waiting when docker stats cannot be read" 2 "unreadable number of cores" gl_give_up acquire $H3
+gl release "$H3"; kill "$H3" 2>/dev/null || true; wait "$H3" 2>/dev/null || true
+run "gate-lock refuses an unknown mode" 2 "usage" bash "$SRC/scripts/gate-lock.sh" nope
 
-reset_lock 1.5
-printf 'feat-kurrent-test-kdb-9\t999999\t\n' > "$LK/running"
-run "ci-local-lock waits for another runner's test container, however low the load, until the wait is up" 2 "waiting for test containers: feat-kurrent-test-kdb-9" lock 900 0 acquire "$ALIVE" img
-reset_lock 1.5
-printf 'great_burnell\t\t12345x1700000000\n' > "$LK/running"
-run "ci-local-lock counts a flmnt gate (dev.flmnt.gate.run) as another runner" 2 "waiting for test containers: great_burnell" lock 900 0 acquire "$ALIVE" img
-reset_lock 1.5
-printf 'feat-kafka-test-b1-9\t%s\t\n' "$ALIVE" > "$LK/running"
-run "ci-local-lock does not wait for its own run's containers" 0 "" lock 900 0 acquire "$ALIVE" img
-
-reset_lock 45.2
-echo "999999 $(date +%s)" > "$LK/held"
-printf 'feat-ci-test-node24-x\t999999\t\n' > "$LK/running"
-run "ci-local-lock keeps waiting past the wait while the 1-minute load is 30 or more" 2 "gave up" lock 0 0 acquire "$ALIVE" img
-reset_lock 12.0
-echo "$ALIVE $(date +%s)" > "$LK/held.other"
-printf 'feat-ci-test-node24-x\t999999\t\n' > "$LK/running"
-run "ci-local-lock runs past the wait once the 1-minute load is under 30" 0 "under 30: running (host rule 8ea670d4)" lock 0 0 acquire "$ALIVE" img
-if grep -q 'run --rm --network none --label feat-test.owner-pid='"$ALIVE"' img cat /proc/loadavg' "$LK/vmlog" 2>/dev/null; then ok "ci-local-lock reads the Docker VM's load through a labelled throwaway container"
-else bad "ci-local-lock reads the Docker VM's load through a labelled throwaway container" "$(cat "$LK/vmlog" 2>/dev/null)"; fi
-reset_lock 12.0 45.0
-echo "999999 $(date +%s)" > "$LK/held"
-printf 'feat-ci-test-node24-x\t999999\t\n' > "$LK/running"
-run "ci-local-lock keeps waiting while the Docker VM's load is 30 or more, however low the host's" 2 "gave up" lock 0 0 acquire "$ALIVE" img
-reset_lock 12.0
-rm -f "$LK/vmload"
-echo "999999 $(date +%s)" > "$LK/held"
-printf 'feat-ci-test-node24-x\t999999\t\n' > "$LK/running"
-run "ci-local-lock keeps waiting when the Docker VM's load cannot be read" 2 "gave up" lock 0 0 acquire "$ALIVE" img
-reset_lock 12.0 45.0
-echo "999999 $(date +%s)" > "$LK/held"
-printf 'feat-ci-test-node24-x\t999999\t\n' > "$LK/running"
-PATH="$LK/bin:$PATH" LOCK_DIR="$LK" LOCK_FILE="$LK/held" CI_LOCAL_LOCK_WAIT=0 CI_LOCAL_LOCK_GIVE_UP=3 CI_LOCAL_LOCK_POLL=1 bash "$SRC/scripts/ci-local-lock.sh" acquire "$ALIVE" img >/dev/null 2>&1 || true
-reads=$(grep -c ' cat /proc/loadavg' "$LK/vmlog" 2>/dev/null || echo 0)
-if [ "$reads" -eq 1 ]; then ok "ci-local-lock reads the Docker VM's load at most once a minute"
-else bad "ci-local-lock reads the Docker VM's load at most once a minute" "$reads reads in ~3 s"; fi
-
-reset_lock
-echo "$DEAD $(date +%s)" > "$LK/held"
-run "ci-local-lock takes over from a holder that is gone" 0 "is gone; taking it over" lock 900 0 acquire "$ALIVE" img
-reset_lock
-echo "$ALIVE $(( $(date +%s) - 86400 ))" > "$LK/held"
-run "ci-local-lock takes over from a reused pid (started after the lock was taken)" 0 "is gone; taking it over" lock 900 0 acquire 999998 img
-reset_lock
-echo "$ALIVE $(date +%s)" > "$LK/held"
-run "ci-local-lock release by another pid keeps the lock" 0 "" lock 900 0 release 999999
-if [ -e "$LK/held" ]; then ok "ci-local-lock is released only by its holder"; else bad "ci-local-lock is released only by its holder" "lock gone"; fi
-run "ci-local-lock release by its holder frees it" 0 "" lock 900 0 release "$ALIVE"
-if [ ! -e "$LK/held" ]; then ok "ci-local-lock leaves no lock after release"; else bad "ci-local-lock leaves no lock after release" "$(cat "$LK/held")"; fi
-run "ci-local-lock refuses an unknown mode" 2 "usage" bash "$SRC/scripts/ci-local-lock.sh" --everything
+# scripts/ci-local-scope.mjs, the scoped check's plan: pure, against a made-up workspace.
+scope() { node --input-type=module -e '
+  import { scope } from "'"$SRC"'/scripts/ci-local-scope.mjs";
+  const pkgs = [
+    { name: "@mmmnt/feat-types", dir: "packages/feat-types", deps: new Set() },
+    { name: "@mmmnt/feat-runtime", dir: "packages/feat-runtime", deps: new Set(["@mmmnt/feat-types"]) },
+    { name: "@mmmnt/feat-adapter-redis", dir: "adapters/redis", deps: new Set(["@mmmnt/feat-types"]) },
+    { name: "@mmmnt/feat-adapter-x", dir: "adapters/x", deps: new Set(["@mmmnt/feat-adapter-redis"]) },
+    { name: "@mmmnt/feat-adapter-kafka", dir: "adapters/kafka", deps: new Set(["@mmmnt/feat-types"]) },
+  ];
+  process.stdout.write(JSON.stringify(scope(process.argv.slice(1), pkgs)));' "$@"; }
+out=$(scope adapters/redis/src/index.ts)
+if [[ "$out" == *'"mode":"scoped"'* && "$out" == *'"@mmmnt/feat-adapter-redis","@mmmnt/feat-adapter-x"]'* && "$out" != *kafka* && "$out" == *'"allSpecs":false'* ]]; then
+  ok "scope: a change in one package runs it and its dependents only"; else bad "scope: a change in one package runs it and its dependents only" "$out"; fi
+out=$(scope packages/feat-types/src/index.ts)
+if [[ "$out" == *'"allSpecs":true'* && "$out" == *'"corpus":true'* && "$out" == *kafka* ]]; then ok "scope: a toolchain package runs every spec and the corpus"
+else bad "scope: a toolchain package runs every spec and the corpus" "$out"; fi
+for f in pnpm-lock.yaml turbo.json scripts/ci-local.sh .github/workflows/ci.yml schemas/builtspec.schema.json corpus/x.feat docs/grammar-reference.md; do
+  out=$(scope adapters/redis/a.ts "$f")
+  if [[ "$out" == *'"mode":"full"'* ]]; then ok "scope: $f widens to the full gate"; else bad "scope: $f widens to the full gate" "$out"; fi
+done
+out=$(scope docs/adr/ADR-0001.md README.md)
+if [[ "$out" == *'"mode":"none"'* ]]; then ok "scope: a change only no gate step reads is refused (zero work)"; else bad "scope: a change only no gate step reads is refused (zero work)" "$out"; fi
+out=$(scope)
+if [[ "$out" == *'"mode":"none"'* ]]; then ok "scope: no change is refused"; else bad "scope: no change is refused" "$out"; fi
+out=$(scope somewhere/else.txt)
+if [[ "$out" == *'"mode":"full"'* ]]; then ok "scope: a path no rule covers widens to the full gate"; else bad "scope: a path no rule covers widens to the full gate" "$out"; fi
 
 # scripts/ci-local-watchdog.sh: past the cap it removes the run's container, then stops the run; stopped in time,
 # it does neither.

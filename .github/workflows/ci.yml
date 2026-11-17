@@ -63,7 +63,7 @@ jobs:
         if: matrix.node == 24
         run: pnpm --filter @mmmnt/feat-adapter-playwright exec playwright install --with-deps chromium
       - name: Workspace tests
-        run: npx turbo run test
+        run: npx turbo run test --concurrency="${FEAT_TEST_CONCURRENCY:-10}"
 
   windows:
     name: feat-cdk on Windows
