@@ -45,10 +45,20 @@ the PR builds. let's get it into a friendly format, into the PR." Form ruled: "G
    transparency-log entry, every digest and SHA in full, each link checked, the first broken one named, and a
    filled-in `gh attestation verify` command per artifact (founder feedback 2026-11-17).
 8. Main re-attests (founder 2026-11-17: "main will have to re-attest", "Attestation + main check + PR pointer"): on
-   a push to main the Action signs a merge-linking attestation (predicate `https://feat.dev/attestation/pr-merge/v1`,
+   a push to main the Action signs a merge-linking attestation (predicate `https://feature.mmmnt.dev/attestation/pr-merge/v1`,
    Sigstore-signed via `actions/attest`, Rekor-logged) naming the PR, its head, the tested merge-ref commit, the PR
    run and its attestation digests, the main commit and main's artifact digests; posts a check run on the main
    commit in the same format; and points the closed PR's report comment at it.
+9. Publication (founder rulings 2026-11-17, flmnt 8a754eb9): the Action lives in `mmmnt/feature` at
+   `actions/pr-report`, public, not listed on the Marketplace, versioned with Feature's release tags; consumers pin
+   it by full commit SHA.
+10. Fork pull requests: a trusted `workflow_run` follow-up reports from the results the fork's `pull_request` run
+    uploaded. It never checks out or runs the fork's code. Attestations show as "not attested (fork PR); attested
+    on merge".
+11. The `feat report` check is required to merge into `main`, once the report has been proven on a few pull requests.
+12. Main's evidence bundles are stored durably in GHCR as digest-pinned OCI artifacts before the merge-linking
+    attestation is signed, and that digest is named in it. A failed store is refused (`EVIDENCE_STORE_FAILED`):
+    nothing is signed or posted.
 
 ## Rejected alternatives
 
@@ -66,5 +76,6 @@ the PR builds. let's get it into a friendly format, into the PR." Form ruled: "G
 
 - Consumers grant `pull-requests: write`, `checks: write`, `actions: read` and `attestations: read` to the report job
   only.
-- Fork pull requests get no report until a `workflow_run` variant exists (open question).
+- Fork pull requests are reported by the `workflow_run` follow-up, from uploaded results only.
+- Merge mode also needs `packages: write` (GHCR) and `id-token: write` + `attestations: write` (signing).
 - The report is as good as the bundles: a job that uploads no bundle shows as "no evidence" rather than as passing.

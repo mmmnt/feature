@@ -86,14 +86,14 @@ and attests the merged commit itself, and the Action runs in merge mode on that 
 3. Check main's own build attestations: source commit = main sha, signer = this repository's workflow at
    `refs/heads/main`. Mismatch → chain broken at `main-provenance`.
 4. Sign one merge-linking attestation with `actions/attest` (pinned; Sigstore-signed, Rekor-logged), subject = each
-   main artifact digest, predicate type `https://feat.dev/attestation/pr-merge/v1`:
+   main artifact digest, predicate type `https://feature.mmmnt.dev/attestation/pr-merge/v1`:
 
    ```json
    {
      "pullRequest": { "number": 7, "headSha": "<full>", "baseSha": "<full>", "mergeRefSha": "<full, tested>" },
      "prRun": { "id": 44153523061, "attempt": 1, "attestations": ["sha256:<full>", "…"] },
      "main": { "sha": "<full>", "run": { "id": 44160000001, "attempt": 1 }, "artifacts": ["sha256:<full>", "…"] },
-     "evidence": { "bundles": ["sha256:<full>", "…"] }
+     "evidence": { "bundles": ["sha256:<full>", "…"], "store": "ghcr.io/<o>/<r>-evidence@sha256:<full>" }
    }
    ```
 5. Post a check run on the main commit in the same report format (verdict, merge chain, attestations, specs, jobs).
@@ -110,7 +110,7 @@ From a main commit:
 # 1. which PR it came from, and the merge-linking attestation for main's artifact
 gh attestation verify <main artifact> --repo mmmnt/flmnt \
   --signer-workflow mmmnt/flmnt/.github/workflows/ci.yml --source-ref refs/heads/main --source-digest <main sha> \
-  --predicate-type https://feat.dev/attestation/pr-merge/v1 --format json   # predicate names PR, head, merge-ref, PR run
+  --predicate-type https://feature.mmmnt.dev/attestation/pr-merge/v1 --format json   # predicate names PR, head, merge-ref, PR run
 # 2. main's build provenance for the same artifact
 gh attestation verify <main artifact> --repo mmmnt/flmnt \
   --signer-workflow mmmnt/flmnt/.github/workflows/ci.yml --source-ref refs/heads/main --source-digest <main sha>
@@ -121,11 +121,24 @@ gh attestation verify <pr artifact> --repo mmmnt/flmnt \
 
 From a PR: step 3 first (the PR report prints it), then steps 1–2 using the "merged as" pointer on the PR comment.
 
-### Open: evidence-bundle retention
+### Evidence retention (ruled 2026-11-17)
 
-Workflow artifacts (the evidence bundles) expire after 90 days by default, while attestations and Rekor entries
-persist. Either store main's bundles durably (for example as an OCI artifact in GHCR, its digest recorded in the
-merge-linking attestation) or accept that the bundles behind old attestations expire.
+Workflow artifacts expire after 90 days; attestations and Rekor entries persist. Main's evidence bundles are pushed to
+GHCR as a digest-pinned OCI artifact (`ghcr.io/<o>/<r>-evidence@sha256:<full>`, pinned `oras`) before the
+merge-linking attestation is signed, and the attestation's `evidence.store` names that digest. A failed push is
+`EVIDENCE_STORE_FAILED`: nothing is signed or posted.
+
+### Fork pull requests (ruled 2026-11-17)
+
+A fork's `pull_request` run has a read-only token and uploads its evidence bundles and job results as artifacts. A
+separate trusted workflow (`on: workflow_run` of that CI workflow) runs the Action in follow-up mode: it downloads
+only those artifacts, never checks out or runs the fork's code, renders the same report, and shows Attestations as
+"not attested (fork PR); attested on merge". The merge-linking attestation on `main` then covers the merged code.
+
+### Publication and enforcement (ruled 2026-11-17)
+
+Public, in `mmmnt/feature` at `actions/pr-report`, not on the Marketplace; versioned with Feature's release tags;
+consumers pin by full SHA. The `feat report` check becomes a required status for `main` once proven on a few PRs.
 
 ## Consumer wiring (flmnt)
 
@@ -135,7 +148,5 @@ the build job attests its artifacts (`actions/attest-build-provenance`, pinned);
 
 ## Known limits
 
-- Fork pull requests get a read-only token → `INSUFFICIENT_PERMISSIONS`; a `workflow_run`-triggered variant would
-  cover them (not in this draft).
 - The report is only as complete as the bundles: a tier that uploads nothing shows as missing, and the verdict is
   `incomplete`, never `pass`.

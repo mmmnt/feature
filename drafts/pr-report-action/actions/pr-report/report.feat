@@ -20,6 +20,9 @@ feat 1.0
 #                              c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192, PR run 44153523061), or none
 #   mainattest:good|wrongsource  main's build attestation: source commit = main sha, or another commit
 #   prattest:present|missing   the PR run's attestation digests are, or are not, retrievable
+#   ghcr:ok|fail               merge mode: storing main's evidence bundles in GHCR as a digest-pinned OCI artifact succeeds or fails
+#   fork:<n>                   follow-up mode: a trusted `workflow_run` run reporting on fork pull request <n> from the
+#                              results its `pull_request` run uploaded; no fork code is checked out or run
 #   merge:good|badparents      the built commit's parents are [base, head], or are not
 #   evidence:<tier>:<fixture>  an uploaded feat-evidence/2 bundle for that tier: `pass`, `fail` (one scenario fails
 #                              with one violation row), `noruns` (verify pass, no run block)
@@ -79,6 +82,9 @@ enforce:
   rejects NO_PR_CONTEXT when the run is neither a pull request nor a push to main, and nothing is posted
   rejects NO_PR_FOR_MERGE when no merged pull request is associated with the main commit, and nothing is signed or posted
   rejects PR_EVIDENCE_MISSING when the pull request run's attestations cannot be retrieved, and nothing is signed or posted
+  on a push to main the evidence bundles are stored in GHCR as a digest-pinned OCI artifact before the merge-linking attestation is signed, and that digest is named in it
+  rejects EVIDENCE_STORE_FAILED when the evidence bundles cannot be stored in GHCR, and nothing is signed or posted
+  a fork pull request is reported by a trusted workflow_run follow-up from the uploaded results only; it never checks out or runs the fork's code, and shows attestations as "not attested (fork PR); attested on merge"
   rejects NO_EVIDENCE when no evidence bundle was uploaded, and nothing is posted
   rejects INSUFFICIENT_PERMISSIONS when the token cannot write pull request comments or check runs, and nothing is posted
 
@@ -179,16 +185,16 @@ scenario "a bundle with no run is incomplete, not passing":
     filesystem has []
 
 scenario "a merge to main signs the merge-linking attestation, checks main and points the PR at it":
-  when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:found prattest:present mainattest:good evidence:unit:pass jobs:green comment:901 token:full go" }
+  when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:found prattest:present ghcr:ok mainattest:good evidence:unit:pass jobs:green comment:901 token:full go" }
   predict success:
     response OK ProbeResult {
-      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b/pulls GET /repos/o/r/actions/runs/44153523061/artifacts GET /repos/o/r/attestations/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/attestations/sha256:9b74c9897bac770ffc029102a200c5de2a4c2a6c2d1e3f4a5b6c7d8e9f0a1b2c ATTEST https://feat.dev/attestation/pr-merge/v1 POST /repos/o/r/check-runs GET /repos/o/r/issues/7/comments PATCH /repos/o/r/issues/comments/901 verdict=pass chain=ok sections=header,tests,attestations,chain,verify"
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b/pulls GET /repos/o/r/actions/runs/44153523061/artifacts GET /repos/o/r/attestations/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/attestations/sha256:9b74c9897bac770ffc029102a200c5de2a4c2a6c2d1e3f4a5b6c7d8e9f0a1b2c PUT ghcr.io/o/r-evidence@sha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae ATTEST https://feature.mmmnt.dev/attestation/pr-merge/v1 POST /repos/o/r/check-runs GET /repos/o/r/issues/7/comments PATCH /repos/o/r/issues/comments/901 verdict=pass chain=ok sections=header,tests,attestations,chain,verify"
       check: "success"
     }
     filesystem has []
 
 scenario "main's build attested for another commit breaks the chain at main's provenance":
-  when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:found prattest:present mainattest:wrongsource evidence:unit:pass jobs:green comment:901 token:full go" }
+  when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:found prattest:present ghcr:ok mainattest:wrongsource evidence:unit:pass jobs:green comment:901 token:full go" }
   predict success:
     response OK ProbeResult {
       trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b/pulls GET /repos/o/r/actions/runs/44153523061/artifacts GET /repos/o/r/attestations/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/attestations/sha256:9b74c9897bac770ffc029102a200c5de2a4c2a6c2d1e3f4a5b6c7d8e9f0a1b2c POST /repos/o/r/check-runs GET /repos/o/r/issues/7/comments PATCH /repos/o/r/issues/comments/901 verdict=fail chain=broken:main-provenance sections=header,tests,attestations,chain,verify"
@@ -224,4 +230,20 @@ scenario "a read-only token is refused before anything is posted":
   when: ProbePrReport { script: "pr:7 merge:good evidence:unit:pass jobs:green attest:verified comment:none token:readonly go" }
   predict rejection INSUFFICIENT_PERMISSIONS:
     response ERR ReportError { code: "INSUFFICIENT_PERMISSIONS" }
+    filesystem has []
+
+scenario "main's evidence that cannot be stored in GHCR is refused and nothing is signed":
+  when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:found prattest:present ghcr:fail mainattest:good evidence:unit:pass jobs:green comment:901 token:full go" }
+  predict rejection EVIDENCE_STORE_FAILED:
+    response ERR ReportError { code: "EVIDENCE_STORE_FAILED" }
+    filesystem has []
+
+scenario "a fork pull request is reported by the trusted follow-up, its attestations marked as attested on merge":
+  when: ProbePrReport { script: "fork:9 evidence:unit:pass jobs:green attest:none comment:none token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/actions/runs/1/artifacts GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/issues/9/comments POST /repos/o/r/issues/9/comments POST /repos/o/r/check-runs verdict=pass chain=not-attested sections=header,tests,attestations,chain"
+      body: matching "not attested \\(fork PR\\); attested on merge"
+      check: "success"
+    }
     filesystem has []
