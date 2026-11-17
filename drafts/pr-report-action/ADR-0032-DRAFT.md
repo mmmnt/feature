@@ -40,6 +40,15 @@ the PR builds. let's get it into a friendly format, into the PR." Form ruled: "G
 5. It never fails silently: no pull request context, no evidence bundle, or a token without the permissions it needs
    is a named refusal, and nothing is posted.
 6. The report states facts only. It does not approve, request changes, or merge.
+7. The report shows a chain of evidence an auditor can follow without trusting the Action: PR → head → base → built
+   ref → built commit (parents = base, head) → run → provenance source commit → signer identity → artifact digest →
+   transparency-log entry, every digest and SHA in full, each link checked, the first broken one named, and a
+   filled-in `gh attestation verify` command per artifact (founder feedback 2026-11-17).
+8. Main re-attests (founder 2026-11-17: "main will have to re-attest", "Attestation + main check + PR pointer"): on
+   a push to main the Action signs a merge-linking attestation (predicate `https://feat.dev/attestation/pr-merge/v1`,
+   Sigstore-signed via `actions/attest`, Rekor-logged) naming the PR, its head, the tested merge-ref commit, the PR
+   run and its attestation digests, the main commit and main's artifact digests; posts a check run on the main
+   commit in the same format; and points the closed PR's report comment at it.
 
 ## Rejected alternatives
 

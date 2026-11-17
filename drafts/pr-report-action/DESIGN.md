@@ -28,9 +28,89 @@ Feature tracks scope in its local working ledger; a GitHub project issue follows
 
 - One comment carrying `<!-- feat-pr-report -->`: list issue comments, PATCH the marked one, else POST.
 - One check run `feat report` (`POST /repos/{o}/{r}/check-runs`), conclusion = verdict
-  (`success` / `failure` / `neutral` for incomplete), `output.summary` = the same markdown, truncated to the API's
-  65 535-character limit with a link to the run.
+  (`success` / `failure` / `neutral` for incomplete), `output.summary` = the same markdown. If it exceeds the
+  API's 65 535-character limit, whole detail sections (per-spec tables first) are dropped and replaced by a link to
+  the run's full report; the verdict, the chain of evidence and every digest are never cut or shortened.
 - Also `$GITHUB_STEP_SUMMARY` (free, no permission).
+
+## Chain of evidence (what is checked, link by link)
+
+Digests and commit SHAs are always shown in full. Each link is checked against the one before it; the first
+mismatch is reported as the broken link, and the verdict is fail.
+
+| # | Link | Source | Check |
+|---|---|---|---|
+| 1 | Pull request | `github.event.pull_request.number` | present, else `NO_PR_CONTEXT` |
+| 2 | Head commit | `pull_request.head.sha` | — |
+| 3 | Base commit | `pull_request.base.sha` | — |
+| 4 | Built ref | `github.ref` (`refs/pull/<n>/merge` on `pull_request`) | names this PR |
+| 5 | Built commit | `github.sha`, the merge preview (≠ head) | `GET /repos/{o}/{r}/commits/{sha}` parents = [base, head] |
+| 6 | Run | `run_id`, `run_attempt`, workflow path | the run's commit = built commit |
+| 7 | Provenance source | in-toto statement: `predicate.buildDefinition.resolvedDependencies[0]` (`uri`, `digest.gitCommit`) and `externalParameters.workflow.{repository,path,ref}` | gitCommit = built commit; repository = this repo |
+| 8 | Signer | Fulcio certificate: SAN `https://github.com/<o>/<r>/<workflow path>@<ref>`, issuer `https://token.actions.githubusercontent.com`, and its GitHub extensions (source repository, source digest, run invocation URI) | SAN is one of the consumer's allowed workflows at the built ref; issuer is GitHub's; certificate source digest = built commit; invocation URI = this run |
+| 9 | Artifact | in-toto `subject[].digest.sha256` | = the digest of the artifact the run uploaded |
+| 10 | Transparency log | the bundle's Rekor entry: log index, log ID, entry UUID, integrated time, inclusion proof | the proof verifies against the log; integrated time falls within the certificate's validity |
+
+Verification uses `@sigstore/verify` (pinned) against the Sigstore public-good trust root: the same checks as
+`gh attestation verify --repo --signer-workflow --source-ref --source-digest --cert-oidc-issuer`. The report prints
+that command per artifact, filled in, so an auditor can reproduce every link without the Action.
+
+An artifact attested by another run (for example the gate image, built on `main`) is shown with its own source ref
+and commit, and is also checked against the consumer's pin file (`ci/images.lock.json`).
+
+### After merge: main re-attests (founder 2026-11-17: "main will have to re-attest"; "Attestation + main check + PR pointer")
+
+The squash or merge commit on `main` differs from both the head and the tested merge preview, so `main`'s CI builds
+and attests the merged commit itself, and the Action runs in merge mode on that push:
+
+1. Find the merged pull request for the main commit: `GET /repos/{o}/{r}/commits/{main sha}/pulls`. None →
+   `NO_PR_FOR_MERGE`, nothing signed or posted.
+2. Find the PR run (the last successful `pull_request` run on the PR's head) and its attestation digests:
+   `GET /repos/{o}/{r}/actions/runs/{pr run}/artifacts` and `GET /repos/{o}/{r}/attestations/{digest}`. Missing →
+   `PR_EVIDENCE_MISSING`, nothing signed or posted.
+3. Check main's own build attestations: source commit = main sha, signer = this repository's workflow at
+   `refs/heads/main`. Mismatch → chain broken at `main-provenance`.
+4. Sign one merge-linking attestation with `actions/attest` (pinned; Sigstore-signed, Rekor-logged), subject = each
+   main artifact digest, predicate type `https://feat.dev/attestation/pr-merge/v1`:
+
+   ```json
+   {
+     "pullRequest": { "number": 7, "headSha": "<full>", "baseSha": "<full>", "mergeRefSha": "<full, tested>" },
+     "prRun": { "id": 44153523061, "attempt": 1, "attestations": ["sha256:<full>", "…"] },
+     "main": { "sha": "<full>", "run": { "id": 44160000001, "attempt": 1 }, "artifacts": ["sha256:<full>", "…"] },
+     "evidence": { "bundles": ["sha256:<full>", "…"] }
+   }
+   ```
+5. Post a check run on the main commit in the same report format (verdict, merge chain, attestations, specs, jobs).
+6. Append to the closed PR's report comment: "merged as `<main sha>` → main attestation `<full digest>` ✅" with a link.
+
+The merge chain the report shows: main commit → merged PR #N → tested merge-ref commit → PR run → PR attestation
+digests → main run → main artifact digests → merge-linking attestation → Rekor entry.
+
+### Auditor walk
+
+From a main commit:
+
+```sh
+# 1. which PR it came from, and the merge-linking attestation for main's artifact
+gh attestation verify <main artifact> --repo mmmnt/flmnt \
+  --signer-workflow mmmnt/flmnt/.github/workflows/ci.yml --source-ref refs/heads/main --source-digest <main sha> \
+  --predicate-type https://feat.dev/attestation/pr-merge/v1 --format json   # predicate names PR, head, merge-ref, PR run
+# 2. main's build provenance for the same artifact
+gh attestation verify <main artifact> --repo mmmnt/flmnt \
+  --signer-workflow mmmnt/flmnt/.github/workflows/ci.yml --source-ref refs/heads/main --source-digest <main sha>
+# 3. the PR run's provenance, for each digest the merge attestation lists
+gh attestation verify <pr artifact> --repo mmmnt/flmnt \
+  --signer-workflow mmmnt/flmnt/.github/workflows/ci.yml --source-ref refs/pull/<n>/merge --source-digest <merge-ref sha>
+```
+
+From a PR: step 3 first (the PR report prints it), then steps 1–2 using the "merged as" pointer on the PR comment.
+
+### Open: evidence-bundle retention
+
+Workflow artifacts (the evidence bundles) expire after 90 days by default, while attestations and Rekor entries
+persist. Either store main's bundles durably (for example as an OCI artifact in GHCR, its digest recorded in the
+merge-linking attestation) or accept that the bundles behind old attestations expire.
 
 ## Consumer wiring (flmnt)
 
