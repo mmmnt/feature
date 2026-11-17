@@ -397,6 +397,7 @@ export async function observe(input) {
           trace.push(`read:${l}${a === undefined ? "" : `:${a}`}=${rs.length}`);
           body.readVia = x.lastReadVia;
           body.read = records(rs);
+          body.readPayloads = JSON.stringify(rs.map((r) => r.payload));
           break;
         }
         case "count": {

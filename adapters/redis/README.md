@@ -22,5 +22,5 @@ Options: `url` | `urlEnv` | `urlFile` (redis:// or rediss://, never with credent
 `tlsCAFile` (PEM, rediss:// only).
 
 The system under test writes every key under the namespace prefix `<namespace>:`. Records:
-`{ type: INSERT | MODIFY | REMOVE, key: <without the prefix>, payload: { kind, value } }`, kinds string, set, hash,
+`{ type: INSERT | MODIFY | REMOVE, key: <without the prefix>, payload: { key, kind, value } }` (the key in the payload too, so a prediction can name it), kinds string, set, hash,
 list, zset. Seeds: `{ type: <kind>, values: { key, value } }`. The fault catalog is empty. See DESIGN.md.

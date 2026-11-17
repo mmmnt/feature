@@ -80,6 +80,9 @@
             "KeyedLookup",
             "NamespaceScan"
           ]
+        },
+        "readPayloads": {
+          "type": "string"
         }
       }
     },

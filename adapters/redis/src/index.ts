@@ -333,7 +333,7 @@ class RedisAdapter implements FeatServiceAdapter {
   }
 
   private record(type: string, key: string, s: KeyState, timestamp: number): CapturedRecord {
-    return { type, key, payload: { kind: s.kind, value: s.value }, timestamp };
+    return { type, key, payload: { key, kind: s.kind, value: s.value }, timestamp };
   }
 
   private diff(before: Map<string, KeyState>, after: Map<string, KeyState>): CapturedRecord[] {

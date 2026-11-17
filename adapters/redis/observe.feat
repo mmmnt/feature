@@ -7,6 +7,11 @@ feat 1.0
 # "Add TLS test now" (a TLS server whose certificate a throwaway CA signs proves a verified connection, and a server
 # certificate from another CA is refused).
 #
+# Amended 2026-11-17, requested by flmnt, whose specs must say which set changed: founder ruling "Key in the payload
+# (Recommended)" (halt 52238f1b), and the founder's flip "Agree as drafted (Recommended)": Feat's matchers read a record's payload only (feat-runtime recordMatches), so a record-level
+# key cannot be predicted. Every record the adapter reports, diff and state alike, now carries its key inside the payload
+# as well: payload { key, kind, value }, key without the namespace prefix; the record-level key stays.
+#
 # Driven through adapters/redis/fixtures/probe.mjs (part of the build, inside touches, not shipped) against a Redis
 # container the TEST starts (redis 7.4.12 pinned by digest, `requirepass` set from the environment inside the
 # container, never an argument; an ACL user `spaced` whose password starts with a space and has one inside).
@@ -65,13 +70,14 @@ construct:
   for the namespace starts with `<ns>:`; the prefix is never reported.
   startCapture(): SCAN the keys matching `<ns>:*` and read each by its type. peekCapture()/stopCapture(): read again and
   diff by key: added = INSERT, value changed = MODIFY, gone = REMOVE (with the value it had); CapturedRecord { type,
-  key: without the prefix, payload: { kind, value }, timestamp }. kind is string (value a string), set (sorted
+  key: without the prefix, payload: { key, kind, value }, timestamp } (the key in the payload too, so a prediction can
+  name it). kind is string (value a string), set (sorted
   members), hash (fields sorted), list (in order) or zset ({ member, score } in score order); any other type is
   KIND_UNSUPPORTED.
   settle(): true with a window open (Redis applies one command at a time, so a command the system has had answered is
   applied before the instrument's next read), false with none. It writes nothing.
   read(query): with `query.expect` entries that each name `key.key`, a lookup of those keys; otherwise every key of the
-  namespace. Records { type: kind, key, payload: { kind, value } }.
+  namespace. Records { type: kind, key, payload: { key, kind, value } }.
   seed(records): SeedRecord { type: kind, values: { key, value } } written under the prefix in one MULTI, before the
   window; a record whose type is no kind, or whose key or value does not fit its kind, is SEED_INVALID.
   reset(): UNLINK every key of the namespace, close the window.
@@ -90,6 +96,7 @@ enforce:
   rejects CREDENTIAL_FILE_UNREADABLE when a file the options name is missing, a directory, unreadable or empty
   capture and read are restricted to keys carrying the namespace prefix
   the namespace prefix is never reported
+  every record's payload carries its key, without the prefix, beside its kind and value
   the diff is a snapshot comparison and cannot see a key created and removed inside the window
   no file's content appears in any message
 
@@ -122,7 +129,7 @@ scenario "a window reports keys added, changed and removed, seeds excluded":
     response OK ObserveResult {
       trace: "setup:a seed:a seed:a start:a set:a sadd:a del:a stop:a=3",
       last: "INSERT:k1,MODIFY:k2,REMOVE:k9",
-      payloads: "[{\"kind\":\"string\",\"value\":\"v1\"},{\"kind\":\"set\",\"value\":[\"m0\",\"m1\"]},{\"kind\":\"string\",\"value\":\"v0\"}]"
+      payloads: "[{\"key\":\"k1\",\"kind\":\"string\",\"value\":\"v1\"},{\"key\":\"k2\",\"kind\":\"set\",\"value\":[\"m0\",\"m1\"]},{\"key\":\"k9\",\"kind\":\"string\",\"value\":\"v0\"}]"
     }
     filesystem has []
 
@@ -132,7 +139,7 @@ scenario "every kind the adapter reads is reported in its canonical order":
     response OK ObserveResult {
       trace: "setup:a start:a hset:a hset:a rpush:a rpush:a zadd:a zadd:a stop:a=3",
       last: "INSERT:h,INSERT:l,INSERT:z",
-      payloads: "[{\"kind\":\"hash\",\"value\":{\"a\":\"2\",\"z\":\"1\"}},{\"kind\":\"list\",\"value\":[\"x\",\"b\"]},{\"kind\":\"zset\",\"value\":[{\"member\":\"m1\",\"score\":1},{\"member\":\"m2\",\"score\":2}]}]"
+      payloads: "[{\"key\":\"h\",\"kind\":\"hash\",\"value\":{\"a\":\"2\",\"z\":\"1\"}},{\"key\":\"l\",\"kind\":\"list\",\"value\":[\"x\",\"b\"]},{\"key\":\"z\",\"kind\":\"zset\",\"value\":[{\"member\":\"m1\",\"score\":1},{\"member\":\"m2\",\"score\":2}]}]"
     }
     filesystem has []
 
@@ -183,6 +190,12 @@ scenario "a read with a key hint looks the key up; without one it scans the name
   when: ObserveRedis { script: "setup:a seed:a:string:k1 seed:a:set:k2 read:a:k2 read:a" }
   predict success:
     response OK ObserveResult { trace: "setup:a seed:a seed:a read:a:k2=1 read:a=2", read: "string:k1,set:k2", readVia: "NamespaceScan" }
+    filesystem has []
+
+scenario "a read's records carry their key in the payload":
+  when: ObserveRedis { script: "setup:a seed:a:set:k2 read:a:k2" }
+  predict success:
+    response OK ObserveResult { trace: "setup:a seed:a read:a:k2=1", read: "set:k2", readPayloads: "[{\"key\":\"k2\",\"kind\":\"set\",\"value\":[\"m0\"]}]" }
     filesystem has []
 
 scenario "a keyed read names how it found the key":
