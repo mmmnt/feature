@@ -1,0 +1,29 @@
+name: feat pr report
+description: >-
+  A pull request build report from feat evidence bundles, the workflow run's jobs and its build attestations: one
+  updating PR comment and a check run, with an auditable chain of evidence (SPEC-PRR-001, ADR-0032).
+inputs:
+  token:
+    description: Token with pull-requests write, checks write, actions read, attestations read (merge mode also packages write, id-token write, attestations write).
+    default: ${{ github.token }}
+  evidence-dir:
+    description: Directory holding the downloaded evidence artifacts, one subdirectory per tier named feat-evidence-<tier>.
+    default: evidence
+  subjects:
+    description: Newline-separated paths of this run's attested artifacts.
+    default: ""
+  signer-workflows:
+    description: Newline-separated workflow paths allowed to sign this repository's attestations.
+    default: .github/workflows/ci.yml
+  check-name:
+    description: Name of the check run carrying the report.
+    default: feat report
+  evidence-repository:
+    description: GHCR repository main's evidence bundles are stored in (merge mode), e.g. ghcr.io/<owner>/<repo>-evidence.
+    default: ""
+  report-job:
+    description: Name of the job running this Action, left out of the job tally.
+    default: report
+runs:
+  using: node24
+  main: dist/main.js

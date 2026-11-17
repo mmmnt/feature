@@ -1,6 +1,7 @@
 feat 1.0
 
-# SPEC-PRR-001 — the pull request build report Action (actions/pr-report). DRAFT, awaiting the founder's flip
+# SPEC-PRR-001 — the pull request build report Action (actions/pr-report). Agreed 2026-11-17 by the founder's flip
+# ("Agree as drafted (Recommended)").
 # (ADR-0032-DRAFT; requested 2026-11-17: "I review all PRs, but I won't go through the code … get it into a friendly
 # format, into the PR"; form ruled "GitHub Action in Feature (Recommended)"). Revised 2026-11-17 on the founder's
 # feedback: "we need more detail on the attestations. digest is truncated, and we need to make alignment from the
@@ -42,7 +43,7 @@ spec SPEC-PRR-001 "PR build report: one updating comment and a check summary, wi
 context Toolchain
 aggregate Reporting
 type infrastructure
-status draft
+status agreed
 
 construct:
   handler at actions/pr-report/src/index.ts

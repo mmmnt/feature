@@ -1,6 +1,7 @@
 packages:
   - "packages/*"
   - "adapters/*"
+  - "actions/*"
 
 onlyBuiltDependencies:
   - "@confluentinc/kafka-javascript"

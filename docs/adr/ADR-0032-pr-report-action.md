@@ -1,6 +1,6 @@
 # ADR-0032 — a pull request build report, published as a GitHub Action
 
-Status: DRAFT — awaiting the founder's flip. Requested by the founder on 2026-11-17 for flmnt: "I review all PRs, but
+Status: Accepted (founder flip 2026-11-17, "Agree as drafted (Recommended)"). Requested by the founder on 2026-11-17 for flmnt: "I review all PRs, but
 I won't go through the code. let's experiment with Feature reporting that captures run and attestation records of
 the PR builds. let's get it into a friendly format, into the PR." Form ruled: "GitHub Action in Feature
 (Recommended)".

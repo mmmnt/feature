@@ -70,6 +70,10 @@
         "module": "adapters/handler/fixtures/probe.mjs",
         "export": "probe"
       },
+      "ProbePrReport": {
+        "module": "actions/pr-report/fixtures/probe.mjs",
+        "export": "probe"
+      },
       "ProbeHandlerRoutes": {
         "module": "adapters/handler/fixtures/probe.mjs",
         "export": "probeRoutes"

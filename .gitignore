@@ -39,3 +39,4 @@ adapters/fs/fixtures/conformance/
 
 # generated run artifacts (reports, evidence, sidecars)
 .feature/
+!actions/pr-report/dist/

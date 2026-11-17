@@ -1,0 +1,27 @@
+{
+  "name": "@mmmnt/feat-pr-report",
+  "version": "0.1.0",
+  "private": true,
+  "description": "GitHub Action: a pull request build report from feat evidence, the run's jobs and its build attestations (SPEC-PRR-001, ADR-0032).",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/main.js",
+  "scripts": {
+    "build": "esbuild src/main.ts --bundle --platform=node --target=node24 --format=esm --outfile=dist/main.js --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --exclude '**/report.test.ts' --passWithNoTests"
+  },
+  "dependencies": {
+    "@actions/attest": "3.2.0",
+    "sigstore": "5.0.1"
+  },
+  "devDependencies": {
+    "@mmmnt/feat-runtime": "workspace:*",
+    "esbuild": "0.28.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mmmnt/feature.git",
+    "directory": "actions/pr-report"
+  }
+}
