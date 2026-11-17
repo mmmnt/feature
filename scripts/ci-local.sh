@@ -20,7 +20,7 @@
 # usage: scripts/ci-local.sh [--ref <commit>] [--job <id|name>]... [--node <major>]... [--all] [--keep] [--list]
 #   --ref   the commit to check (default HEAD); uncommitted changes are never part of the run
 #   --job   a job id from ci.yml (check, test, spec) or the start of its name; repeatable
-#   --node  a matrix Node major (20, 22, 24, 26) instead of the default; repeatable
+#   --node  a matrix Node major (22, 24, 26) instead of the default; repeatable
 #   --all   every Node version of the matrix
 #   --keep  keep the trees after the run (default: removed, the logs stay)
 #   --list  print what the filters select and exit

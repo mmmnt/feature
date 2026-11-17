@@ -40,7 +40,7 @@ npm install --save-dev @mmmnt/feature
 
 Requirements:
 
-- **Node 20 or later** (the repository's `engines` field).
+- **Node 22 or later** (the package's `engines` field; `@oclif/core` 5 requires it).
 - **Vitest** in the project, as a dev dependency (`>=3.2.0`, a peer dependency;
   `feat init` installs it). Generated suites are ordinary Vitest files and
   `feat run` runs the vitest your project installed, found from the project root
