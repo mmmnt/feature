@@ -1,0 +1,113 @@
+feat 1.0
+
+# SPEC-PRR-001 — the pull request build report Action (actions/pr-report). DRAFT, awaiting the founder's flip
+# (ADR-0032-DRAFT; requested 2026-11-17: "I review all PRs, but I won't go through the code … get it into a friendly
+# format, into the PR"; form ruled "GitHub Action in Feature (Recommended)").
+#
+# Driven through actions/pr-report/fixtures/probe.mjs (part of the build, inside touches, not shipped). The probe runs
+# the Action's entry with a recorded GitHub API (no network): every request is answered from a fixture, and the trace
+# lists the requests made, in order, as `METHOD path`. `ProbePrReport { script }` runs a space-separated script:
+#   pr:<n>                     the run belongs to pull request <n> (head sha abc1234); `push` = no pull request
+#   evidence:<tier>:<fixture>  an uploaded feat-evidence/2 bundle for that tier: `pass` (every scenario passes),
+#                              `fail` (one scenario fails with one violation row), `noruns` (verify pass, no run block)
+#   jobs:<fixture>             the run's jobs: `green` (install, lint, unit, harness all success), `red` (harness failure)
+#   attest:<fixture>           attestations for the run's artifacts: `verified`, `unverified` (bundle fails verification),
+#                              `none`
+#   comment:<id>|none          an earlier report comment carrying the marker exists with that id, or none does
+#   token:full|readonly        the token's granted permissions (readonly = what a fork pull request receives)
+#   go                         run the Action
+# After `go` the trace carries `verdict=<pass|fail|incomplete>` and `sections=<names in order>`; `body` is the
+# rendered comment's markdown and `check` the check run's conclusion.
+
+spec SPEC-PRR-001 "PR build report: one updating comment and a check summary from evidence, jobs and attestations"
+context Toolchain
+aggregate Reporting
+type infrastructure
+status draft
+
+construct:
+  handler at actions/pr-report/src/index.ts
+  touches actions/pr-report/**
+  Read every uploaded feat-evidence bundle (one per tier), the workflow run's jobs and the attestations of the
+  run's artifacts; render one markdown report — verdict, specs per tier (passed, failed, with each failure's
+  violation rows), CI jobs with conclusion, duration and link, attestations with subject digest and verification
+  status — and post it as ONE pull request comment found again by the marker `<!-- feat-pr-report -->` (update in
+  place, else create), and as the summary of a check run named `feat report` whose conclusion is the verdict.
+  The verdict is pass only when every tier's bundle has verify pass and run pass, every job succeeded, and every
+  attestation verified; fail when any of them failed; incomplete when evidence or a run is missing.
+
+enforce:
+  exactly one report comment exists on the pull request after any number of runs
+  the check run's conclusion equals the report's verdict
+  rejects NO_PR_CONTEXT when the run does not belong to a pull request, and nothing is posted
+  rejects NO_EVIDENCE when no evidence bundle was uploaded, and nothing is posted
+  rejects INSUFFICIENT_PERMISSIONS when the token cannot write pull request comments or check runs, and nothing is posted
+  an unverified attestation makes the verdict fail, never pass
+
+contract:
+  input ProbeInput
+  response ProbeResult
+  error ReportError
+
+scenario "a green build posts a new report comment and a passing check":
+  when: ProbePrReport { script: "pr:7 evidence:unit:pass evidence:integration:pass jobs:green attest:verified comment:none token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/attestations/sha256:a1 GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=pass sections=verdict,specs:unit,specs:integration,jobs,attestations"
+      check: "success"
+    }
+    filesystem has []
+
+scenario "a second run updates the same comment instead of adding one":
+  when: ProbePrReport { script: "pr:7 evidence:unit:pass jobs:green attest:verified comment:901 token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/attestations/sha256:a1 GET /repos/o/r/issues/7/comments PATCH /repos/o/r/issues/comments/901 POST /repos/o/r/check-runs verdict=pass sections=verdict,specs:unit,jobs,attestations"
+      check: "success"
+    }
+    filesystem has []
+
+scenario "a failing scenario shows its violation and fails the check":
+  when: ProbePrReport { script: "pr:7 evidence:unit:pass evidence:integration:fail jobs:red attest:verified comment:none token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/attestations/sha256:a1 GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=fail sections=verdict,specs:unit,specs:integration,failures,jobs,attestations"
+      check: "failure"
+    }
+    filesystem has []
+
+scenario "an unverified attestation fails the verdict":
+  when: ProbePrReport { script: "pr:7 evidence:unit:pass jobs:green attest:unverified comment:none token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/attestations/sha256:a1 GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=fail sections=verdict,specs:unit,jobs,attestations"
+      check: "failure"
+    }
+    filesystem has []
+
+scenario "a bundle with no run is incomplete, not passing":
+  when: ProbePrReport { script: "pr:7 evidence:unit:noruns jobs:green attest:none comment:none token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=incomplete sections=verdict,specs:unit,jobs,attestations"
+      check: "neutral"
+    }
+    filesystem has []
+
+scenario "a push with no pull request is refused and nothing is posted":
+  when: ProbePrReport { script: "push evidence:unit:pass jobs:green attest:verified token:full go" }
+  predict rejection NO_PR_CONTEXT:
+    response ERR ReportError { code: "NO_PR_CONTEXT" }
+    filesystem has []
+
+scenario "no uploaded evidence is refused and nothing is posted":
+  when: ProbePrReport { script: "pr:7 jobs:green attest:verified comment:none token:full go" }
+  predict rejection NO_EVIDENCE:
+    response ERR ReportError { code: "NO_EVIDENCE" }
+    filesystem has []
+
+scenario "a read-only token is refused before anything is posted":
+  when: ProbePrReport { script: "pr:7 evidence:unit:pass jobs:green attest:verified comment:none token:readonly go" }
+  predict rejection INSUFFICIENT_PERMISSIONS:
+    response ERR ReportError { code: "INSUFFICIENT_PERMISSIONS" }
+    filesystem has []
