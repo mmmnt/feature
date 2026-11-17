@@ -21,6 +21,9 @@ inputs:
   evidence-repository:
     description: GHCR repository main's evidence bundles are stored in (merge mode), e.g. ghcr.io/<owner>/<repo>-evidence.
     default: ""
+  evidence-prefix:
+    description: Prefix of the evidence artifact names; the rest of the name is the tier (e.g. feat-evidence-unit → unit).
+    default: feat-evidence-
   report-job:
     description: Name of the job running this Action, left out of the job tally.
     default: report

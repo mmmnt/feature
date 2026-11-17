@@ -46,6 +46,7 @@ export interface Context {
   mainSha?: string;
   forkRunId?: number; // fork mode: the pull_request run whose uploads are reported
   forkPr?: number;
+  evidencePrefix?: string; // evidence artifact name prefix (default feat-evidence-)
 }
 
 export interface Api {
@@ -197,7 +198,7 @@ async function mergeMode(c: Context, ports: Ports): Promise<Outcome> {
   if (prRun === null) throw new ReportError("PR_EVIDENCE_MISSING", `no pull request run found for #${prInfo.number}`);
   const arts = await ports.api.get(`${repoPath(c)}/actions/runs/${prRun}/artifacts`);
   const prSubjects: Subject[] = (arts?.artifacts ?? [])
-    .filter((a: any) => typeof a.digest === "string" && !String(a.name).startsWith("feat-evidence-"))
+    .filter((a: any) => typeof a.digest === "string" && !String(a.name).startsWith(c.evidencePrefix ?? "feat-evidence-"))
     .map((a: any) => ({ name: a.name, digest: a.digest }));
   if (prSubjects.length === 0) throw new ReportError("PR_EVIDENCE_MISSING", `run ${prRun} has no attested artifacts`);
   const prRows = await verifySubjects(c, ports, prSubjects);

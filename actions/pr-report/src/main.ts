@@ -37,7 +37,7 @@ function makeApi(token: string): Api {
   return { get: (p) => call("GET", p), post: (p, b) => call("POST", p, b), patch: (p, b) => call("PATCH", p, b) };
 }
 
-function readEvidence(dir: string): Evidence[] {
+function readEvidence(dir: string, prefix: string): Evidence[] {
   const out: Evidence[] = [];
   let entries: string[] = [];
   try {
@@ -47,10 +47,10 @@ function readEvidence(dir: string): Evidence[] {
   }
   for (const sub of entries.sort()) {
     const full = path.join(dir, sub);
-    if (!statSync(full).isDirectory() || !sub.startsWith("feat-evidence-")) continue;
+    if (!statSync(full).isDirectory() || !sub.startsWith(prefix)) continue;
     for (const f of readdirSync(full).filter((x) => x.endsWith(".json")).sort()) {
       const bytes = readFileSync(path.join(full, f));
-      out.push({ tier: sub.slice("feat-evidence-".length), digest: sha256(bytes), bundle: JSON.parse(bytes.toString("utf8")) });
+      out.push({ tier: sub.slice(prefix.length), digest: sha256(bytes), bundle: JSON.parse(bytes.toString("utf8")) });
     }
   }
   return out;
@@ -152,6 +152,7 @@ async function main() {
     runId: Number(process.env.GITHUB_RUN_ID),
     runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT ?? 1),
     reportJob: input("report-job", "report"),
+    evidencePrefix: input("evidence-prefix", "feat-evidence-"),
     checkName: input("check-name", "feat report"),
     signerWorkflows: input("signer-workflows", ".github/workflows/ci.yml").split("\n").map((s) => s.trim()).filter(Boolean),
   };
@@ -174,6 +175,7 @@ async function main() {
   }
 
   const evidenceDir = input("evidence-dir", "evidence");
+  const prefix = input("evidence-prefix", "feat-evidence-");
   const subjects: Subject[] = input("subjects")
     .split("\n")
     .map((s) => s.trim())
@@ -184,16 +186,16 @@ async function main() {
     api,
     writable,
     async evidence() {
-      return readEvidence(evidenceDir);
+      return readEvidence(evidenceDir, prefix);
     },
     async forkEvidence(runId) {
       const arts = await api.get(`/repos/${owner}/${repo}/actions/runs/${runId}/artifacts`);
       const out: Evidence[] = [];
-      for (const a of (arts?.artifacts ?? []).filter((x: any) => String(x.name).startsWith("feat-evidence-"))) {
+      for (const a of (arts?.artifacts ?? []).filter((x: any) => String(x.name).startsWith(prefix))) {
         const dir = downloadArtifact(a.archive_download_url, token);
         for (const f of readdirSync(dir).filter((x) => x.endsWith(".json"))) {
           const bytes = readFileSync(path.join(dir, f));
-          out.push({ tier: String(a.name).slice("feat-evidence-".length), digest: sha256(bytes), bundle: JSON.parse(bytes.toString("utf8")) });
+          out.push({ tier: String(a.name).slice(prefix.length), digest: sha256(bytes), bundle: JSON.parse(bytes.toString("utf8")) });
         }
       }
       return out;
@@ -207,7 +209,7 @@ async function main() {
     },
     async store(evidence) {
       const repoRef = input("evidence-repository") || `ghcr.io/${owner}/${repo}-evidence`;
-      const files = readEvidenceFiles(evidenceDir);
+      const files = readEvidenceFiles(evidenceDir, prefix);
       return pushEvidence(repoRef.toLowerCase(), evidence, files, ctx.mainSha!, token);
     },
     async attest(subjs, predicateType, predicate) {
@@ -235,11 +237,11 @@ async function main() {
   }
 }
 
-function readEvidenceFiles(dir: string): Buffer[] {
+function readEvidenceFiles(dir: string, prefix: string): Buffer[] {
   const out: Buffer[] = [];
   for (const sub of readdirSync(dir).sort()) {
     const full = path.join(dir, sub);
-    if (!statSync(full).isDirectory() || !sub.startsWith("feat-evidence-")) continue;
+    if (!statSync(full).isDirectory() || !sub.startsWith(prefix)) continue;
     for (const f of readdirSync(full).filter((x) => x.endsWith(".json")).sort()) out.push(readFileSync(path.join(full, f)));
   }
   return out;
