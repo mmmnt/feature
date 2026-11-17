@@ -29,7 +29,7 @@
     "@mmmnt/feat-derive": "workspace:^",
     "@mmmnt/feat-emit-ts": "workspace:^",
     "@mmmnt/feat-runtime": "workspace:^",
-    "@oclif/core": "^4.3.0",
+    "@oclif/core": "^5.1.12",
     "@mmmnt/feat-types": "workspace:^",
     "@mmmnt/feat-runner": "workspace:^",
     "@mmmnt/feat-analyze": "workspace:^"
