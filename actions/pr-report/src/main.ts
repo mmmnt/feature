@@ -97,20 +97,23 @@ async function resolveTag(api: Api, repository: string, tag: string, token: stri
   return res.headers.get("docker-content-digest") ?? sha256(Buffer.from(await res.arrayBuffer()));
 }
 
-// The attestations stored beside a digest. cosign 3 attaches a Sigstore bundle as an OCI referrer: the referrers
-// API, else the referrers tag schema (`sha256-<hex>`), where GHCR, which has no referrers API, keeps them. cosign 2's
-// classic key signing attaches its DSSE envelopes as the layers of the `sha256-<hex>.att` tag instead; each layer is
-// one attestation, named by its blob's digest.
+// The attestations stored as OCI referrers of a digest, as cosign 3 attaches its Sigstore bundles: the referrers API,
+// else the referrers tag schema (`sha256-<hex>`), where GHCR, which has no referrers API, keeps them.
 async function listReferrers(repository: string, digest: string, token: string): Promise<any[]> {
-  const found: any[] = [];
   let res = await registryGet(repository, `referrers/${digest}`, INDEX, token);
   if (!res.ok) res = await registryGet(repository, `manifests/${digest.replace(":", "-")}`, INDEX, token);
-  if (res.ok) found.push(...(((await res.json()) as any).manifests ?? []).filter((m: any) => m.artifactType === BUNDLE));
-  else if (res.status !== 404) throw new Error(`referrers of ${repository}@${digest} answered ${res.status}`);
+  if (res.status === 404) return [];
+  if (!res.ok) throw new Error(`referrers of ${repository}@${digest} answered ${res.status}`);
+  return (((await res.json()) as any).manifests ?? []).filter((m: any) => m.artifactType === BUNDLE);
+}
+
+// cosign 2's classic key signing keeps its DSSE envelopes as the layers of the `sha256-<hex>.att` tag; each layer is
+// one attestation, named by its blob's digest.
+async function listClassic(repository: string, digest: string, token: string): Promise<any[]> {
   const att = await registryGet(repository, `manifests/${digest.replace(":", "-")}.att`, MANIFEST, token);
-  if (att.ok) for (const layer of ((await att.json()) as any).layers ?? []) found.push({ digest: layer.digest, classic: true });
-  else if (att.status !== 404) throw new Error(`the attestations of ${repository}@${digest} answered ${att.status}`);
-  return found;
+  if (att.status === 404) return [];
+  if (!att.ok) throw new Error(`the .att tag of ${repository}@${digest} answered ${att.status}`);
+  return (((await att.json()) as any).layers ?? []).map((layer: any) => ({ digest: layer.digest, classic: true }));
 }
 
 // The DSSE envelope of one attestation: a classic layer's blob is the envelope itself; a bundle referrer's layer
@@ -377,6 +380,9 @@ async function main() {
     subjects,
     async referrers(subject) {
       return listReferrers(subject.repository, subject.digest, token);
+    },
+    async classic(subject) {
+      return listClassic(subject.repository, subject.digest, token);
     },
     async verify(subject, refs): Promise<Verification> {
       if (trustedKey) {

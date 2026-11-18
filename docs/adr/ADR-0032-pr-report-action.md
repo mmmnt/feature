@@ -71,6 +71,9 @@ the PR builds. let's get it into a friendly format, into the PR." Form ruled: "G
     2026-11-17, "Add the flag").
     Decision 8's "Sigstore-signed via `actions/attest`, Rekor-logged" is replaced by this. Revisit on going public
     (flmnt#278): a public repository has artifact attestations, and keyless signing with a public log becomes an option.
+    *Amended 2026-11-18 (founder ruling "Action reads .att too (Recommended)"):* cosign 2's classic key signing
+    stores no OCI referrer; it keeps the attestations as the layers of the subject's `sha256-<hex>.att` tag. With no
+    referrer, the Action reads that tag, each layer one DSSE envelope whose blob digest is the signature digest shown.
 14. **A required subject that was not produced is incomplete** (founder ruling, "Add the scenario"): the consumer
     names its required attestation subjects; when the run produced none of one, the verdict is `incomplete`, the
     header names the subject and the job that should have produced it, and the report is still posted.

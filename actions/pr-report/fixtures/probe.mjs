@@ -15,6 +15,7 @@ const PR_SUBJECT = { name: "SBOM", digest: "sha256:3a7bd3e2360a3d29eea436fcfb7e4
 const MAIN_SUBJECT = { name: "SBOM", digest: "sha256:9b74c9897bac770ffc029102a200c5de2a4c2a6c2d1e3f4a5b6c7d8e9f0a1b2c", repository: SUBJECT_REPO };
 const REPO_KEY = "sha256:18a0c88f7df4a69a62bd0da7af6b6a4c6e882a86cc0b1f634068e57cb7ce98f7";
 const OTHER_KEY = "sha256:6b3f0e1d9c2a4b5e8f7a6c5d4e3b2a1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b";
+const CLASSIC_LAYER = "sha256:4c6cc238681fcaf230c2a643479538ace0bc675f0eb2b24b083dbccce260956c";
 const SIGNATURE = "sha256:29356bdc46d0ab18535ed914ea4fd7e31dd87fab2b18fbc1138a2185883aaf90";
 const BUNDLES = {
   unit: "sha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae",
@@ -112,7 +113,12 @@ export async function probe(input) {
     subjects: s.mode === "main" ? [MAIN_SUBJECT] : s.attest === "none" || s.sbom === "missing" ? [] : [PR_SUBJECT],
     async referrers(subject) {
       trace.push(`GET ghcr.io/o/r/referrers/${subject.digest}`);
+      if (s.attest === "classic") return [];
       return [{ digest: SIGNATURE, artifactType: "application/vnd.dev.sigstore.bundle.v0.3+json" }];
+    },
+    async classic(subject) {
+      trace.push(`GET ghcr.io/o/r/manifests/${subject.digest.replace(":", "-")}.att`);
+      return s.attest === "classic" ? [{ digest: CLASSIC_LAYER, classic: true }] : [];
     },
     async verify(subject) {
       const signed = { signature: true, key: true, keyFingerprint: REPO_KEY, signatureDigest: SIGNATURE };
@@ -125,6 +131,7 @@ export async function probe(input) {
       if (s.attest === "wrongsource") return { ...good, sourceCommit: OTHER };
       if (s.attest === "foreignsigner") return { ...good, signer: "https://github.com/someone-else/fork/.github/workflows/build.yml@refs/heads/x" };
       if (s.attest === "otherkey") return { ...good, key: false, keyFingerprint: OTHER_KEY };
+      if (s.attest === "classic") return { ...good, signatureDigest: CLASSIC_LAYER };
       return good;
     },
     async findPrRun() {

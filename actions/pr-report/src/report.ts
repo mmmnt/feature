@@ -75,6 +75,7 @@ export interface Ports {
   forkEvidence?(runId: number): Promise<Evidence[]>;
   subjects: Subject[];
   referrers(subject: Subject): Promise<unknown[]>; // the attestations stored as OCI referrers of the subject
+  classic(subject: Subject): Promise<unknown[]>; // cosign's classic key signing: the layers of its `sha256-<hex>.att` tag
   verify(subject: Subject, referrers: unknown[]): Promise<Verification>;
   findPrRun(pr: { number: number; headSha: string }): Promise<number | null>;
   prSubjects(artifacts: unknown[], mergeRefSha: string): Promise<Subject[]>; // the PR run's signed subjects
@@ -131,7 +132,10 @@ async function jobsOf(c: Context, api: Api, runId: number, attempt: number) {
 async function verifySubjects(c: Context, ports: Ports, subjects: Subject[]): Promise<Row[]> {
   const rows: Row[] = [];
   for (const s of subjects) {
-    const refs = await ports.referrers(s);
+    // OCI referrers first; with none, cosign's classic `.att` tag (ruling 2026-11-18, "Action reads .att too
+    // (Recommended)")
+    let refs = await ports.referrers(s);
+    if (refs.length === 0) refs = await ports.classic(s);
     rows.push({ subject: s, v: refs.length === 0 ? null : await ports.verify(s, refs) });
   }
   return rows;

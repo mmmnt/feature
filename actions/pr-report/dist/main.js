@@ -100,7 +100,8 @@ async function jobsOf(c, api, runId, attempt) {
 async function verifySubjects(c, ports, subjects) {
   const rows = [];
   for (const s of subjects) {
-    const refs = await ports.referrers(s);
+    let refs = await ports.referrers(s);
+    if (refs.length === 0) refs = await ports.classic(s);
     rows.push({ subject: s, v: refs.length === 0 ? null : await ports.verify(s, refs) });
   }
   return rows;
@@ -410,15 +411,17 @@ async function resolveTag(api, repository, tag, token) {
   return res.headers.get("docker-content-digest") ?? sha256(Buffer.from(await res.arrayBuffer()));
 }
 async function listReferrers(repository, digest, token) {
-  const found = [];
   let res = await registryGet(repository, `referrers/${digest}`, INDEX, token);
   if (!res.ok) res = await registryGet(repository, `manifests/${digest.replace(":", "-")}`, INDEX, token);
-  if (res.ok) found.push(...((await res.json()).manifests ?? []).filter((m) => m.artifactType === BUNDLE));
-  else if (res.status !== 404) throw new Error(`referrers of ${repository}@${digest} answered ${res.status}`);
+  if (res.status === 404) return [];
+  if (!res.ok) throw new Error(`referrers of ${repository}@${digest} answered ${res.status}`);
+  return ((await res.json()).manifests ?? []).filter((m) => m.artifactType === BUNDLE);
+}
+async function listClassic(repository, digest, token) {
   const att = await registryGet(repository, `manifests/${digest.replace(":", "-")}.att`, MANIFEST, token);
-  if (att.ok) for (const layer of (await att.json()).layers ?? []) found.push({ digest: layer.digest, classic: true });
-  else if (att.status !== 404) throw new Error(`the attestations of ${repository}@${digest} answered ${att.status}`);
-  return found;
+  if (att.status === 404) return [];
+  if (!att.ok) throw new Error(`the .att tag of ${repository}@${digest} answered ${att.status}`);
+  return ((await att.json()).layers ?? []).map((layer) => ({ digest: layer.digest, classic: true }));
 }
 async function bundleOf(repository, descriptor, token) {
   if (descriptor.classic) {
@@ -651,6 +654,9 @@ async function main() {
     subjects,
     async referrers(subject) {
       return listReferrers(subject.repository, subject.digest, token);
+    },
+    async classic(subject) {
+      return listClassic(subject.repository, subject.digest, token);
     },
     async verify(subject, refs) {
       if (trustedKey) {
