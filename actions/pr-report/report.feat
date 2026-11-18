@@ -18,6 +18,14 @@ feat 1.0
 # its required subjects (input `required-subjects: SBOM from build`); the probe step `sbom:missing` is that case.
 # Verify command amended 2026-11-17 by founder ruling "Add the flag": cosign verify-attestation fails on an attestation
 # with no transparency-log entry unless given --insecure-ignore-tlog, so the rendered command carries it.
+# Amended 2026-11-17 after the first real report (flmnt#145), three founder rulings:
+# (A) "Accept a newer base (Recommended)": the event's base sha is a snapshot; GitHub builds the merge ref on the
+#     base branch's tip at that time, so a first parent on the base branch (the event's base or newer) holds the link.
+# (B) "Leave them out (Recommended)": jobs still running because they wait on the report, and the report's own check
+#     run, are not tallied among the CI jobs.
+# (C) "One row per bundle, named (Recommended)": a bundle that names its package is a Tests row `<tier> · <package>`.
+# Under (A) a first parent other than the event's base is compared with the base branch before the link is judged,
+# so the badparents scenario's trace gains that compare (`0badc0de…` is not on main: diverged, the link still breaks).
 # Driven through actions/pr-report/fixtures/probe.mjs (part of the build, inside touches, not shipped). The probe runs
 # the Action's entry with a recorded GitHub API, a recorded GHCR referrers listing and recorded cosign results (no network): every request is
 # answered from a fixture, and the trace lists the requests made, in order, as `METHOD path`.
@@ -36,9 +44,14 @@ feat 1.0
 #   fork:<n>                   follow-up mode: a trusted `workflow_run` run reporting on fork pull request <n> from the
 #                              results its `pull_request` run uploaded; no fork code is checked out or run
 #   merge:good|badparents      the built commit's parents are [base, head], or are not
-#   evidence:<tier>:<fixture>  an uploaded feat-evidence/2 bundle for that tier: `pass`, `fail` (one scenario fails
+#   merge:basemoved            the built commit's parents are [1f2e3d4c5b6a79880a1b2c3d4e5f60718293a4b5, head]: the base
+#                              branch (main) moved past the event's base, and that commit is on it (compare: behind)
+#   merge:offbranch            as basemoved, but the first parent is not on the base branch (compare: diverged)
+#   evidence:<tier>:<fixture>[:<package>]  an uploaded feat-evidence/2 bundle for that tier, of that package when named: `pass`, `fail` (one scenario fails
 #                              with one violation row), `noruns` (verify pass, no run block)
-#   jobs:<fixture>             the run's jobs: `green` (install, lint, unit, harness all succeed), `red` (harness fails)
+#   jobs:<fixture>             the run's jobs: `green` (install, lint, unit, harness all succeed), `red` (harness fails),
+#                              `aggregate` (green, plus `CI green` still in progress because it needs the report, and
+#                              the report's own `feat report` check run, concluded failure)
 #   attest:<fixture>           cosign attestations (OCI referrers in GHCR) for the run's artifact (subject
 #                              sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b): `verified`;
 #                              `unverified` (cosign verify --key fails); `wrongsource` (provenance gitCommit is
@@ -90,7 +103,9 @@ enforce:
   the signer must be one of this repository's workflows at the built ref, or the chain is broken at the signer link
   an attestation signed by any key other than the repository's public key breaks the chain at the key link
   there is no transparency log: no step reads or writes one
-  the built commit's parents must be the pull request's base and head, or the chain is broken at the built-commit link
+  the built commit's first parent must be a commit on the base branch (the event's base or newer) and its second the head, or the chain is broken at the built-commit link
+  jobs still in progress because they wait on the report, and the report's own check run, are not tallied among the CI jobs
+  each evidence bundle is one Tests row, named `<tier> · <package>` when the bundle names its package
   a required attestation subject the run did not produce makes the verdict incomplete, and the header names it and the job that should have produced it
   on a push to main the Action signs one merge-linking attestation naming the pull request number, its head commit,
   the tested merge-ref commit, the pull request run and its attestation digests, the main commit and main's artifact
@@ -188,7 +203,7 @@ scenario "a built commit whose parents are not the PR's base and head breaks the
   when: ProbePrReport { script: "pr:7 merge:badparents evidence:unit:pass jobs:green attest:verified comment:none token:full go" }
   predict success:
     response OK ProbeResult {
-      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=fail chain=broken:built-commit sections=header,tests,attestations,chain,verify"
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET /repos/o/r/compare/main...0badc0de1a2b3c4d5e6f708192a3b4c5d6e7f809 GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=fail chain=broken:built-commit sections=header,tests,attestations,chain,verify"
       check: "failure"
     }
     filesystem has []
@@ -273,5 +288,44 @@ scenario "evidence present but the SBOM not produced is incomplete, naming the b
       trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=incomplete chain=ok sections=header,tests,attestations,chain"
       body: matching "❌ PR #7 — incomplete: SBOM not produced \\(job build\\)"
       check: "neutral"
+    }
+    filesystem has []
+
+scenario "a merge ref built on the base branch's newer tip keeps the chain":
+  when: ProbePrReport { script: "pr:7 merge:basemoved evidence:unit:pass jobs:green attest:verified comment:none token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET /repos/o/r/compare/main...1f2e3d4c5b6a79880a1b2c3d4e5f60718293a4b5 GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=pass chain=ok sections=header,tests,attestations,chain,verify"
+      body: matching "base `1f2e3d4c5b6a79880a1b2c3d4e5f60718293a4b5` \\+ head"
+      check: "success"
+    }
+    filesystem has []
+
+scenario "a merge ref whose first parent is not on the base branch breaks the chain":
+  when: ProbePrReport { script: "pr:7 merge:offbranch evidence:unit:pass jobs:green attest:verified comment:none token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET /repos/o/r/compare/main...1f2e3d4c5b6a79880a1b2c3d4e5f60718293a4b5 GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=fail chain=broken:built-commit sections=header,tests,attestations,chain,verify"
+      check: "failure"
+    }
+    filesystem has []
+
+scenario "jobs waiting on the report and the report's own check run are not tallied":
+  when: ProbePrReport { script: "pr:7 merge:good evidence:unit:pass jobs:aggregate attest:verified comment:none token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=pass chain=ok sections=header,tests,attestations,chain,verify"
+      body: matching "\\| CI jobs \\| — \\| ✅ 4 / 4 \\|"
+      check: "success"
+    }
+    filesystem has []
+
+scenario "each package's bundle is its own named Tests row":
+  when: ProbePrReport { script: "pr:7 merge:good evidence:unit:pass:memory evidence:unit:pass:lifecycle jobs:green attest:verified comment:none token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=pass chain=ok sections=header,tests,attestations,chain,verify"
+      body: matching "\\| unit · memory \\| 2 \\|[^\\n]*\\n\\| unit · lifecycle \\| 2 \\|"
+      check: "success"
     }
     filesystem has []

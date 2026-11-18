@@ -13,6 +13,7 @@ export type Link = "built-commit" | "signature" | "provenance" | "signer" | "key
 
 export interface Evidence {
   tier: string;
+  package?: string; // the package the bundle covers, when a tier has one bundle per package
   digest: string; // sha256:<hex> of the bundle file
   bundle: {
     verify?: { status: string };
@@ -52,7 +53,7 @@ export interface Context {
   reportJob: string;
   checkName: string;
   signerWorkflows: string[]; // e.g. ".github/workflows/ci.yml"
-  pr?: { number: number; headSha: string; baseSha: string; builtRef: string; builtSha: string };
+  pr?: { number: number; headSha: string; baseSha: string; baseRef: string; builtRef: string; builtSha: string };
   mainSha?: string;
   forkRunId?: number; // fork mode: the pull_request run whose uploads are reported
   forkPr?: number;
@@ -176,10 +177,18 @@ export async function runReport(c: Context, ports: Ports): Promise<Outcome> {
 
   const jobs = await jobsOf(c, ports.api, runId, fork ? 1 : c.runAttempt);
   let broken: Link | null = null;
+  let base = c.pr!.baseSha;
   if (!fork) {
     const commit = await ports.api.get(`${repoPath(c)}/commits/${c.pr!.builtSha}`);
     const parents: string[] = (commit?.parents ?? []).map((p: any) => p.sha);
-    if (!(parents.length === 2 && parents[0] === c.pr!.baseSha && parents[1] === c.pr!.headSha)) broken = "built-commit";
+    // The event's base is a snapshot; GitHub builds the merge ref on the base branch's tip at that time. A first
+    // parent the compare finds on the base branch (identical to, or behind, it) is the base (ruling "Accept a newer
+    // base (Recommended)").
+    if (parents.length === 2 && parents[1] === c.pr!.headSha && parents[0] !== base) {
+      const cmp = await ports.api.get(`${repoPath(c)}/compare/${encodeURIComponent(c.pr!.baseRef)}...${parents[0]}`);
+      if (cmp?.status === "identical" || cmp?.status === "behind") base = parents[0]!;
+    }
+    if (!(parents.length === 2 && parents[0] === base && parents[1] === c.pr!.headSha)) broken = "built-commit";
   }
   const rows = fork ? [] : await verifySubjects(c, ports, ports.subjects);
   if (!broken) for (const r of rows) broken ??= attestationBreak(c, r, c.pr!.builtSha, c.pr!.builtRef);
@@ -195,7 +204,7 @@ export async function runReport(c: Context, ports: Ports): Promise<Outcome> {
   sections.push("chain");
   if (!fork && rows.length > 0) sections.push("verify");
 
-  const body = renderPr(c, { prNumber, runId, evidence, jobs, rows, broken, verdict, fork, missing });
+  const body = renderPr(c, { prNumber, runId, evidence, jobs, rows, broken, verdict, fork, missing, base });
   await upsertComment(c, ports.api, prNumber, body, false);
   await ports.api.post(`${repoPath(c)}/check-runs`, {
     name: c.checkName,
@@ -294,7 +303,7 @@ function testsTable(evidence: Evidence[], jobs: { conclusion: string | null }[])
   for (const e of evidence) {
     const r = e.bundle.run;
     const scen = r ? `${mark(r.status === "pass")} ${r.tests - r.failures - r.errors} / ${r.tests}` : "— no run";
-    out.push(`| ${e.tier} | ${(e.bundle.specs ?? []).length} | ${scen} | \`${e.digest}\` |`);
+    out.push(`| ${e.package ? `${e.tier} · ${e.package}` : e.tier} | ${(e.bundle.specs ?? []).length} | ${scen} | \`${e.digest}\` |`);
   }
   const ok = jobs.filter((j) => j.conclusion === "success").length;
   out.push(`| CI jobs | — | ${mark(ok === jobs.length)} ${ok} / ${jobs.length} | — |`);
@@ -344,6 +353,7 @@ function renderPr(
     verdict: Verdict;
     fork: boolean;
     missing: Required[];
+    base: string;
   },
 ): string {
   const short = x.verdict === "incomplete" && x.missing.length > 0;
@@ -369,7 +379,7 @@ function renderPr(
   if (x.fork) out.push("| Attestations | not attested (fork PR); attested on merge |");
   else {
     out.push(
-      `| Built commit's parents = base \`${c.pr!.baseSha}\` + head \`${c.pr!.headSha}\` | ${mark(x.broken !== "built-commit")} |`,
+      `| Built commit's parents = base \`${x.base}\` + head \`${c.pr!.headSha}\` | ${mark(x.broken !== "built-commit")} |`,
     );
     for (const r of x.rows) {
       out.push(

@@ -156,8 +156,8 @@ function signerOf(predicate: any): string | null {
 
 // ── evidence ──
 
-function evidenceFiles(dir: string, prefix: string): { tier: string; bytes: Buffer }[] {
-  const out: { tier: string; bytes: Buffer }[] = [];
+function evidenceFiles(dir: string, prefix: string): { tier: string; package?: string; bytes: Buffer }[] {
+  const out: { tier: string; package?: string; bytes: Buffer }[] = [];
   let entries: string[] = [];
   try {
     entries = readdirSync(dir);
@@ -168,10 +168,11 @@ function evidenceFiles(dir: string, prefix: string): { tier: string; bytes: Buff
     const full = path.join(dir, sub);
     if (!statSync(full).isDirectory() || !sub.startsWith(prefix)) continue;
     const files = readdirSync(full).filter((x) => x.endsWith(".json")).sort();
-    // A tier with one bundle per package names each row by its package.
+    // A tier with one bundle per package: each bundle is named by its package (its file name).
     for (const f of files)
       out.push({
-        tier: files.length > 1 ? `${sub.slice(prefix.length)} · ${f.replace(/\.json$/, "")}` : sub.slice(prefix.length),
+        tier: sub.slice(prefix.length),
+        ...(files.length > 1 ? { package: f.replace(/\.json$/, "") } : {}),
         bytes: readFileSync(path.join(full, f)),
       });
   }
@@ -179,7 +180,12 @@ function evidenceFiles(dir: string, prefix: string): { tier: string; bytes: Buff
 }
 
 const readEvidence = (dir: string, prefix: string): Evidence[] =>
-  evidenceFiles(dir, prefix).map((f) => ({ tier: f.tier, digest: sha256(f.bytes), bundle: JSON.parse(f.bytes.toString("utf8")) }));
+  evidenceFiles(dir, prefix).map((f) => ({
+    tier: f.tier,
+    ...(f.package ? { package: f.package } : {}),
+    digest: sha256(f.bytes),
+    bundle: JSON.parse(f.bytes.toString("utf8")),
+  }));
 
 async function pushEvidence(repoRef: string, evidence: Evidence[], files: Buffer[], tag: string, token: string): Promise<string> {
   const { host, name } = splitRepo(repoRef);
@@ -268,25 +274,15 @@ async function main() {
   if (eventName === "pull_request") {
     const pr = event.pull_request;
     ctx.mode = "pr";
-    ctx.pr = { number: pr.number, headSha: pr.head.sha, baseSha: pr.base.sha, builtRef: process.env.GITHUB_REF!, builtSha: process.env.GITHUB_SHA! };
+    ctx.pr = { number: pr.number, headSha: pr.head.sha, baseSha: pr.base.sha, baseRef: pr.base.ref, builtRef: process.env.GITHUB_REF!, builtSha: process.env.GITHUB_SHA! };
     writable = pr.head.repo?.full_name === `${owner}/${repo}`;
-    // The event's base sha is a snapshot taken when the pull request last changed; when the base branch has moved
-    // since, GitHub builds the merge ref on the branch's newer tip. The pull request's base is the base branch, so the
-    // commit the merge was built on counts as the base when it is on that branch (the compare finds it identical to,
-    // or behind, the branch). Anything else keeps the event's sha, and the built-commit link breaks.
-    const built = await api.get(`/repos/${owner}/${repo}/commits/${ctx.pr.builtSha}`);
-    const first: string | undefined = built?.parents?.[0]?.sha;
-    if (first && first !== ctx.pr.baseSha) {
-      const cmp = await api.get(`/repos/${owner}/${repo}/compare/${encodeURIComponent(pr.base.ref)}...${first}`);
-      if (cmp && (cmp.status === "identical" || cmp.status === "behind")) ctx.pr.baseSha = first;
-    }
   } else if (eventName === "workflow_run" && event.workflow_run?.event === "pull_request") {
     const wr = event.workflow_run;
     const pr = wr.pull_requests?.[0];
     ctx.mode = pr ? "fork" : "none";
     ctx.forkRunId = wr.id;
     ctx.forkPr = pr?.number;
-    if (pr) ctx.pr = { number: pr.number, headSha: wr.head_sha, baseSha: pr.base?.sha ?? "", builtRef: `refs/pull/${pr.number}/merge`, builtSha: "" };
+    if (pr) ctx.pr = { number: pr.number, headSha: wr.head_sha, baseSha: pr.base?.sha ?? "", baseRef: pr.base?.ref ?? "", builtRef: `refs/pull/${pr.number}/merge`, builtSha: "" };
   } else if (eventName === "push" && process.env.GITHUB_REF === "refs/heads/main") {
     ctx.mode = "main";
     ctx.mainSha = process.env.GITHUB_SHA ?? "";

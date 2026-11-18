@@ -8,6 +8,7 @@ const HEAD = "9f2c41d8a07e5b3c6d1f0e2a4b8c7d9e1f3a5b6c";
 const BASE = "4e1a9c3b7d2f6e0a8c5b1d9f3e7a2c6b0d4f8e1a";
 const BUILT = "c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192";
 const OTHER = "0badc0de1a2b3c4d5e6f708192a3b4c5d6e7f809";
+const NEWER_BASE = "1f2e3d4c5b6a79880a1b2c3d4e5f60718293a4b5";
 const MAIN = "5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b";
 const SUBJECT_REPO = "ghcr.io/o/r-sbom";
 const PR_SUBJECT = { name: "SBOM", digest: "sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b", repository: SUBJECT_REPO };
@@ -40,8 +41,8 @@ export async function probe(input) {
     else if (k === "fork") Object.assign(s, { mode: "fork", pr: Number(v) });
     else if (k === "merge") s.merge = v;
     else if (k === "evidence") {
-      const [tier, fixture] = v.split(":");
-      s.evidence.push({ tier, digest: BUNDLES[tier], bundle: bundle(fixture) });
+      const [tier, fixture, pkg] = v.split(":");
+      s.evidence.push({ tier, ...(pkg ? { package: pkg } : {}), digest: BUNDLES[tier], bundle: bundle(fixture) });
     } else if (k === "jobs") s.jobs = v;
     else if (k === "attest") s.attest = v;
     else if (k === "comment") s.comment = v === "none" ? null : Number(v);
@@ -61,13 +62,24 @@ export async function probe(input) {
     { name: "unit", conclusion: "success" },
     { name: "harness", conclusion: s.jobs === "red" ? "failure" : "success" },
     { name: "report", conclusion: null },
+    ...(s.jobs === "aggregate"
+      ? [
+          { name: "CI green", status: "in_progress", conclusion: null },
+          { name: "feat report", status: "completed", conclusion: "failure" },
+        ]
+      : []),
   ];
   const api = {
     async get(path) {
       trace.push(`GET ${path}`);
       if (path.endsWith("/jobs")) return { jobs };
-      if (path.endsWith(`/commits/${BUILT}`))
-        return { parents: s.merge === "badparents" ? [{ sha: OTHER }, { sha: HEAD }] : [{ sha: BASE }, { sha: HEAD }] };
+      if (path.endsWith(`/commits/${BUILT}`)) {
+        if (s.merge === "badparents") return { parents: [{ sha: OTHER }, { sha: HEAD }] };
+        if (s.merge === "basemoved" || s.merge === "offbranch") return { parents: [{ sha: NEWER_BASE }, { sha: HEAD }] };
+        return { parents: [{ sha: BASE }, { sha: HEAD }] };
+      }
+      if (path.endsWith(`/compare/main...${NEWER_BASE}`)) return { status: s.merge === "basemoved" ? "behind" : "diverged" };
+      if (path.endsWith(`/compare/main...${OTHER}`)) return { status: "diverged" };
       if (path.endsWith(`/commits/${s.main}/pulls`))
         return s.prlookup === "found" ? [{ number: 7, merged_at: "2026-11-17T22:40:00Z", head: { sha: HEAD }, merge_ref_sha: BUILT }] : [];
       if (path.endsWith(`/runs/${PR_RUN}/artifacts`))
@@ -144,7 +156,7 @@ export async function probe(input) {
     signerWorkflows: [".github/workflows/ci.yml"],
     publicKey: "ci/signing/flmnt.pub",
     required: s.sbom === "missing" ? [{ label: "SBOM", job: "build" }] : [],
-    pr: s.mode === "pr" || s.mode === "fork" ? { number: s.pr, headSha: HEAD, baseSha: BASE, builtRef: `refs/pull/${s.pr}/merge`, builtSha: BUILT } : undefined,
+    pr: s.mode === "pr" || s.mode === "fork" ? { number: s.pr, headSha: HEAD, baseSha: BASE, baseRef: "main", builtRef: `refs/pull/${s.pr}/merge`, builtSha: BUILT } : undefined,
     mainSha: s.main,
     forkRunId: s.mode === "fork" ? 1 : undefined,
     forkPr: s.mode === "fork" ? s.pr : undefined,
