@@ -93,7 +93,9 @@ function attestationBreak(c, row, builtSha, ref) {
 async function jobsOf(c, api, runId, attempt) {
   const res = await api.get(`${repoPath(c)}/actions/runs/${runId}/attempts/${attempt}/jobs`);
   const jobs = res?.jobs ?? [];
-  return jobs.filter((j) => j.name !== c.reportJob);
+  return jobs.filter(
+    (j) => j.name !== c.reportJob && j.name !== c.checkName && (j.status === void 0 || j.status === "completed")
+  );
 }
 async function verifySubjects(c, ports, subjects) {
   const rows = [];
@@ -139,10 +141,15 @@ async function runReport(c, ports) {
   if (evidence.length === 0) throw new ReportError("NO_EVIDENCE", "no feat evidence bundle was uploaded");
   const jobs = await jobsOf(c, ports.api, runId, fork ? 1 : c.runAttempt);
   let broken = null;
+  let base = c.pr.baseSha;
   if (!fork) {
     const commit = await ports.api.get(`${repoPath(c)}/commits/${c.pr.builtSha}`);
     const parents = (commit?.parents ?? []).map((p) => p.sha);
-    if (!(parents.length === 2 && parents[0] === c.pr.baseSha && parents[1] === c.pr.headSha)) broken = "built-commit";
+    if (parents.length === 2 && parents[1] === c.pr.headSha && parents[0] !== base) {
+      const cmp = await ports.api.get(`${repoPath(c)}/compare/${encodeURIComponent(c.pr.baseRef)}...${parents[0]}`);
+      if (cmp?.status === "identical" || cmp?.status === "behind") base = parents[0];
+    }
+    if (!(parents.length === 2 && parents[0] === base && parents[1] === c.pr.headSha)) broken = "built-commit";
   }
   const rows = fork ? [] : await verifySubjects(c, ports, ports.subjects);
   if (!broken) for (const r of rows) broken ??= attestationBreak(c, r, c.pr.builtSha, c.pr.builtRef);
@@ -155,7 +162,7 @@ async function runReport(c, ports) {
   if (fork || rows.length > 0 || missing.length > 0) sections.push("attestations");
   sections.push("chain");
   if (!fork && rows.length > 0) sections.push("verify");
-  const body = renderPr(c, { prNumber, runId, evidence, jobs, rows, broken, verdict, fork, missing });
+  const body = renderPr(c, { prNumber, runId, evidence, jobs, rows, broken, verdict, fork, missing, base });
   await upsertComment(c, ports.api, prNumber, body, false);
   await ports.api.post(`${repoPath(c)}/check-runs`, {
     name: c.checkName,
@@ -238,7 +245,7 @@ function testsTable(evidence, jobs) {
   for (const e of evidence) {
     const r = e.bundle.run;
     const scen = r ? `${mark(r.status === "pass")} ${r.tests - r.failures - r.errors} / ${r.tests}` : "\u2014 no run";
-    out.push(`| ${e.tier} | ${(e.bundle.specs ?? []).length} | ${scen} | \`${e.digest}\` |`);
+    out.push(`| ${e.package ? `${e.tier} \xB7 ${e.package}` : e.tier} | ${(e.bundle.specs ?? []).length} | ${scen} | \`${e.digest}\` |`);
   }
   const ok = jobs.filter((j) => j.conclusion === "success").length;
   out.push(`| CI jobs | \u2014 | ${mark(ok === jobs.length)} ${ok} / ${jobs.length} | \u2014 |`);
@@ -286,7 +293,7 @@ function renderPr(c, x) {
   if (x.fork) out.push("| Attestations | not attested (fork PR); attested on merge |");
   else {
     out.push(
-      `| Built commit's parents = base \`${c.pr.baseSha}\` + head \`${c.pr.headSha}\` | ${mark(x.broken !== "built-commit")} |`
+      `| Built commit's parents = base \`${x.base}\` + head \`${c.pr.headSha}\` | ${mark(x.broken !== "built-commit")} |`
     );
     for (const r of x.rows) {
       out.push(
@@ -458,12 +465,22 @@ function evidenceFiles(dir, prefix) {
   for (const sub of entries.sort()) {
     const full = path2.join(dir, sub);
     if (!statSync(full).isDirectory() || !sub.startsWith(prefix)) continue;
-    for (const f of readdirSync(full).filter((x) => x.endsWith(".json")).sort())
-      out.push({ tier: sub.slice(prefix.length), bytes: readFileSync2(path2.join(full, f)) });
+    const files = readdirSync(full).filter((x) => x.endsWith(".json")).sort();
+    for (const f of files)
+      out.push({
+        tier: sub.slice(prefix.length),
+        ...files.length > 1 ? { package: f.replace(/\.json$/, "") } : {},
+        bytes: readFileSync2(path2.join(full, f))
+      });
   }
   return out;
 }
-var readEvidence = (dir, prefix) => evidenceFiles(dir, prefix).map((f) => ({ tier: f.tier, digest: sha256(f.bytes), bundle: JSON.parse(f.bytes.toString("utf8")) }));
+var readEvidence = (dir, prefix) => evidenceFiles(dir, prefix).map((f) => ({
+  tier: f.tier,
+  ...f.package ? { package: f.package } : {},
+  digest: sha256(f.bytes),
+  bundle: JSON.parse(f.bytes.toString("utf8"))
+}));
 async function pushEvidence(repoRef, evidence, files, tag, token) {
   const { host, name } = splitRepo(repoRef);
   const auth = await registryAuth(repoRef, "pull,push", token);
@@ -545,7 +562,7 @@ async function main() {
   if (eventName === "pull_request") {
     const pr = event.pull_request;
     ctx.mode = "pr";
-    ctx.pr = { number: pr.number, headSha: pr.head.sha, baseSha: pr.base.sha, builtRef: process.env.GITHUB_REF, builtSha: process.env.GITHUB_SHA };
+    ctx.pr = { number: pr.number, headSha: pr.head.sha, baseSha: pr.base.sha, baseRef: pr.base.ref, builtRef: process.env.GITHUB_REF, builtSha: process.env.GITHUB_SHA };
     writable = pr.head.repo?.full_name === `${owner}/${repo}`;
   } else if (eventName === "workflow_run" && event.workflow_run?.event === "pull_request") {
     const wr = event.workflow_run;
@@ -553,7 +570,7 @@ async function main() {
     ctx.mode = pr ? "fork" : "none";
     ctx.forkRunId = wr.id;
     ctx.forkPr = pr?.number;
-    if (pr) ctx.pr = { number: pr.number, headSha: wr.head_sha, baseSha: pr.base?.sha ?? "", builtRef: `refs/pull/${pr.number}/merge`, builtSha: "" };
+    if (pr) ctx.pr = { number: pr.number, headSha: wr.head_sha, baseSha: pr.base?.sha ?? "", baseRef: pr.base?.ref ?? "", builtRef: `refs/pull/${pr.number}/merge`, builtSha: "" };
   } else if (eventName === "push" && process.env.GITHUB_REF === "refs/heads/main") {
     ctx.mode = "main";
     ctx.mainSha = process.env.GITHUB_SHA ?? "";
