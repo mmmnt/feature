@@ -1,5 +1,6 @@
-// The probe behind `ProbePrReport` (SPEC-PRR-001): run the report core with a recorded GitHub API, recorded
-// verification results, a fake evidence store and a fake signer. No network. Test fixture, not shipped.
+// The probe behind `ProbePrReport` (SPEC-PRR-001): run the report core with a recorded GitHub API, a recorded GHCR
+// referrers listing, recorded cosign results, a fake evidence store and a fake signer. No network, no cosign binary.
+// Test fixture, not shipped.
 // Steps: see the header of ../report.feat.
 import { runReport, ReportError, MARKER } from "../src/report.ts";
 
@@ -8,14 +9,17 @@ const BASE = "4e1a9c3b7d2f6e0a8c5b1d9f3e7a2c6b0d4f8e1a";
 const BUILT = "c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192";
 const OTHER = "0badc0de1a2b3c4d5e6f708192a3b4c5d6e7f809";
 const MAIN = "5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b";
-const PR_SUBJECT = { name: "flmnt-sbom.cdx.json", digest: "sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b" };
-const MAIN_SUBJECT = { name: "flmnt-sbom.cdx.json", digest: "sha256:9b74c9897bac770ffc029102a200c5de2a4c2a6c2d1e3f4a5b6c7d8e9f0a1b2c" };
+const SUBJECT_REPO = "ghcr.io/o/r-sbom";
+const PR_SUBJECT = { name: "SBOM", digest: "sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b", repository: SUBJECT_REPO };
+const MAIN_SUBJECT = { name: "SBOM", digest: "sha256:9b74c9897bac770ffc029102a200c5de2a4c2a6c2d1e3f4a5b6c7d8e9f0a1b2c", repository: SUBJECT_REPO };
+const REPO_KEY = "sha256:18a0c88f7df4a69a62bd0da7af6b6a4c6e882a86cc0b1f634068e57cb7ce98f7";
+const OTHER_KEY = "sha256:6b3f0e1d9c2a4b5e8f7a6c5d4e3b2a1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b";
+const SIGNATURE = "sha256:29356bdc46d0ab18535ed914ea4fd7e31dd87fab2b18fbc1138a2185883aaf90";
 const BUNDLES = {
   unit: "sha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae",
   integration: "sha256:fcde2b2edba56bf408601fb721fe9b5c338d10ee429ea04fae5511b68fbf8fb9",
 };
 const PR_RUN = 44153523061;
-const ISSUER = "https://token.actions.githubusercontent.com";
 
 function bundle(fixture) {
   if (fixture === "pass") return { verify: { status: "pass" }, run: { status: "pass", tests: 12, failures: 0, errors: 0 }, specs: [{}, {}] };
@@ -46,6 +50,7 @@ export async function probe(input) {
     else if (k === "prattest") s.prattest = v;
     else if (k === "mainattest") s.mainattest = v;
     else if (k === "ghcr") s.ghcr = v;
+    else if (k === "sbom") s.sbom = v;
     else if (k !== "go") throw new Error(`unknown probe step '${step}'`);
   }
 
@@ -68,7 +73,6 @@ export async function probe(input) {
       if (path.endsWith(`/runs/${PR_RUN}/artifacts`))
         return { artifacts: s.prattest === "missing" ? [] : [{ name: PR_SUBJECT.name, digest: PR_SUBJECT.digest }] };
       if (path.endsWith("/runs/1/artifacts")) return { artifacts: s.evidence.map((e) => ({ name: `feat-evidence-${e.tier}` })) };
-      if (path.includes("/attestations/")) return { attestations: [{ bundle: { digest: path.split("/").pop() } }] };
       if (path.endsWith("/comments")) return s.comment ? [{ id: s.comment, body: `${MARKER}\nold` }] : [];
       throw new Error(`unrecorded GET ${path}`);
     },
@@ -93,28 +97,29 @@ export async function probe(input) {
       await api.get(`/repos/o/r/actions/runs/${runId}/artifacts`);
       return s.evidence;
     },
-    subjects: s.mode === "main" ? [MAIN_SUBJECT] : s.attest === "none" ? [] : [PR_SUBJECT],
+    subjects: s.mode === "main" ? [MAIN_SUBJECT] : s.attest === "none" || s.sbom === "missing" ? [] : [PR_SUBJECT],
+    async referrers(subject) {
+      trace.push(`GET ghcr.io/o/r/referrers/${subject.digest}`);
+      return [{ digest: SIGNATURE, artifactType: "application/vnd.dev.sigstore.bundle.v0.3+json" }];
+    },
     async verify(subject) {
+      const signed = { signature: true, key: true, keyFingerprint: REPO_KEY, signatureDigest: SIGNATURE };
       if (s.mode === "main") {
-        if (subject.digest === PR_SUBJECT.digest)
-          return { signature: true, sourceCommit: BUILT, signer: pathOf("refs/pull/7/merge"), issuer: ISSUER, rekorIndex: 871204553 };
-        return {
-          signature: true,
-          sourceCommit: s.mainattest === "wrongsource" ? OTHER : s.main,
-          signer: pathOf("refs/heads/main"),
-          issuer: ISSUER,
-          rekorIndex: 871322019,
-        };
+        if (subject.digest === PR_SUBJECT.digest) return { ...signed, sourceCommit: BUILT, signer: pathOf("refs/pull/7/merge") };
+        return { ...signed, sourceCommit: s.mainattest === "wrongsource" ? OTHER : s.main, signer: pathOf("refs/heads/main") };
       }
-      const good = { signature: true, sourceCommit: BUILT, signer: pathOf("refs/pull/7/merge"), issuer: ISSUER, rekorIndex: 871204553 };
-      if (s.attest === "unverified") return { ...good, signature: false };
+      const good = { ...signed, sourceCommit: BUILT, signer: pathOf("refs/pull/7/merge") };
+      if (s.attest === "unverified") return { ...good, signature: false, key: false, keyFingerprint: null, signatureDigest: null };
       if (s.attest === "wrongsource") return { ...good, sourceCommit: OTHER };
       if (s.attest === "foreignsigner") return { ...good, signer: "https://github.com/someone-else/fork/.github/workflows/build.yml@refs/heads/x" };
-      if (s.attest === "nolog") return { ...good, rekorIndex: null };
+      if (s.attest === "otherkey") return { ...good, key: false, keyFingerprint: OTHER_KEY };
       return good;
     },
     async findPrRun() {
       return PR_RUN;
+    },
+    async prSubjects(artifacts) {
+      return artifacts.filter((a) => typeof a.digest === "string").map((a) => ({ name: "SBOM", digest: a.digest, repository: SUBJECT_REPO }));
     },
     async store(evidence) {
       if (s.ghcr === "fail") throw new Error("push refused");
@@ -122,9 +127,9 @@ export async function probe(input) {
       trace.push(`PUT ${ref}`);
       return ref;
     },
-    async attest(_subjects, predicateType) {
-      trace.push(`ATTEST ${predicateType}`);
-      return { digest: "sha256:e3b98a4da31a127d4bde6e43033f66ba274cab0eb7eb1c70ec41402bf6273dd8", rekorIndex: 871322019 };
+    async sign(_subjects, predicateType) {
+      trace.push(`SIGN ${predicateType}`);
+      return { digest: "sha256:e3b98a4da31a127d4bde6e43033f66ba274cab0eb7eb1c70ec41402bf6273dd8" };
     },
   };
 
@@ -137,6 +142,8 @@ export async function probe(input) {
     reportJob: "report",
     checkName: "feat report",
     signerWorkflows: [".github/workflows/ci.yml"],
+    publicKey: "ci/signing/flmnt.pub",
+    required: s.sbom === "missing" ? [{ label: "SBOM", job: "build" }] : [],
     pr: s.mode === "pr" || s.mode === "fork" ? { number: s.pr, headSha: HEAD, baseSha: BASE, builtRef: `refs/pull/${s.pr}/merge`, builtSha: BUILT } : undefined,
     mainSha: s.main,
     forkRunId: s.mode === "fork" ? 1 : undefined,

@@ -1,13 +1,15 @@
 // SPEC-PRR-001 — the pull request build report (ADR-0032). The core is a function of its context and its ports:
-// every GitHub call goes through `api`, verification through `verify`, evidence storage through `store` and signing
-// through `attest`, so the spec drives it with recorded fakes and the Action wires real ones (main.ts).
+// every GitHub call goes through `api`, the GHCR referrers listing through `referrers`, cosign verification through
+// `verify`, evidence storage through `store` and signing through `sign`, so the spec drives it with recorded fakes and
+// the Action wires real ones (main.ts). Signing is the consumer's own cosign key; there is no transparency log
+// (ADR-0032 decision 13).
 
 export const MARKER = "<!-- feat-pr-report -->";
 export const MERGE_PREDICATE = "https://feature.mmmnt.dev/attestation/pr-merge/v1";
 
 export type Mode = "pr" | "fork" | "main" | "none";
 export type Verdict = "pass" | "fail" | "incomplete";
-export type Link = "built-commit" | "signature" | "provenance" | "signer" | "log" | "main-provenance";
+export type Link = "built-commit" | "signature" | "provenance" | "signer" | "key" | "main-provenance";
 
 export interface Evidence {
   tier: string;
@@ -21,16 +23,24 @@ export interface Evidence {
 }
 
 export interface Subject {
-  name: string;
-  digest: string; // sha256:<hex>
+  name: string; // label, e.g. SBOM
+  digest: string; // sha256:<hex> of the subject's OCI manifest
+  repository: string; // e.g. ghcr.io/<owner>/<repo>-sbom
+}
+
+// A subject the consumer requires (input `required-subjects`, e.g. "SBOM from build"), ADR-0032 decision 14.
+export interface Required {
+  label: string;
+  job: string;
 }
 
 export interface Verification {
-  signature: boolean; // signature and certificate chain to the trust root
+  signature: boolean; // cosign verified the attestation's signature with a key it was given
+  key: boolean; // ...and that key is the repository's public key
+  keyFingerprint: string | null; // sha256:<hex> of the verifying key's DER SubjectPublicKeyInfo
+  signatureDigest: string | null; // digest of the referrer manifest carrying the verified attestation
   sourceCommit: string | null; // provenance source commit
-  signer: string | null; // certificate SAN
-  issuer: string | null;
-  rekorIndex: number | null;
+  signer: string | null; // the provenance's workflow, https://github.com/<o>/<r>/<path>@<ref>
 }
 
 export interface Context {
@@ -47,6 +57,8 @@ export interface Context {
   forkRunId?: number; // fork mode: the pull_request run whose uploads are reported
   forkPr?: number;
   evidencePrefix?: string; // evidence artifact name prefix (default feat-evidence-)
+  publicKey: string; // the repository's public key path, e.g. ci/signing/flmnt.pub
+  required?: Required[];
 }
 
 export interface Api {
@@ -61,10 +73,12 @@ export interface Ports {
   evidence(): Promise<Evidence[]>;
   forkEvidence?(runId: number): Promise<Evidence[]>;
   subjects: Subject[];
-  verify(subject: Subject, bundles: unknown[]): Promise<Verification>;
+  referrers(subject: Subject): Promise<unknown[]>; // the attestations stored as OCI referrers of the subject
+  verify(subject: Subject, referrers: unknown[]): Promise<Verification>;
   findPrRun(pr: { number: number; headSha: string }): Promise<number | null>;
+  prSubjects(artifacts: unknown[], mergeRefSha: string): Promise<Subject[]>; // the PR run's signed subjects
   store(evidence: Evidence[]): Promise<string>; // digest-pinned reference
-  attest(subjects: Subject[], predicateType: string, predicate: unknown): Promise<{ digest: string; rekorIndex: number | null }>;
+  sign(subjects: Subject[], predicateType: string, predicate: unknown): Promise<{ digest: string }>;
 }
 
 export class ReportError extends Error {
@@ -98,8 +112,8 @@ function attestationBreak(c: Context, row: Row, builtSha: string, ref: string): 
   const v = row.v;
   if (!v || !v.signature) return "signature";
   if (v.sourceCommit !== builtSha) return "provenance";
-  if (!signerOk(c, v.signer, ref) || v.issuer !== "https://token.actions.githubusercontent.com") return "signer";
-  if (v.rekorIndex === null) return "log";
+  if (!signerOk(c, v.signer, ref)) return "signer";
+  if (!v.key) return "key";
   return null;
 }
 
@@ -112,9 +126,8 @@ async function jobsOf(c: Context, api: Api, runId: number, attempt: number) {
 async function verifySubjects(c: Context, ports: Ports, subjects: Subject[]): Promise<Row[]> {
   const rows: Row[] = [];
   for (const s of subjects) {
-    const res = await ports.api.get(`${repoPath(c)}/attestations/${s.digest}`);
-    const bundles: unknown[] = (res?.attestations ?? []).map((a: any) => a.bundle ?? a);
-    rows.push({ subject: s, v: bundles.length === 0 ? null : await ports.verify(s, bundles) });
+    const refs = await ports.referrers(s);
+    rows.push({ subject: s, v: refs.length === 0 ? null : await ports.verify(s, refs) });
   }
   return rows;
 }
@@ -140,6 +153,9 @@ async function upsertComment(c: Context, api: Api, pr: number, body: string, app
   }
 }
 
+const missingOf = (c: Context, subjects: Subject[]): Required[] =>
+  (c.required ?? []).filter((r) => !subjects.some((s) => s.name === r.label));
+
 const conclusion = (v: Verdict) => (v === "pass" ? "success" : v === "fail" ? "failure" : "neutral");
 
 export async function runReport(c: Context, ports: Ports): Promise<Outcome> {
@@ -164,23 +180,25 @@ export async function runReport(c: Context, ports: Ports): Promise<Outcome> {
   const rows = fork ? [] : await verifySubjects(c, ports, ports.subjects);
   if (!broken) for (const r of rows) broken ??= attestationBreak(c, r, c.pr!.builtSha, c.pr!.builtRef);
 
+  const missing = fork ? [] : missingOf(c, ports.subjects);
   const t = testsVerdict(evidence);
   const jobsFailed = jobs.some((j) => j.conclusion !== "success");
-  const verdict: Verdict = t.failed || jobsFailed || broken ? "fail" : t.incomplete ? "incomplete" : "pass";
+  const verdict: Verdict =
+    t.failed || jobsFailed || broken ? "fail" : t.incomplete || missing.length > 0 ? "incomplete" : "pass";
   const chain = fork ? "not-attested" : broken ? (`broken:${broken}` as const) : "ok";
   const sections = ["header", "tests"];
-  if (fork || rows.length > 0) sections.push("attestations");
+  if (fork || rows.length > 0 || missing.length > 0) sections.push("attestations");
   sections.push("chain");
   if (!fork && rows.length > 0) sections.push("verify");
 
-  const body = renderPr(c, { prNumber, runId, evidence, jobs, rows, broken, verdict, fork });
+  const body = renderPr(c, { prNumber, runId, evidence, jobs, rows, broken, verdict, fork, missing });
   await upsertComment(c, ports.api, prNumber, body, false);
   await ports.api.post(`${repoPath(c)}/check-runs`, {
     name: c.checkName,
     head_sha: c.pr!.headSha,
     status: "completed",
     conclusion: conclusion(verdict),
-    output: { title: headline(verdict, prNumber, broken), summary: body },
+    output: { title: headline(verdict, prNumber, broken, missing), summary: body },
   });
   return { verdict, chain, sections, body, check: conclusion(verdict) };
 }
@@ -197,9 +215,7 @@ async function mergeMode(c: Context, ports: Ports): Promise<Outcome> {
   const prRun = await ports.findPrRun({ number: prInfo.number, headSha: prInfo.headSha });
   if (prRun === null) throw new ReportError("PR_EVIDENCE_MISSING", `no pull request run found for #${prInfo.number}`);
   const arts = await ports.api.get(`${repoPath(c)}/actions/runs/${prRun}/artifacts`);
-  const prSubjects: Subject[] = (arts?.artifacts ?? [])
-    .filter((a: any) => typeof a.digest === "string" && !String(a.name).startsWith(c.evidencePrefix ?? "feat-evidence-"))
-    .map((a: any) => ({ name: a.name, digest: a.digest }));
+  const prSubjects = await ports.prSubjects(arts?.artifacts ?? [], prInfo.mergeRefSha);
   if (prSubjects.length === 0) throw new ReportError("PR_EVIDENCE_MISSING", `run ${prRun} has no attested artifacts`);
   const prRows = await verifySubjects(c, ports, prSubjects);
   if (prRows.some((r) => r.v === null))
@@ -212,11 +228,12 @@ async function mergeMode(c: Context, ports: Ports): Promise<Outcome> {
     if (b === "provenance") broken ??= "main-provenance";
     else broken ??= b;
   }
+  const missing = missingOf(c, ports.subjects);
   const t = testsVerdict(evidence);
   const jobsFailed = jobs.some((j) => j.conclusion !== "success");
 
-  let merge: { digest: string; rekorIndex: number | null; store: string } | null = null;
-  if (!broken) {
+  let merge: { digest: string; store: string } | null = null;
+  if (!broken && missing.length === 0 && ports.subjects.length > 0) {
     let store: string;
     try {
       store = await ports.store(evidence);
@@ -229,31 +246,40 @@ async function mergeMode(c: Context, ports: Ports): Promise<Outcome> {
       main: { sha: main, run: { id: c.runId, attempt: c.runAttempt }, artifacts: ports.subjects.map((s) => s.digest) },
       evidence: { bundles: evidence.map((e) => e.digest), store },
     };
-    const a = await ports.attest(ports.subjects, MERGE_PREDICATE, predicate);
+    const a = await ports.sign(ports.subjects, MERGE_PREDICATE, predicate);
     merge = { ...a, store };
   }
-  const verdict: Verdict = t.failed || jobsFailed || broken ? "fail" : t.incomplete ? "incomplete" : "pass";
+  const verdict: Verdict =
+    t.failed || jobsFailed || broken ? "fail" : t.incomplete || missing.length > 0 ? "incomplete" : "pass";
   const chain = broken ? (`broken:${broken}` as const) : "ok";
   const sections = ["header", "tests", "attestations", "chain", "verify"];
-  const body = renderMain(c, { main, prInfo, prRun, evidence, jobs, prRows, mainRows, broken, verdict, merge });
+  const body = renderMain(c, { main, prInfo, prRun, evidence, jobs, prRows, mainRows, broken, verdict, merge, missing });
   await ports.api.post(`${repoPath(c)}/check-runs`, {
     name: c.checkName,
     head_sha: main,
     status: "completed",
     conclusion: conclusion(verdict),
-    output: { title: `main ${main}: ${verdict}`, summary: body },
+    output: { title: `main ${main}: ${missing.length > 0 ? `incomplete: ${missingText(missing)}` : verdict}`, summary: body },
   });
+  const why = broken
+    ? `merge chain broken at ${broken}`
+    : missing.length > 0
+      ? `merge not signed: ${missingText(missing)}`
+      : `merge not signed: ${verdict}`;
   const line = merge
-    ? `**Merged** as \`${main}\` · merge attestation \`${merge.digest}\` · Rekor \`${merge.rekorIndex ?? "—"}\` ✅`
-    : `**Merged** as \`${main}\` · ❌ merge chain broken at ${broken ?? verdict}`;
+    ? `**Merged** as \`${main}\` · merge statement signature \`${merge.digest}\` ✅`
+    : `**Merged** as \`${main}\` · ❌ ${why}`;
   await upsertComment(c, ports.api, prInfo.number, line, true);
   return { verdict, chain, sections, body, check: conclusion(verdict) };
 }
 
 // ── rendering: compact, evidential, no prose; digests and SHAs always in full ──
 
-function headline(v: Verdict, pr: number, broken: Link | null): string {
+const missingText = (m: Required[]) => m.map((r) => `${r.label} not produced (job ${r.job})`).join(", ");
+
+function headline(v: Verdict, pr: number, broken: Link | null, missing: Required[]): string {
   if (broken) return `PR #${pr}: chain broken at ${broken}`;
+  if (v === "incomplete" && missing.length > 0) return `PR #${pr}: incomplete: ${missingText(missing)}`;
   return v === "pass" ? `PR #${pr}: verified` : v === "fail" ? `PR #${pr}: failed` : `PR #${pr}: incomplete`;
 }
 
@@ -271,24 +297,60 @@ function testsTable(evidence: Evidence[], jobs: { conclusion: string | null }[])
   return out;
 }
 
-function attestationRows(rows: Row[]): string[] {
-  const out = ["### Attestations", "", "| Artifact | Digest | Signer | Source commit | Rekor | |", "|---|---|---|---|---|---|"];
+function attestationRows(rows: Row[], missing: Required[] = []): string[] {
+  const out = [
+    "### Attestations",
+    "",
+    "| Artifact | Subject digest | Signature | Key | Signer | Source commit | |",
+    "|---|---|---|---|---|---|---|",
+  ];
   for (const r of rows) {
     const v = r.v;
     const signer = v?.signer ? v.signer.replace(/^https:\/\/github\.com\/[^/]+\/[^/]+\/\.github\/workflows\//, "") : "—";
     out.push(
-      `| \`${r.subject.name}\` | \`${r.subject.digest}\` | \`${signer}\` | \`${v?.sourceCommit ?? "—"}\` | \`${v?.rekorIndex ?? "—"}\` | ${mark(!!v && v.signature)} |`,
+      `| \`${r.subject.name}\` | \`${r.subject.digest}\` | \`${v?.signatureDigest ?? "—"}\` | \`${v?.keyFingerprint ?? "—"}\` | \`${signer}\` | \`${v?.sourceCommit ?? "—"}\` | ${mark(!!v && v.signature && v.key)} |`,
     );
   }
+  for (const m of missing) out.push(`| \`${m.label}\` | not produced (job ${m.job}) | — | — | — | — | ❌ |`);
   return out;
+}
+
+// The command an auditor runs with the committed public key alone (ADR-0032 decision 13). There is no transparency
+// log, so cosign must be told not to require an entry in one (founder ruling 2026-11-17, "Add the flag").
+export const verifyCommand = (c: Context, s: Subject, type: string) =>
+  `cosign verify-attestation --key ${c.publicKey} --insecure-ignore-tlog --type ${type} ${s.repository}@${s.digest}`;
+
+function verifyBlock(lines: string[]): string[] {
+  return ["", "<details><summary>Verify</summary>", "", "```sh", ...lines, "```", "", "</details>"];
+}
+
+function keyRow(r: Row): string {
+  return `| \`${r.subject.name}\` signed by the repository's key \`${r.v?.keyFingerprint ?? "—"}\` | ${mark(!!r.v && r.v.signature && r.v.key)} |`;
 }
 
 function renderPr(
   c: Context,
-  x: { prNumber: number; runId: number; evidence: Evidence[]; jobs: any[]; rows: Row[]; broken: Link | null; verdict: Verdict; fork: boolean },
+  x: {
+    prNumber: number;
+    runId: number;
+    evidence: Evidence[];
+    jobs: any[];
+    rows: Row[];
+    broken: Link | null;
+    verdict: Verdict;
+    fork: boolean;
+    missing: Required[];
+  },
 ): string {
-  const icon = x.verdict === "pass" ? "✅" : x.verdict === "fail" ? "❌" : "⚪";
-  const title = x.broken ? `chain broken at ${x.broken}` : x.verdict === "pass" ? "verified" : x.verdict;
+  const short = x.verdict === "incomplete" && x.missing.length > 0;
+  const icon = x.verdict === "pass" ? "✅" : x.verdict === "fail" || short ? "❌" : "⚪";
+  const title = x.broken
+    ? `chain broken at ${x.broken}`
+    : short
+      ? `incomplete: ${missingText(x.missing)}`
+      : x.verdict === "pass"
+        ? "verified"
+        : x.verdict;
   const out = [MARKER, `## ${icon} PR #${x.prNumber} — ${title}`, ""];
   if (x.fork) out.push(`Fork pull request · run [${x.runId}](https://github.com/${c.owner}/${c.repo}/actions/runs/${x.runId})`);
   else
@@ -298,7 +360,7 @@ function renderPr(
   out.push("", ...testsTable(x.evidence, x.jobs), "");
   if (x.fork) {
     out.push("### Attestations", "", "not attested (fork PR); attested on merge", "");
-  } else if (x.rows.length > 0) out.push(...attestationRows(x.rows), "");
+  } else if (x.rows.length > 0 || x.missing.length > 0) out.push(...attestationRows(x.rows, x.missing), "");
   out.push("### Chain", "", "| Check | |", "|---|---|");
   if (x.fork) out.push("| Attestations | not attested (fork PR); attested on merge |");
   else {
@@ -306,27 +368,15 @@ function renderPr(
       `| Built commit's parents = base \`${c.pr!.baseSha}\` + head \`${c.pr!.headSha}\` | ${mark(x.broken !== "built-commit")} |`,
     );
     for (const r of x.rows) {
-      out.push(`| \`${r.subject.name}\` source commit \`${r.v?.sourceCommit ?? "—"}\` = built commit \`${c.pr!.builtSha}\` | ${mark(!!r.v && r.v.sourceCommit === c.pr!.builtSha)} |`);
-      out.push(`| \`${r.subject.name}\` signer = this repository's workflow, issuer GitHub Actions | ${mark(!!r.v && signerOk(c, r.v.signer, c.pr!.builtRef) && r.v.issuer === "https://token.actions.githubusercontent.com")} |`);
-      out.push(`| \`${r.subject.name}\` transparency-log entry | ${mark(!!r.v && r.v.rekorIndex !== null)} |`);
+      out.push(
+        `| \`${r.subject.name}\` signature verifies | ${mark(!!r.v && r.v.signature)} |`,
+        `| \`${r.subject.name}\` source commit \`${r.v?.sourceCommit ?? "—"}\` = built commit \`${c.pr!.builtSha}\` | ${mark(!!r.v && r.v.sourceCommit === c.pr!.builtSha)} |`,
+        `| \`${r.subject.name}\` signer = this repository's workflow at \`${c.pr!.builtRef}\` | ${mark(!!r.v && signerOk(c, r.v.signer, c.pr!.builtRef))} |`,
+        keyRow(r),
+      );
     }
   }
-  if (!x.fork && x.rows.length > 0) {
-    const s = x.rows[0]!.subject;
-    out.push(
-      "",
-      "<details><summary>Verify</summary>",
-      "",
-      "```sh",
-      `gh run download ${x.runId} -R ${c.owner}/${c.repo} -n ${s.name}`,
-      `gh attestation verify ${s.name} -R ${c.owner}/${c.repo} \\`,
-      `  --signer-workflow ${c.owner}/${c.repo}/${c.signerWorkflows[0]} \\`,
-      `  --source-digest ${c.pr!.builtSha}`,
-      "```",
-      "",
-      "</details>",
-    );
-  }
+  if (!x.fork && x.rows.length > 0) out.push(...verifyBlock(x.rows.map((r) => verifyCommand(c, r.subject, "slsaprovenance1"))));
   return out.join("\n");
 }
 
@@ -342,44 +392,48 @@ function renderMain(
     mainRows: Row[];
     broken: Link | null;
     verdict: Verdict;
-    merge: { digest: string; rekorIndex: number | null; store: string } | null;
+    merge: { digest: string; store: string } | null;
+    missing: Required[];
   },
 ): string {
-  const icon = x.verdict === "pass" ? "✅" : x.verdict === "fail" ? "❌" : "⚪";
-  const out = [MARKER, `## ${icon} main \`${x.main}\` — ${x.broken ? `chain broken at ${x.broken}` : x.verdict === "pass" ? "verified" : x.verdict}`, ""];
+  const short = x.verdict === "incomplete" && x.missing.length > 0;
+  const icon = x.verdict === "pass" ? "✅" : x.verdict === "fail" || short ? "❌" : "⚪";
+  const title = x.broken
+    ? `chain broken at ${x.broken}`
+    : short
+      ? `incomplete: ${missingText(x.missing)}`
+      : x.verdict === "pass"
+        ? "verified"
+        : x.verdict;
+  const out = [MARKER, `## ${icon} main \`${x.main}\` — ${title}`, ""];
   out.push(
     `Merged PR #${x.prInfo.number} · head \`${x.prInfo.headSha}\` · tested \`${x.prInfo.mergeRefSha}\` · PR run [${x.prRun}](https://github.com/${c.owner}/${c.repo}/actions/runs/${x.prRun}) · main run [${c.runId}](https://github.com/${c.owner}/${c.repo}/actions/runs/${c.runId}/attempts/${c.runAttempt})`,
     "",
     ...testsTable(x.evidence, x.jobs),
     "",
-    ...attestationRows([...x.prRows, ...x.mainRows]),
+    ...attestationRows([...x.prRows, ...x.mainRows], x.missing),
     "",
     "### Chain",
     "",
     "| Check | |",
     "|---|---|",
   );
-  for (const r of x.prRows) out.push(`| PR \`${r.subject.name}\` source commit = tested \`${x.prInfo.mergeRefSha}\` | ${mark(!!r.v && r.v.sourceCommit === x.prInfo.mergeRefSha)} |`);
-  for (const r of x.mainRows) out.push(`| main \`${r.subject.name}\` source commit \`${r.v?.sourceCommit ?? "—"}\` = main \`${x.main}\` | ${mark(!!r.v && r.v.sourceCommit === x.main)} |`);
-  if (x.merge)
+  for (const r of x.prRows)
     out.push(
-      `| Evidence stored \`${x.merge.store}\` | ✅ |`,
-      `| Merge attestation \`${x.merge.digest}\` · Rekor \`${x.merge.rekorIndex ?? "—"}\` | ✅ |`,
+      `| PR \`${r.subject.name}\` source commit = tested \`${x.prInfo.mergeRefSha}\` | ${mark(!!r.v && r.v.sourceCommit === x.prInfo.mergeRefSha)} |`,
     );
-  const s = x.mainRows[0]?.subject;
-  if (s)
+  for (const r of x.mainRows)
     out.push(
-      "",
-      "<details><summary>Verify</summary>",
-      "",
-      "```sh",
-      `gh attestation verify ${s.name} -R ${c.owner}/${c.repo} \\`,
-      `  --signer-workflow ${c.owner}/${c.repo}/${c.signerWorkflows[0]} \\`,
-      `  --source-ref refs/heads/main --source-digest ${x.main} \\`,
-      `  --predicate-type ${MERGE_PREDICATE}`,
-      "```",
-      "",
-      "</details>",
+      `| main \`${r.subject.name}\` source commit \`${r.v?.sourceCommit ?? "—"}\` = main \`${x.main}\` | ${mark(!!r.v && r.v.sourceCommit === x.main)} |`,
+      keyRow(r),
+    );
+  if (x.merge)
+    out.push(`| Evidence stored \`${x.merge.store}\` | ✅ |`, `| Merge statement signature \`${x.merge.digest}\` | ✅ |`);
+  if (x.mainRows.length > 0)
+    out.push(
+      ...verifyBlock(
+        x.mainRows.flatMap((r) => [verifyCommand(c, r.subject, "slsaprovenance1"), verifyCommand(c, r.subject, MERGE_PREDICATE)]),
+      ),
     );
   return out.join("\n");
 }

@@ -1,5 +1,11 @@
 # PR build report Action — design notes (DRAFT)
 
+> Amended 2026-11-17 (ADR-0032 decisions 13–14): signing is the consumer's own cosign key, attestations are OCI
+> referrers in GHCR, there is no transparency log (the log link is now the key link, and verification is
+> `cosign verify-attestation --key <public key> --insecure-ignore-tlog`), and a required subject not produced is an
+> incomplete report. Where these notes say Sigstore keyless, `actions/attest`, Rekor or `gh attestation verify`,
+> the amendment, `report.feat` and `src/` govern.
+
 Scope entry: "SPEC-PRR-001 — the pull request build report Action", requested 2026-11-17 (flmnt record af370225).
 Feature tracks scope in its local working ledger; a GitHub project issue follows once the project is set up.
 

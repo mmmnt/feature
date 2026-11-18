@@ -2,7 +2,7 @@
   "name": "@mmmnt/feat-pr-report",
   "version": "0.1.0",
   "private": true,
-  "description": "GitHub Action: a pull request build report from feat evidence, the run's jobs and its build attestations (SPEC-PRR-001, ADR-0032).",
+  "description": "GitHub Action: a pull request build report from feat evidence, the run's jobs and its own-key cosign attestations (SPEC-PRR-001, ADR-0032).",
   "license": "MIT",
   "type": "module",
   "main": "./dist/main.js",
@@ -11,13 +11,10 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --exclude '**/report.test.ts' --passWithNoTests"
   },
-  "dependencies": {
-    "@actions/attest": "3.2.0",
-    "sigstore": "5.0.1"
-  },
   "devDependencies": {
     "@mmmnt/feat-runtime": "workspace:*",
-    "esbuild": "0.28.1"
+    "esbuild": "0.28.1",
+    "vitest": "^3.2.0"
   },
   "repository": {
     "type": "git",
