@@ -100,7 +100,8 @@ async function jobsOf(c, api, runId, attempt) {
 async function verifySubjects(c, ports, subjects) {
   const rows = [];
   for (const s of subjects) {
-    const refs = await ports.referrers(s);
+    let refs = await ports.referrers(s);
+    if (refs.length === 0) refs = await ports.classic(s);
     rows.push({ subject: s, v: refs.length === 0 ? null : await ports.verify(s, refs) });
   }
   return rows;
@@ -414,10 +415,19 @@ async function listReferrers(repository, digest, token) {
   if (!res.ok) res = await registryGet(repository, `manifests/${digest.replace(":", "-")}`, INDEX, token);
   if (res.status === 404) return [];
   if (!res.ok) throw new Error(`referrers of ${repository}@${digest} answered ${res.status}`);
-  const index = await res.json();
-  return (index.manifests ?? []).filter((m) => m.artifactType === BUNDLE);
+  return ((await res.json()).manifests ?? []).filter((m) => m.artifactType === BUNDLE);
+}
+async function listClassic(repository, digest, token) {
+  const att = await registryGet(repository, `manifests/${digest.replace(":", "-")}.att`, MANIFEST, token);
+  if (att.status === 404) return [];
+  if (!att.ok) throw new Error(`the .att tag of ${repository}@${digest} answered ${att.status}`);
+  return ((await att.json()).layers ?? []).map((layer) => ({ digest: layer.digest, classic: true }));
 }
 async function bundleOf(repository, descriptor, token) {
+  if (descriptor.classic) {
+    const b2 = await registryGet(repository, `blobs/${descriptor.digest}`, "application/vnd.dsse.envelope.v1+json", token);
+    return b2.ok ? { dsseEnvelope: await b2.json() } : null;
+  }
   const m = await registryGet(repository, `manifests/${descriptor.digest}`, MANIFEST, token);
   if (!m.ok) return null;
   const layer = (await m.json()).layers?.[0];
@@ -644,6 +654,9 @@ async function main() {
     subjects,
     async referrers(subject) {
       return listReferrers(subject.repository, subject.digest, token);
+    },
+    async classic(subject) {
+      return listClassic(subject.repository, subject.digest, token);
     },
     async verify(subject, refs) {
       if (trustedKey) {

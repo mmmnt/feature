@@ -24,6 +24,9 @@ feat 1.0
 # (B) "Leave them out (Recommended)": jobs still running because they wait on the report, and the report's own check
 #     run, are not tallied among the CI jobs.
 # (C) "One row per bundle, named (Recommended)": a bundle that names its package is a Tests row `<tier> · <package>`.
+# Amended 2026-11-18 by founder ruling "Action reads .att too (Recommended)": cosign 2's classic key signing keeps its
+# attestations as the layers of the subject's `sha256-<hex>.att` tag, not as OCI referrers (flmnt#145's first signed
+# SBOM read "chain broken at signature" for it); with no referrer, the Action reads that tag.
 # Under (A) a first parent other than the event's base is compared with the base branch before the link is judged,
 # so the badparents scenario's trace gains that compare (`0badc0de…` is not on main: diverged, the link still breaks).
 # Driven through actions/pr-report/fixtures/probe.mjs (part of the build, inside touches, not shipped). The probe runs
@@ -57,7 +60,9 @@ feat 1.0
 #                              `unverified` (cosign verify --key fails); `wrongsource` (provenance gitCommit is
 #                              0badc0de1a2b3c4d5e6f708192a3b4c5d6e7f809); `foreignsigner` (the provenance names another
 #                              repository's workflow); `otherkey` (signed by a key other than the repository's
-#                              public key); `none` (no attestation)
+#                              public key); `classic` (no OCI referrer; one attestation held by cosign's classic
+#                              `.att` tag, layer sha256:4c6cc238681fcaf230c2a643479538ace0bc675f0eb2b24b083dbccce260956c);
+#                              `none` (no attestation)
 #   comment:<id>|none          an earlier report comment carrying the marker exists with that id, or none does
 #   token:full|readonly        the token's granted permissions (readonly = what a fork pull request receives)
 #   sbom:missing               the run was required to produce the SBOM (job build) and did not: no subject
@@ -75,7 +80,8 @@ construct:
   handler at actions/pr-report/src/index.ts
   touches actions/pr-report/**
   Read every uploaded feat-evidence bundle (one per tier), the workflow run's jobs, the built commit, and the
-  attestations of the run's artifacts; verify each attestation with cosign against the repository's public key (`ci/signing/<key>.pub`): the signature,
+  attestations of the run's artifacts (OCI referrers of the subject, else the layers of cosign's classic
+  `sha256-<hex>.att` tag); verify each attestation with cosign against the repository's public key (`ci/signing/<key>.pub`): the signature,
   the key's fingerprint, the signer workflow and the provenance source; render one markdown report and post it as ONE pull
   request comment found again by the marker `<!-- feat-pr-report -->` (update in place, else create), and as the
   summary of a check run named `feat report` whose conclusion is the verdict.
@@ -103,6 +109,7 @@ enforce:
   the signer must be one of this repository's workflows at the built ref, or the chain is broken at the signer link
   an attestation signed by any key other than the repository's public key breaks the chain at the key link
   there is no transparency log: no step reads or writes one
+  a subject's attestations are its OCI referrers; with none, the layers of its classic `.att` tag; with neither, it has no attestation
   the built commit's first parent must be a commit on the base branch (the event's base or newer) and its second the head, or the chain is broken at the built-commit link
   jobs still in progress because they wait on the report, and the report's own check run, are not tallied among the CI jobs
   each evidence bundle is one Tests row, named `<tier> · <package>` when the bundle names its package
@@ -326,6 +333,16 @@ scenario "each package's bundle is its own named Tests row":
     response OK ProbeResult {
       trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=pass chain=ok sections=header,tests,attestations,chain,verify"
       body: matching "\\| unit · memory \\| 2 \\|[^\\n]*\\n\\| unit · lifecycle \\| 2 \\|"
+      check: "success"
+    }
+    filesystem has []
+
+scenario "an attestation held only by cosign's classic .att tag is found and verified":
+  when: ProbePrReport { script: "pr:7 merge:good evidence:unit:pass jobs:green attest:classic comment:none token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET ghcr.io/o/r/manifests/sha256-3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b.att GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=pass chain=ok sections=header,tests,attestations,chain,verify"
+      body: matching "`sha256:4c6cc238681fcaf230c2a643479538ace0bc675f0eb2b24b083dbccce260956c`"
       check: "success"
     }
     filesystem has []

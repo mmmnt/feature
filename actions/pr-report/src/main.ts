@@ -97,18 +97,32 @@ async function resolveTag(api: Api, repository: string, tag: string, token: stri
   return res.headers.get("docker-content-digest") ?? sha256(Buffer.from(await res.arrayBuffer()));
 }
 
-// The OCI referrers of a digest: the referrers API, else the referrers tag schema (`sha256-<hex>`), which is where
-// cosign writes them on a registry with no referrers API.
+// The attestations stored as OCI referrers of a digest, as cosign 3 attaches its Sigstore bundles: the referrers API,
+// else the referrers tag schema (`sha256-<hex>`), where GHCR, which has no referrers API, keeps them.
 async function listReferrers(repository: string, digest: string, token: string): Promise<any[]> {
   let res = await registryGet(repository, `referrers/${digest}`, INDEX, token);
   if (!res.ok) res = await registryGet(repository, `manifests/${digest.replace(":", "-")}`, INDEX, token);
   if (res.status === 404) return [];
   if (!res.ok) throw new Error(`referrers of ${repository}@${digest} answered ${res.status}`);
-  const index = (await res.json()) as any;
-  return (index.manifests ?? []).filter((m: any) => m.artifactType === BUNDLE);
+  return (((await res.json()) as any).manifests ?? []).filter((m: any) => m.artifactType === BUNDLE);
 }
 
+// cosign 2's classic key signing keeps its DSSE envelopes as the layers of the `sha256-<hex>.att` tag; each layer is
+// one attestation, named by its blob's digest.
+async function listClassic(repository: string, digest: string, token: string): Promise<any[]> {
+  const att = await registryGet(repository, `manifests/${digest.replace(":", "-")}.att`, MANIFEST, token);
+  if (att.status === 404) return [];
+  if (!att.ok) throw new Error(`the .att tag of ${repository}@${digest} answered ${att.status}`);
+  return (((await att.json()) as any).layers ?? []).map((layer: any) => ({ digest: layer.digest, classic: true }));
+}
+
+// The DSSE envelope of one attestation: a classic layer's blob is the envelope itself; a bundle referrer's layer
+// holds a Sigstore bundle carrying it.
 async function bundleOf(repository: string, descriptor: any, token: string): Promise<any | null> {
+  if (descriptor.classic) {
+    const b = await registryGet(repository, `blobs/${descriptor.digest}`, "application/vnd.dsse.envelope.v1+json", token);
+    return b.ok ? { dsseEnvelope: await b.json() } : null;
+  }
   const m = await registryGet(repository, `manifests/${descriptor.digest}`, MANIFEST, token);
   if (!m.ok) return null;
   const layer = ((await m.json()) as any).layers?.[0];
@@ -366,6 +380,9 @@ async function main() {
     subjects,
     async referrers(subject) {
       return listReferrers(subject.repository, subject.digest, token);
+    },
+    async classic(subject) {
+      return listClassic(subject.repository, subject.digest, token);
     },
     async verify(subject, refs): Promise<Verification> {
       if (trustedKey) {
