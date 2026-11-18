@@ -7,8 +7,19 @@ feat 1.0
 # feedback: "we need more detail on the attestations. digest is truncated, and we need to make alignment from the
 # signature to the PR ref so we can establish an easy chain of evidence for an auditor."
 #
+# Amended 2026-11-17 by the founder's flip ("Agree as drafted (Recommended)"; the missing-SBOM check conclusion
+# confirmed "Neutral (Recommended)") — two rulings in one amendment (ADR-0032 decisions 13–14):
+# (1) "Sign with our own key" (flmnt f1530c7d): GitHub artifact attestations are not available to the consumer, so
+# attestations are signed with the consumer's own cosign key, stored as OCI referrers in GHCR, verified with
+# `cosign verify-attestation --key`; no public transparency log. The tlog link becomes the key link.
+# (2) "Add the scenario": evidence present but
+# an expected attestation subject not produced (flmnt's SBOM, from its build job) is an explicit incomplete result,
+# "❌ incomplete: SBOM not produced (job build)", never a pass and never a report that is not posted. The consumer names
+# its required subjects (input `required-subjects: SBOM from build`); the probe step `sbom:missing` is that case.
+# Verify command amended 2026-11-17 by founder ruling "Add the flag": cosign verify-attestation fails on an attestation
+# with no transparency-log entry unless given --insecure-ignore-tlog, so the rendered command carries it.
 # Driven through actions/pr-report/fixtures/probe.mjs (part of the build, inside touches, not shipped). The probe runs
-# the Action's entry with a recorded GitHub API and a recorded Sigstore trust root (no network): every request is
+# the Action's entry with a recorded GitHub API, a recorded GHCR referrers listing and recorded cosign results (no network): every request is
 # answered from a fixture, and the trace lists the requests made, in order, as `METHOD path`.
 # `ProbePrReport { script }` runs a space-separated script:
 #   pr:<n>                     the run belongs to pull request <n>: head 9f2c41d8a07e5b3c6d1f0e2a4b8c7d9e1f3a5b6c, base
@@ -28,13 +39,15 @@ feat 1.0
 #   evidence:<tier>:<fixture>  an uploaded feat-evidence/2 bundle for that tier: `pass`, `fail` (one scenario fails
 #                              with one violation row), `noruns` (verify pass, no run block)
 #   jobs:<fixture>             the run's jobs: `green` (install, lint, unit, harness all succeed), `red` (harness fails)
-#   attest:<fixture>           attestations for the run's artifact (subject
+#   attest:<fixture>           cosign attestations (OCI referrers in GHCR) for the run's artifact (subject
 #                              sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b): `verified`;
-#                              `unverified` (the bundle's signature fails); `wrongsource` (provenance gitCommit is
-#                              0badc0de1a2b3c4d5e6f708192a3b4c5d6e7f809); `foreignsigner` (SAN is another repository's
-#                              workflow); `nolog` (no transparency-log entry); `none` (no attestation)
+#                              `unverified` (cosign verify --key fails); `wrongsource` (provenance gitCommit is
+#                              0badc0de1a2b3c4d5e6f708192a3b4c5d6e7f809); `foreignsigner` (the provenance names another
+#                              repository's workflow); `otherkey` (signed by a key other than the repository's
+#                              public key); `none` (no attestation)
 #   comment:<id>|none          an earlier report comment carrying the marker exists with that id, or none does
 #   token:full|readonly        the token's granted permissions (readonly = what a fork pull request receives)
+#   sbom:missing               the run was required to produce the SBOM (job build) and did not: no subject
 #   go                         run the Action
 # After `go` the trace carries `verdict=<pass|fail|incomplete>`, `chain=<ok|broken:<link>>` and `sections=<names>`;
 # `body` is the rendered comment's markdown and `check` the check run's conclusion.
@@ -49,18 +62,20 @@ construct:
   handler at actions/pr-report/src/index.ts
   touches actions/pr-report/**
   Read every uploaded feat-evidence bundle (one per tier), the workflow run's jobs, the built commit, and the
-  attestations of the run's artifacts; verify each attestation (signature, certificate chain to the Sigstore root,
-  transparency-log inclusion, signer identity, provenance source); render one markdown report and post it as ONE pull
+  attestations of the run's artifacts; verify each attestation with cosign against the repository's public key (`ci/signing/<key>.pub`): the signature,
+  the key's fingerprint, the signer workflow and the provenance source; render one markdown report and post it as ONE pull
   request comment found again by the marker `<!-- feat-pr-report -->` (update in place, else create), and as the
   summary of a check run named `feat report` whose conclusion is the verdict.
   The comment is compact and evidential, with no prose: a header (verdict and PR number; head commit, built ref and
   built commit, run link); Tests (per tier: specs, scenarios passed, evidence bundle digest; CI jobs passed); Attestations
-  (per artifact: name, full digest, signer workflow@ref, source commit, Rekor log index, verified); Chain (one row per
-  check: built commit parents = base + head, each source commit = built commit, signer = this repository's workflow
-  with GitHub's issuer, pinned images = the pin file); and a collapsed Verify block with the `gh attestation verify`
+  (per artifact: name, full subject digest, signature digest, key fingerprint, signer workflow@ref, source commit,
+  verified); Chain (one row per
+  check: built commit parents = base + head, each source commit = built commit, signer = this repository's workflow,
+  key = the repository's public key, pinned images = the pin file); and a collapsed Verify block with the
+  `cosign verify-attestation --key ci/signing/flmnt.pub --insecure-ignore-tlog --type slsaprovenance1 ghcr.io/<o>/<r>-sbom@sha256:<full>`
   command. On failure only the header and the failing row change. After merge one line is appended: merged as the
-  main commit, the merge attestation's digest, its Rekor index, a link to the main report. Full detail (certificate
-  identity, builder, log entry UUID, integrated time, the full provenance) stays in the evidence bundle and the
+  main commit, the merge statement's signature digest, a link to the main report. Full detail (the full provenance,
+  the referrer manifests) stays in the evidence bundle and the
   attestations, not in the comment. Every digest and commit SHA is printed in full, never shortened.
   The verdict is pass only when every tier's bundle has verify pass and run pass, every job succeeded, and every
   link of the chain holds; fail when any of them failed or any link is broken; incomplete when evidence or a run is
@@ -73,8 +88,10 @@ enforce:
   the comment holds only the header, Tests, Attestations, Chain and Verify sections, and on failure differs from a pass only in its header and failing rows
   the provenance's source commit must equal the commit the run built, or the chain is broken at the provenance link
   the signer must be one of this repository's workflows at the built ref, or the chain is broken at the signer link
-  an attestation with no transparency-log entry breaks the chain at the log link
+  an attestation signed by any key other than the repository's public key breaks the chain at the key link
+  there is no transparency log: no step reads or writes one
   the built commit's parents must be the pull request's base and head, or the chain is broken at the built-commit link
+  a required attestation subject the run did not produce makes the verdict incomplete, and the header names it and the job that should have produced it
   on a push to main the Action signs one merge-linking attestation naming the pull request number, its head commit,
   the tested merge-ref commit, the pull request run and its attestation digests, the main commit and main's artifact
   digests; posts a check run on the main commit in the same report format; and appends "merged as <main sha>" with
@@ -98,7 +115,7 @@ scenario "a green build with an unbroken chain posts a new report comment and a 
   when: ProbePrReport { script: "pr:7 merge:good evidence:unit:pass evidence:integration:pass jobs:green attest:verified comment:none token:full go" }
   predict success:
     response OK ProbeResult {
-      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET /repos/o/r/attestations/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=pass chain=ok sections=header,tests,attestations,chain,verify"
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=pass chain=ok sections=header,tests,attestations,chain,verify"
       check: "success"
     }
     filesystem has []
@@ -107,7 +124,7 @@ scenario "a second run updates the same comment instead of adding one":
   when: ProbePrReport { script: "pr:7 merge:good evidence:unit:pass jobs:green attest:verified comment:901 token:full go" }
   predict success:
     response OK ProbeResult {
-      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET /repos/o/r/attestations/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/issues/7/comments PATCH /repos/o/r/issues/comments/901 POST /repos/o/r/check-runs verdict=pass chain=ok sections=header,tests,attestations,chain,verify"
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/issues/7/comments PATCH /repos/o/r/issues/comments/901 POST /repos/o/r/check-runs verdict=pass chain=ok sections=header,tests,attestations,chain,verify"
       check: "success"
     }
     filesystem has []
@@ -126,7 +143,7 @@ scenario "a failing scenario shows its violation and fails the check":
   when: ProbePrReport { script: "pr:7 merge:good evidence:unit:pass evidence:integration:fail jobs:red attest:verified comment:none token:full go" }
   predict success:
     response OK ProbeResult {
-      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET /repos/o/r/attestations/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=fail chain=ok sections=header,tests,attestations,chain,verify"
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=fail chain=ok sections=header,tests,attestations,chain,verify"
       check: "failure"
     }
     filesystem has []
@@ -135,7 +152,7 @@ scenario "an attestation whose signature fails verification breaks the chain":
   when: ProbePrReport { script: "pr:7 merge:good evidence:unit:pass jobs:green attest:unverified comment:none token:full go" }
   predict success:
     response OK ProbeResult {
-      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET /repos/o/r/attestations/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=fail chain=broken:signature sections=header,tests,attestations,chain,verify"
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=fail chain=broken:signature sections=header,tests,attestations,chain,verify"
       check: "failure"
     }
     filesystem has []
@@ -144,7 +161,7 @@ scenario "a provenance source commit other than the built commit breaks the chai
   when: ProbePrReport { script: "pr:7 merge:good evidence:unit:pass jobs:green attest:wrongsource comment:none token:full go" }
   predict success:
     response OK ProbeResult {
-      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET /repos/o/r/attestations/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=fail chain=broken:provenance sections=header,tests,attestations,chain,verify"
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=fail chain=broken:provenance sections=header,tests,attestations,chain,verify"
       check: "failure"
     }
     filesystem has []
@@ -153,16 +170,16 @@ scenario "a signer that is not this repository's workflow breaks the chain":
   when: ProbePrReport { script: "pr:7 merge:good evidence:unit:pass jobs:green attest:foreignsigner comment:none token:full go" }
   predict success:
     response OK ProbeResult {
-      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET /repos/o/r/attestations/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=fail chain=broken:signer sections=header,tests,attestations,chain,verify"
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=fail chain=broken:signer sections=header,tests,attestations,chain,verify"
       check: "failure"
     }
     filesystem has []
 
-scenario "an attestation with no transparency-log entry breaks the chain":
-  when: ProbePrReport { script: "pr:7 merge:good evidence:unit:pass jobs:green attest:nolog comment:none token:full go" }
+scenario "an attestation signed by another key breaks the chain":
+  when: ProbePrReport { script: "pr:7 merge:good evidence:unit:pass jobs:green attest:otherkey comment:none token:full go" }
   predict success:
     response OK ProbeResult {
-      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET /repos/o/r/attestations/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=fail chain=broken:log sections=header,tests,attestations,chain,verify"
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=fail chain=broken:key sections=header,tests,attestations,chain,verify"
       check: "failure"
     }
     filesystem has []
@@ -171,7 +188,7 @@ scenario "a built commit whose parents are not the PR's base and head breaks the
   when: ProbePrReport { script: "pr:7 merge:badparents evidence:unit:pass jobs:green attest:verified comment:none token:full go" }
   predict success:
     response OK ProbeResult {
-      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET /repos/o/r/attestations/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=fail chain=broken:built-commit sections=header,tests,attestations,chain,verify"
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=fail chain=broken:built-commit sections=header,tests,attestations,chain,verify"
       check: "failure"
     }
     filesystem has []
@@ -189,7 +206,7 @@ scenario "a merge to main signs the merge-linking attestation, checks main and p
   when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:found prattest:present ghcr:ok mainattest:good evidence:unit:pass jobs:green comment:901 token:full go" }
   predict success:
     response OK ProbeResult {
-      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b/pulls GET /repos/o/r/actions/runs/44153523061/artifacts GET /repos/o/r/attestations/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/attestations/sha256:9b74c9897bac770ffc029102a200c5de2a4c2a6c2d1e3f4a5b6c7d8e9f0a1b2c PUT ghcr.io/o/r-evidence@sha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae ATTEST https://feature.mmmnt.dev/attestation/pr-merge/v1 POST /repos/o/r/check-runs GET /repos/o/r/issues/7/comments PATCH /repos/o/r/issues/comments/901 verdict=pass chain=ok sections=header,tests,attestations,chain,verify"
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b/pulls GET /repos/o/r/actions/runs/44153523061/artifacts GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET ghcr.io/o/r/referrers/sha256:9b74c9897bac770ffc029102a200c5de2a4c2a6c2d1e3f4a5b6c7d8e9f0a1b2c PUT ghcr.io/o/r-evidence@sha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae SIGN https://feature.mmmnt.dev/attestation/pr-merge/v1 POST /repos/o/r/check-runs GET /repos/o/r/issues/7/comments PATCH /repos/o/r/issues/comments/901 verdict=pass chain=ok sections=header,tests,attestations,chain,verify"
       check: "success"
     }
     filesystem has []
@@ -198,7 +215,7 @@ scenario "main's build attested for another commit breaks the chain at main's pr
   when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:found prattest:present ghcr:ok mainattest:wrongsource evidence:unit:pass jobs:green comment:901 token:full go" }
   predict success:
     response OK ProbeResult {
-      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b/pulls GET /repos/o/r/actions/runs/44153523061/artifacts GET /repos/o/r/attestations/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/attestations/sha256:9b74c9897bac770ffc029102a200c5de2a4c2a6c2d1e3f4a5b6c7d8e9f0a1b2c POST /repos/o/r/check-runs GET /repos/o/r/issues/7/comments PATCH /repos/o/r/issues/comments/901 verdict=fail chain=broken:main-provenance sections=header,tests,attestations,chain,verify"
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b/pulls GET /repos/o/r/actions/runs/44153523061/artifacts GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET ghcr.io/o/r/referrers/sha256:9b74c9897bac770ffc029102a200c5de2a4c2a6c2d1e3f4a5b6c7d8e9f0a1b2c POST /repos/o/r/check-runs GET /repos/o/r/issues/7/comments PATCH /repos/o/r/issues/comments/901 verdict=fail chain=broken:main-provenance sections=header,tests,attestations,chain,verify"
       check: "failure"
     }
     filesystem has []
@@ -246,5 +263,15 @@ scenario "a fork pull request is reported by the trusted follow-up, its attestat
       trace: "GET /repos/o/r/actions/runs/1/artifacts GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/issues/9/comments POST /repos/o/r/issues/9/comments POST /repos/o/r/check-runs verdict=pass chain=not-attested sections=header,tests,attestations,chain"
       body: matching "not attested \\(fork PR\\); attested on merge"
       check: "success"
+    }
+    filesystem has []
+
+scenario "evidence present but the SBOM not produced is incomplete, naming the build job":
+  when: ProbePrReport { script: "pr:7 merge:good evidence:unit:pass jobs:green sbom:missing comment:none token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=incomplete chain=ok sections=header,tests,attestations,chain"
+      body: matching "❌ PR #7 — incomplete: SBOM not produced \\(job build\\)"
+      check: "neutral"
     }
     filesystem has []

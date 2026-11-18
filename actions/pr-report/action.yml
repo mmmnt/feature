@@ -1,19 +1,36 @@
 name: feat pr report
 description: >-
-  A pull request build report from feat evidence bundles, the workflow run's jobs and its build attestations: one
-  updating PR comment and a check run, with an auditable chain of evidence (SPEC-PRR-001, ADR-0032).
+  A pull request build report from feat evidence bundles, the workflow run's jobs and its own-key cosign attestations
+  (OCI referrers in GHCR, no transparency log): one updating PR comment and a check run, with an auditable chain of
+  evidence (SPEC-PRR-001, ADR-0032).
 inputs:
   token:
-    description: Token with pull-requests write, checks write, actions read, attestations read (merge mode also packages write, id-token write, attestations write).
+    description: Token with pull-requests write, checks write, actions read and packages read (merge mode packages write).
     default: ${{ github.token }}
   evidence-dir:
-    description: Directory holding the downloaded evidence artifacts, one subdirectory per tier named feat-evidence-<tier>.
+    description: Directory holding the downloaded evidence artifacts, one subdirectory per tier named <evidence-prefix><tier>.
     default: evidence
   subjects:
-    description: Newline-separated paths of this run's attested artifacts.
+    description: >-
+      Newline-separated `<label>: <OCI repository>` lines, e.g. `SBOM: ghcr.io/<owner>/<repo>-sbom`. Each repository
+      holds the signed artifact tagged with the commit the run built.
+    default: ""
+  required-subjects:
+    description: >-
+      Newline-separated `<label> from <job>` lines, e.g. `SBOM from build`. A required subject the run did not produce
+      makes the report incomplete and names the job (ADR-0032 decision 14).
+    default: ""
+  public-key:
+    description: Path of the repository's committed cosign public key, e.g. ci/signing/flmnt.pub.
+    default: cosign.pub
+  signing-key:
+    description: Merge mode only. The repository's cosign private key (pass a secret). Written to a 0600 file and removed.
+    default: ""
+  signing-password:
+    description: Merge mode only. The private key's password (pass a secret).
     default: ""
   signer-workflows:
-    description: Newline-separated workflow paths allowed to sign this repository's attestations.
+    description: Newline-separated workflow paths allowed to have produced this repository's provenance.
     default: .github/workflows/ci.yml
   check-name:
     description: Name of the check run carrying the report.

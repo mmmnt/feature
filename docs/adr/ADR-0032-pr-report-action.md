@@ -1,6 +1,7 @@
 # ADR-0032 — a pull request build report, published as a GitHub Action
 
-Status: Accepted (founder flip 2026-11-17, "Agree as drafted (Recommended)"). Requested by the founder on 2026-11-17 for flmnt: "I review all PRs, but
+Status: Accepted (founder flip 2026-11-17, "Agree as drafted (Recommended)"). Amended 2026-11-17 by decisions 13–14
+(founder flip "Agree as drafted (Recommended)"; the missing-SBOM check conclusion "Neutral (Recommended)"). Requested by the founder on 2026-11-17 for flmnt: "I review all PRs, but
 I won't go through the code. let's experiment with Feature reporting that captures run and attestation records of
 the PR builds. let's get it into a friendly format, into the PR." Form ruled: "GitHub Action in Feature
 (Recommended)".
@@ -59,6 +60,20 @@ the PR builds. let's get it into a friendly format, into the PR." Form ruled: "G
 12. Main's evidence bundles are stored durably in GHCR as digest-pinned OCI artifacts before the merge-linking
     attestation is signed, and that digest is named in it. A failed store is refused (`EVIDENCE_STORE_FAILED`):
     nothing is signed or posted.
+13. **Signing uses the consumer's own key** (founder ruling f1530c7d, "Sign with our own key"). GitHub artifact
+    attestations are not available to a private Team-plan repository. The consumer signs with cosign using a key
+    pair it controls: the private key and its password are repository secrets, the public key is committed (flmnt:
+    `ci/signing/flmnt.pub`). Signed SLSA provenance and the merge-linking statement are stored as OCI referrers in
+    GHCR beside their subjects. There is no public transparency log; the key link replaces the log link in the chain
+    of evidence, and the report shows the signature digest and key fingerprint instead of a log index. Verification
+    is `cosign verify-attestation --key <public key> --insecure-ignore-tlog`, which an auditor runs with the committed
+    public key alone; the flag tells cosign not to require a log entry that by design does not exist (founder ruling
+    2026-11-17, "Add the flag").
+    Decision 8's "Sigstore-signed via `actions/attest`, Rekor-logged" is replaced by this. Revisit on going public
+    (flmnt#278): a public repository has artifact attestations, and keyless signing with a public log becomes an option.
+14. **A required subject that was not produced is incomplete** (founder ruling, "Add the scenario"): the consumer
+    names its required attestation subjects; when the run produced none of one, the verdict is `incomplete`, the
+    header names the subject and the job that should have produced it, and the report is still posted.
 
 ## Rejected alternatives
 
@@ -71,11 +86,17 @@ the PR builds. let's get it into a friendly format, into the PR." Form ruled: "G
   request; the reviewer would have to go looking for it.
 - **Parsing JUnit directly.** The evidence bundle already carries per-scenario results and violations, digest-anchored;
   reading JUnit again would duplicate the parser and lose the bundle's guarantees.
+- **Keyless Sigstore signing without GitHub's attestations API** (Fulcio + public Rekor). Would publish entries for
+  a private repository's builds to a public log.
+- **Upgrading the plan for artifact attestations** (GitHub Enterprise Cloud). Rejected by the founder's choice of
+  own-key signing (f1530c7d); revisit on going public (flmnt#278).
+- **Failing the report job on a missing SBOM.** Leaves the reviewer with no report.
 
 ## Consequences
 
-- Consumers grant `pull-requests: write`, `checks: write`, `actions: read` and `attestations: read` to the report job
-  only.
+- Consumers grant `pull-requests: write`, `checks: write`, `actions: read` and `packages: read` to the report job
+  only (decision 13: the referrers are read from GHCR; no `attestations: read`).
 - Fork pull requests are reported by the `workflow_run` follow-up, from uploaded results only.
-- Merge mode also needs `packages: write` (GHCR) and `id-token: write` + `attestations: write` (signing).
+- Merge mode also needs `packages: write` (GHCR) and the signing key's secrets (decision 13); no `id-token: write`
+  and no `attestations: write`.
 - The report is as good as the bundles: a job that uploads no bundle shows as "no evidence" rather than as passing.
