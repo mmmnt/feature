@@ -119,8 +119,12 @@ function attestationBreak(c: Context, row: Row, builtSha: string, ref: string): 
 
 async function jobsOf(c: Context, api: Api, runId: number, attempt: number) {
   const res = await api.get(`${repoPath(c)}/actions/runs/${runId}/attempts/${attempt}/jobs`);
-  const jobs: { name: string; conclusion: string | null; html_url?: string }[] = res?.jobs ?? [];
-  return jobs.filter((j) => j.name !== c.reportJob);
+  const jobs: { name: string; status?: string; conclusion: string | null; html_url?: string }[] = res?.jobs ?? [];
+  // Jobs still running when the report runs are the ones that wait on it (an aggregate such as `CI green`); the
+  // report's own check run is listed among the jobs too. Neither is a job the report can judge.
+  return jobs.filter(
+    (j) => j.name !== c.reportJob && j.name !== c.checkName && (j.status === undefined || j.status === "completed"),
+  );
 }
 
 async function verifySubjects(c: Context, ports: Ports, subjects: Subject[]): Promise<Row[]> {

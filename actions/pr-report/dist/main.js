@@ -93,7 +93,9 @@ function attestationBreak(c, row, builtSha, ref) {
 async function jobsOf(c, api, runId, attempt) {
   const res = await api.get(`${repoPath(c)}/actions/runs/${runId}/attempts/${attempt}/jobs`);
   const jobs = res?.jobs ?? [];
-  return jobs.filter((j) => j.name !== c.reportJob);
+  return jobs.filter(
+    (j) => j.name !== c.reportJob && j.name !== c.checkName && (j.status === void 0 || j.status === "completed")
+  );
 }
 async function verifySubjects(c, ports, subjects) {
   const rows = [];
@@ -458,8 +460,12 @@ function evidenceFiles(dir, prefix) {
   for (const sub of entries.sort()) {
     const full = path2.join(dir, sub);
     if (!statSync(full).isDirectory() || !sub.startsWith(prefix)) continue;
-    for (const f of readdirSync(full).filter((x) => x.endsWith(".json")).sort())
-      out.push({ tier: sub.slice(prefix.length), bytes: readFileSync2(path2.join(full, f)) });
+    const files = readdirSync(full).filter((x) => x.endsWith(".json")).sort();
+    for (const f of files)
+      out.push({
+        tier: files.length > 1 ? `${sub.slice(prefix.length)} \xB7 ${f.replace(/\.json$/, "")}` : sub.slice(prefix.length),
+        bytes: readFileSync2(path2.join(full, f))
+      });
   }
   return out;
 }
@@ -547,6 +553,12 @@ async function main() {
     ctx.mode = "pr";
     ctx.pr = { number: pr.number, headSha: pr.head.sha, baseSha: pr.base.sha, builtRef: process.env.GITHUB_REF, builtSha: process.env.GITHUB_SHA };
     writable = pr.head.repo?.full_name === `${owner}/${repo}`;
+    const built = await api.get(`/repos/${owner}/${repo}/commits/${ctx.pr.builtSha}`);
+    const first = built?.parents?.[0]?.sha;
+    if (first && first !== ctx.pr.baseSha) {
+      const cmp = await api.get(`/repos/${owner}/${repo}/compare/${encodeURIComponent(pr.base.ref)}...${first}`);
+      if (cmp && (cmp.status === "identical" || cmp.status === "behind")) ctx.pr.baseSha = first;
+    }
   } else if (eventName === "workflow_run" && event.workflow_run?.event === "pull_request") {
     const wr = event.workflow_run;
     const pr = wr.pull_requests?.[0];

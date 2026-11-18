@@ -167,8 +167,13 @@ function evidenceFiles(dir: string, prefix: string): { tier: string; bytes: Buff
   for (const sub of entries.sort()) {
     const full = path.join(dir, sub);
     if (!statSync(full).isDirectory() || !sub.startsWith(prefix)) continue;
-    for (const f of readdirSync(full).filter((x) => x.endsWith(".json")).sort())
-      out.push({ tier: sub.slice(prefix.length), bytes: readFileSync(path.join(full, f)) });
+    const files = readdirSync(full).filter((x) => x.endsWith(".json")).sort();
+    // A tier with one bundle per package names each row by its package.
+    for (const f of files)
+      out.push({
+        tier: files.length > 1 ? `${sub.slice(prefix.length)} · ${f.replace(/\.json$/, "")}` : sub.slice(prefix.length),
+        bytes: readFileSync(path.join(full, f)),
+      });
   }
   return out;
 }
@@ -265,6 +270,16 @@ async function main() {
     ctx.mode = "pr";
     ctx.pr = { number: pr.number, headSha: pr.head.sha, baseSha: pr.base.sha, builtRef: process.env.GITHUB_REF!, builtSha: process.env.GITHUB_SHA! };
     writable = pr.head.repo?.full_name === `${owner}/${repo}`;
+    // The event's base sha is a snapshot taken when the pull request last changed; when the base branch has moved
+    // since, GitHub builds the merge ref on the branch's newer tip. The pull request's base is the base branch, so the
+    // commit the merge was built on counts as the base when it is on that branch (the compare finds it identical to,
+    // or behind, the branch). Anything else keeps the event's sha, and the built-commit link breaks.
+    const built = await api.get(`/repos/${owner}/${repo}/commits/${ctx.pr.builtSha}`);
+    const first: string | undefined = built?.parents?.[0]?.sha;
+    if (first && first !== ctx.pr.baseSha) {
+      const cmp = await api.get(`/repos/${owner}/${repo}/compare/${encodeURIComponent(pr.base.ref)}...${first}`);
+      if (cmp && (cmp.status === "identical" || cmp.status === "behind")) ctx.pr.baseSha = first;
+    }
   } else if (eventName === "workflow_run" && event.workflow_run?.event === "pull_request") {
     const wr = event.workflow_run;
     const pr = wr.pull_requests?.[0];
