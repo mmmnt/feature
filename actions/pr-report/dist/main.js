@@ -410,14 +410,21 @@ async function resolveTag(api, repository, tag, token) {
   return res.headers.get("docker-content-digest") ?? sha256(Buffer.from(await res.arrayBuffer()));
 }
 async function listReferrers(repository, digest, token) {
+  const found = [];
   let res = await registryGet(repository, `referrers/${digest}`, INDEX, token);
   if (!res.ok) res = await registryGet(repository, `manifests/${digest.replace(":", "-")}`, INDEX, token);
-  if (res.status === 404) return [];
-  if (!res.ok) throw new Error(`referrers of ${repository}@${digest} answered ${res.status}`);
-  const index = await res.json();
-  return (index.manifests ?? []).filter((m) => m.artifactType === BUNDLE);
+  if (res.ok) found.push(...((await res.json()).manifests ?? []).filter((m) => m.artifactType === BUNDLE));
+  else if (res.status !== 404) throw new Error(`referrers of ${repository}@${digest} answered ${res.status}`);
+  const att = await registryGet(repository, `manifests/${digest.replace(":", "-")}.att`, MANIFEST, token);
+  if (att.ok) for (const layer of (await att.json()).layers ?? []) found.push({ digest: layer.digest, classic: true });
+  else if (att.status !== 404) throw new Error(`the attestations of ${repository}@${digest} answered ${att.status}`);
+  return found;
 }
 async function bundleOf(repository, descriptor, token) {
+  if (descriptor.classic) {
+    const b2 = await registryGet(repository, `blobs/${descriptor.digest}`, "application/vnd.dsse.envelope.v1+json", token);
+    return b2.ok ? { dsseEnvelope: await b2.json() } : null;
+  }
   const m = await registryGet(repository, `manifests/${descriptor.digest}`, MANIFEST, token);
   if (!m.ok) return null;
   const layer = (await m.json()).layers?.[0];

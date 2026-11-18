@@ -97,18 +97,29 @@ async function resolveTag(api: Api, repository: string, tag: string, token: stri
   return res.headers.get("docker-content-digest") ?? sha256(Buffer.from(await res.arrayBuffer()));
 }
 
-// The OCI referrers of a digest: the referrers API, else the referrers tag schema (`sha256-<hex>`), which is where
-// cosign writes them on a registry with no referrers API.
+// The attestations stored beside a digest. cosign 3 attaches a Sigstore bundle as an OCI referrer: the referrers
+// API, else the referrers tag schema (`sha256-<hex>`), where GHCR, which has no referrers API, keeps them. cosign 2's
+// classic key signing attaches its DSSE envelopes as the layers of the `sha256-<hex>.att` tag instead; each layer is
+// one attestation, named by its blob's digest.
 async function listReferrers(repository: string, digest: string, token: string): Promise<any[]> {
+  const found: any[] = [];
   let res = await registryGet(repository, `referrers/${digest}`, INDEX, token);
   if (!res.ok) res = await registryGet(repository, `manifests/${digest.replace(":", "-")}`, INDEX, token);
-  if (res.status === 404) return [];
-  if (!res.ok) throw new Error(`referrers of ${repository}@${digest} answered ${res.status}`);
-  const index = (await res.json()) as any;
-  return (index.manifests ?? []).filter((m: any) => m.artifactType === BUNDLE);
+  if (res.ok) found.push(...(((await res.json()) as any).manifests ?? []).filter((m: any) => m.artifactType === BUNDLE));
+  else if (res.status !== 404) throw new Error(`referrers of ${repository}@${digest} answered ${res.status}`);
+  const att = await registryGet(repository, `manifests/${digest.replace(":", "-")}.att`, MANIFEST, token);
+  if (att.ok) for (const layer of ((await att.json()) as any).layers ?? []) found.push({ digest: layer.digest, classic: true });
+  else if (att.status !== 404) throw new Error(`the attestations of ${repository}@${digest} answered ${att.status}`);
+  return found;
 }
 
+// The DSSE envelope of one attestation: a classic layer's blob is the envelope itself; a bundle referrer's layer
+// holds a Sigstore bundle carrying it.
 async function bundleOf(repository: string, descriptor: any, token: string): Promise<any | null> {
+  if (descriptor.classic) {
+    const b = await registryGet(repository, `blobs/${descriptor.digest}`, "application/vnd.dsse.envelope.v1+json", token);
+    return b.ok ? { dsseEnvelope: await b.json() } : null;
+  }
   const m = await registryGet(repository, `manifests/${descriptor.digest}`, MANIFEST, token);
   if (!m.ok) return null;
   const layer = ((await m.json()) as any).layers?.[0];
