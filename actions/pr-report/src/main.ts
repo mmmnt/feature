@@ -78,10 +78,21 @@ async function registryGet(repository: string, p: string, accept: string, token:
   return fetch(`https://${host}/v2/${name}/${p}`, { headers: { ...(await registryAuth(repository, "pull", token)), accept } });
 }
 
-// The subject's manifest digest at a tag (the commit the run built), or null when it was not produced.
-async function resolveTag(repository: string, tag: string, token: string): Promise<string | null> {
+// The subject's manifest digest at a tag (the commit the run built), or null when it was not produced. GHCR answers
+// 403 DENIED both for a package that does not exist and for one the token cannot read, so a 403 is settled by the
+// packages API: no such package is "not produced"; an existing one the registry refused is an error, never hidden.
+async function resolveTag(api: Api, repository: string, tag: string, token: string): Promise<string | null> {
   const res = await registryGet(repository, `manifests/${tag}`, `${MANIFEST}, ${INDEX}`, token);
   if (res.status === 404) return null;
+  if (res.status === 403) {
+    const { name } = splitRepo(repository);
+    const [org = "", ...pkg] = name.split("/");
+    const p = encodeURIComponent(pkg.join("/"));
+    const known =
+      (await api.get(`/orgs/${org}/packages/container/${p}`)) ?? (await api.get(`/users/${org}/packages/container/${p}`));
+    if (known === null) return null;
+    throw new Error(`${repository} exists but the registry refused the token (403); grant the report job packages: read`);
+  }
   if (!res.ok) throw new Error(`${repository}:${tag} answered ${res.status}`);
   return res.headers.get("docker-content-digest") ?? sha256(Buffer.from(await res.arrayBuffer()));
 }
@@ -273,7 +284,7 @@ async function main() {
   const resolve = async (tag: string): Promise<Subject[]> => {
     const out: Subject[] = [];
     for (const d of declared) {
-      const digest = await resolveTag(d.repository, tag, token);
+      const digest = await resolveTag(api, d.repository, tag, token);
       if (digest) out.push({ name: d.label, digest, repository: d.repository });
     }
     return out;

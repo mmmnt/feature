@@ -388,9 +388,17 @@ async function registryGet(repository, p, accept, token) {
   const { host, name } = splitRepo(repository);
   return fetch(`https://${host}/v2/${name}/${p}`, { headers: { ...await registryAuth(repository, "pull", token), accept } });
 }
-async function resolveTag(repository, tag, token) {
+async function resolveTag(api, repository, tag, token) {
   const res = await registryGet(repository, `manifests/${tag}`, `${MANIFEST}, ${INDEX}`, token);
   if (res.status === 404) return null;
+  if (res.status === 403) {
+    const { name } = splitRepo(repository);
+    const [org = "", ...pkg] = name.split("/");
+    const p = encodeURIComponent(pkg.join("/"));
+    const known = await api.get(`/orgs/${org}/packages/container/${p}`) ?? await api.get(`/users/${org}/packages/container/${p}`);
+    if (known === null) return null;
+    throw new Error(`${repository} exists but the registry refused the token (403); grant the report job packages: read`);
+  }
   if (!res.ok) throw new Error(`${repository}:${tag} answered ${res.status}`);
   return res.headers.get("docker-content-digest") ?? sha256(Buffer.from(await res.arrayBuffer()));
 }
@@ -556,7 +564,7 @@ async function main() {
   const resolve = async (tag) => {
     const out = [];
     for (const d of declared) {
-      const digest = await resolveTag(d.repository, tag, token);
+      const digest = await resolveTag(api, d.repository, tag, token);
       if (digest) out.push({ name: d.label, digest, repository: d.repository });
     }
     return out;
