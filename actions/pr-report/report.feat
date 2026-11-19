@@ -129,8 +129,8 @@ enforce:
   sign-merge)" to the closed pull request's report comment
   the merge statement is signed only in sign mode, never in the run that writes it
   sign mode signs exactly the statement whose digest main's check recorded, for the run's main commit, then appends
-  the signature's digest to that check and to the pull request's comment; anything else rejects STATEMENT_MISMATCH,
-  and nothing is signed or posted
+  the signature's digest to that check and to the pull request's comment
+  rejects STATEMENT_MISMATCH when the statement names another main commit, or its digest is not the one main's check recorded, and nothing is signed or posted
   main's build attestation must have the main commit as its source, or the chain is broken at the main-provenance link
   rejects NO_PR_CONTEXT when the run is neither a pull request nor a push to main, and nothing is posted
   rejects NO_PR_FOR_MERGE when no merged pull request is associated with the main commit, and nothing is signed or posted
