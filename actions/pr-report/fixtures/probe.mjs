@@ -58,6 +58,7 @@ export async function probe(input) {
     else if (k === "mainattest") s.mainattest = v;
     else if (k === "ghcr") s.ghcr = v;
     else if (k === "sbom") s.sbom = v;
+    else if (k === "prcheck") s.prcheck = v;
     else if (k === "sign") Object.assign(s, { mode: "sign-merge", sign: v, main: "5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b" });
     else if (k !== "go") throw new Error(`unknown probe step '${step}'`);
   }
@@ -88,7 +89,17 @@ export async function probe(input) {
       if (path.endsWith(`/compare/main...${NEWER_BASE}`)) return { status: s.merge === "basemoved" ? "behind" : "diverged" };
       if (path.endsWith(`/compare/main...${OTHER}`)) return { status: "diverged" };
       if (path.endsWith(`/commits/${s.main}/pulls`))
-        return s.prlookup === "found" ? [{ number: 7, merged_at: "2026-11-17T22:40:00Z", head: { sha: HEAD }, merge_ref_sha: BUILT }] : [];
+        // the pulls API's real shape (recorded from a merged pull request): merge_commit_sha is the commit on main,
+        // and no field names the merge commit the pull request's run tested
+        return s.prlookup === "found" ? [{ number: 7, merged_at: "2026-11-17T22:40:00Z", head: { sha: HEAD }, merge_commit_sha: s.main }] : [];
+      if (path.endsWith(`/commits/${HEAD}/check-runs?check_name=feat%20report`))
+        return {
+          check_runs: [
+            s.prcheck === "summary"
+              ? { id: 55, external_id: "", output: { summary: `${MARKER}\n## ✅ PR #7 — verified\n\nHead \`${HEAD}\` · built \`refs/pull/7/merge\` @ \`${BUILT}\` · run [44153523061](x)` } }
+              : { id: 55, external_id: BUILT, output: { summary: "report" } },
+          ],
+        };
       if (path.endsWith(`/runs/${PR_RUN}/artifacts`))
         return { artifacts: s.prattest === "missing" ? [] : [{ name: PR_SUBJECT.name, digest: PR_SUBJECT.digest }] };
       if (path.endsWith("/runs/1/artifacts")) return { artifacts: s.evidence.map((e) => ({ name: `feat-evidence-${e.tier}` })) };
@@ -147,7 +158,9 @@ export async function probe(input) {
     async findPrRun() {
       return PR_RUN;
     },
-    async prSubjects(artifacts) {
+    // as production does: the pull request's subjects are found at the tag of the commit its run tested, and at no other
+    async prSubjects(artifacts, mergeRefSha) {
+      if (mergeRefSha !== BUILT) return [];
       return artifacts.filter((a) => typeof a.digest === "string").map((a) => ({ name: "SBOM", digest: a.digest, repository: SUBJECT_REPO }));
     },
     async store(evidence) {

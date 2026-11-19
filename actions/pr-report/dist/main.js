@@ -171,9 +171,20 @@ async function runReport(c, ports) {
     head_sha: c.pr.headSha,
     status: "completed",
     conclusion: conclusion(verdict),
-    output: { title: headline(verdict, prNumber, broken, missing), summary: body }
+    output: { title: headline(verdict, prNumber, broken, missing), summary: body },
+    // the commit this run built and tested, which the merge run reads back
+    ...!fork && c.pr.builtSha ? { external_id: c.pr.builtSha } : {}
   });
   return { verdict, chain, sections, body, check: conclusion(verdict) };
+}
+async function testedMergeRef(c, api, head) {
+  const res = await api.get(`${repoPath(c)}/commits/${head}/check-runs?check_name=${encodeURIComponent(c.checkName)}`);
+  for (const run of res?.check_runs ?? []) {
+    if (typeof run.external_id === "string" && /^[0-9a-f]{40}$/.test(run.external_id)) return run.external_id;
+    const built = /built `[^`]+` @ `([0-9a-f]{40})`/.exec(run.output?.summary ?? "");
+    if (built) return built[1];
+  }
+  return null;
 }
 async function mergeMode(c, ports) {
   const evidence = await ports.evidence();
@@ -183,7 +194,10 @@ async function mergeMode(c, ports) {
   const pulls = await ports.api.get(`${repoPath(c)}/commits/${main2}/pulls`) ?? [];
   const pr = pulls.find((p) => p.merged_at);
   if (!pr) throw new ReportError("NO_PR_FOR_MERGE", `no merged pull request is associated with ${main2}`);
-  const prInfo = { number: pr.number, headSha: pr.head.sha, mergeRefSha: pr.merge_ref_sha };
+  const mergeRefSha = await testedMergeRef(c, ports.api, pr.head.sha);
+  if (!mergeRefSha)
+    throw new ReportError("PR_EVIDENCE_MISSING", `no ${c.checkName} check on #${pr.number}'s head records the commit its run tested`);
+  const prInfo = { number: pr.number, headSha: pr.head.sha, mergeRefSha };
   const prRun = await ports.findPrRun({ number: prInfo.number, headSha: prInfo.headSha });
   if (prRun === null) throw new ReportError("PR_EVIDENCE_MISSING", `no pull request run found for #${prInfo.number}`);
   const arts = await ports.api.get(`${repoPath(c)}/actions/runs/${prRun}/artifacts`);
