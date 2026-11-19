@@ -22,7 +22,7 @@
       "type": "object",
       "required": ["code"],
       "properties": {
-        "code": { "enum": ["NO_PR_CONTEXT", "NO_EVIDENCE", "INSUFFICIENT_PERMISSIONS", "NO_PR_FOR_MERGE", "PR_EVIDENCE_MISSING", "EVIDENCE_STORE_FAILED"] },
+        "code": { "enum": ["NO_PR_CONTEXT", "NO_EVIDENCE", "INSUFFICIENT_PERMISSIONS", "NO_PR_FOR_MERGE", "PR_EVIDENCE_MISSING", "EVIDENCE_STORE_FAILED", "STATEMENT_MISMATCH"] },
         "detail": { "type": "string" }
       }
     }

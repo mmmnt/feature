@@ -2,6 +2,7 @@
 // referrers listing, recorded cosign results, a fake evidence store and a fake signer. No network, no cosign binary.
 // Test fixture, not shipped.
 // Steps: see the header of ../report.feat.
+import { createHash } from "node:crypto";
 import { runReport, ReportError, MARKER } from "../src/report.ts";
 
 const HEAD = "9f2c41d8a07e5b3c6d1f0e2a4b8c7d9e1f3a5b6c";
@@ -22,6 +23,10 @@ const BUNDLES = {
   integration: "sha256:fcde2b2edba56bf408601fb721fe9b5c338d10ee429ea04fae5511b68fbf8fb9",
 };
 const PR_RUN = 44153523061;
+const sha = (text) => "sha256:" + createHash("sha256").update(text).digest("hex");
+// the merge statement report-main wrote for MAIN (sign:good), one for another commit (sign:othermain), and one whose
+// bytes differ from what main's check recorded (sign:tampered)
+const STATEMENT = (mainSha) => ({ pullRequest: { number: 7, headSha: "9f2c41d8a07e5b3c6d1f0e2a4b8c7d9e1f3a5b6c" }, main: { sha: mainSha } });
 
 function bundle(fixture) {
   if (fixture === "pass") return { verify: { status: "pass" }, run: { status: "pass", tests: 12, failures: 0, errors: 0 }, specs: [{}, {}] };
@@ -53,6 +58,7 @@ export async function probe(input) {
     else if (k === "mainattest") s.mainattest = v;
     else if (k === "ghcr") s.ghcr = v;
     else if (k === "sbom") s.sbom = v;
+    else if (k === "sign") Object.assign(s, { mode: "sign-merge", sign: v, main: "5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b" });
     else if (k !== "go") throw new Error(`unknown probe step '${step}'`);
   }
 
@@ -86,6 +92,10 @@ export async function probe(input) {
       if (path.endsWith(`/runs/${PR_RUN}/artifacts`))
         return { artifacts: s.prattest === "missing" ? [] : [{ name: PR_SUBJECT.name, digest: PR_SUBJECT.digest }] };
       if (path.endsWith("/runs/1/artifacts")) return { artifacts: s.evidence.map((e) => ({ name: `feat-evidence-${e.tier}` })) };
+      if (path.endsWith(`/commits/${s.main}/check-runs?check_name=feat%20report`)) {
+        const recorded = sha(JSON.stringify(STATEMENT(s.main)));
+        return { check_runs: [{ id: 77, name: "feat report", external_id: recorded, output: { title: `main ${s.main}: pass`, summary: "report" } }] };
+      }
       if (path.endsWith("/comments")) return s.comment ? [{ id: s.comment, body: `${MARKER}\nold` }] : [];
       throw new Error(`unrecorded GET ${path}`);
     },
@@ -110,7 +120,7 @@ export async function probe(input) {
       await api.get(`/repos/o/r/actions/runs/${runId}/artifacts`);
       return s.evidence;
     },
-    subjects: s.mode === "main" ? [MAIN_SUBJECT] : s.attest === "none" || s.sbom === "missing" ? [] : [PR_SUBJECT],
+    subjects: s.mode === "main" || s.mode === "sign-merge" ? [MAIN_SUBJECT] : s.attest === "none" || s.sbom === "missing" ? [] : [PR_SUBJECT],
     async referrers(subject) {
       trace.push(`GET ghcr.io/o/r/referrers/${subject.digest}`);
       if (s.attest === "classic") return [];
@@ -145,6 +155,15 @@ export async function probe(input) {
       const ref = `ghcr.io/o/r-evidence@${evidence[0].digest}`;
       trace.push(`PUT ${ref}`);
       return ref;
+    },
+    async writeStatement(statement) {
+      trace.push("WRITE merge-statement");
+      return { digest: sha(JSON.stringify(statement)) };
+    },
+    async readStatement() {
+      const statement = STATEMENT(s.sign === "othermain" ? OTHER : s.main);
+      const bytes = JSON.stringify(statement) + (s.sign === "tampered" ? " " : "");
+      return { statement, digest: sha(bytes) };
     },
     async sign(_subjects, predicateType) {
       trace.push(`SIGN ${predicateType}`);

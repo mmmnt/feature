@@ -135,6 +135,7 @@ async function runReport(c, ports) {
   if (!ports.writable)
     throw new ReportError("INSUFFICIENT_PERMISSIONS", "the token cannot write pull request comments or check runs");
   if (c.mode === "main") return mergeMode(c, ports);
+  if (c.mode === "sign-merge") return signMode(c, ports);
   const fork = c.mode === "fork";
   const prNumber = fork ? c.forkPr : c.pr.number;
   const runId = fork ? c.forkRunId : c.runId;
@@ -215,8 +216,8 @@ async function mergeMode(c, ports) {
       main: { sha: main2, run: { id: c.runId, attempt: c.runAttempt }, artifacts: ports.subjects.map((s) => s.digest) },
       evidence: { bundles: evidence.map((e) => e.digest), store }
     };
-    const a = await ports.sign(ports.subjects, MERGE_PREDICATE, predicate);
-    merge = { ...a, store };
+    const written = await ports.writeStatement(predicate);
+    merge = { statement: written.digest, store };
   }
   const verdict = t.failed || jobsFailed || broken ? "fail" : t.incomplete || missing.length > 0 ? "incomplete" : "pass";
   const chain = broken ? `broken:${broken}` : "ok";
@@ -227,12 +228,34 @@ async function mergeMode(c, ports) {
     head_sha: main2,
     status: "completed",
     conclusion: conclusion(verdict),
-    output: { title: `main ${main2}: ${missing.length > 0 ? `incomplete: ${missingText(missing)}` : verdict}`, summary: body }
+    output: { title: `main ${main2}: ${missing.length > 0 ? `incomplete: ${missingText(missing)}` : verdict}`, summary: body },
+    ...merge ? { external_id: merge.statement } : {}
   });
   const why = broken ? `merge chain broken at ${broken}` : missing.length > 0 ? `merge not signed: ${missingText(missing)}` : `merge not signed: ${verdict}`;
-  const line = merge ? `**Merged** as \`${main2}\` \xB7 merge statement signature \`${merge.digest}\` \u2705` : `**Merged** as \`${main2}\` \xB7 \u274C ${why}`;
+  const line = merge ? `**Merged** as \`${main2}\` \xB7 merge statement \`${merge.statement}\` \xB7 signature pending (job sign-merge)` : `**Merged** as \`${main2}\` \xB7 \u274C ${why}`;
   await upsertComment(c, ports.api, prInfo.number, line, true);
   return { verdict, chain, sections, body, check: conclusion(verdict) };
+}
+async function signMode(c, ports) {
+  const main2 = c.mainSha;
+  const { statement, digest } = await ports.readStatement();
+  if (statement?.main?.sha !== main2)
+    throw new ReportError("STATEMENT_MISMATCH", `the statement names main ${statement?.main?.sha ?? "none"}, not ${main2}`);
+  const runs = await ports.api.get(
+    `${repoPath(c)}/commits/${main2}/check-runs?check_name=${encodeURIComponent(c.checkName)}`
+  );
+  const check = (runs?.check_runs ?? []).find((r) => r.external_id === digest);
+  if (!check)
+    throw new ReportError("STATEMENT_MISMATCH", `no ${c.checkName} check on ${main2} recorded the statement ${digest}`);
+  const signed = await ports.sign(ports.subjects, MERGE_PREDICATE, statement);
+  const line = `**Signed** merge statement \`${digest}\` \xB7 signature \`${signed.digest}\` \u2705`;
+  await ports.api.patch(`${repoPath(c)}/check-runs/${check.id}`, {
+    output: { title: check.output?.title ?? `main ${main2}`, summary: `${check.output?.summary ?? ""}
+
+${line}` }
+  });
+  await upsertComment(c, ports.api, statement.pullRequest.number, line, true);
+  return { verdict: "pass", chain: "ok", sections: [], body: line, check: "success" };
 }
 var missingText = (m) => m.map((r) => `${r.label} not produced (job ${r.job})`).join(", ");
 function headline(v, pr, broken, missing) {
@@ -335,7 +358,10 @@ function renderMain(c, x) {
       keyRow(r)
     );
   if (x.merge)
-    out.push(`| Evidence stored \`${x.merge.store}\` | \u2705 |`, `| Merge statement signature \`${x.merge.digest}\` | \u2705 |`);
+    out.push(
+      `| Evidence stored \`${x.merge.store}\` | \u2705 |`,
+      `| Merge statement \`${x.merge.statement}\` \xB7 signature pending (job sign-merge) | \u23F3 |`
+    );
   if (x.mainRows.length > 0)
     out.push(
       ...verifyBlock(
@@ -582,7 +608,7 @@ async function main() {
     ctx.forkPr = pr?.number;
     if (pr) ctx.pr = { number: pr.number, headSha: wr.head_sha, baseSha: pr.base?.sha ?? "", baseRef: pr.base?.ref ?? "", builtRef: `refs/pull/${pr.number}/merge`, builtSha: "" };
   } else if (eventName === "push" && process.env.GITHUB_REF === "refs/heads/main") {
-    ctx.mode = "main";
+    ctx.mode = input("sign-statement") ? "sign-merge" : "main";
     ctx.mainSha = process.env.GITHUB_SHA ?? "";
   }
   const evidenceDir = input("evidence-dir", "evidence");
@@ -596,10 +622,10 @@ async function main() {
     }
     return out;
   };
-  const builtTag = ctx.mode === "main" ? ctx.mainSha : ctx.mode === "pr" ? ctx.pr.builtSha : "";
-  const subjects = ctx.mode === "pr" || ctx.mode === "main" ? await resolve(builtTag) : [];
+  const builtTag = ctx.mode === "main" || ctx.mode === "sign-merge" ? ctx.mainSha : ctx.mode === "pr" ? ctx.pr.builtSha : "";
+  const subjects = ctx.mode === "pr" || ctx.mode === "main" || ctx.mode === "sign-merge" ? await resolve(builtTag) : [];
   const work = mkdtempSync(path2.join(tmpdir(), "feat-pr-report-"));
-  const needsCosign = subjects.length > 0 || ctx.mode === "main";
+  const needsCosign = subjects.length > 0 || ctx.mode === "main" || ctx.mode === "sign-merge";
   const cosign = needsCosign ? await ensureCosign(path2.join(process.env.RUNNER_TOOL_CACHE ?? work, "cosign")) : "";
   const cosignEnv = { DOCKER_CONFIG: dockerConfig(work, token) };
   const builtKey = existsSync2(ctx.publicKey) ? readFileSync2(ctx.publicKey, "utf8") : null;
@@ -681,6 +707,21 @@ async function main() {
     async store(evidence) {
       const repoRef = input("evidence-repository") || `ghcr.io/${owner}/${repo}-evidence`;
       return pushEvidence(repoRef, evidence, evidenceFiles(evidenceDir, prefix).map((f) => f.bytes), ctx.mainSha, token);
+    },
+    // the statement's bytes are the digest's: written once, read back unchanged, signed as they are
+    async writeStatement(statement) {
+      const bytes = Buffer.from(JSON.stringify(statement));
+      const file = path2.join(process.env.RUNNER_TEMP ?? work, "merge-statement.json");
+      writeFileSync2(file, bytes);
+      const digest = sha256(bytes);
+      if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `statement=${file}
+statement-digest=${digest}
+`);
+      return { digest };
+    },
+    async readStatement() {
+      const bytes = readFileSync2(input("sign-statement"));
+      return { statement: JSON.parse(bytes.toString("utf8")), digest: sha256(bytes) };
     },
     async sign(subjs, predicateType, predicate) {
       const privateKey = process.env.INPUT_SIGNING_KEY ?? "";

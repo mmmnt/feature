@@ -7,7 +7,7 @@
 export const MARKER = "<!-- feat-pr-report -->";
 export const MERGE_PREDICATE = "https://feature.mmmnt.dev/attestation/pr-merge/v1";
 
-export type Mode = "pr" | "fork" | "main" | "none";
+export type Mode = "pr" | "fork" | "main" | "sign-merge" | "none";
 export type Verdict = "pass" | "fail" | "incomplete";
 export type Link = "built-commit" | "signature" | "provenance" | "signer" | "key" | "main-provenance";
 
@@ -81,6 +81,10 @@ export interface Ports {
   prSubjects(artifacts: unknown[], mergeRefSha: string): Promise<Subject[]>; // the PR run's signed subjects
   store(evidence: Evidence[]): Promise<string>; // digest-pinned reference
   sign(subjects: Subject[], predicateType: string, predicate: unknown): Promise<{ digest: string }>;
+  // the two-run merge mode (ruling 2026-11-18, "Two-run merge mode (Recommended)"): the report run writes the
+  // unsigned merge statement; the sign run reads it back and alone signs it
+  writeStatement(statement: unknown): Promise<{ digest: string }>;
+  readStatement(): Promise<{ statement: any; digest: string }>;
 }
 
 export class ReportError extends Error {
@@ -172,6 +176,7 @@ export async function runReport(c: Context, ports: Ports): Promise<Outcome> {
   if (!ports.writable)
     throw new ReportError("INSUFFICIENT_PERMISSIONS", "the token cannot write pull request comments or check runs");
   if (c.mode === "main") return mergeMode(c, ports);
+  if (c.mode === "sign-merge") return signMode(c, ports);
 
   const fork = c.mode === "fork";
   const prNumber = fork ? c.forkPr! : c.pr!.number;
@@ -249,7 +254,7 @@ async function mergeMode(c: Context, ports: Ports): Promise<Outcome> {
   const t = testsVerdict(evidence);
   const jobsFailed = jobs.some((j) => j.conclusion !== "success");
 
-  let merge: { digest: string; store: string } | null = null;
+  let merge: { statement: string; store: string } | null = null;
   if (!broken && missing.length === 0 && ports.subjects.length > 0) {
     let store: string;
     try {
@@ -263,8 +268,9 @@ async function mergeMode(c: Context, ports: Ports): Promise<Outcome> {
       main: { sha: main, run: { id: c.runId, attempt: c.runAttempt }, artifacts: ports.subjects.map((s) => s.digest) },
       evidence: { bundles: evidence.map((e) => e.digest), store },
     };
-    const a = await ports.sign(ports.subjects, MERGE_PREDICATE, predicate);
-    merge = { ...a, store };
+    // written, never signed here: the sign run alone holds the key
+    const written = await ports.writeStatement(predicate);
+    merge = { statement: written.digest, store };
   }
   const verdict: Verdict =
     t.failed || jobsFailed || broken ? "fail" : t.incomplete || missing.length > 0 ? "incomplete" : "pass";
@@ -277,6 +283,7 @@ async function mergeMode(c: Context, ports: Ports): Promise<Outcome> {
     status: "completed",
     conclusion: conclusion(verdict),
     output: { title: `main ${main}: ${missing.length > 0 ? `incomplete: ${missingText(missing)}` : verdict}`, summary: body },
+    ...(merge ? { external_id: merge.statement } : {}),
   });
   const why = broken
     ? `merge chain broken at ${broken}`
@@ -284,10 +291,32 @@ async function mergeMode(c: Context, ports: Ports): Promise<Outcome> {
       ? `merge not signed: ${missingText(missing)}`
       : `merge not signed: ${verdict}`;
   const line = merge
-    ? `**Merged** as \`${main}\` · merge statement signature \`${merge.digest}\` ✅`
+    ? `**Merged** as \`${main}\` · merge statement \`${merge.statement}\` · signature pending (job sign-merge)`
     : `**Merged** as \`${main}\` · ❌ ${why}`;
   await upsertComment(c, ports.api, prInfo.number, line, true);
   return { verdict, chain, sections, body, check: conclusion(verdict) };
+}
+
+// The sign run: the statement the report run wrote, for this main commit and with the digest main's check recorded,
+// is signed and the check and the pull request pointed at its signature; anything else is refused with no effect.
+async function signMode(c: Context, ports: Ports): Promise<Outcome> {
+  const main = c.mainSha!;
+  const { statement, digest } = await ports.readStatement();
+  if (statement?.main?.sha !== main)
+    throw new ReportError("STATEMENT_MISMATCH", `the statement names main ${statement?.main?.sha ?? "none"}, not ${main}`);
+  const runs = await ports.api.get(
+    `${repoPath(c)}/commits/${main}/check-runs?check_name=${encodeURIComponent(c.checkName)}`,
+  );
+  const check = (runs?.check_runs ?? []).find((r: any) => r.external_id === digest);
+  if (!check)
+    throw new ReportError("STATEMENT_MISMATCH", `no ${c.checkName} check on ${main} recorded the statement ${digest}`);
+  const signed = await ports.sign(ports.subjects, MERGE_PREDICATE, statement);
+  const line = `**Signed** merge statement \`${digest}\` · signature \`${signed.digest}\` ✅`;
+  await ports.api.patch(`${repoPath(c)}/check-runs/${check.id}`, {
+    output: { title: check.output?.title ?? `main ${main}`, summary: `${check.output?.summary ?? ""}\n\n${line}` },
+  });
+  await upsertComment(c, ports.api, statement.pullRequest.number, line, true);
+  return { verdict: "pass", chain: "ok", sections: [], body: line, check: "success" };
 }
 
 // ── rendering: compact, evidential, no prose; digests and SHAs always in full ──
@@ -410,7 +439,7 @@ function renderMain(
     mainRows: Row[];
     broken: Link | null;
     verdict: Verdict;
-    merge: { digest: string; store: string } | null;
+    merge: { statement: string; store: string } | null;
     missing: Required[];
   },
 ): string {
@@ -446,7 +475,10 @@ function renderMain(
       keyRow(r),
     );
   if (x.merge)
-    out.push(`| Evidence stored \`${x.merge.store}\` | ✅ |`, `| Merge statement signature \`${x.merge.digest}\` | ✅ |`);
+    out.push(
+      `| Evidence stored \`${x.merge.store}\` | ✅ |`,
+      `| Merge statement \`${x.merge.statement}\` · signature pending (job sign-merge) | ⏳ |`,
+    );
   if (x.mainRows.length > 0)
     out.push(
       ...verifyBlock(
