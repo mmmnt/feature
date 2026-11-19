@@ -55,19 +55,15 @@ export interface Context {
   signerWorkflows: string[]; // e.g. ".github/workflows/ci.yml"
   pr?: { number: number; headSha: string; baseSha: string; baseRef: string; builtRef: string; builtSha: string };
   mainSha?: string;
-  actor?: string; // the run's actor (GITHUB_ACTOR); dependabot[bot]'s runs hold no repository secrets
   forkRun?: ForkRun; // fork mode: the pull_request run whose uploads are reported
   evidencePrefix?: string; // evidence artifact name prefix (default feat-evidence-)
   publicKey: string; // the repository's public key path, e.g. ci/signing/flmnt.pub
   required?: Required[];
 }
 
-// A run Dependabot started holds no repository secrets, as a fork's run holds none (founder 2026-11-19, flmnt
-// f60f6956): neither can sign, so neither is attested before merge.
-export const DEPENDABOT = "dependabot[bot]";
-export type Origin = "fork" | "dependabot";
-const originLabel = (o: Origin) => (o === "fork" ? "fork" : "Dependabot");
-const notAttested = (o: Origin) => `not attested (${originLabel(o)} PR); attested on merge`;
+// A fork's run holds no repository secrets (founder 2026-11-19, flmnt f60f6956): it cannot sign, so it is not
+// attested before merge. Every run from this repository holds them, Dependabot's included (flmnt 6fcbe41f).
+const NOT_ATTESTED = "not attested (fork PR); attested on merge";
 
 // The `workflow_run` event's run, in the fields of GitHub's payload the follow-up reads.
 export interface ForkRun {
@@ -76,7 +72,6 @@ export interface ForkRun {
   headBranch: string;
   headOwner: string; // head_repository.owner.login
   headRepository: string; // head_repository.full_name
-  actor: string; // actor.login
   pullRequests: { number: number; baseSha: string; baseRef: string }[]; // empty for a fork's run
 }
 
@@ -197,19 +192,16 @@ export async function runReport(c: Context, ports: Ports): Promise<Outcome> {
   if (c.mode === "sign-merge") return signMode(c, ports);
 
   const fork = c.mode === "fork";
-  let origin: Origin | null = null;
   let pr = c.pr!;
   if (fork) {
     const run = c.forkRun!;
-    origin = runOrigin(c, run);
-    if (!origin)
+    if (!isForkRun(c, run))
       throw new ReportError(
         "TRUSTED_RUN",
-        `run ${run.id} is from ${run.headRepository}, started by ${run.actor}: it holds the repository's secrets and reports itself`,
+        `run ${run.id} is from ${run.headRepository}: it holds the repository's secrets and reports itself`,
       );
     pr = await forkPullRequest(c, ports.api, run);
-  } else if (c.actor === DEPENDABOT) origin = "dependabot";
-  const unattested = origin !== null;
+  }
   const prNumber = pr.number;
   const runId = fork ? c.forkRun!.id : c.runId;
   const evidence = fork ? await ports.forkEvidence!(runId) : await ports.evidence();
@@ -230,22 +222,22 @@ export async function runReport(c: Context, ports: Ports): Promise<Outcome> {
     }
     if (!(parents.length === 2 && parents[0] === base && parents[1] === c.pr!.headSha)) broken = "built-commit";
   }
-  // a run that holds no secrets signed nothing: no subject is verified, and none is required of it
-  const rows = unattested ? [] : await verifySubjects(c, ports, ports.subjects);
+  // a fork's run holds no secrets and signed nothing: no subject is verified, and none is required of it
+  const rows = fork ? [] : await verifySubjects(c, ports, ports.subjects);
   if (!broken) for (const r of rows) broken ??= attestationBreak(c, r, pr.builtSha, pr.builtRef);
 
-  const missing = unattested ? [] : missingOf(c, ports.subjects);
+  const missing = fork ? [] : missingOf(c, ports.subjects);
   const t = testsVerdict(evidence);
   const jobsFailed = jobs.some((j) => j.conclusion !== "success");
   const verdict: Verdict =
     t.failed || jobsFailed || broken ? "fail" : t.incomplete || missing.length > 0 ? "incomplete" : "pass";
-  const chain = broken ? (`broken:${broken}` as const) : unattested ? "not-attested" : "ok";
+  const chain = broken ? (`broken:${broken}` as const) : fork ? "not-attested" : "ok";
   const sections = ["header", "tests"];
-  if (unattested || rows.length > 0 || missing.length > 0) sections.push("attestations");
+  if (fork || rows.length > 0 || missing.length > 0) sections.push("attestations");
   sections.push("chain");
-  if (!unattested && rows.length > 0) sections.push("verify");
+  if (!fork && rows.length > 0) sections.push("verify");
 
-  const body = renderPr(c, { pr, prNumber, runId, evidence, jobs, rows, broken, verdict, fork, origin, missing, base });
+  const body = renderPr(c, { pr, prNumber, runId, evidence, jobs, rows, broken, verdict, fork, missing, base });
   await upsertComment(c, ports.api, prNumber, body, false);
   await ports.api.post(`${repoPath(c)}/check-runs`, {
     name: c.checkName,
@@ -267,7 +259,6 @@ export function forkRunOf(wr: any): ForkRun {
     headBranch: String(wr.head_branch ?? ""),
     headOwner: String(wr.head_repository?.owner?.login ?? ""),
     headRepository: String(wr.head_repository?.full_name ?? ""),
-    actor: String(wr.actor?.login ?? ""),
     pullRequests: (wr.pull_requests ?? []).map((p: any) => ({
       number: Number(p.number),
       baseSha: String(p.base?.sha ?? ""),
@@ -276,18 +267,16 @@ export function forkRunOf(wr: any): ForkRun {
   };
 }
 
-// Who a follow-up's run came from: a fork, or this repository with Dependabot as its actor. Any other run held the
-// repository's secrets and reported itself.
-export function runOrigin(c: Context, run: ForkRun): Origin | null {
-  if (run.headRepository !== `${c.owner}/${c.repo}`) return "fork";
-  return run.actor === DEPENDABOT ? "dependabot" : null;
+// Whether a follow-up's run came from a fork. A run from this repository held the repository's secrets and reported
+// itself, whoever started it.
+export function isForkRun(c: Context, run: ForkRun): boolean {
+  return run.headRepository !== `${c.owner}/${c.repo}`;
 }
 
-// Who a merged pull request came from, read from the pulls API: its head repository (none when the fork is gone) and
-// its author.
-export function pullOrigin(c: Context, pull: any): Origin | null {
-  if (pull?.head?.repo?.full_name !== `${c.owner}/${c.repo}`) return "fork";
-  return pull?.user?.login === DEPENDABOT ? "dependabot" : null;
+// Whether a merged pull request came from a fork, read from the pulls API: its head repository is another, or none
+// when the fork is gone.
+export function isForkPull(c: Context, pull: any): boolean {
+  return pull?.head?.repo?.full_name !== `${c.owner}/${c.repo}`;
 }
 
 // The pull request a follow-up's run belongs to. GitHub lists it on the run, except for a fork's run, whose
@@ -339,18 +328,18 @@ async function mergeMode(c: Context, ports: Ports): Promise<Outcome> {
   if (!pr) throw new ReportError("NO_PR_FOR_MERGE", `no merged pull request is associated with ${main}`);
   // the pulls API names the head and the commit that landed on main, not the merge commit the pull request's run
   // tested: that one is recorded by the pull request run's own feat report check
-  // a fork's or Dependabot's pull request ran without the key: its run attested nothing, and is recorded so
-  const origin = pullOrigin(c, pr);
+  // a fork's pull request ran without the key: its run attested nothing, and is recorded so
+  const fork = isForkPull(c, pr);
   const mergeRefSha = await testedMergeRef(c, ports.api, pr.head.sha as string);
-  if (!mergeRefSha && !origin)
+  if (!mergeRefSha && !fork)
     throw new ReportError("PR_EVIDENCE_MISSING", `no ${c.checkName} check on #${pr.number}'s head records the commit its run tested`);
   const prInfo = { number: pr.number as number, headSha: pr.head.sha as string, mergeRefSha };
   const prRun = await ports.findPrRun({ number: prInfo.number, headSha: prInfo.headSha });
-  if (prRun === null && !origin) throw new ReportError("PR_EVIDENCE_MISSING", `no pull request run found for #${prInfo.number}`);
+  if (prRun === null && !fork) throw new ReportError("PR_EVIDENCE_MISSING", `no pull request run found for #${prInfo.number}`);
   const arts = prRun === null ? null : await ports.api.get(`${repoPath(c)}/actions/runs/${prRun}/artifacts`);
   const prSubjects = prRun === null || !mergeRefSha ? [] : await ports.prSubjects(arts?.artifacts ?? [], mergeRefSha);
-  if (prSubjects.length === 0 && !origin) throw new ReportError("PR_EVIDENCE_MISSING", `run ${prRun} has no attested artifacts`);
-  const unattested = prSubjects.length === 0 ? origin : null;
+  if (prSubjects.length === 0 && !fork) throw new ReportError("PR_EVIDENCE_MISSING", `run ${prRun} has no attested artifacts`);
+  const unattested = prSubjects.length === 0 && fork;
   const prRows = await verifySubjects(c, ports, prSubjects);
   if (prRows.some((r) => r.v === null))
     throw new ReportError("PR_EVIDENCE_MISSING", `run ${prRun}'s attestations cannot be retrieved`);
@@ -376,7 +365,7 @@ async function mergeMode(c: Context, ports: Ports): Promise<Outcome> {
     }
     const predicate = {
       pullRequest: unattested
-        ? { number: prInfo.number, headSha: prInfo.headSha, mergeRefSha: prInfo.mergeRefSha, attested: false, origin: unattested }
+        ? { number: prInfo.number, headSha: prInfo.headSha, mergeRefSha: prInfo.mergeRefSha, attested: false, origin: "fork" }
         : { number: prInfo.number, headSha: prInfo.headSha, mergeRefSha: prInfo.mergeRefSha },
       prRun: { id: prRun, attestations: prRows.map((r) => r.subject.digest) },
       main: { sha: main, run: { id: c.runId, attempt: c.runAttempt }, artifacts: ports.subjects.map((s) => s.digest) },
@@ -499,7 +488,6 @@ function renderPr(
     broken: Link | null;
     verdict: Verdict;
     fork: boolean;
-    origin: Origin | null;
     pr: NonNullable<Context["pr"]>;
     missing: Required[];
     base: string;
@@ -518,20 +506,20 @@ function renderPr(
   const p = x.pr;
   if (x.fork)
     out.push(
-      `${x.origin === "fork" ? "Fork" : "Dependabot"} pull request · head \`${p.headSha}\` · run [${x.runId}](https://github.com/${c.owner}/${c.repo}/actions/runs/${x.runId})`,
+      `Fork pull request · head \`${p.headSha}\` · run [${x.runId}](https://github.com/${c.owner}/${c.repo}/actions/runs/${x.runId})`,
     );
   else
     out.push(
       `Head \`${p.headSha}\` · built \`${p.builtRef}\` @ \`${p.builtSha}\` · run [${x.runId}](https://github.com/${c.owner}/${c.repo}/actions/runs/${x.runId}/attempts/${c.runAttempt})`,
     );
   out.push("", ...testsTable(x.evidence, x.jobs), "");
-  if (x.origin) {
-    out.push("### Attestations", "", notAttested(x.origin), "");
+  if (x.fork) {
+    out.push("### Attestations", "", NOT_ATTESTED, "");
   } else if (x.rows.length > 0 || x.missing.length > 0) out.push(...attestationRows(x.rows, x.missing), "");
   out.push("### Chain", "", "| Check | |", "|---|---|");
   if (!x.fork)
     out.push(`| Built commit's parents = base \`${x.base}\` + head \`${p.headSha}\` | ${mark(x.broken !== "built-commit")} |`);
-  if (x.origin) out.push(`| Attestations | ${notAttested(x.origin)} |`);
+  if (x.fork) out.push(`| Attestations | ${NOT_ATTESTED} |`);
   else
     for (const r of x.rows) {
       out.push(
@@ -541,7 +529,7 @@ function renderPr(
         keyRow(r),
       );
     }
-  if (!x.origin && x.rows.length > 0) out.push(...verifyBlock(x.rows.map((r) => verifyCommand(c, r.subject, "slsaprovenance1"))));
+  if (!x.fork && x.rows.length > 0) out.push(...verifyBlock(x.rows.map((r) => verifyCommand(c, r.subject, "slsaprovenance1"))));
   return out.join("\n");
 }
 
@@ -559,7 +547,7 @@ function renderMain(
     verdict: Verdict;
     merge: { statement: string; store: string } | null;
     missing: Required[];
-    unattested: Origin | null;
+    unattested: boolean;
   },
 ): string {
   const short = x.verdict === "incomplete" && x.missing.length > 0;
@@ -584,7 +572,7 @@ function renderMain(
     "| Check | |",
     "|---|---|",
   );
-  if (x.unattested) out.push(`| PR attestations | ${notAttested(x.unattested)} |`);
+  if (x.unattested) out.push(`| PR attestations | ${NOT_ATTESTED} |`);
   for (const r of x.prRows)
     out.push(
       `| PR \`${r.subject.name}\` source commit = tested \`${x.prInfo.mergeRefSha}\` | ${mark(!!r.v && r.v.sourceCommit === x.prInfo.mergeRefSha)} |`,

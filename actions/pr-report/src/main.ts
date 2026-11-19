@@ -12,7 +12,6 @@ import { attestArgs, ensureCosign, verifyArgs, writeSigningConfig } from "./cosi
 import { input as readInput, readStatementFile, signingSecrets } from "./inputs.js";
 import {
   runReport,
-  DEPENDABOT,
   forkRunOf,
   ReportError,
   type Api,
@@ -288,7 +287,6 @@ async function main() {
     required: parseRequired(input("required-subjects")),
   };
   let writable = true;
-  ctx.actor = process.env.GITHUB_ACTOR ?? "";
   if (eventName === "pull_request") {
     const pr = event.pull_request;
     ctx.mode = "pr";
@@ -318,9 +316,7 @@ async function main() {
     return out;
   };
   const builtTag = ctx.mode === "main" || ctx.mode === "sign-merge" ? ctx.mainSha! : ctx.mode === "pr" ? ctx.pr!.builtSha : "";
-  // a Dependabot run signed nothing (it holds no secrets), so it has no subject to resolve
-  const signedPr = ctx.mode === "pr" && ctx.actor !== DEPENDABOT;
-  const subjects = signedPr || ctx.mode === "main" || ctx.mode === "sign-merge" ? await resolve(builtTag) : [];
+  const subjects = ctx.mode === "pr" || ctx.mode === "main" || ctx.mode === "sign-merge" ? await resolve(builtTag) : [];
 
   const work = mkdtempSync(path.join(tmpdir(), "feat-pr-report-"));
   const needsCosign = subjects.length > 0 || ctx.mode === "main" || ctx.mode === "sign-merge";

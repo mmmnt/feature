@@ -47,7 +47,6 @@ export async function probe(input) {
     else if (k === "fork") Object.assign(s, { mode: "fork", pr: Number(v) });
     else if (k === "prs") s.prs = v;
     else if (k === "from") s.from = v;
-    else if (k === "actor") s.actor = v === "dependabot" ? "dependabot[bot]" : v;
     else if (k === "prfrom") s.prfrom = v;
     else if (k === "merge") s.merge = v;
     else if (k === "evidence") {
@@ -95,13 +94,12 @@ export async function probe(input) {
       if (path.endsWith(`/commits/${s.main}/pulls`))
         // the pulls API's real shape (recorded from a merged pull request): merge_commit_sha is the commit on main,
         // and no field names the merge commit the pull request's run tested
-        // (and, as recorded from flmnt's pull requests, the head repository and the author)
+        // (and, as recorded from flmnt's pull requests, the head repository)
         return s.prlookup === "found"
           ? [
               {
                 number: 7,
                 merged_at: "2026-11-17T22:40:00Z",
-                user: { login: s.prfrom === "dependabot" ? "dependabot[bot]" : "a-person" },
                 head: { sha: HEAD, repo: { full_name: s.prfrom === "fork" ? "contributor/r" : "o/r" } },
                 merge_commit_sha: s.main,
               },
@@ -215,18 +213,16 @@ export async function probe(input) {
     required: s.sbom === "missing" ? [{ label: "SBOM", job: "build" }] : [],
     pr: s.mode === "pr" ? { number: s.pr, headSha: HEAD, baseSha: BASE, baseRef: "main", builtRef: `refs/pull/${s.pr}/merge`, builtSha: BUILT } : undefined,
     mainSha: s.main,
-    actor: s.actor ?? "a-person",
     // the workflow_run payload's fields: id, head_sha, head_branch, head_repository.{owner.login,full_name},
-    // actor.login, pull_requests (empty for a fork's run)
+    // pull_requests (empty for a fork's run)
     forkRun:
       s.mode === "fork"
         ? {
             id: 1,
             headSha: HEAD,
-            headBranch: s.from === "fork" || !s.from ? "feature" : "dependabot/npm/x-1.2.3",
-            headOwner: s.from === "fork" || !s.from ? "contributor" : "o",
-            headRepository: s.from === "fork" || !s.from ? "contributor/r" : "o/r",
-            actor: s.from === "dependabot" ? "dependabot[bot]" : "a-person",
+            headBranch: "feature",
+            headOwner: s.from === "samerepo" ? "o" : "contributor",
+            headRepository: s.from === "samerepo" ? "o/r" : "contributor/r",
             pullRequests: s.prs ? [] : [{ number: s.pr, baseSha: BASE, baseRef: "main" }],
           }
         : undefined,

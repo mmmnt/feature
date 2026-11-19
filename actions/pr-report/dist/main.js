@@ -91,9 +91,7 @@ function readStatementFile(file) {
 // src/report.ts
 var MARKER = "<!-- feat-pr-report -->";
 var MERGE_PREDICATE = "https://feature.mmmnt.dev/attestation/pr-merge/v1";
-var DEPENDABOT = "dependabot[bot]";
-var originLabel = (o) => o === "fork" ? "fork" : "Dependabot";
-var notAttested = (o) => `not attested (${originLabel(o)} PR); attested on merge`;
+var NOT_ATTESTED = "not attested (fork PR); attested on merge";
 var ReportError = class extends Error {
   constructor(code, detail) {
     super(detail);
@@ -161,19 +159,16 @@ async function runReport(c, ports) {
   if (c.mode === "main") return mergeMode(c, ports);
   if (c.mode === "sign-merge") return signMode(c, ports);
   const fork = c.mode === "fork";
-  let origin = null;
   let pr = c.pr;
   if (fork) {
     const run = c.forkRun;
-    origin = runOrigin(c, run);
-    if (!origin)
+    if (!isForkRun(c, run))
       throw new ReportError(
         "TRUSTED_RUN",
-        `run ${run.id} is from ${run.headRepository}, started by ${run.actor}: it holds the repository's secrets and reports itself`
+        `run ${run.id} is from ${run.headRepository}: it holds the repository's secrets and reports itself`
       );
     pr = await forkPullRequest(c, ports.api, run);
-  } else if (c.actor === DEPENDABOT) origin = "dependabot";
-  const unattested = origin !== null;
+  }
   const prNumber = pr.number;
   const runId = fork ? c.forkRun.id : c.runId;
   const evidence = fork ? await ports.forkEvidence(runId) : await ports.evidence();
@@ -190,18 +185,18 @@ async function runReport(c, ports) {
     }
     if (!(parents.length === 2 && parents[0] === base && parents[1] === c.pr.headSha)) broken = "built-commit";
   }
-  const rows = unattested ? [] : await verifySubjects(c, ports, ports.subjects);
+  const rows = fork ? [] : await verifySubjects(c, ports, ports.subjects);
   if (!broken) for (const r of rows) broken ??= attestationBreak(c, r, pr.builtSha, pr.builtRef);
-  const missing = unattested ? [] : missingOf(c, ports.subjects);
+  const missing = fork ? [] : missingOf(c, ports.subjects);
   const t = testsVerdict(evidence);
   const jobsFailed = jobs.some((j) => j.conclusion !== "success");
   const verdict = t.failed || jobsFailed || broken ? "fail" : t.incomplete || missing.length > 0 ? "incomplete" : "pass";
-  const chain = broken ? `broken:${broken}` : unattested ? "not-attested" : "ok";
+  const chain = broken ? `broken:${broken}` : fork ? "not-attested" : "ok";
   const sections = ["header", "tests"];
-  if (unattested || rows.length > 0 || missing.length > 0) sections.push("attestations");
+  if (fork || rows.length > 0 || missing.length > 0) sections.push("attestations");
   sections.push("chain");
-  if (!unattested && rows.length > 0) sections.push("verify");
-  const body = renderPr(c, { pr, prNumber, runId, evidence, jobs, rows, broken, verdict, fork, origin, missing, base });
+  if (!fork && rows.length > 0) sections.push("verify");
+  const body = renderPr(c, { pr, prNumber, runId, evidence, jobs, rows, broken, verdict, fork, missing, base });
   await upsertComment(c, ports.api, prNumber, body, false);
   await ports.api.post(`${repoPath(c)}/check-runs`, {
     name: c.checkName,
@@ -221,7 +216,6 @@ function forkRunOf(wr) {
     headBranch: String(wr.head_branch ?? ""),
     headOwner: String(wr.head_repository?.owner?.login ?? ""),
     headRepository: String(wr.head_repository?.full_name ?? ""),
-    actor: String(wr.actor?.login ?? ""),
     pullRequests: (wr.pull_requests ?? []).map((p) => ({
       number: Number(p.number),
       baseSha: String(p.base?.sha ?? ""),
@@ -229,13 +223,11 @@ function forkRunOf(wr) {
     }))
   };
 }
-function runOrigin(c, run) {
-  if (run.headRepository !== `${c.owner}/${c.repo}`) return "fork";
-  return run.actor === DEPENDABOT ? "dependabot" : null;
+function isForkRun(c, run) {
+  return run.headRepository !== `${c.owner}/${c.repo}`;
 }
-function pullOrigin(c, pull) {
-  if (pull?.head?.repo?.full_name !== `${c.owner}/${c.repo}`) return "fork";
-  return pull?.user?.login === DEPENDABOT ? "dependabot" : null;
+function isForkPull(c, pull) {
+  return pull?.head?.repo?.full_name !== `${c.owner}/${c.repo}`;
 }
 async function forkPullRequest(c, api, run) {
   const listed = run.pullRequests[0];
@@ -277,17 +269,17 @@ async function mergeMode(c, ports) {
   const pulls = await ports.api.get(`${repoPath(c)}/commits/${main2}/pulls`) ?? [];
   const pr = pulls.find((p) => p.merged_at);
   if (!pr) throw new ReportError("NO_PR_FOR_MERGE", `no merged pull request is associated with ${main2}`);
-  const origin = pullOrigin(c, pr);
+  const fork = isForkPull(c, pr);
   const mergeRefSha = await testedMergeRef(c, ports.api, pr.head.sha);
-  if (!mergeRefSha && !origin)
+  if (!mergeRefSha && !fork)
     throw new ReportError("PR_EVIDENCE_MISSING", `no ${c.checkName} check on #${pr.number}'s head records the commit its run tested`);
   const prInfo = { number: pr.number, headSha: pr.head.sha, mergeRefSha };
   const prRun = await ports.findPrRun({ number: prInfo.number, headSha: prInfo.headSha });
-  if (prRun === null && !origin) throw new ReportError("PR_EVIDENCE_MISSING", `no pull request run found for #${prInfo.number}`);
+  if (prRun === null && !fork) throw new ReportError("PR_EVIDENCE_MISSING", `no pull request run found for #${prInfo.number}`);
   const arts = prRun === null ? null : await ports.api.get(`${repoPath(c)}/actions/runs/${prRun}/artifacts`);
   const prSubjects = prRun === null || !mergeRefSha ? [] : await ports.prSubjects(arts?.artifacts ?? [], mergeRefSha);
-  if (prSubjects.length === 0 && !origin) throw new ReportError("PR_EVIDENCE_MISSING", `run ${prRun} has no attested artifacts`);
-  const unattested = prSubjects.length === 0 ? origin : null;
+  if (prSubjects.length === 0 && !fork) throw new ReportError("PR_EVIDENCE_MISSING", `run ${prRun} has no attested artifacts`);
+  const unattested = prSubjects.length === 0 && fork;
   const prRows = await verifySubjects(c, ports, prSubjects);
   if (prRows.some((r) => r.v === null))
     throw new ReportError("PR_EVIDENCE_MISSING", `run ${prRun}'s attestations cannot be retrieved`);
@@ -310,7 +302,7 @@ async function mergeMode(c, ports) {
       throw new ReportError("EVIDENCE_STORE_FAILED", `evidence bundles could not be stored: ${e.message}`);
     }
     const predicate = {
-      pullRequest: unattested ? { number: prInfo.number, headSha: prInfo.headSha, mergeRefSha: prInfo.mergeRefSha, attested: false, origin: unattested } : { number: prInfo.number, headSha: prInfo.headSha, mergeRefSha: prInfo.mergeRefSha },
+      pullRequest: unattested ? { number: prInfo.number, headSha: prInfo.headSha, mergeRefSha: prInfo.mergeRefSha, attested: false, origin: "fork" } : { number: prInfo.number, headSha: prInfo.headSha, mergeRefSha: prInfo.mergeRefSha },
       prRun: { id: prRun, attestations: prRows.map((r) => r.subject.digest) },
       main: { sha: main2, run: { id: c.runId, attempt: c.runAttempt }, artifacts: ports.subjects.map((s) => s.digest) },
       evidence: { bundles: evidence.map((e) => e.digest), store }
@@ -406,20 +398,20 @@ function renderPr(c, x) {
   const p = x.pr;
   if (x.fork)
     out.push(
-      `${x.origin === "fork" ? "Fork" : "Dependabot"} pull request \xB7 head \`${p.headSha}\` \xB7 run [${x.runId}](https://github.com/${c.owner}/${c.repo}/actions/runs/${x.runId})`
+      `Fork pull request \xB7 head \`${p.headSha}\` \xB7 run [${x.runId}](https://github.com/${c.owner}/${c.repo}/actions/runs/${x.runId})`
     );
   else
     out.push(
       `Head \`${p.headSha}\` \xB7 built \`${p.builtRef}\` @ \`${p.builtSha}\` \xB7 run [${x.runId}](https://github.com/${c.owner}/${c.repo}/actions/runs/${x.runId}/attempts/${c.runAttempt})`
     );
   out.push("", ...testsTable(x.evidence, x.jobs), "");
-  if (x.origin) {
-    out.push("### Attestations", "", notAttested(x.origin), "");
+  if (x.fork) {
+    out.push("### Attestations", "", NOT_ATTESTED, "");
   } else if (x.rows.length > 0 || x.missing.length > 0) out.push(...attestationRows(x.rows, x.missing), "");
   out.push("### Chain", "", "| Check | |", "|---|---|");
   if (!x.fork)
     out.push(`| Built commit's parents = base \`${x.base}\` + head \`${p.headSha}\` | ${mark(x.broken !== "built-commit")} |`);
-  if (x.origin) out.push(`| Attestations | ${notAttested(x.origin)} |`);
+  if (x.fork) out.push(`| Attestations | ${NOT_ATTESTED} |`);
   else
     for (const r of x.rows) {
       out.push(
@@ -429,7 +421,7 @@ function renderPr(c, x) {
         keyRow(r)
       );
     }
-  if (!x.origin && x.rows.length > 0) out.push(...verifyBlock(x.rows.map((r) => verifyCommand(c, r.subject, "slsaprovenance1"))));
+  if (!x.fork && x.rows.length > 0) out.push(...verifyBlock(x.rows.map((r) => verifyCommand(c, r.subject, "slsaprovenance1"))));
   return out.join("\n");
 }
 function renderMain(c, x) {
@@ -449,7 +441,7 @@ function renderMain(c, x) {
     "| Check | |",
     "|---|---|"
   );
-  if (x.unattested) out.push(`| PR attestations | ${notAttested(x.unattested)} |`);
+  if (x.unattested) out.push(`| PR attestations | ${NOT_ATTESTED} |`);
   for (const r of x.prRows)
     out.push(
       `| PR \`${r.subject.name}\` source commit = tested \`${x.prInfo.mergeRefSha}\` | ${mark(!!r.v && r.v.sourceCommit === x.prInfo.mergeRefSha)} |`
@@ -697,7 +689,6 @@ async function main() {
     required: parseRequired(input2("required-subjects"))
   };
   let writable = true;
-  ctx.actor = process.env.GITHUB_ACTOR ?? "";
   if (eventName === "pull_request") {
     const pr = event.pull_request;
     ctx.mode = "pr";
@@ -723,8 +714,7 @@ async function main() {
     return out;
   };
   const builtTag = ctx.mode === "main" || ctx.mode === "sign-merge" ? ctx.mainSha : ctx.mode === "pr" ? ctx.pr.builtSha : "";
-  const signedPr = ctx.mode === "pr" && ctx.actor !== DEPENDABOT;
-  const subjects = signedPr || ctx.mode === "main" || ctx.mode === "sign-merge" ? await resolve(builtTag) : [];
+  const subjects = ctx.mode === "pr" || ctx.mode === "main" || ctx.mode === "sign-merge" ? await resolve(builtTag) : [];
   const work = mkdtempSync(path2.join(tmpdir(), "feat-pr-report-"));
   const needsCosign = subjects.length > 0 || ctx.mode === "main" || ctx.mode === "sign-merge";
   const cosign = needsCosign ? await ensureCosign(path2.join(process.env.RUNNER_TOOL_CACHE ?? work, "cosign")) : "";
