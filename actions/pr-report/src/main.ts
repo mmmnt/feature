@@ -9,6 +9,7 @@ import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFi
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { attestArgs, ensureCosign, verifyArgs, writeSigningConfig } from "./cosign.js";
+import { input as readInput, readStatementFile, signingSecrets } from "./inputs.js";
 import {
   runReport,
   ReportError,
@@ -21,7 +22,7 @@ import {
   type Verification,
 } from "./report.js";
 
-const input = (name: string, fallback = ""): string => (process.env[`INPUT_${name.toUpperCase()}`] ?? fallback).trim();
+const input = (name: string, fallback = ""): string => readInput(process.env, name, fallback);
 const lines = (v: string) => v.split("\n").map((s) => s.trim()).filter(Boolean);
 const sha256 = (buf: Buffer | string) => "sha256:" + createHash("sha256").update(buf).digest("hex");
 const PROVENANCE = "https://slsa.dev/provenance/v1";
@@ -419,18 +420,17 @@ async function main() {
       return { digest };
     },
     async readStatement() {
-      const bytes = readFileSync(input("sign-statement"));
-      return { statement: JSON.parse(bytes.toString("utf8")), digest: sha256(bytes) };
+      return readStatementFile(input("sign-statement"));
     },
     async sign(subjs, predicateType, predicate) {
-      const privateKey = process.env.INPUT_SIGNING_KEY ?? "";
+      const { key: privateKey, password } = signingSecrets(process.env);
       if (!privateKey.trim()) throw new Error("merge mode needs the signing-key input (the repository's cosign private key)");
       const keyPath = path.join(work, "signing.key");
       writeFileSync(keyPath, privateKey, { mode: 0o600 });
       const predPath = path.join(work, "merge-predicate.json");
       writeFileSync(predPath, JSON.stringify(predicate));
       const cfg = writeSigningConfig(work);
-      const env = { ...cosignEnv, COSIGN_PASSWORD: process.env.INPUT_SIGNING_PASSWORD ?? "" };
+      const env = { ...cosignEnv, COSIGN_PASSWORD: password };
       try {
         for (const s of subjs) {
           const ref = `${s.repository}@${s.digest}`;
