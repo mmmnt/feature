@@ -12,6 +12,7 @@ import { attestArgs, ensureCosign, verifyArgs, writeSigningConfig } from "./cosi
 import { input as readInput, readStatementFile, signingSecrets } from "./inputs.js";
 import {
   runReport,
+  forkRunOf,
   ReportError,
   type Api,
   type Context,
@@ -292,12 +293,10 @@ async function main() {
     ctx.pr = { number: pr.number, headSha: pr.head.sha, baseSha: pr.base.sha, baseRef: pr.base.ref, builtRef: process.env.GITHUB_REF!, builtSha: process.env.GITHUB_SHA! };
     writable = pr.head.repo?.full_name === `${owner}/${repo}`;
   } else if (eventName === "workflow_run" && event.workflow_run?.event === "pull_request") {
+    // the run the follow-up reports; its pull request is resolved by the core (a fork's run lists none)
     const wr = event.workflow_run;
-    const pr = wr.pull_requests?.[0];
-    ctx.mode = pr ? "fork" : "none";
-    ctx.forkRunId = wr.id;
-    ctx.forkPr = pr?.number;
-    if (pr) ctx.pr = { number: pr.number, headSha: wr.head_sha, baseSha: pr.base?.sha ?? "", baseRef: pr.base?.ref ?? "", builtRef: `refs/pull/${pr.number}/merge`, builtSha: "" };
+    ctx.mode = "fork";
+    ctx.forkRun = forkRunOf(wr);
   } else if (eventName === "push" && process.env.GITHUB_REF === "refs/heads/main") {
     // the sign run is the one handed the statement the report run wrote
     ctx.mode = input("sign-statement") ? "sign-merge" : "main";
