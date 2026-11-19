@@ -1,9 +1,9 @@
 import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);
 
 // src/main.ts
-import { createHash as createHash2, createPublicKey } from "node:crypto";
+import { createHash as createHash3, createPublicKey } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
-import { appendFileSync, existsSync as existsSync2, mkdirSync as mkdirSync2, mkdtempSync, readdirSync, readFileSync as readFileSync2, rmSync, statSync, writeFileSync as writeFileSync2 } from "node:fs";
+import { appendFileSync, existsSync as existsSync2, mkdirSync as mkdirSync2, mkdtempSync, readdirSync, readFileSync as readFileSync3, rmSync, statSync, writeFileSync as writeFileSync2 } from "node:fs";
 import { tmpdir } from "node:os";
 import path2 from "node:path";
 
@@ -65,6 +65,27 @@ async function ensureCosign(dir) {
   }
   chmodSync(bin, 493);
   return bin;
+}
+
+// src/inputs.ts
+import { createHash as createHash2 } from "node:crypto";
+import { readFileSync as readFileSync2 } from "node:fs";
+var inputName = (name) => `INPUT_${name.replace(/ /g, "_").toUpperCase()}`;
+function input(env, name, fallback = "") {
+  return (env[inputName(name)] ?? fallback).trim();
+}
+function rawInput(env, name) {
+  return env[inputName(name)] ?? "";
+}
+function signingSecrets(env) {
+  return { key: rawInput(env, "signing-key"), password: rawInput(env, "signing-password") };
+}
+function readStatementFile(file) {
+  const bytes = readFileSync2(file);
+  return {
+    statement: JSON.parse(bytes.toString("utf8")),
+    digest: "sha256:" + createHash2("sha256").update(bytes).digest("hex")
+  };
 }
 
 // src/report.ts
@@ -386,9 +407,9 @@ function renderMain(c, x) {
 }
 
 // src/main.ts
-var input = (name, fallback = "") => (process.env[`INPUT_${name.toUpperCase()}`] ?? fallback).trim();
+var input2 = (name, fallback = "") => input(process.env, name, fallback);
 var lines = (v) => v.split("\n").map((s) => s.trim()).filter(Boolean);
-var sha256 = (buf) => "sha256:" + createHash2("sha256").update(buf).digest("hex");
+var sha256 = (buf) => "sha256:" + createHash3("sha256").update(buf).digest("hex");
 var PROVENANCE = "https://slsa.dev/provenance/v1";
 var BUNDLE = "application/vnd.dev.sigstore.bundle.v0.3+json";
 var INDEX = "application/vnd.oci.image.index.v1+json";
@@ -520,7 +541,7 @@ function evidenceFiles(dir, prefix) {
       out.push({
         tier: sub.slice(prefix.length),
         ...files.length > 1 ? { package: f.replace(/\.json$/, "") } : {},
-        bytes: readFileSync2(path2.join(full, f))
+        bytes: readFileSync3(path2.join(full, f))
       });
   }
   return out;
@@ -590,8 +611,8 @@ var parseRequired = (v) => lines(v).map((l) => {
   return { label: m[1], job: m[2] };
 });
 async function main() {
-  const token = input("token");
-  const event = JSON.parse(readFileSync2(process.env.GITHUB_EVENT_PATH, "utf8"));
+  const token = input2("token");
+  const event = JSON.parse(readFileSync3(process.env.GITHUB_EVENT_PATH, "utf8"));
   const [owner = "", repo = ""] = (process.env.GITHUB_REPOSITORY ?? "/").split("/");
   const eventName = process.env.GITHUB_EVENT_NAME;
   const api = makeApi(token);
@@ -601,12 +622,12 @@ async function main() {
     mode: "none",
     runId: Number(process.env.GITHUB_RUN_ID),
     runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT ?? 1),
-    reportJob: input("report-job", "report"),
-    evidencePrefix: input("evidence-prefix", "feat-evidence-"),
-    checkName: input("check-name", "feat report"),
-    signerWorkflows: lines(input("signer-workflows", ".github/workflows/ci.yml")),
-    publicKey: input("public-key", "cosign.pub"),
-    required: parseRequired(input("required-subjects"))
+    reportJob: input2("report-job", "report"),
+    evidencePrefix: input2("evidence-prefix", "feat-evidence-"),
+    checkName: input2("check-name", "feat report"),
+    signerWorkflows: lines(input2("signer-workflows", ".github/workflows/ci.yml")),
+    publicKey: input2("public-key", "cosign.pub"),
+    required: parseRequired(input2("required-subjects"))
   };
   let writable = true;
   if (eventName === "pull_request") {
@@ -622,12 +643,12 @@ async function main() {
     ctx.forkPr = pr?.number;
     if (pr) ctx.pr = { number: pr.number, headSha: wr.head_sha, baseSha: pr.base?.sha ?? "", baseRef: pr.base?.ref ?? "", builtRef: `refs/pull/${pr.number}/merge`, builtSha: "" };
   } else if (eventName === "push" && process.env.GITHUB_REF === "refs/heads/main") {
-    ctx.mode = input("sign-statement") ? "sign-merge" : "main";
+    ctx.mode = input2("sign-statement") ? "sign-merge" : "main";
     ctx.mainSha = process.env.GITHUB_SHA ?? "";
   }
-  const evidenceDir = input("evidence-dir", "evidence");
-  const prefix = input("evidence-prefix", "feat-evidence-");
-  const declared = parseSubjects(input("subjects"));
+  const evidenceDir = input2("evidence-dir", "evidence");
+  const prefix = input2("evidence-prefix", "feat-evidence-");
+  const declared = parseSubjects(input2("subjects"));
   const resolve = async (tag) => {
     const out = [];
     for (const d of declared) {
@@ -642,7 +663,7 @@ async function main() {
   const needsCosign = subjects.length > 0 || ctx.mode === "main" || ctx.mode === "sign-merge";
   const cosign = needsCosign ? await ensureCosign(path2.join(process.env.RUNNER_TOOL_CACHE ?? work, "cosign")) : "";
   const cosignEnv = { DOCKER_CONFIG: dockerConfig(work, token) };
-  const builtKey = existsSync2(ctx.publicKey) ? readFileSync2(ctx.publicKey, "utf8") : null;
+  const builtKey = existsSync2(ctx.publicKey) ? readFileSync3(ctx.publicKey, "utf8") : null;
   let trustedKey = builtKey;
   if (ctx.mode === "pr") {
     const res = await api.get(`/repos/${owner}/${repo}/contents/${ctx.publicKey}?ref=${ctx.pr.baseSha}`);
@@ -685,7 +706,7 @@ async function main() {
       for (const a of (arts?.artifacts ?? []).filter((x) => String(x.name).startsWith(prefix))) {
         const dir = downloadArtifact(a.archive_download_url, token);
         for (const f of readdirSync(dir).filter((x) => x.endsWith(".json"))) {
-          const bytes = readFileSync2(path2.join(dir, f));
+          const bytes = readFileSync3(path2.join(dir, f));
           out.push({ tier: String(a.name).slice(prefix.length), digest: sha256(bytes), bundle: JSON.parse(bytes.toString("utf8")) });
         }
       }
@@ -719,7 +740,7 @@ async function main() {
       return resolve(mergeRefSha);
     },
     async store(evidence) {
-      const repoRef = input("evidence-repository") || `ghcr.io/${owner}/${repo}-evidence`;
+      const repoRef = input2("evidence-repository") || `ghcr.io/${owner}/${repo}-evidence`;
       return pushEvidence(repoRef, evidence, evidenceFiles(evidenceDir, prefix).map((f) => f.bytes), ctx.mainSha, token);
     },
     // the statement's bytes are the digest's: written once, read back unchanged, signed as they are
@@ -734,18 +755,17 @@ statement-digest=${digest}
       return { digest };
     },
     async readStatement() {
-      const bytes = readFileSync2(input("sign-statement"));
-      return { statement: JSON.parse(bytes.toString("utf8")), digest: sha256(bytes) };
+      return readStatementFile(input2("sign-statement"));
     },
     async sign(subjs, predicateType, predicate) {
-      const privateKey = process.env.INPUT_SIGNING_KEY ?? "";
+      const { key: privateKey, password } = signingSecrets(process.env);
       if (!privateKey.trim()) throw new Error("merge mode needs the signing-key input (the repository's cosign private key)");
       const keyPath = path2.join(work, "signing.key");
       writeFileSync2(keyPath, privateKey, { mode: 384 });
       const predPath = path2.join(work, "merge-predicate.json");
       writeFileSync2(predPath, JSON.stringify(predicate));
       const cfg = writeSigningConfig(work);
-      const env = { ...cosignEnv, COSIGN_PASSWORD: process.env.INPUT_SIGNING_PASSWORD ?? "" };
+      const env = { ...cosignEnv, COSIGN_PASSWORD: password };
       try {
         for (const s2 of subjs) {
           const ref = `${s2.repository}@${s2.digest}`;
