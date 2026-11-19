@@ -32,6 +32,12 @@ feat 1.0
 # external_id and points the pull request at it with "signature pending (job sign-merge)"; a separate sign run
 # (input `sign-statement`, job sign-merge) signs exactly that statement for that main commit, or refuses
 # STATEMENT_MISMATCH with no effect.
+# Corrected 2026-11-19 after flmnt's first merge to main (run 44446177926, "run 44441336322 has no attested
+# artifacts"): the pulls API names no merge commit a pull request's run tested (its merge_commit_sha is the commit on
+# main; the probe's merge_ref_sha was invented). Merge mode reads the tested commit from the pull request run's own
+# feat report check on the head: its external_id, which PR mode now sets to the built commit, else the "built `<ref>` @
+# `<sha>`" of an older check's summary. The probe's pulls response has the real shape; `prcheck:summary` is an older
+# check with no external_id.
 # Under (A) a first parent other than the event's base is compared with the base branch before the link is judged,
 # so the badparents scenario's trace gains that compare (`0badc0de…` is not on main: diverged, the link still breaks).
 # Driven through actions/pr-report/fixtures/probe.mjs (part of the build, inside touches, not shipped). The probe runs
@@ -46,6 +52,8 @@ feat 1.0
 #   prlookup:found|notfound    the pull request associated with the main commit (#7, merged from head
 #                              9f2c41d8a07e5b3c6d1f0e2a4b8c7d9e1f3a5b6c, tested merge ref commit
 #                              c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192, PR run 44153523061), or none
+#   prcheck:summary            the pull request head's feat report check has no external_id; its summary names the
+#                              built commit (a check posted before the Action recorded it)
 #   mainattest:good|wrongsource  main's build attestation: source commit = main sha, or another commit
 #   prattest:present|missing   the PR run's attestation digests are, or are not, retrievable
 #   ghcr:ok|fail               merge mode: storing main's evidence bundles in GHCR as a digest-pinned OCI artifact succeeds or fails
@@ -132,6 +140,7 @@ enforce:
   the signature's digest to that check and to the pull request's comment
   rejects STATEMENT_MISMATCH when the statement names another main commit, or its digest is not the one main's check recorded, and nothing is signed or posted
   main's build attestation must have the main commit as its source, or the chain is broken at the main-provenance link
+  the tested merge-ref commit is the one the pull request run's feat report check recorded (its external_id, else the built commit its summary names); a pull request whose check records none rejects PR_EVIDENCE_MISSING
   rejects NO_PR_CONTEXT when the run is neither a pull request nor a push to main, and nothing is posted
   rejects NO_PR_FOR_MERGE when no merged pull request is associated with the main commit, and nothing is signed or posted
   rejects PR_EVIDENCE_MISSING when the pull request run's attestations cannot be retrieved, and nothing is signed or posted
@@ -241,8 +250,18 @@ scenario "a merge to main writes the merge statement, checks main and points the
   when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:found prattest:present ghcr:ok mainattest:good evidence:unit:pass jobs:green comment:901 token:full go" }
   predict success:
     response OK ProbeResult {
-      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b/pulls GET /repos/o/r/actions/runs/44153523061/artifacts GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET ghcr.io/o/r/referrers/sha256:9b74c9897bac770ffc029102a200c5de2a4c2a6c2d1e3f4a5b6c7d8e9f0a1b2c PUT ghcr.io/o/r-evidence@sha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae WRITE merge-statement POST /repos/o/r/check-runs GET /repos/o/r/issues/7/comments PATCH /repos/o/r/issues/comments/901 verdict=pass chain=ok sections=header,tests,attestations,chain,verify"
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b/pulls GET /repos/o/r/commits/9f2c41d8a07e5b3c6d1f0e2a4b8c7d9e1f3a5b6c/check-runs?check_name=feat%20report GET /repos/o/r/actions/runs/44153523061/artifacts GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET ghcr.io/o/r/referrers/sha256:9b74c9897bac770ffc029102a200c5de2a4c2a6c2d1e3f4a5b6c7d8e9f0a1b2c PUT ghcr.io/o/r-evidence@sha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae WRITE merge-statement POST /repos/o/r/check-runs GET /repos/o/r/issues/7/comments PATCH /repos/o/r/issues/comments/901 verdict=pass chain=ok sections=header,tests,attestations,chain,verify"
       body: matching "signature pending \\(job sign-merge\\)"
+      check: "success"
+    }
+    filesystem has []
+
+scenario "a merge finds the commit the pull request run tested from that run's check, when the check predates its external_id":
+  when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:found prcheck:summary prattest:present ghcr:ok mainattest:good evidence:unit:pass jobs:green comment:901 token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b/pulls GET /repos/o/r/commits/9f2c41d8a07e5b3c6d1f0e2a4b8c7d9e1f3a5b6c/check-runs?check_name=feat%20report GET /repos/o/r/actions/runs/44153523061/artifacts GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET ghcr.io/o/r/referrers/sha256:9b74c9897bac770ffc029102a200c5de2a4c2a6c2d1e3f4a5b6c7d8e9f0a1b2c PUT ghcr.io/o/r-evidence@sha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae WRITE merge-statement POST /repos/o/r/check-runs GET /repos/o/r/issues/7/comments PATCH /repos/o/r/issues/comments/901 verdict=pass chain=ok sections=header,tests,attestations,chain,verify"
+      body: matching "tested `c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192`"
       check: "success"
     }
     filesystem has []
@@ -251,7 +270,7 @@ scenario "main's build attested for another commit breaks the chain at main's pr
   when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:found prattest:present ghcr:ok mainattest:wrongsource evidence:unit:pass jobs:green comment:901 token:full go" }
   predict success:
     response OK ProbeResult {
-      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b/pulls GET /repos/o/r/actions/runs/44153523061/artifacts GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET ghcr.io/o/r/referrers/sha256:9b74c9897bac770ffc029102a200c5de2a4c2a6c2d1e3f4a5b6c7d8e9f0a1b2c POST /repos/o/r/check-runs GET /repos/o/r/issues/7/comments PATCH /repos/o/r/issues/comments/901 verdict=fail chain=broken:main-provenance sections=header,tests,attestations,chain,verify"
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b/pulls GET /repos/o/r/commits/9f2c41d8a07e5b3c6d1f0e2a4b8c7d9e1f3a5b6c/check-runs?check_name=feat%20report GET /repos/o/r/actions/runs/44153523061/artifacts GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET ghcr.io/o/r/referrers/sha256:9b74c9897bac770ffc029102a200c5de2a4c2a6c2d1e3f4a5b6c7d8e9f0a1b2c POST /repos/o/r/check-runs GET /repos/o/r/issues/7/comments PATCH /repos/o/r/issues/comments/901 verdict=fail chain=broken:main-provenance sections=header,tests,attestations,chain,verify"
       check: "failure"
     }
     filesystem has []
