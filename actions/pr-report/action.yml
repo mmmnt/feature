@@ -23,11 +23,16 @@ inputs:
   public-key:
     description: Path of the repository's committed cosign public key, e.g. ci/signing/flmnt.pub.
     default: cosign.pub
+  sign-statement:
+    description: >-
+      Sign mode (a push to main): the merge statement the report run wrote (its `statement` output, passed as a file).
+      Only this statement, for this main commit and with the digest main's check recorded, is signed.
+    default: ""
   signing-key:
-    description: Merge mode only. The repository's cosign private key (pass a secret). Written to a 0600 file and removed.
+    description: Sign mode only. The repository's cosign private key (pass a secret). Written to a 0600 file and removed.
     default: ""
   signing-password:
-    description: Merge mode only. The private key's password (pass a secret).
+    description: Sign mode only. The private key's password (pass a secret).
     default: ""
   signer-workflows:
     description: Newline-separated workflow paths allowed to have produced this repository's provenance.
@@ -44,6 +49,11 @@ inputs:
   report-job:
     description: Name of the job running this Action, left out of the job tally.
     default: report
+outputs:
+  statement:
+    description: Merge mode. The path of the unsigned merge statement this run wrote, for the sign run.
+  statement-digest:
+    description: Merge mode. The statement's sha256 digest, also recorded as main's check external_id.
 runs:
   using: node24
   main: dist/main.js

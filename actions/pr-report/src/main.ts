@@ -298,7 +298,8 @@ async function main() {
     ctx.forkPr = pr?.number;
     if (pr) ctx.pr = { number: pr.number, headSha: wr.head_sha, baseSha: pr.base?.sha ?? "", baseRef: pr.base?.ref ?? "", builtRef: `refs/pull/${pr.number}/merge`, builtSha: "" };
   } else if (eventName === "push" && process.env.GITHUB_REF === "refs/heads/main") {
-    ctx.mode = "main";
+    // the sign run is the one handed the statement the report run wrote
+    ctx.mode = input("sign-statement") ? "sign-merge" : "main";
     ctx.mainSha = process.env.GITHUB_SHA ?? "";
   }
 
@@ -314,11 +315,11 @@ async function main() {
     }
     return out;
   };
-  const builtTag = ctx.mode === "main" ? ctx.mainSha! : ctx.mode === "pr" ? ctx.pr!.builtSha : "";
-  const subjects = ctx.mode === "pr" || ctx.mode === "main" ? await resolve(builtTag) : [];
+  const builtTag = ctx.mode === "main" || ctx.mode === "sign-merge" ? ctx.mainSha! : ctx.mode === "pr" ? ctx.pr!.builtSha : "";
+  const subjects = ctx.mode === "pr" || ctx.mode === "main" || ctx.mode === "sign-merge" ? await resolve(builtTag) : [];
 
   const work = mkdtempSync(path.join(tmpdir(), "feat-pr-report-"));
-  const needsCosign = subjects.length > 0 || ctx.mode === "main";
+  const needsCosign = subjects.length > 0 || ctx.mode === "main" || ctx.mode === "sign-merge";
   const cosign = needsCosign ? await ensureCosign(path.join(process.env.RUNNER_TOOL_CACHE ?? work, "cosign")) : "";
   const cosignEnv = { DOCKER_CONFIG: dockerConfig(work, token) };
 
@@ -407,6 +408,19 @@ async function main() {
     async store(evidence) {
       const repoRef = input("evidence-repository") || `ghcr.io/${owner}/${repo}-evidence`;
       return pushEvidence(repoRef, evidence, evidenceFiles(evidenceDir, prefix).map((f) => f.bytes), ctx.mainSha!, token);
+    },
+    // the statement's bytes are the digest's: written once, read back unchanged, signed as they are
+    async writeStatement(statement) {
+      const bytes = Buffer.from(JSON.stringify(statement));
+      const file = path.join(process.env.RUNNER_TEMP ?? work, "merge-statement.json");
+      writeFileSync(file, bytes);
+      const digest = sha256(bytes);
+      if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `statement=${file}\nstatement-digest=${digest}\n`);
+      return { digest };
+    },
+    async readStatement() {
+      const bytes = readFileSync(input("sign-statement"));
+      return { statement: JSON.parse(bytes.toString("utf8")), digest: sha256(bytes) };
     },
     async sign(subjs, predicateType, predicate) {
       const privateKey = process.env.INPUT_SIGNING_KEY ?? "";

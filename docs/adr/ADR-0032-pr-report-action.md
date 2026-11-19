@@ -74,6 +74,13 @@ the PR builds. let's get it into a friendly format, into the PR." Form ruled: "G
     *Amended 2026-11-18 (founder ruling "Action reads .att too (Recommended)"):* cosign 2's classic key signing
     stores no OCI referrer; it keeps the attestations as the layers of the subject's `sha256-<hex>.att` tag. With no
     referrer, the Action reads that tag, each layer one DSSE envelope whose blob digest is the signature digest shown.
+    *Amended 2026-11-18 (founder ruling "Two-run merge mode (Recommended)"):* the run on a push to main never holds
+    the signing key. It writes the merge statement unsigned (Action outputs `statement`, `statement-digest`), records
+    the digest as the main check's `external_id`, and points the pull request at it with "signature pending (job
+    sign-merge)". A separate run in sign mode (input `sign-statement`, with `signing-key` / `signing-password`) signs
+    exactly the statement whose digest main's check recorded, for the run's main commit, and appends the signature's
+    digest to the check and the pull request; any other statement is refused `STATEMENT_MISMATCH` with no effect.
+    This replaces decision 8's signing inside the merge run.
 14. **A required subject that was not produced is incomplete** (founder ruling, "Add the scenario"): the consumer
     names its required attestation subjects; when the run produced none of one, the verdict is `incomplete`, the
     header names the subject and the job that should have produced it, and the report is still posted.
@@ -94,12 +101,17 @@ the PR builds. let's get it into a friendly format, into the PR." Form ruled: "G
 - **Upgrading the plan for artifact attestations** (GitHub Enterprise Cloud). Rejected by the founder's choice of
   own-key signing (f1530c7d); revisit on going public (flmnt#278).
 - **Failing the report job on a missing SBOM.** Leaves the reviewer with no report.
+- **Signing the merge statement in the run that writes it** (decision 8 as first agreed). Rejected by the founder's
+  "Two-run merge mode": the job that reads pull request evidence and posts would hold the signing key.
+- **Running the whole merge mode in the signing job.** Rejected: the same, the key beside the evidence and the posting.
+- **The signing job signing with cosign alone, the Action never told.** Rejected: the main check and the pull
+  request would never show the merge signature, and the auditor's walk would lose its last link.
 
 ## Consequences
 
 - Consumers grant `pull-requests: write`, `checks: write`, `actions: read` and `packages: read` to the report job
   only (decision 13: the referrers are read from GHCR; no `attestations: read`).
 - Fork pull requests are reported by the `workflow_run` follow-up, from uploaded results only.
-- Merge mode also needs `packages: write` (GHCR) and the signing key's secrets (decision 13); no `id-token: write`
-  and no `attestations: write`.
+- Merge mode needs `packages: write` (GHCR) and no secret. Sign mode needs `contents: read`, `packages: write`,
+  `checks: write`, `pull-requests: write` and the signing key's secrets; no `id-token: write`, no `attestations: write`.
 - The report is as good as the bundles: a job that uploads no bundle shows as "no evidence" rather than as passing.
