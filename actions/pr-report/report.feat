@@ -40,6 +40,15 @@ feat 1.0
 # check with no external_id.
 # Under (A) a first parent other than the event's base is compared with the base branch before the link is judged,
 # so the badparents scenario's trace gains that compare (`0badc0de…` is not on main: diverged, the link still breaks).
+# Amended 2026-11-19 by founder rulings (flmnt f60f6956) "Dependabot needs to be enabled to work. Update workflows to
+# support its prs." and "Forks need to work as well.": a run Dependabot started holds no repository secrets, like a
+# fork's. (1) A pull request run whose actor is dependabot[bot] reports in-run with its attestations "not attested
+# (Dependabot PR); attested on merge": no subject is verified and none is required. (2) GitHub leaves a fork run's
+# `workflow_run.pull_requests` empty, so the follow-up finds the pull request by `<head owner>:<head branch>` among the
+# open pull requests and accepts only the one whose head is the run's head commit; none is NO_PR_CONTEXT. The
+# follow-up reports only a fork's or Dependabot's run and refuses TRUSTED_RUN for any other. (3) Merge mode records a
+# fork's or Dependabot's pull request whose run left no attestation as not attested in the merge statement, instead
+# of refusing PR_EVIDENCE_MISSING; main's own attestations start its chain.
 # Driven through actions/pr-report/fixtures/probe.mjs (part of the build, inside touches, not shipped). The probe runs
 # the Action's entry with a recorded GitHub API, a recorded GHCR referrers listing and recorded cosign results (no network): every request is
 # answered from a fixture, and the trace lists the requests made, in order, as `METHOD path`.
@@ -59,6 +68,15 @@ feat 1.0
 #   ghcr:ok|fail               merge mode: storing main's evidence bundles in GHCR as a digest-pinned OCI artifact succeeds or fails
 #   fork:<n>                   follow-up mode: a trusted `workflow_run` run reporting on fork pull request <n> from the
 #                              results its `pull_request` run uploaded; no fork code is checked out or run
+#   prs:empty|stale            follow-up mode: the workflow_run lists no pull request (as GitHub sends a fork's run);
+#                              the open pull requests of contributor:feature are #<n> at head
+#                              9f2c41d8a07e5b3c6d1f0e2a4b8c7d9e1f3a5b6c (`empty`), or #<n> at head
+#                              0badc0de1a2b3c4d5e6f708192a3b4c5d6e7f809 (`stale`: the branch moved since the run)
+#   from:fork|samerepo|dependabot  follow-up mode: the run's head repository is contributor/r (`fork`, the default), o/r
+#                              started by a person (`samerepo`), or o/r started by dependabot[bot] (`dependabot`)
+#   actor:dependabot           pull request mode: the run's actor is dependabot[bot]
+#   prfrom:fork|dependabot     merge mode: the merged pull request's head repository is contributor/r, or its author is
+#                              dependabot[bot] (default: o/r, a person)
 #   merge:good|badparents      the built commit's parents are [base, head], or are not
 #   merge:basemoved            the built commit's parents are [1f2e3d4c5b6a79880a1b2c3d4e5f60718293a4b5, head]: the base
 #                              branch (main) moved past the event's base, and that commit is on it (compare: behind)
@@ -147,6 +165,11 @@ enforce:
   on a push to main the evidence bundles are stored in GHCR as a digest-pinned OCI artifact before the merge-linking attestation is signed, and that digest is named in it
   rejects EVIDENCE_STORE_FAILED when the evidence bundles cannot be stored in GHCR, and nothing is signed or posted
   a fork pull request is reported by a trusted workflow_run follow-up from the uploaded results only; it never checks out or runs the fork's code, and shows attestations as "not attested (fork PR); attested on merge"
+  a fork's run lists no pull request; the follow-up takes the open pull request of `<head owner>:<head branch>` whose head is the run's head commit, and rejects NO_PR_CONTEXT when none is, posting nothing
+  the follow-up reports only a run from a fork or one dependabot[bot] started
+  rejects TRUSTED_RUN when the follow-up's run is from this repository and was not started by dependabot[bot], and nothing is posted
+  a pull request run whose actor is dependabot[bot] holds no repository secrets: it reports in-run, verifies and requires no subject, and shows attestations as "not attested (Dependabot PR); attested on merge"; its verdict is its evidence, its jobs and the built-commit link
+  merge mode records a fork's or dependabot[bot]'s pull request whose run left no attestation as not attested in the merge statement, and continues with main's own attestations; any other pull request without them rejects PR_EVIDENCE_MISSING
   rejects NO_EVIDENCE when no evidence bundle was uploaded, and nothing is posted
   rejects INSUFFICIENT_PERMISSIONS when the token cannot write pull request comments or check runs, and nothing is posted
 
@@ -400,4 +423,84 @@ scenario "a statement whose digest differs from the one main's check recorded is
   when: ProbePrReport { script: "sign:tampered comment:901 token:full go" }
   predict rejection STATEMENT_MISMATCH:
     response ERR ReportError { code: "STATEMENT_MISMATCH" }
+    filesystem has []
+
+scenario "a fork run that lists no pull request is matched to the open pull request of its head branch at its head commit":
+  when: ProbePrReport { script: "fork:9 prs:empty evidence:unit:pass jobs:green comment:none token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/pulls?head=contributor%3Afeature&state=open GET /repos/o/r/actions/runs/1/artifacts GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/issues/9/comments POST /repos/o/r/issues/9/comments POST /repos/o/r/check-runs verdict=pass chain=not-attested sections=header,tests,attestations,chain"
+      body: matching "not attested \\(fork PR\\); attested on merge"
+      check: "success"
+    }
+    filesystem has []
+
+scenario "a fork run whose branch has moved past its head commit matches no pull request and nothing is posted":
+  when: ProbePrReport { script: "fork:9 prs:stale evidence:unit:pass jobs:green comment:none token:full go" }
+  predict rejection NO_PR_CONTEXT:
+    response ERR ReportError { code: "NO_PR_CONTEXT" }
+    filesystem has []
+
+scenario "the follow-up refuses a run a person started from this repository, which reports itself":
+  when: ProbePrReport { script: "fork:9 from:samerepo evidence:unit:pass jobs:green comment:none token:full go" }
+  predict rejection TRUSTED_RUN:
+    response ERR ReportError { code: "TRUSTED_RUN" }
+    filesystem has []
+
+scenario "the follow-up reports a run dependabot started as not attested":
+  when: ProbePrReport { script: "fork:9 from:dependabot evidence:unit:pass jobs:green comment:none token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/actions/runs/1/artifacts GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/issues/9/comments POST /repos/o/r/issues/9/comments POST /repos/o/r/check-runs verdict=pass chain=not-attested sections=header,tests,attestations,chain"
+      body: matching "not attested \\(Dependabot PR\\); attested on merge"
+      check: "success"
+    }
+    filesystem has []
+
+scenario "a dependabot pull request run reports in-run, verifying no attestation, as not attested":
+  when: ProbePrReport { script: "pr:7 actor:dependabot merge:good evidence:unit:pass jobs:green attest:verified comment:none token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=pass chain=not-attested sections=header,tests,attestations,chain"
+      body: matching "not attested \\(Dependabot PR\\); attested on merge"
+      check: "success"
+    }
+    filesystem has []
+
+scenario "a dependabot pull request run is not incomplete for the SBOM it could not sign":
+  when: ProbePrReport { script: "pr:7 actor:dependabot merge:good evidence:unit:pass jobs:green sbom:missing comment:none token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=pass chain=not-attested sections=header,tests,attestations,chain"
+      check: "success"
+    }
+    filesystem has []
+
+scenario "a dependabot pull request run whose merge ref is not base plus head still breaks the chain":
+  when: ProbePrReport { script: "pr:7 actor:dependabot merge:badparents evidence:unit:pass jobs:green comment:none token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET /repos/o/r/compare/main...0badc0de1a2b3c4d5e6f708192a3b4c5d6e7f809 GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=fail chain=broken:built-commit sections=header,tests,attestations,chain"
+      check: "failure"
+    }
+    filesystem has []
+
+scenario "a merged dependabot pull request whose run left no attestation is recorded as not attested and main is attested":
+  when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:found prfrom:dependabot prattest:missing ghcr:ok mainattest:good evidence:unit:pass jobs:green comment:901 token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b/pulls GET /repos/o/r/commits/9f2c41d8a07e5b3c6d1f0e2a4b8c7d9e1f3a5b6c/check-runs?check_name=feat%20report GET /repos/o/r/actions/runs/44153523061/artifacts GET ghcr.io/o/r/referrers/sha256:9b74c9897bac770ffc029102a200c5de2a4c2a6c2d1e3f4a5b6c7d8e9f0a1b2c PUT ghcr.io/o/r-evidence@sha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae WRITE merge-statement POST /repos/o/r/check-runs GET /repos/o/r/issues/7/comments PATCH /repos/o/r/issues/comments/901 verdict=pass chain=ok sections=header,tests,attestations,chain,verify"
+      body: matching "not attested \\(Dependabot PR\\); attested on merge"
+      check: "success"
+    }
+    filesystem has []
+
+scenario "a merged fork pull request whose run left no attestation is recorded as not attested and main is attested":
+  when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:found prfrom:fork prattest:missing ghcr:ok mainattest:good evidence:unit:pass jobs:green comment:901 token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b/pulls GET /repos/o/r/commits/9f2c41d8a07e5b3c6d1f0e2a4b8c7d9e1f3a5b6c/check-runs?check_name=feat%20report GET /repos/o/r/actions/runs/44153523061/artifacts GET ghcr.io/o/r/referrers/sha256:9b74c9897bac770ffc029102a200c5de2a4c2a6c2d1e3f4a5b6c7d8e9f0a1b2c PUT ghcr.io/o/r-evidence@sha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae WRITE merge-statement POST /repos/o/r/check-runs GET /repos/o/r/issues/7/comments PATCH /repos/o/r/issues/comments/901 verdict=pass chain=ok sections=header,tests,attestations,chain,verify"
+      body: matching "not attested \\(fork PR\\); attested on merge"
+      check: "success"
+    }
     filesystem has []

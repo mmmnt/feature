@@ -12,6 +12,8 @@ import { attestArgs, ensureCosign, verifyArgs, writeSigningConfig } from "./cosi
 import { input as readInput, readStatementFile, signingSecrets } from "./inputs.js";
 import {
   runReport,
+  DEPENDABOT,
+  forkRunOf,
   ReportError,
   type Api,
   type Context,
@@ -286,18 +288,17 @@ async function main() {
     required: parseRequired(input("required-subjects")),
   };
   let writable = true;
+  ctx.actor = process.env.GITHUB_ACTOR ?? "";
   if (eventName === "pull_request") {
     const pr = event.pull_request;
     ctx.mode = "pr";
     ctx.pr = { number: pr.number, headSha: pr.head.sha, baseSha: pr.base.sha, baseRef: pr.base.ref, builtRef: process.env.GITHUB_REF!, builtSha: process.env.GITHUB_SHA! };
     writable = pr.head.repo?.full_name === `${owner}/${repo}`;
   } else if (eventName === "workflow_run" && event.workflow_run?.event === "pull_request") {
+    // the run the follow-up reports; its pull request is resolved by the core (a fork's run lists none)
     const wr = event.workflow_run;
-    const pr = wr.pull_requests?.[0];
-    ctx.mode = pr ? "fork" : "none";
-    ctx.forkRunId = wr.id;
-    ctx.forkPr = pr?.number;
-    if (pr) ctx.pr = { number: pr.number, headSha: wr.head_sha, baseSha: pr.base?.sha ?? "", baseRef: pr.base?.ref ?? "", builtRef: `refs/pull/${pr.number}/merge`, builtSha: "" };
+    ctx.mode = "fork";
+    ctx.forkRun = forkRunOf(wr);
   } else if (eventName === "push" && process.env.GITHUB_REF === "refs/heads/main") {
     // the sign run is the one handed the statement the report run wrote
     ctx.mode = input("sign-statement") ? "sign-merge" : "main";
@@ -317,7 +318,9 @@ async function main() {
     return out;
   };
   const builtTag = ctx.mode === "main" || ctx.mode === "sign-merge" ? ctx.mainSha! : ctx.mode === "pr" ? ctx.pr!.builtSha : "";
-  const subjects = ctx.mode === "pr" || ctx.mode === "main" || ctx.mode === "sign-merge" ? await resolve(builtTag) : [];
+  // a Dependabot run signed nothing (it holds no secrets), so it has no subject to resolve
+  const signedPr = ctx.mode === "pr" && ctx.actor !== DEPENDABOT;
+  const subjects = signedPr || ctx.mode === "main" || ctx.mode === "sign-merge" ? await resolve(builtTag) : [];
 
   const work = mkdtempSync(path.join(tmpdir(), "feat-pr-report-"));
   const needsCosign = subjects.length > 0 || ctx.mode === "main" || ctx.mode === "sign-merge";

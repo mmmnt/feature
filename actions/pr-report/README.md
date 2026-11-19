@@ -7,7 +7,10 @@ attestations, stored as OCI referrers in GHCR beside their subjects and verified
 SHA-256-checked) against the committed public key; nothing reads or writes a transparency log (ADR-0032 decision 13). On a push to `main` it re-attests: it stores the evidence in
 GHCR by digest, signs a merge-linking attestation (`https://feature.mmmnt.dev/attestation/pr-merge/v1`) and points
 the merged pull request's comment at it. Fork pull requests are reported by a trusted `workflow_run` follow-up from
-the uploaded results only.
+the uploaded results only; it finds the pull request by `<head owner>:<head branch>` at the run's head commit, since
+GitHub lists none on a fork's run. A run Dependabot started holds no repository secrets either: it reports in-run with
+its attestations "not attested (Dependabot PR); attested on merge", and merge mode records such a pull request as not
+attested.
 
 Spec: `report.feat` (SPEC-PRR-001). Decision: `docs/adr/ADR-0032-pr-report-action.md`. Design: `DESIGN.md`.
 Format: `MOCK-REPORT.md`.
