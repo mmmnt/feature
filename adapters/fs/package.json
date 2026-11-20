@@ -1,6 +1,6 @@
 {
   "name": "@mmmnt/feat-adapter-fs",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "Feat service adapter: filesystem capture (files written during the capture window). Dogfood-critical.",
   "license": "MIT",
   "type": "module",
@@ -35,6 +35,9 @@
   },
   "publishConfig": {
     "access": "public"
+  },
+  "engines": {
+    "node": ">=22.15"
   },
   "devDependencies": {
     "@mmmnt/feat-adapter-kit": "workspace:^",
