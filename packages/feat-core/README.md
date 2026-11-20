@@ -167,18 +167,20 @@ valid names.
 | `MISSING_PRAGMA` | the first non-comment line is not `feat <major>.<minor>` | yes | "Add 'feat 1.0' as the first line." |
 | `UNSUPPORTED_VERSION` | the pragma's major is not 1 | yes | no |
 | `MALFORMED_SYNTAX` | a compiler-zone block breaks the grammar: an unknown spec type, status or contract role; a malformed value, payload or record list; an unknown prediction form; a scenario with no trigger; a `predict rejection` id that is neither `UPPER_SNAKE` nor `UpperCamel`; a malformed `fault` line; an unknown variable function or type; a duplicate variable or a cycle | usually | usually lists the valid forms |
-| `UNKNOWN_SERVICE_KEY` | a prediction, a delivery, a `fault` line or a capture reference names a service absent from `services` | no | the configured services |
+| `UNKNOWN_SERVICE_KEY` | a prediction, a delivery, a `fault` line, a capture reference or an `observes` line names a service absent from `services` | no (yes on `observes`) | the configured services |
 | `UNKNOWN_COMMAND` | a `when:` or `execute` names a command absent from `response.commands` | no | the configured commands |
 | `UNKNOWN_ACTOR` | an `as <actor>` clause names an actor absent from `response.actors` | no | the configured actors |
 | `UNDECLARED_SCHEMA` | a scenario references a schema that `contract:` does not declare | no | the declared schemas |
 | `DUPLICATE_SCENARIO_NAME` | two scenarios in one spec share a name (names are failure anchors) | no | yes |
 | `TRIGGER_MISMATCH` | `when:` on a `projection`, `policy` or `saga`, or `deliver` on any other type | no | no |
 | `QUERY_SIDE_EFFECT` | a `query` spec predicts a non-empty `has` on a service | no | no |
-| `INCOMPLETE_PREDICTION` | a prediction on a non-`query` spec has no `has` for a configured service | no | yes |
+| `INCOMPLETE_PREDICTION` | a prediction on a non-`query` spec has no `has` for a configured service, or, when the spec declares `observes`, for an observed one | no | yes |
+| `UNOBSERVED_SERVICE` | a spec that declares `observes` names another configured service in a prediction, a seed, a delivery, a `fault` line or a capture reference (ADR-0033) | no | the observed services |
 | `MISSING_MINIMUM` | the spec lacks a complete header, one construct directive, one enforce directive, one contract entry or one scenario | no | yes |
 | `UNKNOWN_VARIABLE` | a `${name}` reference, in a scenario or in another variable, names a variable that `variables:` does not declare | no | the declared variables |
 
-That is thirteen codes. The agent-zone blocks (`construct:` and `enforce:`) are
+That is fourteen codes. An `observes` line that names no service, names one twice, has an empty item or is
+written twice is `MALFORMED_SYNTAX`. The agent-zone blocks (`construct:` and `enforce:`) are
 freeform: a keyword line becomes a typed node, any other line is kept verbatim
 as a directive, and a parse error inside them is not possible.
 

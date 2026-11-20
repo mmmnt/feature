@@ -185,6 +185,8 @@ export interface SpecVariable {
 export interface BuiltSpec {
   featVersion: string;
   identity: SpecIdentity;
+  /** ADR-0033: the services this spec observes, as written. Absent = every configured service. */
+  observes?: string[];
   construct: ConstructInstruction[];
   enforce: EnforceStep[];
   contract: ContractReference[];

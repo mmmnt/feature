@@ -21,6 +21,7 @@ context <Name>
 aggregate <Name>
 type <spec-type>
 status <lifecycle>              ← draft | agreed | built | verified (ADR-0008)
+observes <service>, ...         ← optional (ADR-0033): the services this spec observes; absent = all configured
 
 construct:                      ← agent zone (required, ≥1 directive + ≥1 touches)
   ...
@@ -96,6 +97,7 @@ KEYWORD-qualifier (`uuid`); `flowId: any zebra` is a parse error, not a comment.
 | `aggregate` | `aggregate Flow` | Aggregate / entity |
 | `type` | `type command` | One of: `command`, `query`, `policy`, `projection`, `saga`, `infrastructure`, `integration`, `scaffold` |
 | `status` | `status agreed` | Lifecycle (ADR-0008): `draft` → `agreed` → `built` → `verified`. The agent refuses to build a spec that is not `agreed`; the agent may *propose* the draft→agreed flip, the human can revert; tooling flips `built`/`verified`. |
+| `observes` | `observes log, cache` | Optional, at most once (ADR-0033). The services this spec observes, each a key of the config's `services` (closed space: an unknown key is `UNKNOWN_SERVICE_KEY`). Absent = every configured service, as before. A key written twice, a bare `observes`, an empty item or a second line is `MALFORMED_SYNTAX`. Recorded in the IR as top-level `observes`, in written order. |
 
 ---
 
@@ -311,7 +313,7 @@ Three types, fixed grammar:
 | Form | Assertion behavior |
 | --- | --- |
 | `predict success:` | Positive response + expected effects per service |
-| `predict rejection <ID>:` | Error response + **zero effects across ALL configured services**. `<ID>` is UPPER_SNAKE or UpperCamel (§1.2). |
+| `predict rejection <ID>:` | Error response + **zero effects across ALL configured services**, including the services the spec does not observe: derive asserts `has []` on each of them (ADR-0033). `<ID>` is UPPER_SNAKE or UpperCamel (§1.2). |
 | `predict error <CODE>:` | Error response + zero or compensating effects |
 
 Prediction lines:
@@ -324,11 +326,15 @@ Prediction lines:
 | `<service> has ordered [...]` / `has unordered [...]` | Ordering override (ADR-0004) |
 | `<service> contains [ <record>, ... ]` | **Resulting state** via adapter `read()` (ADR-0011) — polled to convergence for eventual services; may appear alongside `has` for the same service |
 
-**Completeness (INV-6)**: every configured service must appear in every prediction — `has []`
-is the explicit "nothing happens here". Omission is a validation error.
+**Completeness (INV-6)**: every service the spec observes must appear in every prediction: every configured service
+when the spec has no `observes` line, the declared ones when it has (ADR-0033). `has []` is the explicit "nothing
+happens here". Omission is a validation error (`INCOMPLETE_PREDICTION`). A scenario that names a configured service
+the spec does not observe (in a `has` or `contains`, a `seed`, a `deliver ... to`, a `fault`, or an `@<service>[i]`
+reference) is `UNOBSERVED_SERVICE`.
 **Query guarantee (ADR-0011)**: for `type query`, service predictions are implicitly `has []`
 everywhere and writing any `has [X]` is a **parse error** — side-effect freedom is unviolable
-by construction. Queries predict `response` (+ optional `contains`).
+by construction. This holds for every configured service, observed or not. Queries predict `response`
+(+ optional `contains`, on an observed service).
 **Observation modes (ADR-0023)**: `has` is the *diff* mode and `contains` the *state* mode. Diff is
 not optional: INV-6 puts a `has` on every service of every prediction, so every adapter serves it,
 natively or by comparing snapshots. State is the mode an adapter may lack. An adapter declares what

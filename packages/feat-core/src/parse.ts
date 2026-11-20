@@ -22,7 +22,7 @@ type ErrorCode =
   | "UNKNOWN_SERVICE_KEY" | "UNKNOWN_COMMAND" | "UNDECLARED_SCHEMA"
   | "UNKNOWN_ACTOR" | "DUPLICATE_SCENARIO_NAME" | "TRIGGER_MISMATCH"
   | "QUERY_SIDE_EFFECT" | "INCOMPLETE_PREDICTION" | "MISSING_MINIMUM"
-  | "UNKNOWN_VARIABLE";
+  | "UNKNOWN_VARIABLE" | "UNOBSERVED_SERVICE";
 
 class ParseFailure extends Error {
   constructor(
@@ -586,6 +586,8 @@ function parseFeat(source: string, ctx: ConfigContext): Record<string, unknown> 
 
   type Section = "none" | "construct" | "enforce" | "contract" | "variables" | "scenario";
   const variables: Record<string, unknown>[] = [];
+  // ADR-0033: the services this spec observes, as written; undefined = every configured service.
+  let observes: string[] | undefined;
   let section: Section = "none";
   let scenario: Record<string, unknown> | null = null;
   let scenarioPhase: "given" | "predict" | "examples" | "none" = "none";
@@ -621,6 +623,26 @@ function parseFeat(source: string, ctx: ConfigContext): Record<string, unknown> 
       if (!STATUSES.includes(m[1]!))
         throw new ParseFailure("MALFORMED_SYNTAX", `Unknown status '${m[1]}'.`, s.line, `Valid statuses: ${STATUSES.join(", ")}`);
       identity.status = m[1];
+      continue;
+    }
+
+    // ── observes (ADR-0033): a header line naming the services this spec observes ──
+    if (section === "none" && (t === "observes" || /^observes[ \t]/.test(t))) {
+      const form = "Write 'observes <service>, <service>': one or more configured service keys, each once, separated by commas.";
+      if (observes !== undefined)
+        throw new ParseFailure("MALFORMED_SYNTAX", "'observes' is written twice.", s.line, form);
+      const items = t.slice("observes".length).split(",").map((x) => x.trim());
+      if (items.length === 1 && items[0] === "")
+        throw new ParseFailure("MALFORMED_SYNTAX", "'observes' names no service.", s.line, form);
+      if (items.some((x) => !/^[A-Za-z_][A-Za-z0-9_-]*$/.test(x)))
+        throw new ParseFailure("MALFORMED_SYNTAX", `'observes' has an empty or malformed item: '${t}'.`, s.line, form);
+      const dup = items.find((x, i) => items.indexOf(x) !== i);
+      if (dup !== undefined)
+        throw new ParseFailure("MALFORMED_SYNTAX", `'observes' names '${dup}' twice.`, s.line, form);
+      for (const key of items)
+        if (!ctx.serviceKeys.includes(key))
+          throw new ParseFailure("UNKNOWN_SERVICE_KEY", `Service '${key}' is not configured.`, s.line, `Configured services: ${ctx.serviceKeys.join(", ")}`);
+      observes = items;
       continue;
     }
 
@@ -893,6 +915,16 @@ function parseFeat(source: string, ctx: ConfigContext): Record<string, unknown> 
     for (const key of serviceRefs)
       if (!ctx.serviceKeys.includes(key))
         throw new ParseFailure("UNKNOWN_SERVICE_KEY", `Service '${key}' is not configured.`, undefined, `Configured services: ${ctx.serviceKeys.join(", ")}`);
+    // ── UNOBSERVED_SERVICE (ADR-0033): a spec that declares observes names only the services it observes ──
+    if (observes !== undefined)
+      for (const key of serviceRefs)
+        if (!observes.includes(key))
+          throw new ParseFailure(
+            "UNOBSERVED_SERVICE",
+            `Scenario '${sc.name}' names service '${key}', which this spec does not observe.`,
+            undefined,
+            `Observed services: ${observes.join(", ")} — add '${key}' to the observes line, or remove it from the scenario.`,
+          );
 
     const schemaRefs: string[] = [];
     const response = prediction.response as Record<string, unknown> | undefined;
@@ -919,10 +951,13 @@ function parseFeat(source: string, ctx: ConfigContext): Record<string, unknown> 
 
     // ── INCOMPLETE_PREDICTION (INV-6, query-exempt) ──
     if (specType !== "query") {
-      for (const key of ctx.serviceKeys) {
+      // ADR-0033: every OBSERVED service, in config order; without observes, every configured one.
+      for (const key of ctx.serviceKeys.filter((k) => observes === undefined || observes.includes(k))) {
         const entry = services?.[key];
         if (!entry || entry.records === undefined)
-          throw new ParseFailure("INCOMPLETE_PREDICTION", `Prediction in scenario '${sc.name}' omits configured service '${key}'.`, undefined, "Every configured service must appear; 'has []' is the explicit zero-assertion.");
+          throw observes === undefined
+            ? new ParseFailure("INCOMPLETE_PREDICTION", `Prediction in scenario '${sc.name}' omits configured service '${key}'.`, undefined, "Every configured service must appear; 'has []' is the explicit zero-assertion.")
+            : new ParseFailure("INCOMPLETE_PREDICTION", `Prediction in scenario '${sc.name}' omits observed service '${key}'.`, undefined, "Every observed service must appear; 'has []' is the explicit zero-assertion.");
       }
     }
   }
@@ -966,6 +1001,7 @@ function parseFeat(source: string, ctx: ConfigContext): Record<string, unknown> 
   if (variables.length > 0) ir.variables = variables;
 
   ir.identity = identity;
+  if (observes !== undefined) ir.observes = observes;
   ir.construct = construct;
   ir.enforce = enforce;
   ir.contract = contract;

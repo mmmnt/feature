@@ -118,6 +118,13 @@
         }
       }
     },
+    "observes": {
+      "description": "The services this spec observes (ADR-0033): service keys of the config, in written order. Absent = every configured service. Each prediction names exactly these; a scenario naming another configured service is UNOBSERVED_SERVICE.",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
     "identity": {
       "type": "object",
       "required": [

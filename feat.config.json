@@ -30,6 +30,10 @@
         "module": "packages/feat-derive/fixtures/probe.mjs",
         "export": "deriveSeeds"
       },
+      "DeriveServices": {
+        "module": "packages/feat-derive/fixtures/probe.mjs",
+        "export": "deriveServices"
+      },
       "InlineSeedFixtures": {
         "module": "packages/feature/src/seed-fixtures.ts",
         "export": "inlineSeedFixtures"

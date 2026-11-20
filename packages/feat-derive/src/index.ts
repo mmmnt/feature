@@ -1,7 +1,9 @@
 // @mmmnt/feat-derive — BuiltSpec IR + FeatConfig → TestTopology (PRD §3, ADR-0004/0011/0012/0014).
 // Pure and deterministic (INV-2): no I/O, no clock, no randomness. Outline rows expand to
 // concrete cases; ordering is left to the harness (the active tier's consistency) unless the spec overrides it; query
-// predictions synthesize implicit `has []` for every configured service (ADR-0011).
+// predictions synthesize implicit `has []` for every configured service (ADR-0011). A spec that declares `observes`
+// (ADR-0033, SPEC-DRV-002) resolves its successes and errors over the observed services only; its rejections still
+// cover every configured service, an unobserved one as a synthesised `has []`.
 
 import type {
   BuiltSpec, FeatConfig, Given, Invocation, Delivery, Matcher, Prediction,
@@ -48,6 +50,8 @@ export interface TestTopology {
   specName: string;
   cases: TestCase[];
   serviceKeys: string[];
+  /** ADR-0033: the services the spec observes, as written; absent = every configured service. */
+  observes?: string[];
 }
 
 type Row = Record<string, unknown>;
@@ -116,6 +120,7 @@ function resolvePrediction(
   config: FeatConfig,
   specType: string,
   row: Row,
+  observes: string[] | undefined,
 ): ResolvedPrediction {
   const p = scenario.prediction;
   const out: ResolvedPrediction = { type: p.type, services: {} };
@@ -154,6 +159,12 @@ function resolvePrediction(
       const queryContains = substituteRecords(entry?.contains, row);
       if (queryContains !== undefined) queryEntry.contains = queryContains;
       out.services[key] = queryEntry;
+      continue;
+    }
+    if (observes !== undefined && !observes.includes(key)) {
+      // SPEC-DRV-002 (ruling bcce4098 F3-a): a rejection has zero effects on every configured service, observed or
+      // not; a success or an error predicts the observed services only.
+      if (p.type === "rejection") out.services[key] = { records: [] };
       continue;
     }
     if (!entry) continue; // parser enforces INV-6; defensive
@@ -205,6 +216,10 @@ function substituteGiven(given: Given | undefined, row: Row, isOutline: boolean)
 
 export function derive(spec: BuiltSpec, config: FeatConfig): TestTopology {
   const cases: TestCase[] = [];
+  // SPEC-DRV-002: an observed service the derive config lacks (a tier that dropped it) is refused, never dropped.
+  for (const key of spec.observes ?? [])
+    if (!(key in config.services))
+      throw Object.assign(new Error(`Spec ${spec.identity.id} observes service '${key}', which this config does not configure. Configured services: ${Object.keys(config.services).join(", ")}`), { code: "UNKNOWN_SERVICE_KEY" });
 
   for (const scenario of spec.scenarios) {
     const rows: (Row | null)[] = scenario.examples ? scenario.examples : [null];
@@ -220,7 +235,7 @@ export function derive(spec: BuiltSpec, config: FeatConfig): TestTopology {
         anchor,
         name,
         specType: spec.identity.type,
-        prediction: resolvePrediction(scenario, config, spec.identity.type, row),
+        prediction: resolvePrediction(scenario, config, spec.identity.type, row, spec.observes),
       };
       if (spec.variables && spec.variables.length > 0) testCase.variables = spec.variables;
       const given = substituteGiven(scenario.given, row, isOutline);
@@ -247,5 +262,6 @@ export function derive(spec: BuiltSpec, config: FeatConfig): TestTopology {
     specName: spec.identity.name,
     cases,
     serviceKeys: Object.keys(config.services).sort(),
+    ...(spec.observes !== undefined ? { observes: [...spec.observes] } : {}),
   };
 }

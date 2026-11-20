@@ -1,0 +1,44 @@
+feat 1.0
+
+# Corpus exemplar #20 — a spec declares the services it observes (ADR-0033). The config has three services,
+# `log`, `cache` and `files`; this spec observes `log` and `cache`, so every prediction names those two and no other,
+# and `files` is never set up, captured or asserted for this file. Without an `observes` line a spec observes every
+# configured service, as before, and its IR has no `observes`. The IR records the declaration in written order.
+
+spec SPEC-PAU-001 "PauseWrites holds the node's writes"
+context Lifecycle
+aggregate Node
+type command
+status agreed
+observes log, cache
+
+construct:
+  handler at features/pause-writes/handler.ts
+  touches features/pause-writes/**
+
+enforce:
+  record that writes are paused and hold the pause under the holder
+  rejects ALREADY_PAUSED when another holder holds the pause
+
+contract:
+  input PauseInput
+  response PauseReceipt
+  event PauseEvent
+  record PauseEntry
+  error Refusal
+
+scenario "a pause is recorded and held":
+  when: PauseWrites { holder: "h-1" }
+  predict success:
+    response 200 PauseReceipt { holder: @when.holder }
+    log has [ writes.paused with PauseEvent { holder: @when.holder, at: any timestamp } ]
+    cache has [ PAUSE_SET with PauseEntry { holder: @when.holder } ]
+
+scenario "a second holder is refused and nothing changes":
+  given:
+    execute PauseWrites { holder: "h-1" }
+  when: PauseWrites { holder: "h-2" }
+  predict rejection ALREADY_PAUSED:
+    response 409 Refusal { code: "ALREADY_PAUSED", holder: "h-1" }
+    log has []
+    cache has []

@@ -159,6 +159,13 @@ query is kept, because it asserts resulting state and claims no write.
 and `contains`, with the row substituted. A service the spec does not mention is left out of the
 case. The parser already requires every configured service in a prediction.
 
+**Observed services (ADR-0033, SPEC-DRV-002).** A spec that declares `observes` has its successes
+and errors resolved over the observed services only. A rejection still covers every configured
+service: derive writes `records: []` on each service the spec does not observe, so a rejection
+proves zero effects everywhere. A query is unchanged, with `records: []` on every service. The
+topology carries `observes`. An observed service that the derive config does not configure (a tier
+that dropped it) throws an Error whose `code` is `UNKNOWN_SERVICE_KEY`.
+
 **Ordering.** `ordering` is set on a service's assertion only when the spec wrote `has ordered` or
 `has unordered`. Otherwise it is absent, and the harness picks the default from the active config
 when the test runs: `unordered` for an `eventual` service, `ordered` for any other (ADR-0024). The
