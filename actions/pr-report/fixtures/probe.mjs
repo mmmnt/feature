@@ -26,7 +26,20 @@ const PR_RUN = 44153523061;
 const sha = (text) => "sha256:" + createHash("sha256").update(text).digest("hex");
 // the merge statement report-main wrote for MAIN (sign:good), one for another commit (sign:othermain), and one whose
 // bytes differ from what main's check recorded (sign:tampered)
-const STATEMENT = (mainSha) => ({ pullRequest: { number: 7, headSha: "9f2c41d8a07e5b3c6d1f0e2a4b8c7d9e1f3a5b6c" }, main: { sha: mainSha } });
+const STATEMENT = (mainSha, direct = false) =>
+  direct
+    ? { pullRequest: null, prRun: null, push: { sender: "mmmnt-flmnt-roadmap[bot]", before: BASE }, main: { sha: mainSha } }
+    : { pullRequest: { number: 7, headSha: "9f2c41d8a07e5b3c6d1f0e2a4b8c7d9e1f3a5b6c" }, main: { sha: mainSha } };
+// the pushed range, in the compare API's commit shape: sha, parents[].sha, commit.verification
+const ZERO = "0000000000000000000000000000000000000000";
+const ROOT = "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678";
+const MID1 = "b2c3d4e5f60718293a4b5c6d7e8f901234567891";
+const MID2 = "c3d4e5f60718293a4b5c6d7e8f90123456789012";
+const commitOf = (sha, parent, verified = true) => ({
+  sha,
+  parents: parent ? [{ sha: parent }] : [],
+  commit: { verification: { verified, reason: verified ? "valid" : "unsigned" } },
+});
 
 function bundle(fixture) {
   if (fixture === "pass") return { verify: { status: "pass" }, run: { status: "pass", tests: 12, failures: 0, errors: 0 }, specs: [{}, {}] };
@@ -63,6 +76,8 @@ export async function probe(input) {
     else if (k === "sbom") s.sbom = v;
     else if (k === "prcheck") s.prcheck = v;
     else if (k === "sign") Object.assign(s, { mode: "sign-merge", sign: v, main: "5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b" });
+    else if (k === "pusher") s.pusher = v;
+    else if (k === "range") s.range = v;
     else if (k !== "go") throw new Error(`unknown probe step '${step}'`);
   }
 
@@ -119,8 +134,22 @@ export async function probe(input) {
       if (path.endsWith(`/runs/${PR_RUN}/artifacts`))
         return { artifacts: s.prattest === "missing" ? [] : [{ name: PR_SUBJECT.name, digest: PR_SUBJECT.digest }] };
       if (path.endsWith("/runs/1/artifacts")) return { artifacts: s.evidence.map((e) => ({ name: `feat-evidence-${e.tier}` })) };
+      // the compare of the push's before with the main commit (range:one|many|forced|incomplete)
+      if (path === `/repos/o/r/compare/${BASE}...${s.main}`) return { status: "ahead", total_commits: 1, commits: [commitOf(s.main, BASE)] };
+      if (path === `/repos/o/r/compare/${NEWER_BASE}...${s.main}`) {
+        if (s.range === "forced") return { status: "diverged", total_commits: 2, commits: [] };
+        if (s.range === "incomplete") return { status: "ahead", total_commits: 251, commits: [commitOf(MID1, NEWER_BASE)] };
+        return {
+          status: "ahead",
+          total_commits: 3,
+          commits: [commitOf(MID1, NEWER_BASE), commitOf(MID2, MID1, false), commitOf(s.main, MID2)],
+        };
+      }
+      if (path.startsWith(`/repos/o/r/compare/${NEWER_BASE}...${s.main}?`)) return { commits: [] };
+      // a first push: the main commit's history, newest first, down to its root
+      if (path === `/repos/o/r/commits?sha=${s.main}&per_page=100`) return [commitOf(s.main, ROOT), commitOf(ROOT, null)];
       if (path.endsWith(`/commits/${s.main}/check-runs?check_name=feat%20report`)) {
-        const recorded = sha(JSON.stringify(STATEMENT(s.main)));
+        const recorded = sha(JSON.stringify(STATEMENT(s.main, s.sign === "direct")));
         return { check_runs: [{ id: 77, name: "feat report", external_id: recorded, output: { title: `main ${s.main}: pass`, summary: "report" } }] };
       }
       if (path.endsWith("/comments")) return s.comment ? [{ id: s.comment, body: `${MARKER}\nold` }] : [];
@@ -190,7 +219,7 @@ export async function probe(input) {
       return { digest: sha(JSON.stringify(statement)) };
     },
     async readStatement() {
-      const statement = STATEMENT(s.sign === "othermain" ? OTHER : s.main);
+      const statement = STATEMENT(s.sign === "othermain" ? OTHER : s.main, s.sign === "direct");
       const bytes = JSON.stringify(statement) + (s.sign === "tampered" ? " " : "");
       return { statement, digest: sha(bytes) };
     },
@@ -213,6 +242,10 @@ export async function probe(input) {
     required: s.sbom === "missing" ? [{ label: "SBOM", job: "build" }] : [],
     pr: s.mode === "pr" ? { number: s.pr, headSha: HEAD, baseSha: BASE, baseRef: "main", builtRef: `refs/pull/${s.pr}/merge`, builtSha: BUILT } : undefined,
     mainSha: s.main,
+    push:
+      s.mode === "main"
+        ? { before: s.range === "first" ? ZERO : s.range && s.range !== "one" ? NEWER_BASE : BASE, sender: s.pusher ?? "octocat" }
+        : undefined,
     // the workflow_run payload's fields: id, head_sha, head_branch, head_repository.{owner.login,full_name},
     // pull_requests (empty for a fork's run)
     forkRun:

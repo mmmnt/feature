@@ -301,6 +301,8 @@ async function main() {
     // the sign run is the one handed the statement the report run wrote
     ctx.mode = input("sign-statement") ? "sign-merge" : "main";
     ctx.mainSha = process.env.GITHUB_SHA ?? "";
+    // the push: its `before` bounds the range the statement lists, its sender is recorded as a fact (143df84e)
+    ctx.push = { before: String(event.before ?? ""), sender: String(event.sender?.login ?? process.env.GITHUB_ACTOR ?? "") };
   }
 
   const evidenceDir = input("evidence-dir", "evidence");

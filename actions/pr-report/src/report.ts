@@ -5,7 +5,11 @@
 // (ADR-0032 decision 13).
 
 export const MARKER = "<!-- feat-pr-report -->";
-export const MERGE_PREDICATE = "https://feature.mmmnt.dev/attestation/pr-merge/v1";
+// pr-merge/v2 (founder rulings 143df84e, a51f90a0): every push to main, merge or direct, is signed under v2, whose
+// pullRequest and prRun are null for a direct commit and whose push block lists the pushed range. Statements signed
+// under v1 before v0.1.74 stay verifiable with that type; nothing new is signed under it.
+export const MERGE_PREDICATE = "https://feature.mmmnt.dev/attestation/pr-merge/v2";
+export const MERGE_PREDICATE_V1 = "https://feature.mmmnt.dev/attestation/pr-merge/v1";
 
 export type Mode = "pr" | "fork" | "main" | "sign-merge" | "none";
 export type Verdict = "pass" | "fail" | "incomplete";
@@ -55,6 +59,7 @@ export interface Context {
   signerWorkflows: string[]; // e.g. ".github/workflows/ci.yml"
   pr?: { number: number; headSha: string; baseSha: string; baseRef: string; builtRef: string; builtSha: string };
   mainSha?: string;
+  push?: { before: string; sender: string }; // main mode: the push event's `before` and `sender.login`
   forkRun?: ForkRun; // fork mode: the pull_request run whose uploads are reported
   evidencePrefix?: string; // evidence artifact name prefix (default feat-evidence-)
   publicKey: string; // the repository's public key path, e.g. ci/signing/flmnt.pub
@@ -120,6 +125,73 @@ interface Row {
 }
 
 const repoPath = (c: Context) => `/repos/${c.owner}/${c.repo}`;
+
+// One commit of a pushed range, as the statement lists it: a fact, never a link of the chain.
+export interface PushedCommit {
+  sha: string;
+  parents: string[];
+  verification: { verified: boolean; reason: string };
+}
+
+export interface PushRange {
+  sender: string;
+  before: string;
+  fromRoot: boolean; // a first push: `before` is all zeros, the range is the head's history from the root
+  commits: PushedCommit[]; // oldest first, the head last
+}
+
+const ZERO_SHA = /^0{40}$/;
+const PAGE = 100;
+
+const pushedCommit = (x: any): PushedCommit => ({
+  sha: String(x?.sha ?? ""),
+  parents: (x?.parents ?? []).map((p: any) => String(p?.sha ?? "")),
+  verification: {
+    verified: x?.commit?.verification?.verified === true,
+    reason: String(x?.commit?.verification?.reason ?? "unknown"),
+  },
+});
+
+// The commits a push to main brought, every one of them (founder ruling a51f90a0): the compare of the push's `before`
+// with the head, paged until GitHub has returned total_commits; a `before` that is not an ancestor of the head is a
+// force push, NOT_FAST_FORWARD; a range that cannot be listed in full is PUSH_RANGE_INCOMPLETE. A first push (`before`
+// all zeros) is the head's history from its root commit.
+export async function pushRange(c: Context, api: Api, head: string): Promise<PushRange> {
+  const before = c.push?.before ?? "";
+  const sender = c.push?.sender ?? "";
+  if (!before || ZERO_SHA.test(before)) {
+    const listed: any[] = [];
+    for (let page = 1; ; page++) {
+      const res = await api.get(`${repoPath(c)}/commits?sha=${head}&per_page=${PAGE}${page > 1 ? `&page=${page}` : ""}`);
+      if (!Array.isArray(res)) throw new ReportError("PUSH_RANGE_INCOMPLETE", `the history of ${head} could not be listed`);
+      listed.push(...res);
+      if (res.length < PAGE) break;
+    }
+    const commits = listed.map(pushedCommit).reverse();
+    if (commits.length === 0 || commits[commits.length - 1]!.sha !== head || commits[0]!.parents.length !== 0)
+      throw new ReportError("PUSH_RANGE_INCOMPLETE", `the history of ${head} was not listed down to its root commit`);
+    return { sender, before, fromRoot: true, commits };
+  }
+  const base = `${repoPath(c)}/compare/${before}...${head}`;
+  const first = await api.get(base);
+  if (!first) throw new ReportError("PUSH_RANGE_INCOMPLETE", `${before}...${head} could not be compared`);
+  if (first.status !== "ahead" && first.status !== "identical")
+    throw new ReportError("NOT_FAST_FORWARD", `the push's before ${before} is not an ancestor of ${head} (compare: ${first.status})`);
+  const total = Number(first.total_commits ?? 0);
+  const listed: any[] = [...(first.commits ?? [])];
+  for (let page = 2; listed.length < total; page++) {
+    const res = await api.get(`${base}?per_page=${PAGE}&page=${page}`);
+    const more = res?.commits ?? [];
+    if (more.length === 0) break;
+    listed.push(...more);
+  }
+  const commits = listed.map(pushedCommit);
+  if (commits.length !== total || (total > 0 && commits[commits.length - 1]!.sha !== head))
+    throw new ReportError("PUSH_RANGE_INCOMPLETE", `${total} commits in ${before}...${head}, ${commits.length} listed`);
+  return { sender, before, fromRoot: false, commits };
+}
+
+const pushBlock = (r: PushRange) => ({ sender: r.sender, before: r.before, commits: r.commits });
 
 function signerOk(c: Context, signer: string | null, ref: string): boolean {
   if (!signer) return false;
@@ -325,7 +397,10 @@ async function mergeMode(c: Context, ports: Ports): Promise<Outcome> {
   const main = c.mainSha!;
   const pulls: any[] = (await ports.api.get(`${repoPath(c)}/commits/${main}/pulls`)) ?? [];
   const pr = pulls.find((p) => p.merged_at);
-  if (!pr) throw new ReportError("NO_PR_FOR_MERGE", `no merged pull request is associated with ${main}`);
+  // every push to main, merge or direct, is checked for a fast-forward and its range listed in full (a51f90a0)
+  const range = await pushRange(c, ports.api, main);
+  // a push whose head has no merged pull request is a direct commit, whoever pushed it (143df84e)
+  if (!pr) return directMode(c, ports, evidence, jobs, range);
   // the pulls API names the head and the commit that landed on main, not the merge commit the pull request's run
   // tested: that one is recorded by the pull request run's own feat report check
   // a fork's pull request ran without the key: its run attested nothing, and is recorded so
@@ -343,8 +418,38 @@ async function mergeMode(c: Context, ports: Ports): Promise<Outcome> {
   const prRows = await verifySubjects(c, ports, prSubjects);
   if (prRows.some((r) => r.v === null))
     throw new ReportError("PR_EVIDENCE_MISSING", `run ${prRun}'s attestations cannot be retrieved`);
-  const mainRows = await verifySubjects(c, ports, ports.subjects);
+  const pullRequest = unattested
+    ? { number: prInfo.number, headSha: prInfo.headSha, mergeRefSha: prInfo.mergeRefSha, attested: false, origin: "fork" }
+    : { number: prInfo.number, headSha: prInfo.headSha, mergeRefSha: prInfo.mergeRefSha };
+  return attestMain(c, ports, {
+    evidence,
+    jobs,
+    range,
+    pull: { prInfo, prRun, prRows, unattested },
+    statement: { pullRequest, prRun: { id: prRun, attestations: prRows.map((r) => r.subject.digest) } },
+  });
+}
 
+// A direct commit: reported and attested as a merge is, with no pull request in the statement and none posted to.
+function directMode(c: Context, ports: Ports, evidence: Evidence[], jobs: any[], range: PushRange): Promise<Outcome> {
+  return attestMain(c, ports, { evidence, jobs, range, pull: null, statement: { pullRequest: null, prRun: null } });
+}
+
+// What a push to main attests once its pull request, if any, is settled: main's own attestations, the evidence store,
+// the unsigned pr-merge/v2 statement, main's check and, for a merge, the pull request's line.
+async function attestMain(
+  c: Context,
+  ports: Ports,
+  x: {
+    evidence: Evidence[];
+    jobs: any[];
+    range: PushRange;
+    pull: { prInfo: { number: number; headSha: string; mergeRefSha: string | null }; prRun: number | null; prRows: Row[]; unattested: boolean } | null;
+    statement: { pullRequest: unknown; prRun: unknown };
+  },
+): Promise<Outcome> {
+  const main = c.mainSha!;
+  const mainRows = await verifySubjects(c, ports, ports.subjects);
   let broken: Link | null = null;
   for (const r of mainRows) {
     const b = attestationBreak(c, r, main, "refs/heads/main");
@@ -352,24 +457,22 @@ async function mergeMode(c: Context, ports: Ports): Promise<Outcome> {
     else broken ??= b;
   }
   const missing = missingOf(c, ports.subjects);
-  const t = testsVerdict(evidence);
-  const jobsFailed = jobs.some((j) => j.conclusion !== "success");
+  const t = testsVerdict(x.evidence);
+  const jobsFailed = x.jobs.some((j) => j.conclusion !== "success");
 
   let merge: { statement: string; store: string } | null = null;
   if (!broken && missing.length === 0 && ports.subjects.length > 0) {
     let store: string;
     try {
-      store = await ports.store(evidence);
+      store = await ports.store(x.evidence);
     } catch (e) {
       throw new ReportError("EVIDENCE_STORE_FAILED", `evidence bundles could not be stored: ${(e as Error).message}`);
     }
     const predicate = {
-      pullRequest: unattested
-        ? { number: prInfo.number, headSha: prInfo.headSha, mergeRefSha: prInfo.mergeRefSha, attested: false, origin: "fork" }
-        : { number: prInfo.number, headSha: prInfo.headSha, mergeRefSha: prInfo.mergeRefSha },
-      prRun: { id: prRun, attestations: prRows.map((r) => r.subject.digest) },
+      ...x.statement,
+      push: pushBlock(x.range),
       main: { sha: main, run: { id: c.runId, attempt: c.runAttempt }, artifacts: ports.subjects.map((s) => s.digest) },
-      evidence: { bundles: evidence.map((e) => e.digest), store },
+      evidence: { bundles: x.evidence.map((e) => e.digest), store },
     };
     // written, never signed here: the sign run alone holds the key
     const written = await ports.writeStatement(predicate);
@@ -379,7 +482,18 @@ async function mergeMode(c: Context, ports: Ports): Promise<Outcome> {
     t.failed || jobsFailed || broken ? "fail" : t.incomplete || missing.length > 0 ? "incomplete" : "pass";
   const chain = broken ? (`broken:${broken}` as const) : "ok";
   const sections = ["header", "tests", "attestations", "chain", "verify"];
-  const body = renderMain(c, { main, prInfo, prRun, evidence, jobs, prRows, mainRows, broken, verdict, merge, missing, unattested });
+  const body = renderMain(c, {
+    main,
+    pull: x.pull,
+    range: x.range,
+    evidence: x.evidence,
+    jobs: x.jobs,
+    mainRows,
+    broken,
+    verdict,
+    merge,
+    missing,
+  });
   await ports.api.post(`${repoPath(c)}/check-runs`, {
     name: c.checkName,
     head_sha: main,
@@ -388,15 +502,18 @@ async function mergeMode(c: Context, ports: Ports): Promise<Outcome> {
     output: { title: `main ${main}: ${missing.length > 0 ? `incomplete: ${missingText(missing)}` : verdict}`, summary: body },
     ...(merge ? { external_id: merge.statement } : {}),
   });
-  const why = broken
-    ? `merge chain broken at ${broken}`
-    : missing.length > 0
-      ? `merge not signed: ${missingText(missing)}`
-      : `merge not signed: ${verdict}`;
-  const line = merge
-    ? `**Merged** as \`${main}\` · merge statement \`${merge.statement}\` · signature pending (job sign-merge)`
-    : `**Merged** as \`${main}\` · ❌ ${why}`;
-  await upsertComment(c, ports.api, prInfo.number, line, true);
+  // a direct commit has no pull request to point at
+  if (x.pull) {
+    const why = broken
+      ? `merge chain broken at ${broken}`
+      : missing.length > 0
+        ? `merge not signed: ${missingText(missing)}`
+        : `merge not signed: ${verdict}`;
+    const line = merge
+      ? `**Merged** as \`${main}\` · merge statement \`${merge.statement}\` · signature pending (job sign-merge)`
+      : `**Merged** as \`${main}\` · ❌ ${why}`;
+    await upsertComment(c, ports.api, x.pull.prInfo.number, line, true);
+  }
   return { verdict, chain, sections, body, check: conclusion(verdict) };
 }
 
@@ -418,7 +535,8 @@ async function signMode(c: Context, ports: Ports): Promise<Outcome> {
   await ports.api.patch(`${repoPath(c)}/check-runs/${check.id}`, {
     output: { title: check.output?.title ?? `main ${main}`, summary: `${check.output?.summary ?? ""}\n\n${line}` },
   });
-  await upsertComment(c, ports.api, statement.pullRequest.number, line, true);
+  // a direct commit's statement names no pull request: there is none to point at
+  if (statement.pullRequest) await upsertComment(c, ports.api, statement.pullRequest.number, line, true);
   return { verdict: "pass", chain: "ok", sections: [], body: line, check: "success" };
 }
 
@@ -537,17 +655,15 @@ function renderMain(
   c: Context,
   x: {
     main: string;
-    prInfo: { number: number; headSha: string; mergeRefSha: string | null };
-    prRun: number | null;
+    pull: { prInfo: { number: number; headSha: string; mergeRefSha: string | null }; prRun: number | null; prRows: Row[]; unattested: boolean } | null;
+    range: PushRange;
     evidence: Evidence[];
     jobs: any[];
-    prRows: Row[];
     mainRows: Row[];
     broken: Link | null;
     verdict: Verdict;
     merge: { statement: string; store: string } | null;
     missing: Required[];
-    unattested: boolean;
   },
 ): string {
   const short = x.verdict === "incomplete" && x.missing.length > 0;
@@ -559,29 +675,45 @@ function renderMain(
       : x.verdict === "pass"
         ? "verified"
         : x.verdict;
+  const n = x.range.commits.length;
+  const since = `${n} commit${n === 1 ? "" : "s"} since ${x.range.fromRoot ? "the root" : `\`${x.range.before}\``}`;
+  const mainRun = `main run [${c.runId}](https://github.com/${c.owner}/${c.repo}/actions/runs/${c.runId}/attempts/${c.runAttempt})`;
+  const prRows = x.pull?.prRows ?? [];
   const out = [MARKER, `## ${icon} main \`${x.main}\` — ${title}`, ""];
+  if (x.pull) {
+    const p = x.pull;
+    out.push(
+      `Merged PR #${p.prInfo.number} · head \`${p.prInfo.headSha}\` · tested \`${p.prInfo.mergeRefSha ?? "—"}\` · PR run ${p.prRun === null ? "—" : `[${p.prRun}](https://github.com/${c.owner}/${c.repo}/actions/runs/${p.prRun})`} · pushed by \`${x.range.sender || "—"}\` · ${since} · ${mainRun}`,
+    );
+  } else {
+    out.push(
+      `Direct commit \`${x.main}\` · no pull request · pushed by \`${x.range.sender || "—"}\` · ${since} · ${mainRun}`,
+    );
+  }
   out.push(
-    `Merged PR #${x.prInfo.number} · head \`${x.prInfo.headSha}\` · tested \`${x.prInfo.mergeRefSha ?? "—"}\` · PR run ${x.prRun === null ? "—" : `[${x.prRun}](https://github.com/${c.owner}/${c.repo}/actions/runs/${x.prRun})`} · main run [${c.runId}](https://github.com/${c.owner}/${c.repo}/actions/runs/${c.runId}/attempts/${c.runAttempt})`,
     "",
     ...testsTable(x.evidence, x.jobs),
     "",
-    ...attestationRows([...x.prRows, ...x.mainRows], x.missing),
+    ...attestationRows([...prRows, ...x.mainRows], x.missing),
     "",
     "### Chain",
     "",
     "| Check | |",
     "|---|---|",
   );
-  if (x.unattested) out.push(`| PR attestations | ${NOT_ATTESTED} |`);
-  for (const r of x.prRows)
+  if (x.pull?.unattested) out.push(`| PR attestations | ${NOT_ATTESTED} |`);
+  for (const r of prRows)
     out.push(
-      `| PR \`${r.subject.name}\` source commit = tested \`${x.prInfo.mergeRefSha}\` | ${mark(!!r.v && r.v.sourceCommit === x.prInfo.mergeRefSha)} |`,
+      `| PR \`${r.subject.name}\` source commit = tested \`${x.pull!.prInfo.mergeRefSha}\` | ${mark(!!r.v && r.v.sourceCommit === x.pull!.prInfo.mergeRefSha)} |`,
     );
   for (const r of x.mainRows)
     out.push(
       `| main \`${r.subject.name}\` source commit \`${r.v?.sourceCommit ?? "—"}\` = main \`${x.main}\` | ${mark(!!r.v && r.v.sourceCommit === x.main)} |`,
       keyRow(r),
     );
+  // the pushed range: facts recorded in the statement, not links of the chain
+  for (const p of x.range.commits)
+    out.push(`| commit \`${p.sha}\` signature | ${p.verification.verified ? "✅" : p.verification.reason} |`);
   if (x.merge)
     out.push(
       `| Evidence stored \`${x.merge.store}\` | ✅ |`,

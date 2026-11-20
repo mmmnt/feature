@@ -5,8 +5,12 @@ bundles, the workflow run's jobs and the run's build attestations, with an audit
 head to signed provenance and the repository's own signing key. Attestations are the consumer's own cosign
 attestations, stored as OCI referrers in GHCR beside their subjects and verified with the pinned cosign (v3.1.4,
 SHA-256-checked) against the committed public key; nothing reads or writes a transparency log (ADR-0032 decision 13). On a push to `main` it re-attests: it stores the evidence in
-GHCR by digest, signs a merge-linking attestation (`https://feature.mmmnt.dev/attestation/pr-merge/v1`) and points
-the merged pull request's comment at it. Fork pull requests are reported by a trusted `workflow_run` follow-up from
+GHCR by digest, writes a merge-linking statement (`https://feature.mmmnt.dev/attestation/pr-merge/v2`) that a
+separate sign run signs, and points the merged pull request's comment at it. A push to `main` whose head has no merged
+pull request is a direct commit: it is attested the same way, with a null `pullRequest`, and reported on main's check
+alone. Every statement lists the push's sender and every commit since its `before`; a force push is refused
+`NOT_FAST_FORWARD` and a range GitHub cannot list in full `PUSH_RANGE_INCOMPLETE`. Main commits attested before
+v0.1.74 carry `pr-merge/v1` and verify with that type. Fork pull requests are reported by a trusted `workflow_run` follow-up from
 the uploaded results only; it finds the pull request by `<head owner>:<head branch>` at the run's head commit, since
 GitHub lists none on a fork's run, and merge mode records a fork's pull request whose run left no attestation as not
 attested.

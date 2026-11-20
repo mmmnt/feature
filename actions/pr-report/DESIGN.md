@@ -5,6 +5,11 @@
 > `cosign verify-attestation --key <public key> --insecure-ignore-tlog`), and a required subject not produced is an
 > incomplete report. Where these notes say Sigstore keyless, `actions/attest`, Rekor or `gh attestation verify`,
 > the amendment, `report.feat` and `src/` govern.
+>
+> Amended 2026-11-20 (ADR-0032 decision 15, flmnt 36125703): every push to main is attested, a merge or a direct commit
+> (a head with no merged pull request); `NO_PR_FOR_MERGE` is gone; the statement is
+> `https://feature.mmmnt.dev/attestation/pr-merge/v2`, with a nullable `pullRequest` and a `push` block listing every
+> commit since the push's `before`. Where the steps below say `NO_PR_FOR_MERGE` or `pr-merge/v1`, decision 15 governs.
 
 Scope entry: "SPEC-PRR-001 — the pull request build report Action", requested 2026-11-17 (flmnt record af370225).
 Feature tracks scope in its local working ledger; a GitHub project issue follows once the project is set up.

@@ -1,6 +1,7 @@
 // Sign mode against what main's first two-run merge really produced (flmnt run 44467992168 at 422960a): the merge
 // statement report-main wrote (the merge-statement artifact, as uploaded) and main's feat report check, which recorded
-// its digest. Sign mode runs only on a push to main, so these recorded inputs are its only run before main.
+// its digest. Sign mode runs only on a push to main, so these recorded inputs are its only run before main. From
+// v0.1.74 sign mode signs every statement under pr-merge/v2 (founder rulings 143df84e, 36125703).
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { readStatementFile } from "./inputs.js";
@@ -67,7 +68,7 @@ describe("sign mode on the statement and check main really produced", () => {
     expect(out.verdict).toBe("pass");
     expect(trace).toEqual([
       `GET /repos/mmmnt/flmnt/commits/${MAIN}/check-runs?check_name=feat%20report`,
-      "SIGN https://feature.mmmnt.dev/attestation/pr-merge/v1",
+      "SIGN https://feature.mmmnt.dev/attestation/pr-merge/v2",
       `PATCH /repos/mmmnt/flmnt/check-runs/${checks.check_runs[0].id}`,
       "GET /repos/mmmnt/flmnt/issues/284/comments",
       "POST /repos/mmmnt/flmnt/issues/284/comments",
