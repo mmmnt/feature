@@ -1,7 +1,8 @@
 feat 1.0
 
 # SPEC-RT-015 — the runtime evaluates a list that holds matchers (founder ruling cc58ae94, 2026-11-20,
-# "Matchers in list items (Recommended)"; ADR-0034). A list in a value block was only ever a literal, so a
+# "Matchers in list items (Recommended)"; Q1 7ca2385c, "Refuse it (Recommended)"; agreed 2026-11-20, "Agree
+# (Recommended)"; ADR-0034). A list in a value block was only ever a literal, so a
 # consumer could not predict a list of archive members in which one member's text is a digest of bytes whose
 # layout the spec leaves open. SPEC-CORE-001 (amended by ADR-0034) parses such a list to
 # { matcher: "list", items } with each object item that holds a matcher as { matcher: "object", fields };
@@ -27,7 +28,7 @@ spec SPEC-RT-015 "Matcher: a list that holds matchers"
 context Toolchain
 aggregate Runtime
 type infrastructure
-status draft
+status agreed
 
 construct:
   handler at packages/feat-runtime/src/matcher.ts

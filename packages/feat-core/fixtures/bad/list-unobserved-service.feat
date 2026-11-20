@@ -25,4 +25,4 @@ scenario "does the thing":
   when: DoThing { value: 1 }
   predict success:
     response OK ThingResult
-    eventStore has [ Wrote with ThingRow { members: [ { id: @log[0].id } ] } ]
+    eventStore has [ Wrote with ThingRow { members: [ { id: @cache[0].id } ] } ]

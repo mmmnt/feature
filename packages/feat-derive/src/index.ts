@@ -94,6 +94,9 @@ function substituteMatcher(m: Matcher, row: Row): Matcher {
   if (m.matcher === "nested") return { matcher: "nested", fields: substituteBlock(m.fields, row) };
   // ADR-0027: a placeholder inside a negation's operand takes the row's value as it does outside one.
   if (m.matcher === "not") return { matcher: "not", operand: substituteMatcher(m.operand, row) };
+  // ADR-0034: a placeholder inside a list or an object in one takes the row's value as it does outside one.
+  if (m.matcher === "list") return { matcher: "list", items: m.items.map((x) => substituteMatcher(x, row)) };
+  if (m.matcher === "object") return { matcher: "object", fields: substituteBlock(m.fields, row) };
   // A literal's array or object value may hold whole-value placeholders (`roles: [<role>]`): they take
   // the row's value at any depth, as in a payload. A scalar literal has none, so it is returned as is.
   if (m.matcher === "literal" && row !== NOT_OUTLINE && typeof m.value === "object" && m.value !== null)

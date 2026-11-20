@@ -1,7 +1,8 @@
 # ADR-0034 — matchers inside a list
 
-Status: Proposed (draft). Founder ruling cc58ae94, 2026-11-20, "Matchers in list items (Recommended)": "Feature
-allows a matcher to sit inside a list item … every field still declared, list comparison stays exact." Built in
+Status: Accepted (founder ruling cc58ae94, 2026-11-20, "Matchers in list items (Recommended)": "Feature allows a
+matcher to sit inside a list item … every field still declared, list comparison stays exact"; Q1 ruled 7ca2385c,
+"Refuse it (Recommended)"; the draft set agreed 2026-11-20, "Agree (Recommended)"). Built in
 SPEC-CORE-001 (amended) and SPEC-RT-015 (new; it touches derive's substitution, as SPEC-RT-011 did for `not`).
 
 ## Context
@@ -39,7 +40,7 @@ compared exactly; written with its literal digest, the spec pins a byte layout t
 6. The parser refuses, as MALFORMED_SYNTAX with a hint:
    - `absent` as a list item: an item is a value; write a shorter list.
    - `absent` as a field of an object inside a list: an undeclared field must already be absent; leave it out
-     (one spelling per meaning, as ADR-0027 refuses `not absent`). — see open question Q1.
+     (one spelling per meaning, as ADR-0027 refuses `not absent`; ruling 7ca2385c).
    - `not [ … ]` over a list that holds a matcher: which item differs is unsaid; negate a field inside it
      (`[ { id: not @when.id } ]`). `not` over a literal list stays a literal operand, as today.
    - an unterminated list or object (existing message).
@@ -66,7 +67,9 @@ compared exactly; written with its literal digest, the spec pins a byte layout t
 
 ## Consequences
 
-- `schemas/builtspec.schema.json` gains the `list` and `object` matchers; `@mmmnt/feat-types` gains them in
+- `schemas/builtspec.schema.json` gains the `list` and `object` matchers, and its `literal` value admits arrays and
+  objects: the parser has always recorded a list or object literal that way, and no corpus exemplar carried one until
+  `list-matcher`, whose list items are object literals; `@mmmnt/feat-types` gains them in
   `Matcher`; feat-core parses them; feat-runtime's `applyMatcher` evaluates them; feat-derive recurses into them.
 - The parser's capture-service walk (`collectCaptureServices`) descends into lists and objects.
 - The record diff (`has`, `contains`) is unchanged: a record that fails still reports "captured X does not match
@@ -74,9 +77,3 @@ compared exactly; written with its literal digest, the spec pins a byte layout t
   first field violation in a record mismatch is a separate change; not part of this ruling.)
 - The TextMate grammars need no new word; check that matcher words inside `[ … ]` are scoped as outside.
 - The corpus gains exemplar #21, `corpus/list-matcher/`.
-
-## Open questions
-
-- **Q1 — `absent` on a field of an object inside a list.** Refuse it (Rec.): the object is exact, so an undeclared
-  field is already required absent and `absent` is a second spelling. Or allow it as a redundant but explicit
-  statement (no harm at runtime; two spellings for one meaning).

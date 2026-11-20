@@ -123,7 +123,17 @@ export type Matcher =
    * numbers, each exactly an f32, whose consecutive little-endian f32 bytes hash (sha256, lowercase hex) to
    * `sha256`. A negation never takes it as its operand.
    */
-  | { matcher: "f32Digest"; dims: number; sha256: string };
+  | { matcher: "f32Digest"; dims: number; sha256: string }
+  /**
+   * ADR-0034 (SPEC-RT-015): a list that holds a matcher. It passes on an array of exactly items.length items,
+   * each passing its matcher in order. A list with no matcher in it is a literal, never this.
+   */
+  | { matcher: "list"; items: Matcher[] }
+  /**
+   * ADR-0034 (SPEC-RT-015): an object inside a list that holds a matcher. Exact: it passes on an object whose
+   * keys are exactly the declared ones, each field passing its matcher. Outside a list a block is `nested`.
+   */
+  | { matcher: "object"; fields: ValueBlock };
 
 export interface ValueBlock {
   [field: string]: Matcher;

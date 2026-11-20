@@ -292,6 +292,9 @@ function collectCaptureServices(block: Record<string, unknown>, into: string[]):
     if (m.matcher === "nested") collectCaptureServices(m.fields as Record<string, unknown>, into);
     // ADR-0027: a reference inside a negation names a service like one outside it.
     if (m.matcher === "not") collectCaptureServices({ operand: m.operand }, into);
+    // ADR-0034: a reference inside a list, or inside an object in one, names a service like one outside it.
+    if (m.matcher === "list") collectCaptureServices(Object.fromEntries((m.items as unknown[]).map((x, i) => [String(i), x])), into);
+    if (m.matcher === "object") collectCaptureServices(m.fields as Record<string, unknown>, into);
   }
 }
 
@@ -326,6 +329,8 @@ function parseNegation(c: ValueCursor): Matcher {
   if (c.peek() === "{")
     throw new ParseFailure("MALFORMED_SYNTAX", "'not { … }' is refused: the negation of a partial value block does not say which field differs.", undefined, "Negate a field inside the block instead: '{ field: not <matcher> }'.");
   const operand = parseMatcher(c);
+  if (operand.matcher === "list")
+    throw new ParseFailure("MALFORMED_SYNTAX", "'not [ … ]' is refused: the negation of a list that holds a matcher does not say which item differs.", undefined, "Negate a field inside an item instead: '[ { field: not <matcher> } ]'.");
   if (operand.matcher === "absent")
     throw new ParseFailure("MALFORMED_SYNTAX", "'not absent' is refused: it means a value is present, which 'any' says.", undefined, "Write 'any' for a field that must be present.");
   if (operand.matcher === "any" && operand.ofType === undefined)
@@ -363,6 +368,7 @@ function parseMatcher(c: ValueCursor): Matcher {
   c.skipWs();
   const rest = () => c.src.slice(c.pos);
   if (c.peek() === "{") return { matcher: "nested", fields: parseValueBlock(c) };
+  if (c.peek() === "[") return parseListMatcher(c);
   if (/^not(?:[\s,}]|$)/.test(rest())) return parseNegation(c);
   if (/^f32(?:[\s,}]|$)/.test(rest())) return parseF32Digest(c);
   let m: RegExpExecArray | null;
@@ -423,6 +429,83 @@ function parseMatcher(c: ValueCursor): Matcher {
   }
   const value = parseLiteralValue(c);
   return { matcher: "literal", value };
+}
+
+/**
+ * A list in matcher position (ADR-0034). Its items, and the fields of an object inside it, are read in matcher
+ * position at any depth. A list that holds no matcher at any depth is recorded exactly as the literal it always
+ * was (placeholders included, which stay literal data); otherwise it is { matcher: "list", items }, an object in
+ * it that holds a matcher { matcher: "object", fields }, and every matcher-free item or field a literal.
+ */
+function parseListMatcher(c: ValueCursor): Matcher {
+  return collapse(parseListItems(c));
+}
+
+function parseListItems(c: ValueCursor): Matcher {
+  c.skipWs();
+  c.pos++; // '['
+  const items: Matcher[] = [];
+  c.skipWs();
+  while (c.peek() !== "]") {
+    if (c.peek() === "") c.fail("list (unterminated)");
+    const item = parseListPart(c);
+    if (item.matcher === "absent")
+      throw new ParseFailure("MALFORMED_SYNTAX", "'absent' is not a list item: an item is a value.", undefined, "Write a shorter list: a list predicts every item it holds.");
+    items.push(item);
+    c.skipWs();
+  }
+  c.pos++;
+  return { matcher: "list", items };
+}
+
+/** An item of a list, or a field of an object inside one: an object, a list, or any other matcher. */
+function parseListPart(c: ValueCursor): Matcher {
+  c.skipWs();
+  if (c.peek() === "[") return parseListItems(c);
+  if (c.peek() === "{") {
+    c.pos++;
+    const fields: Record<string, Matcher> = {};
+    c.skipWs();
+    while (c.peek() !== "}") {
+      if (c.peek() === "") c.fail("object (unterminated)");
+      const key = parseKey(c);
+      const field = parseListPart(c);
+      if (field.matcher === "absent")
+        throw new ParseFailure("MALFORMED_SYNTAX", "'absent' is refused inside a list: an object there is exact, so a field it does not name is already absent.", undefined, "Leave the field out.");
+      fields[key] = field;
+      c.skipWs();
+    }
+    c.pos++;
+    return { matcher: "object", fields };
+  }
+  return parseMatcher(c);
+}
+
+/** True when a list or object read by parseListPart holds a matcher other than a literal, at any depth. */
+function holdsMatcher(m: Matcher): boolean {
+  if (m.matcher === "list") return (m.items as Matcher[]).some(holdsMatcher);
+  if (m.matcher === "object") return Object.values(m.fields as Record<string, Matcher>).some(holdsMatcher);
+  return m.matcher !== "literal" && m.matcher !== "placeholder";
+}
+
+/** The literal value of a matcher-free subtree (a placeholder is literal data, as in a literal). */
+function literalOf(m: Matcher): unknown {
+  if (m.matcher === "list") return (m.items as Matcher[]).map(literalOf);
+  if (m.matcher === "object")
+    return Object.fromEntries(Object.entries(m.fields as Record<string, Matcher>).map(([k, f]) => [k, literalOf(f)]));
+  if (m.matcher === "placeholder") return { $placeholder: m.name };
+  return m.value;
+}
+
+/** Every matcher-free subtree becomes a literal; a list or object that holds a matcher keeps its form. */
+function collapse(m: Matcher): Matcher {
+  if (m.matcher !== "list" && m.matcher !== "object") return m;
+  if (!holdsMatcher(m)) return { matcher: "literal", value: literalOf(m) };
+  if (m.matcher === "list") return { matcher: "list", items: (m.items as Matcher[]).map(collapse) };
+  return {
+    matcher: "object",
+    fields: Object.fromEntries(Object.entries(m.fields as Record<string, Matcher>).map(([k, f]) => [k, collapse(f)])),
+  };
 }
 
 function parseValueBlock(c: ValueCursor): Record<string, Matcher> {

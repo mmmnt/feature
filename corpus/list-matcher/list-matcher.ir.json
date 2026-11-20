@@ -1,0 +1,233 @@
+{
+  "featVersion": "1.0",
+  "identity": {
+    "id": "SPEC-ARC-001",
+    "name": "WriteArchive writes its members in path order",
+    "context": "Archive",
+    "aggregate": "Archive",
+    "type": "command",
+    "status": "agreed"
+  },
+  "construct": [
+    {
+      "kind": "handler",
+      "path": "features/write-archive/handler.ts"
+    },
+    {
+      "kind": "touches",
+      "glob": "features/write-archive/**"
+    }
+  ],
+  "enforce": [
+    {
+      "kind": "constraint",
+      "text": "write the manifest, its digest and one file per stream, in path order"
+    }
+  ],
+  "contract": [
+    {
+      "kind": "input",
+      "schemaName": "WriteInput"
+    },
+    {
+      "kind": "response",
+      "schemaName": "Written"
+    },
+    {
+      "kind": "record",
+      "schemaName": "ArchiveFile"
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "an archive is written with its manifest and digest",
+      "when": {
+        "command": "WriteArchive",
+        "payload": {
+          "path": "a.flmnt",
+          "tags": [
+            "daily"
+          ]
+        }
+      },
+      "prediction": {
+        "type": "success",
+        "response": {
+          "status": 200,
+          "schemaName": "Written",
+          "valueBlock": {
+            "path": {
+              "matcher": "whenRef",
+              "path": "path"
+            },
+            "members": {
+              "matcher": "literal",
+              "value": [
+                "manifest.json",
+                "manifest.sha256",
+                "streams/domain.jsonl"
+              ]
+            }
+          }
+        },
+        "services": {
+          "files": {
+            "records": [
+              {
+                "type": "FILE_WRITTEN",
+                "schemaName": "ArchiveFile",
+                "valueBlock": {
+                  "path": {
+                    "matcher": "literal",
+                    "value": "a.flmnt"
+                  },
+                  "tags": {
+                    "matcher": "literal",
+                    "value": [
+                      "daily"
+                    ]
+                  },
+                  "members": {
+                    "matcher": "list",
+                    "items": [
+                      {
+                        "matcher": "literal",
+                        "value": {
+                          "name": "manifest.json",
+                          "json": {
+                            "formatVersion": 1
+                          }
+                        }
+                      },
+                      {
+                        "matcher": "object",
+                        "fields": {
+                          "name": {
+                            "matcher": "literal",
+                            "value": "manifest.sha256"
+                          },
+                          "text": {
+                            "matcher": "regex",
+                            "pattern": "^[0-9a-f]{64}  manifest\\.json\\n$"
+                          }
+                        }
+                      },
+                      {
+                        "matcher": "object",
+                        "fields": {
+                          "name": {
+                            "matcher": "literal",
+                            "value": "streams/domain.jsonl"
+                          },
+                          "text": {
+                            "matcher": "not",
+                            "operand": {
+                              "matcher": "literal",
+                              "value": ""
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "the tags are written as given",
+      "when": {
+        "command": "WriteArchive",
+        "payload": {
+          "path": "b.flmnt",
+          "tags": [
+            {
+              "$placeholder": "tag"
+            }
+          ]
+        }
+      },
+      "prediction": {
+        "type": "success",
+        "response": {
+          "status": 200,
+          "schemaName": "Written",
+          "valueBlock": {
+            "path": {
+              "matcher": "whenRef",
+              "path": "path"
+            },
+            "members": {
+              "matcher": "any"
+            }
+          }
+        },
+        "services": {
+          "files": {
+            "records": [
+              {
+                "type": "FILE_WRITTEN",
+                "schemaName": "ArchiveFile",
+                "valueBlock": {
+                  "path": {
+                    "matcher": "literal",
+                    "value": "b.flmnt"
+                  },
+                  "tags": {
+                    "matcher": "literal",
+                    "value": [
+                      {
+                        "$placeholder": "tag"
+                      }
+                    ]
+                  },
+                  "members": {
+                    "matcher": "list",
+                    "items": [
+                      {
+                        "matcher": "object",
+                        "fields": {
+                          "name": {
+                            "matcher": "literal",
+                            "value": "manifest.json"
+                          },
+                          "json": {
+                            "matcher": "any"
+                          }
+                        }
+                      },
+                      {
+                        "matcher": "object",
+                        "fields": {
+                          "name": {
+                            "matcher": "literal",
+                            "value": "manifest.sha256"
+                          },
+                          "text": {
+                            "matcher": "any",
+                            "ofType": "string"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "examples": [
+        {
+          "tag": "daily"
+        },
+        {
+          "tag": "weekly"
+        }
+      ]
+    }
+  ]
+}
