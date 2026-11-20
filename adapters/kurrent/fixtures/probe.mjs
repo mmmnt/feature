@@ -509,7 +509,8 @@ async function run(input, mode) {
     }
     const body = { trace: trace.join(" ") };
     if (last) body.last = last;
-    if (lastPayloads !== undefined && lastPayloads.length > 0) body.lastPayloads = lastPayloads;
+    // lastPayloads is SPEC-ADPKUR-001's answer (its 2026-11-20 amendment); the other specs' results do not carry it.
+    if (mode === "observe" && lastPayloads !== undefined && lastPayloads.length > 0) body.lastPayloads = lastPayloads;
     if (peekEqualsStop !== undefined) body.peekEqualsStop = peekEqualsStop;
     return { status: "OK", body };
   } catch (e) {
