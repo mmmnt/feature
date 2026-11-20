@@ -1,6 +1,7 @@
 # ADR-0032 — a pull request build report, published as a GitHub Action
 
-Status: Accepted (founder flip 2026-11-17, "Agree as drafted (Recommended)"). Amended 2026-11-17 by decisions 13–14
+Status: Accepted (founder flip 2026-11-17, "Agree as drafted (Recommended)"). Amended 2026-11-20 by decision 15
+(founder flip "Agree (Rec.)", flmnt 36125703; rulings 720367d8, 143df84e, a51f90a0). Amended 2026-11-17 by decisions 13–14
 (founder flip "Agree as drafted (Recommended)"; the missing-SBOM check conclusion "Neutral (Recommended)"). Requested by the founder on 2026-11-17 for flmnt: "I review all PRs, but
 I won't go through the code. let's experiment with Feature reporting that captures run and attestation records of
 the PR builds. let's get it into a friendly format, into the PR." Form ruled: "GitHub Action in Feature
@@ -47,6 +48,7 @@ the PR builds. let's get it into a friendly format, into the PR." Form ruled: "G
    filled-in `gh attestation verify` command per artifact (founder feedback 2026-11-17).
 8. Main re-attests (founder 2026-11-17: "main will have to re-attest", "Attestation + main check + PR pointer"): on
    a push to main the Action signs a merge-linking attestation (predicate `https://feature.mmmnt.dev/attestation/pr-merge/v1`,
+   `pr-merge/v2` from v0.1.74, decision 15;
    Sigstore-signed via `actions/attest`, Rekor-logged) naming the PR, its head, the tested merge-ref commit, the PR
    run and its attestation digests, the main commit and main's artifact digests; posts a check run on the main
    commit in the same format; and points the closed PR's report comment at it.
@@ -85,6 +87,31 @@ the PR builds. let's get it into a friendly format, into the PR." Form ruled: "G
     names its required attestation subjects; when the run produced none of one, the verdict is `incomplete`, the
     header names the subject and the job that should have produced it, and the report is still posted.
 
+15. **Every push to main is attested, a merge or a direct commit; the statement is pr-merge/v2** (founder ruling
+    2026-11-20 "Direct-commit mode", flmnt 720367d8, chosen over a bot-commit skip in the consumer; shaped by "Any
+    push with no PR", "pr-merge/v2", "Attest head, list all", 143df84e, and a51f90a0; agreed "Agree (Rec.)",
+    36125703). flmnt's roadmap App lands built / verified flips on main as one App-signed `createCommitOnBranch`
+    commit with no pull request, which merge mode refused `NO_PR_FOR_MERGE`.
+    - A push to main whose head has a merged pull request is that pull request's merge; one whose head has none is a
+      **direct commit**, whoever pushed it, reported and signed like a merge (the same two runs, evidence store and
+      main-provenance link), on main's check alone: no pull request is posted to, in the report run or in sign mode.
+      There is no allow-list, and `NO_PR_FOR_MERGE` is gone.
+    - Every push reads `GET /compare/{before}...{head}`. A `before` that is not an ancestor of the head (a force push)
+      is refused `NOT_FAST_FORWARD`, with no effect. The range is paged until GitHub has returned `total_commits`; one
+      that cannot be listed in full is refused `PUSH_RANGE_INCOMPLETE`, with no effect. A first push (`before` all
+      zeros) is the head's history listed down to its root commit.
+    - The statement attests the head (`main.artifacts`) and lists, in a `push` block every v2 statement carries
+      (merges included), the push's sender and every commit of the range with its parents and GitHub's signature
+      verification. These are facts: an unsigned commit in the range neither breaks the chain nor refuses the push.
+    - The predicate type is `https://feature.mmmnt.dev/attestation/pr-merge/v2` for merges and direct commits;
+      `pullRequest` and `prRun` are null for a direct commit. **Migration:** up to v0.1.73 main mode wrote, and
+      sign-merge signed, `pr-merge/v1` statements (no `push` block, a pull request always present). From v0.1.74 on,
+      both write and sign only v2, and main's Verify block renders
+      `cosign verify-attestation --key <public key> --insecure-ignore-tlog --type https://feature.mmmnt.dev/attestation/pr-merge/v2 <repository>@<digest>`.
+      A main commit attested before v0.1.74 verifies with `--type https://feature.mmmnt.dev/attestation/pr-merge/v1`;
+      its referrers stay in GHCR. A consumer re-pins its report and sign jobs together and adds v2 wherever it names
+      the predicate type, keeping v1.
+
 ## Rejected alternatives
 
 - **A GitHub App.** Richer (it could follow runs across repositories and react to events), but it needs hosting, a
@@ -107,6 +134,18 @@ the PR builds. let's get it into a friendly format, into the PR." Form ruled: "G
 - **The signing job signing with cosign alone, the Action never told.** Rejected: the main check and the pull
   request would never show the merge signature, and the auditor's walk would lose its last link.
 
+- **Skipping the statement for a bot's commit in the consumer** (flmnt's `cargo xtask roadmap flip-commit`).
+  Rejected by the founder's "Direct-commit mode": main would carry commits with no statement.
+- **Accepting a red main after each flip.** A real failure would hide among the expected ones.
+- **An allow-list of senders for direct commits.** Rejected by "Any push with no PR" (143df84e): the sender is
+  recorded, not gated.
+- **A separate `direct-commit/v1` predicate type, or `pr-merge/v1` with a `kind` field.** Rejected by "pr-merge/v2":
+  one type covers every push to main.
+- **Refusing a multi-commit or merge-commit push.** Rejected by "Attest head, list all": the head is attested and
+  the range listed.
+- **Attesting a force push from the merge base, or a partially listed range.** Rejected by a51f90a0: the rewrite or
+  the missing commits would leave no record.
+
 ## Consequences
 
 - Consumers grant `pull-requests: write`, `checks: write`, `actions: read` and `packages: read` to the report job
@@ -114,4 +153,7 @@ the PR builds. let's get it into a friendly format, into the PR." Form ruled: "G
 - Fork pull requests are reported by the `workflow_run` follow-up, from uploaded results only.
 - Merge mode needs `packages: write` (GHCR) and no secret. Sign mode needs `contents: read`, `packages: write`,
   `checks: write`, `pull-requests: write` and the signing key's secrets; no `id-token: write`, no `attestations: write`.
+- Decision 15: a direct commit is reported on main's check only. The compare needs no permission beyond
+  `contents: read`. Every push to main lists its range, so a force push to main turns main's report red
+  (`NOT_FAST_FORWARD`) instead of being attested.
 - The report is as good as the bundles: a job that uploads no bundle shows as "no evidence" rather than as passing.

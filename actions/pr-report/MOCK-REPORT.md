@@ -98,7 +98,7 @@ Merged PR #7 · head `9f2c41d8a07e5b3c6d1f0e2a4b8c7d9e1f3a5b6c` · tested `c0ffe
 
 ```sh
 cosign verify-attestation --key ci/signing/flmnt.pub --insecure-ignore-tlog --type slsaprovenance1 ghcr.io/<owner>/<repo>-sbom@sha256:9b74c9897bac770ffc029102a200c5de2a4c2a6c2d1e3f4a5b6c7d8e9f0a1b2c
-cosign verify-attestation --key ci/signing/flmnt.pub --insecure-ignore-tlog --type https://feature.mmmnt.dev/attestation/pr-merge/v1 ghcr.io/<owner>/<repo>-sbom@sha256:9b74c9897bac770ffc029102a200c5de2a4c2a6c2d1e3f4a5b6c7d8e9f0a1b2c
+cosign verify-attestation --key ci/signing/flmnt.pub --insecure-ignore-tlog --type https://feature.mmmnt.dev/attestation/pr-merge/v2 ghcr.io/<owner>/<repo>-sbom@sha256:9b74c9897bac770ffc029102a200c5de2a4c2a6c2d1e3f4a5b6c7d8e9f0a1b2c
 ```
 
 </details>

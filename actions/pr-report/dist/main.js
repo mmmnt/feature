@@ -90,7 +90,7 @@ function readStatementFile(file) {
 
 // src/report.ts
 var MARKER = "<!-- feat-pr-report -->";
-var MERGE_PREDICATE = "https://feature.mmmnt.dev/attestation/pr-merge/v1";
+var MERGE_PREDICATE = "https://feature.mmmnt.dev/attestation/pr-merge/v2";
 var NOT_ATTESTED = "not attested (fork PR); attested on merge";
 var ReportError = class extends Error {
   constructor(code, detail) {
@@ -100,6 +100,51 @@ var ReportError = class extends Error {
   code;
 };
 var repoPath = (c) => `/repos/${c.owner}/${c.repo}`;
+var ZERO_SHA = /^0{40}$/;
+var PAGE = 100;
+var pushedCommit = (x) => ({
+  sha: String(x?.sha ?? ""),
+  parents: (x?.parents ?? []).map((p) => String(p?.sha ?? "")),
+  verification: {
+    verified: x?.commit?.verification?.verified === true,
+    reason: String(x?.commit?.verification?.reason ?? "unknown")
+  }
+});
+async function pushRange(c, api, head) {
+  const before = c.push?.before ?? "";
+  const sender = c.push?.sender ?? "";
+  if (!before || ZERO_SHA.test(before)) {
+    const listed2 = [];
+    for (let page = 1; ; page++) {
+      const res = await api.get(`${repoPath(c)}/commits?sha=${head}&per_page=${PAGE}${page > 1 ? `&page=${page}` : ""}`);
+      if (!Array.isArray(res)) throw new ReportError("PUSH_RANGE_INCOMPLETE", `the history of ${head} could not be listed`);
+      listed2.push(...res);
+      if (res.length < PAGE) break;
+    }
+    const commits2 = listed2.map(pushedCommit).reverse();
+    if (commits2.length === 0 || commits2[commits2.length - 1].sha !== head || commits2[0].parents.length !== 0)
+      throw new ReportError("PUSH_RANGE_INCOMPLETE", `the history of ${head} was not listed down to its root commit`);
+    return { sender, before, fromRoot: true, commits: commits2 };
+  }
+  const base = `${repoPath(c)}/compare/${before}...${head}`;
+  const first = await api.get(base);
+  if (!first) throw new ReportError("PUSH_RANGE_INCOMPLETE", `${before}...${head} could not be compared`);
+  if (first.status !== "ahead" && first.status !== "identical")
+    throw new ReportError("NOT_FAST_FORWARD", `the push's before ${before} is not an ancestor of ${head} (compare: ${first.status})`);
+  const total = Number(first.total_commits ?? 0);
+  const listed = [...first.commits ?? []];
+  for (let page = 2; listed.length < total; page++) {
+    const res = await api.get(`${base}?per_page=${PAGE}&page=${page}`);
+    const more = res?.commits ?? [];
+    if (more.length === 0) break;
+    listed.push(...more);
+  }
+  const commits = listed.map(pushedCommit);
+  if (commits.length !== total || total > 0 && commits[commits.length - 1].sha !== head)
+    throw new ReportError("PUSH_RANGE_INCOMPLETE", `${total} commits in ${before}...${head}, ${commits.length} listed`);
+  return { sender, before, fromRoot: false, commits };
+}
+var pushBlock = (r) => ({ sender: r.sender, before: r.before, commits: r.commits });
 function signerOk(c, signer, ref) {
   if (!signer) return false;
   return c.signerWorkflows.some((w) => signer === `https://github.com/${c.owner}/${c.repo}/${w}@${ref}`);
@@ -268,7 +313,8 @@ async function mergeMode(c, ports) {
   const main2 = c.mainSha;
   const pulls = await ports.api.get(`${repoPath(c)}/commits/${main2}/pulls`) ?? [];
   const pr = pulls.find((p) => p.merged_at);
-  if (!pr) throw new ReportError("NO_PR_FOR_MERGE", `no merged pull request is associated with ${main2}`);
+  const range = await pushRange(c, ports.api, main2);
+  if (!pr) return directMode(c, ports, evidence, jobs, range);
   const fork = isForkPull(c, pr);
   const mergeRefSha = await testedMergeRef(c, ports.api, pr.head.sha);
   if (!mergeRefSha && !fork)
@@ -283,6 +329,20 @@ async function mergeMode(c, ports) {
   const prRows = await verifySubjects(c, ports, prSubjects);
   if (prRows.some((r) => r.v === null))
     throw new ReportError("PR_EVIDENCE_MISSING", `run ${prRun}'s attestations cannot be retrieved`);
+  const pullRequest = unattested ? { number: prInfo.number, headSha: prInfo.headSha, mergeRefSha: prInfo.mergeRefSha, attested: false, origin: "fork" } : { number: prInfo.number, headSha: prInfo.headSha, mergeRefSha: prInfo.mergeRefSha };
+  return attestMain(c, ports, {
+    evidence,
+    jobs,
+    range,
+    pull: { prInfo, prRun, prRows, unattested },
+    statement: { pullRequest, prRun: { id: prRun, attestations: prRows.map((r) => r.subject.digest) } }
+  });
+}
+function directMode(c, ports, evidence, jobs, range) {
+  return attestMain(c, ports, { evidence, jobs, range, pull: null, statement: { pullRequest: null, prRun: null } });
+}
+async function attestMain(c, ports, x) {
+  const main2 = c.mainSha;
   const mainRows = await verifySubjects(c, ports, ports.subjects);
   let broken = null;
   for (const r of mainRows) {
@@ -291,21 +351,21 @@ async function mergeMode(c, ports) {
     else broken ??= b;
   }
   const missing = missingOf(c, ports.subjects);
-  const t = testsVerdict(evidence);
-  const jobsFailed = jobs.some((j) => j.conclusion !== "success");
+  const t = testsVerdict(x.evidence);
+  const jobsFailed = x.jobs.some((j) => j.conclusion !== "success");
   let merge = null;
   if (!broken && missing.length === 0 && ports.subjects.length > 0) {
     let store;
     try {
-      store = await ports.store(evidence);
+      store = await ports.store(x.evidence);
     } catch (e) {
       throw new ReportError("EVIDENCE_STORE_FAILED", `evidence bundles could not be stored: ${e.message}`);
     }
     const predicate = {
-      pullRequest: unattested ? { number: prInfo.number, headSha: prInfo.headSha, mergeRefSha: prInfo.mergeRefSha, attested: false, origin: "fork" } : { number: prInfo.number, headSha: prInfo.headSha, mergeRefSha: prInfo.mergeRefSha },
-      prRun: { id: prRun, attestations: prRows.map((r) => r.subject.digest) },
+      ...x.statement,
+      push: pushBlock(x.range),
       main: { sha: main2, run: { id: c.runId, attempt: c.runAttempt }, artifacts: ports.subjects.map((s) => s.digest) },
-      evidence: { bundles: evidence.map((e) => e.digest), store }
+      evidence: { bundles: x.evidence.map((e) => e.digest), store }
     };
     const written = await ports.writeStatement(predicate);
     merge = { statement: written.digest, store };
@@ -313,7 +373,18 @@ async function mergeMode(c, ports) {
   const verdict = t.failed || jobsFailed || broken ? "fail" : t.incomplete || missing.length > 0 ? "incomplete" : "pass";
   const chain = broken ? `broken:${broken}` : "ok";
   const sections = ["header", "tests", "attestations", "chain", "verify"];
-  const body = renderMain(c, { main: main2, prInfo, prRun, evidence, jobs, prRows, mainRows, broken, verdict, merge, missing, unattested });
+  const body = renderMain(c, {
+    main: main2,
+    pull: x.pull,
+    range: x.range,
+    evidence: x.evidence,
+    jobs: x.jobs,
+    mainRows,
+    broken,
+    verdict,
+    merge,
+    missing
+  });
   await ports.api.post(`${repoPath(c)}/check-runs`, {
     name: c.checkName,
     head_sha: main2,
@@ -322,9 +393,11 @@ async function mergeMode(c, ports) {
     output: { title: `main ${main2}: ${missing.length > 0 ? `incomplete: ${missingText(missing)}` : verdict}`, summary: body },
     ...merge ? { external_id: merge.statement } : {}
   });
-  const why = broken ? `merge chain broken at ${broken}` : missing.length > 0 ? `merge not signed: ${missingText(missing)}` : `merge not signed: ${verdict}`;
-  const line = merge ? `**Merged** as \`${main2}\` \xB7 merge statement \`${merge.statement}\` \xB7 signature pending (job sign-merge)` : `**Merged** as \`${main2}\` \xB7 \u274C ${why}`;
-  await upsertComment(c, ports.api, prInfo.number, line, true);
+  if (x.pull) {
+    const why = broken ? `merge chain broken at ${broken}` : missing.length > 0 ? `merge not signed: ${missingText(missing)}` : `merge not signed: ${verdict}`;
+    const line = merge ? `**Merged** as \`${main2}\` \xB7 merge statement \`${merge.statement}\` \xB7 signature pending (job sign-merge)` : `**Merged** as \`${main2}\` \xB7 \u274C ${why}`;
+    await upsertComment(c, ports.api, x.pull.prInfo.number, line, true);
+  }
   return { verdict, chain, sections, body, check: conclusion(verdict) };
 }
 async function signMode(c, ports) {
@@ -345,7 +418,7 @@ async function signMode(c, ports) {
 
 ${line}` }
   });
-  await upsertComment(c, ports.api, statement.pullRequest.number, line, true);
+  if (statement.pullRequest) await upsertComment(c, ports.api, statement.pullRequest.number, line, true);
   return { verdict: "pass", chain: "ok", sections: [], body: line, check: "success" };
 }
 var missingText = (m) => m.map((r) => `${r.label} not produced (job ${r.job})`).join(", ");
@@ -428,29 +501,44 @@ function renderMain(c, x) {
   const short = x.verdict === "incomplete" && x.missing.length > 0;
   const icon = x.verdict === "pass" ? "\u2705" : x.verdict === "fail" || short ? "\u274C" : "\u26AA";
   const title = x.broken ? `chain broken at ${x.broken}` : short ? `incomplete: ${missingText(x.missing)}` : x.verdict === "pass" ? "verified" : x.verdict;
+  const n = x.range.commits.length;
+  const since = `${n} commit${n === 1 ? "" : "s"} since ${x.range.fromRoot ? "the root" : `\`${x.range.before}\``}`;
+  const mainRun = `main run [${c.runId}](https://github.com/${c.owner}/${c.repo}/actions/runs/${c.runId}/attempts/${c.runAttempt})`;
+  const prRows = x.pull?.prRows ?? [];
   const out = [MARKER, `## ${icon} main \`${x.main}\` \u2014 ${title}`, ""];
+  if (x.pull) {
+    const p = x.pull;
+    out.push(
+      `Merged PR #${p.prInfo.number} \xB7 head \`${p.prInfo.headSha}\` \xB7 tested \`${p.prInfo.mergeRefSha ?? "\u2014"}\` \xB7 PR run ${p.prRun === null ? "\u2014" : `[${p.prRun}](https://github.com/${c.owner}/${c.repo}/actions/runs/${p.prRun})`} \xB7 pushed by \`${x.range.sender || "\u2014"}\` \xB7 ${since} \xB7 ${mainRun}`
+    );
+  } else {
+    out.push(
+      `Direct commit \`${x.main}\` \xB7 no pull request \xB7 pushed by \`${x.range.sender || "\u2014"}\` \xB7 ${since} \xB7 ${mainRun}`
+    );
+  }
   out.push(
-    `Merged PR #${x.prInfo.number} \xB7 head \`${x.prInfo.headSha}\` \xB7 tested \`${x.prInfo.mergeRefSha ?? "\u2014"}\` \xB7 PR run ${x.prRun === null ? "\u2014" : `[${x.prRun}](https://github.com/${c.owner}/${c.repo}/actions/runs/${x.prRun})`} \xB7 main run [${c.runId}](https://github.com/${c.owner}/${c.repo}/actions/runs/${c.runId}/attempts/${c.runAttempt})`,
     "",
     ...testsTable(x.evidence, x.jobs),
     "",
-    ...attestationRows([...x.prRows, ...x.mainRows], x.missing),
+    ...attestationRows([...prRows, ...x.mainRows], x.missing),
     "",
     "### Chain",
     "",
     "| Check | |",
     "|---|---|"
   );
-  if (x.unattested) out.push(`| PR attestations | ${NOT_ATTESTED} |`);
-  for (const r of x.prRows)
+  if (x.pull?.unattested) out.push(`| PR attestations | ${NOT_ATTESTED} |`);
+  for (const r of prRows)
     out.push(
-      `| PR \`${r.subject.name}\` source commit = tested \`${x.prInfo.mergeRefSha}\` | ${mark(!!r.v && r.v.sourceCommit === x.prInfo.mergeRefSha)} |`
+      `| PR \`${r.subject.name}\` source commit = tested \`${x.pull.prInfo.mergeRefSha}\` | ${mark(!!r.v && r.v.sourceCommit === x.pull.prInfo.mergeRefSha)} |`
     );
   for (const r of x.mainRows)
     out.push(
       `| main \`${r.subject.name}\` source commit \`${r.v?.sourceCommit ?? "\u2014"}\` = main \`${x.main}\` | ${mark(!!r.v && r.v.sourceCommit === x.main)} |`,
       keyRow(r)
     );
+  for (const p of x.range.commits)
+    out.push(`| commit \`${p.sha}\` signature | ${p.verification.verified ? "\u2705" : p.verification.reason} |`);
   if (x.merge)
     out.push(
       `| Evidence stored \`${x.merge.store}\` | \u2705 |`,
@@ -701,6 +789,7 @@ async function main() {
   } else if (eventName === "push" && process.env.GITHUB_REF === "refs/heads/main") {
     ctx.mode = input2("sign-statement") ? "sign-merge" : "main";
     ctx.mainSha = process.env.GITHUB_SHA ?? "";
+    ctx.push = { before: String(event.before ?? ""), sender: String(event.sender?.login ?? process.env.GITHUB_ACTOR ?? "") };
   }
   const evidenceDir = input2("evidence-dir", "evidence");
   const prefix = input2("evidence-prefix", "feat-evidence-");
