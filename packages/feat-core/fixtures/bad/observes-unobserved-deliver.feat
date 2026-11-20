@@ -1,0 +1,23 @@
+feat 1.0
+
+spec SPEC-BAD-112 "a deliver targets a service the spec does not observe"
+context Bad
+aggregate Thing
+type projection
+status draft
+observes eventStore
+
+construct:
+  handler at src/do-thing.ts
+  touches src/**
+
+enforce:
+  project the thing
+
+contract:
+  event ThingResult
+
+scenario "projects the thing":
+  deliver ThingHappened { id: "t-1" } to cache
+  predict success:
+    eventStore has []

@@ -56,6 +56,11 @@ describe("feat grammar tokenization", () => {
     expect(scopesAt("status agreed", "agreed")).toContain("constant.language.status.feat");
   });
 
+  it("scopes observes and its service keys (ADR-0033)", () => {
+    expect(scopesAt("observes log, cache", "observes")).toContain("keyword.declaration.feat");
+    expect(scopesAt("observes log, cache", "cache")).toContain("variable.other.service.feat");
+  });
+
   it("makes the trigger and prediction structure pop", () => {
     expect(scopesAt('  when: CreateUser { email: "a@b.c" }', "when")).toContain("keyword.control.trigger.feat");
     expect(scopesAt('  when: CreateUser { email: "a@b.c" }', "CreateUser")).toContain("entity.name.function.command.feat");

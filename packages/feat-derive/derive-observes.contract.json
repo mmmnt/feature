@@ -1,0 +1,81 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-DRV-002",
+  "schemas": {
+    "DeriveInput": {
+      "type": "object",
+      "required": [
+        "spec",
+        "config"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "spec": {
+          "type": "string",
+          "minLength": 1
+        },
+        "config": {
+          "type": "string",
+          "minLength": 1
+        },
+        "deriveConfig": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "DeriveResult": {
+      "type": "object",
+      "required": [
+        "cases"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "observes": {
+          "type": "string"
+        },
+        "cases": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "services",
+              "implicit"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "services": {
+                "type": "string"
+              },
+              "implicit": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "DeriveError": {
+      "type": "object",
+      "required": [
+        "code"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "UNKNOWN_SERVICE_KEY",
+            "DERIVE_THREW",
+            "PARSE_FAILED"
+          ]
+        },
+        "detail": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

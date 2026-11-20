@@ -34,6 +34,15 @@ feat 1.0
 # `f32 <dims> sha256 "<hex>"`, recorded as { matcher: "f32Digest", dims, sha256 }; the runtime evaluates it
 # (SPEC-RT-014). One new exemplar, corpus/f32-digest, and seven refusal fixtures; every other scenario and every
 # other exemplar's IR is unchanged.
+#
+# AMENDMENT (ADR-0033, a spec declares the services it observes; agreed by founder decision 2d6e954c, "Agree once
+# revised (Rec.)", on rulings bcce4098 F3-a "Narrow successes (Rec.)" and F3-b "UNOBSERVED_SERVICE (Rec.)"). Founder ruling 2026-11-20 N3 "Per-spec services" (NOT the recommendation; flmnt workspace
+# bc674142, decision f2f873a8): "Feature's grammar lets a spec declare the subset of configured services it observes."
+# A header line `observes <service>[, <service>]...` names services of the config; the IR records them, in written order,
+# as a top-level `observes`. INV-6 then reads "every OBSERVED service in every non-query prediction". With no `observes`
+# line a spec observes every configured service and its IR has no `observes` key, so every existing exemplar's IR is
+# unchanged. One new exemplar, corpus/spec-observes (#20), two ok fixtures and eleven refusal fixtures; one new code,
+# UNOBSERVED_SERVICE. Every other scenario is unchanged.
 
 spec SPEC-CORE-001 "Parse a .feat file to BuiltSpec IR"
 context Toolchain
@@ -81,6 +90,17 @@ construct:
   lowercase hexadecimal characters is the f32 digest matcher (ADR-0030), recorded as { matcher: "f32Digest",
   dims, sha256 }. A length that is not a positive integer, a digest that is not 64 lowercase hex, a missing
   part, and `not f32 ...` are MALFORMED_SYNTAX, each with a hint giving the form.
+  A header line `observes` followed by one or more service keys separated by commas (spaces or tabs around a comma
+  allowed) declares the services the spec observes (ADR-0033), recorded as the IR's top-level `observes`, an array of
+  the keys in written order. Each key joins the closed service space: one absent from the config's services is
+  UNKNOWN_SERVICE_KEY listing the configured ones. A key written twice, a bare `observes`, an empty item (a leading,
+  trailing or doubled comma) and a second `observes` line are MALFORMED_SYNTAX, each with a hint giving the form.
+  When a spec declares `observes`, every service a scenario names must be one it declares: a `has` or `contains`
+  prediction, a `seed`, a `deliver ... to`, a given `fault` and an `@<service>[i]` capture reference (alone or inside
+  `not`) naming a configured service the spec does not declare is UNOBSERVED_SERVICE, naming the service and listing
+  the declared ones in the hint ("add it to the observes line"). INCOMPLETE_PREDICTION then checks the declared
+  services only, in config order. A spec with no `observes` line is checked against every configured service, as
+  before, and its IR carries no `observes`. Declaring every configured service is allowed and is recorded as written.
 
 enforce:
   read the version pragma before anything else
@@ -94,7 +114,10 @@ enforce:
   rejects DUPLICATE_SCENARIO_NAME when two scenarios in one spec share a name
   rejects TRIGGER_MISMATCH when the trigger form does not match the spec type discipline
   rejects QUERY_SIDE_EFFECT when a query spec predicts any service write
-  rejects INCOMPLETE_PREDICTION when a non-query prediction omits a configured service
+  rejects INCOMPLETE_PREDICTION when a non-query prediction omits a configured service, or, when the spec declares observes, an observed one
+  rejects UNOBSERVED_SERVICE when a spec that declares observes names, in a prediction, seed, deliver, fault or capture reference, a configured service it does not observe
+  rejects UNKNOWN_SERVICE_KEY when an observes line names a service absent from the config services
+  rejects MALFORMED_SYNTAX when an observes line names no service, names one twice, has an empty item, or is written twice
   rejects MISSING_MINIMUM when a spec lacks the required minimum sections
 
 contract:
@@ -208,6 +231,57 @@ scenario "parses the f32 digest exemplar (f32-digest, ADR-0030)":
   when: Parse { spec: "corpus/f32-digest/f32-digest.feat", config: "corpus/f32-digest/feat.config.json" }
   predict success:
     response OK BuiltSpec equals fixture "../../corpus/f32-digest/f32-digest.ir.json"
+    filesystem has []
+
+scenario "parses the observed-services exemplar (spec-observes, ADR-0033)":
+  when: Parse { spec: "corpus/spec-observes/spec-observes.feat", config: "corpus/spec-observes/feat.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "../../corpus/spec-observes/spec-observes.ir.json"
+    filesystem has []
+
+scenario "a command that observes two of three services predicts those two and records them in written order":
+  when: Parse { spec: "packages/feat-core/fixtures/ok/observes-subset.feat", config: "packages/feat-core/fixtures/parse-observes.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "../../packages/feat-core/fixtures/ok/observes-subset.ir.json"
+    filesystem has []
+
+scenario "a query that observes one service may read it with contains":
+  when: Parse { spec: "packages/feat-core/fixtures/ok/observes-query.feat", config: "packages/feat-core/fixtures/parse-observes.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "../../packages/feat-core/fixtures/ok/observes-query.ir.json"
+    filesystem has []
+
+scenario outline "refuses an observes declaration that is not well formed or names an unconfigured service":
+  when: Parse { spec: <spec>, config: "packages/feat-core/fixtures/parse-observes.config.json" }
+  predict rejection <code>:
+    response ERR ParseError { code: <code>, hint: matching <hint> }
+    filesystem has []
+  examples:
+    | spec                                                         | code                  | hint                     |
+    | "packages/feat-core/fixtures/bad/observes-unknown-service.feat" | "UNKNOWN_SERVICE_KEY" | "^Configured services: eventStore, cache, log" |
+    | "packages/feat-core/fixtures/bad/observes-duplicate.feat"    | "MALFORMED_SYNTAX"    | "^Write 'observes <service>, <service>'" |
+    | "packages/feat-core/fixtures/bad/observes-bare.feat"         | "MALFORMED_SYNTAX"    | "^Write 'observes <service>, <service>'" |
+    | "packages/feat-core/fixtures/bad/observes-trailing-comma.feat" | "MALFORMED_SYNTAX"  | "^Write 'observes <service>, <service>'" |
+    | "packages/feat-core/fixtures/bad/observes-twice.feat"        | "MALFORMED_SYNTAX"    | "^Write 'observes <service>, <service>'" |
+
+scenario outline "refuses a service the spec uses but does not observe, naming it and the observed ones":
+  when: Parse { spec: <spec>, config: "packages/feat-core/fixtures/parse-observes.config.json" }
+  predict rejection UNOBSERVED_SERVICE:
+    response ERR ParseError { code: "UNOBSERVED_SERVICE", message: matching "'cache'", hint: matching "^Observed services: eventStore" }
+    filesystem has []
+  examples:
+    | spec                                                              |
+    | "packages/feat-core/fixtures/bad/observes-unobserved-prediction.feat" |
+    | "packages/feat-core/fixtures/bad/observes-unobserved-contains.feat"   |
+    | "packages/feat-core/fixtures/bad/observes-unobserved-seed.feat"       |
+    | "packages/feat-core/fixtures/bad/observes-unobserved-fault.feat"      |
+    | "packages/feat-core/fixtures/bad/observes-unobserved-capture-ref.feat" |
+    | "packages/feat-core/fixtures/bad/observes-unobserved-deliver.feat"   |
+
+scenario "a prediction that omits an observed service is incomplete":
+  when: Parse { spec: "packages/feat-core/fixtures/bad/observes-incomplete.feat", config: "packages/feat-core/fixtures/parse-observes.config.json" }
+  predict rejection INCOMPLETE_PREDICTION:
+    response ERR ParseError { code: "INCOMPLETE_PREDICTION", message: matching "observed service 'cache'" }
     filesystem has []
 
 scenario "a word that merely begins with fault stays freeform context":

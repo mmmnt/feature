@@ -104,6 +104,26 @@
               "name": "constant.language.status.feat"
             }
           }
+        },
+        {
+          "comment": "ADR-0033: the services this spec observes, each a service key",
+          "begin": "^(observes)(?=\\s|$)",
+          "beginCaptures": {
+            "1": {
+              "name": "keyword.declaration.feat"
+            }
+          },
+          "end": "$",
+          "patterns": [
+            {
+              "match": "[A-Za-z_][A-Za-z0-9_-]*",
+              "name": "variable.other.service.feat"
+            },
+            {
+              "match": ",",
+              "name": "punctuation.separator.comma.feat"
+            }
+          ]
         }
       ]
     },

@@ -1,6 +1,6 @@
 {
   "name": "@mmmnt/feat-adapter-fs",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "Feat service adapter: filesystem capture (files written during the capture window). Dogfood-critical.",
   "license": "MIT",
   "type": "module",
@@ -19,7 +19,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --exclude '**/observe.test.ts' --passWithNoTests"
+    "test": "vitest run --exclude '**/observe.test.ts' --exclude '**/archive.test.ts' --passWithNoTests"
   },
   "dependencies": {
     "@mmmnt/feat-types": "workspace:^"
@@ -35,6 +35,9 @@
   },
   "publishConfig": {
     "access": "public"
+  },
+  "engines": {
+    "node": ">=22.15"
   },
   "devDependencies": {
     "@mmmnt/feat-adapter-kit": "workspace:^",

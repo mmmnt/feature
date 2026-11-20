@@ -123,6 +123,15 @@ function isServerTruncateBefore(type: string, data: unknown): boolean {
   return typeof n === "number" && Number.isInteger(n) && n >= 0 && n < INT64_MAX_AS_NUMBER;
 }
 
+/**
+ * A soft delete by the system: a `$metadata` record whose `$tb` is the Int64 maximum (the client delivers 2^63),
+ * whatever other keys it has (founder rulings 415d6541 WSP-q1, bcce4098 F2-a). Reported as `stream.deleted`.
+ */
+function isSoftDelete(type: string, data: unknown): boolean {
+  if (type !== "$metadata" || typeof data !== "object" || data === null || Array.isArray(data)) return false;
+  return (data as { $tb?: unknown }).$tb === INT64_MAX_AS_NUMBER;
+}
+
 /** The WHATWG form of an IP literal, so `[0:0:0:0:0:0:0:1]` and `[::1]` are one host; the literal as written when it does not parse. */
 function canonicalIp(literal: string): string {
   try {
@@ -500,13 +509,26 @@ class KurrentAdapter implements FeatServiceAdapter {
       if (this.isInstrument(event.metadata)) continue;
       if (event.type.startsWith("$") && !KEPT_SYSTEM_TYPES.has(event.type)) continue;
       if (isServerTruncateBefore(event.type, event.data)) continue;
+      const meta = { revision: Number(event.revision), commitPosition: Number(position.commit) };
+      const timestamp = new Date(event.created).getTime();
+      // A deletion is reported by the stream it deleted (SPEC-ADPKUR-001, rulings 415d6541, bcce4098): a soft delete
+      // is the `$$<stream>` metadata record, a hard delete the `$streamDeleted` event (not JSON) in the stream itself.
+      if (isSoftDelete(event.type, event.data) && key.startsWith("$$")) {
+        const streamId = key.slice(2);
+        this.captured.push({ type: "stream.deleted", key: streamId, payload: { streamId }, timestamp, metadata: meta });
+        continue;
+      }
+      if (event.type === "$streamDeleted") {
+        this.captured.push({ type: "stream.deleted", key, payload: { streamId: key, hard: true }, timestamp, metadata: meta });
+        continue;
+      }
       if (event.isJson === false) continue;
       this.captured.push({
         type: event.type,
         key,
         payload: (event.data ?? {}) as Record<string, unknown>,
-        timestamp: new Date(event.created).getTime(),
-        metadata: { revision: Number(event.revision), commitPosition: Number(position.commit) },
+        timestamp,
+        metadata: meta,
       });
     }
     return last;
@@ -668,11 +690,13 @@ class KurrentAdapter implements FeatServiceAdapter {
     if (this.proxy !== undefined && this.opened !== undefined) await this.proxy.disarm();
     const { streams, withMetadata } = await this.namespaceStreams();
     for (const name of streams) {
-      if (withMetadata.has(name)) await this.db().setStreamMetadata(name, {});
+      // A tombstoned stream refuses the metadata write and the delete with stream-deleted: it is already gone.
       try {
+        if (withMetadata.has(name)) await this.db().setStreamMetadata(name, {});
         await this.db().deleteStream(name);
       } catch (e) {
-        if (errorType(e) !== "stream-not-found") throw e;
+        const t = errorType(e);
+        if (t !== "stream-not-found" && t !== "stream-deleted") throw e;
       }
     }
     this.windowOpen = false;

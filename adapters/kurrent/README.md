@@ -73,9 +73,21 @@ What a capture keeps and drops:
 - Events the adapter itself wrote (metadata `{ "feat": "instrument" }`: fence
   markers and fault placeholders) are never captured, peeked or read.
 - Server-written system events (types starting with `$`) are dropped, except
-  `$streamDeleted` and `$metadata`. A soft delete or a metadata change by the
-  system is therefore captured, with key `$$<stream>` and type `$metadata`.
-- Events that are not JSON are dropped.
+  `$streamDeleted` and `$metadata`. A metadata change by the system is captured
+  with key `$$<stream>` and type `$metadata`.
+- A deletion by the system is reported by the stream it deleted, as type
+  `stream.deleted` with key `<stream>` (SPEC-ADPKUR-001; founder rulings
+  415d6541, bcce4098):
+  - a soft delete (`deleteStream`) as `payload: { streamId: "<stream>" }`. It
+    has no `hard` field. Its `$$<stream>/$metadata` record (`$tb` at the Int64
+    maximum, whatever other keys it has) is not captured;
+  - a hard delete (`tombstoneStream`) as
+    `payload: { streamId: "<stream>", hard: true }`. KurrentDB writes it as a
+    non-JSON `$streamDeleted` event in the stream itself.
+
+  `<stream>` is the name without the namespace prefix, `::` and all:
+  `ws-1::domain/stream.deleted`.
+- Other events that are not JSON are dropped.
 
 ### The `$tb` metadata rule
 
@@ -86,7 +98,8 @@ so the capture drops it. A soft delete by the system writes the same body with
 `n` equal to the Int64 maximum (`9223372036854775807`; the client delivers it as
 the JSON number 2^63). That is the system's effect and is captured. A body with
 any other key, or an `n` that is not a non-negative integer below the maximum,
-is captured. (Founder ruling 2026-11-09, "Kurrent $tb A".)
+is captured. (Founder ruling 2026-11-09, "Kurrent $tb A".) The soft delete's own
+record, with `n` at the maximum, is reported as `stream.deleted` (above).
 
 ## Install
 
@@ -254,13 +267,15 @@ dot, no namespace is a prefix of another.
   events as records (`metadata: { revision }`). With hints, `contains`
   assertions that carry a `key.stream` literal name the streams to read; the
   adapter reads those and may return no others. Without hints it finds every
-  stream the namespace has ever held by an `$all` prefix scan. A soft-deleted or
-  never-written stream reads as empty, so state is not resurrected from `$all`.
+  stream the namespace has ever held by an `$all` prefix scan. A soft-deleted,
+  tombstoned or never-written stream reads as empty, so state is not resurrected from `$all`.
   Instrument events, `$`-typed events and non-JSON events are skipped.
 - **`reset()`** disarms every transport fault and restores a paused or stopped
   container, clears and soft-deletes every stream of the namespace (clearing
   stream metadata first, which removes an `ACCESS_DENIED` ACL), and closes the
-  window.
+  window. A stream the system tombstoned refuses both writes, so reset skips it.
+  Its name stays dead in that store, so use a fresh stream name for each
+  hard-delete scenario.
 
 ## Faults
 

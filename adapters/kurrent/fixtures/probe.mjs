@@ -369,10 +369,17 @@ async function run(input, mode) {
   let last;
   let lastPeek;
   let peekEqualsStop;
+  let lastPayloads;
   const records = (rs) => rs.map((r) => `${r.key}/${r.type}`).join(",");
+  // A stream may hold `:` (flmnt's ids do, `<workspace>::domain`): kind and label first, a type last, the stream between.
+  const TYPED = new Set(["seed", "write", "writenew", "writeuser", "meta"]);
+  const STREAMED = new Set(["delete", "tombstone"]);
   try {
     for (const step of steps) {
-      const [kind, l, a, b, c] = step.split(":");
+      const parts = step.split(":");
+      let [kind, l, a, b, c] = parts;
+      if (TYPED.has(kind) && parts.length > 4) [a, b] = [parts.slice(2, -1).join(":"), parts.at(-1)];
+      if (STREAMED.has(kind)) a = parts.slice(2).join(":");
       switch (kind) {
         case "setup":
           await adapter(l).setup();
@@ -428,6 +435,18 @@ async function run(input, mode) {
           await kdb.admin.deleteStream(`${nsOf(l)}.${a}`);
           trace.push(`delete:${l}`);
           break;
+        case "tombstone":
+          dirty.add(adapter(l));
+          await kdb.admin.tombstoneStream(`${nsOf(l)}.${a}`);
+          trace.push(`tombstone:${l}`);
+          break;
+        case "meta": {
+          dirty.add(adapter(l));
+          const [k, v] = b.split("=");
+          await kdb.admin.setStreamMetadata(`${nsOf(l)}.${a}`, { [k]: Number(v) });
+          trace.push(`meta:${l}`);
+          break;
+        }
         case "writeraw":
           await kdb.admin.appendToStream(`elsewhere.${l}`, jsonEvent({ type: a, data: {} }), { streamState: ANY });
           trace.push("writeraw");
@@ -439,12 +458,14 @@ async function run(input, mode) {
         case "peek": {
           lastPeek = await adapter(l).peekCapture();
           last = records(lastPeek);
+          lastPayloads = lastPeek.map((r) => r.payload);
           trace.push(`peek:${l}=${lastPeek.length}`);
           break;
         }
         case "stop": {
           const rs = await adapter(l).stopCapture();
           last = records(rs);
+          lastPayloads = rs.map((r) => r.payload);
           if (lastPeek !== undefined) peekEqualsStop = JSON.stringify(lastPeek) === JSON.stringify(rs);
           lastPeek = undefined;
           trace.push(`stop:${l}=${rs.length}`);
@@ -488,6 +509,8 @@ async function run(input, mode) {
     }
     const body = { trace: trace.join(" ") };
     if (last) body.last = last;
+    // lastPayloads is SPEC-ADPKUR-001's answer (its 2026-11-20 amendment); the other specs' results do not carry it.
+    if (mode === "observe" && lastPayloads !== undefined && lastPayloads.length > 0) body.lastPayloads = lastPayloads;
     if (peekEqualsStop !== undefined) body.peekEqualsStop = peekEqualsStop;
     return { status: "OK", body };
   } catch (e) {
