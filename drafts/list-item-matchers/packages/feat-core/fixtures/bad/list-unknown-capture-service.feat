@@ -1,0 +1,27 @@
+feat 1.0
+
+# ADR-0034: a capture reference inside a list item names a service like one outside it; an unconfigured one is UNKNOWN_SERVICE_KEY listing the configured ones.
+
+spec SPEC-BAD-133 "Capture reference inside a list naming an unconfigured service"
+context Bad
+aggregate Thing
+type command
+status draft
+
+construct:
+  handler at src/do-thing.ts
+  touches src/**
+
+enforce:
+  do the thing
+
+contract:
+  input ThingInput
+  response ThingResult
+  record ThingRow
+
+scenario "does the thing":
+  when: DoThing { value: 1 }
+  predict success:
+    response OK ThingResult
+    eventStore has [ Wrote with ThingRow { members: [ { id: @nosuchservice[0].id } ] } ]

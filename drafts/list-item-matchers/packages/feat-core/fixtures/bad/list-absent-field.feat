@@ -1,0 +1,27 @@
+feat 1.0
+
+# ADR-0034: an object inside a list is exact, so a field it does not name is already required absent; `absent` is a second spelling, refused as MALFORMED_SYNTAX with a hint to leave the field out (open question Q1).
+
+spec SPEC-BAD-130 "Absent on a field of an object inside a list"
+context Bad
+aggregate Thing
+type command
+status draft
+
+construct:
+  handler at src/do-thing.ts
+  touches src/**
+
+enforce:
+  do the thing
+
+contract:
+  input ThingInput
+  response ThingResult
+  record ThingRow
+
+scenario "does the thing":
+  when: DoThing { value: 1 }
+  predict success:
+    response OK ThingResult
+    eventStore has [ Wrote with ThingRow { members: [ { name: "a", text: any string, size: absent } ] } ]

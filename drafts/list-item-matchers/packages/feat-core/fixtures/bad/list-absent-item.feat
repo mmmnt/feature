@@ -1,0 +1,27 @@
+feat 1.0
+
+# ADR-0034: a list item is a value, so `absent` cannot be one; refused as MALFORMED_SYNTAX with a hint to write a shorter list.
+
+spec SPEC-BAD-129 "Absent as a list item"
+context Bad
+aggregate Thing
+type command
+status draft
+
+construct:
+  handler at src/do-thing.ts
+  touches src/**
+
+enforce:
+  do the thing
+
+contract:
+  input ThingInput
+  response ThingResult
+  record ThingRow
+
+scenario "does the thing":
+  when: DoThing { value: 1 }
+  predict success:
+    response OK ThingResult
+    eventStore has [ Wrote with ThingRow { members: [ { name: "a", text: any string }, absent ] } ]

@@ -1,0 +1,27 @@
+feat 1.0
+
+# ADR-0034: a list opened in matcher position and never closed is MALFORMED_SYNTAX (the existing unterminated-value message).
+
+spec SPEC-BAD-132 "Unterminated list that holds a matcher"
+context Bad
+aggregate Thing
+type command
+status draft
+
+construct:
+  handler at src/do-thing.ts
+  touches src/**
+
+enforce:
+  do the thing
+
+contract:
+  input ThingInput
+  response ThingResult
+  record ThingRow
+
+scenario "does the thing":
+  when: DoThing { value: 1 }
+  predict success:
+    response OK ThingResult
+    eventStore has [ Wrote with ThingRow { members: [ { name: "a", text: any string } } ]
