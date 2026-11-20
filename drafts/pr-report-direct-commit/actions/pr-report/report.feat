@@ -52,23 +52,19 @@ feat 1.0
 #
 # Amendment DRAFT 2026-11-20, awaiting the founder's flip (status below unchanged; this copy lives in drafts/ and is
 # promoted over actions/pr-report/report.feat when agreed). Founder ruling 2026-11-20 "Direct-commit mode" (flmnt
-# 720367d8; context 55d6ee20, 3e87faa8, 95c2f463): flmnt's roadmap App (mmmnt-flmnt-roadmap[bot]) lands built /
-# verified flips on main as one App-signed commit through createCommitOnBranch, a commit with no pull request, which
-# merge mode refuses NO_PR_FOR_MERGE today. A direct-commit mode reports and attests it instead:
-# (1) A push to main whose commit has no merged pull request is a direct commit only when the push's sender is in the
-#     new input `direct-commit-actors` (default empty: every consumer behaves as before). Any other such push still
-#     rejects NO_PR_FOR_MERGE with no effect.
-# (2) A direct commit is one commit with one parent, and that parent is the branch's previous head (the push event's
-#     `before`). Anything else (several commits in one push, a merge commit) rejects DIRECT_COMMIT_REFUSED with no
-#     effect, so no commit reaches main unattested behind an attested one.
-# (3) The report run stores main's evidence in GHCR, writes an unsigned direct-commit statement (the commit, its
-#     parent, the sender, the run, main's artifact digests, the evidence bundle digests and the store; no pull
-#     request fields), records its digest as main's check's external_id, and posts to no pull request.
-# (4) Sign mode signs a direct-commit statement under its own predicate type,
-#     `https://feature.mmmnt.dev/attestation/direct-commit/v1`, and appends the signature to main's check only.
-# (5) A push whose commit has a merged pull request is a merge, whoever pushed it: merge mode is unchanged.
-# Open for the founder: the qualification rule, the refusal codes, the predicate type, the one-commit rule and the
-# identity the allow-list is matched against (drafts/pr-report-direct-commit/ADR-0032-AMENDMENT-DRAFT.md).
+# 720367d8; context 55d6ee20, 3e87faa8, 95c2f463), shaped by the founder's rulings on the first draft (flmnt 143df84e):
+# "Any push with no PR", "pr-merge/v2", "Attest head, list all". flmnt's roadmap App lands built / verified flips on
+# main as one App-signed createCommitOnBranch commit with no pull request, which merge mode refused NO_PR_FOR_MERGE.
+# (1) Every push to main whose head commit has no merged pull request is a direct commit, reported and signed like a
+#     merge. There is no allow-list input, and NO_PR_FOR_MERGE is gone.
+# (2) Every push to main, merge or direct, reads the compare of the push's `before` with its head. The statement
+#     attests the head and lists every commit in `before..head`, each with its parents and GitHub's verification of its
+#     signature, as facts. The push's sender is recorded too. A `before` that is not an ancestor of the head (a
+#     force push) rejects NOT_FAST_FORWARD with no effect.
+# (3) The statement's predicate type is https://feature.mmmnt.dev/attestation/pr-merge/v2 for merges and direct commits
+#     alike: `pullRequest` and `prRun` are null for a direct commit. Statements signed under pr-merge/v1 before this
+#     release stay verifiable with that type; nothing new is signed under v1.
+# (4) A direct commit is reported on main's check alone; no pull request is posted to, in the report run or in sign mode.
 # Driven through actions/pr-report/fixtures/probe.mjs (part of the build, inside touches, not shipped). The probe runs
 # the Action's entry with a recorded GitHub API, a recorded GHCR referrers listing and recorded cosign results (no network): every request is
 # answered from a fixture, and the trace lists the requests made, in order, as `METHOD path`.
@@ -118,14 +114,14 @@ feat 1.0
 #   sign:good|othermain|tampered  sign mode on main 5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b: the statement report-main
 #                              wrote (`good`), one naming another main commit (`othermain`), or one whose bytes differ
 #                              from what main's check (id 77) recorded (`tampered`)
-#   pusher:<login>             a push's sender (event `sender.login`, GITHUB_ACTOR); default octocat
-#   direct-actors:<login>      the input `direct-commit-actors` holds <login> (default: empty)
-#   direct:single|multi|mergecommit  the main commit 5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b with no pull request: one
-#                              parent, 4e1a9c3b7d2f6e0a8c5b1d9f3e7a2c6b0d4f8e1a, which is the push's `before`
-#                              (`single`); one parent, but `before` is 1f2e3d4c5b6a79880a1b2c3d4e5f60718293a4b5, so the
-#                              push carried more commits (`multi`); two parents (`mergecommit`)
-#   sign:direct                sign mode: the direct-commit statement report-main wrote for main 5e8d1f2a…, recorded by
-#                              main's check (id 77)
+#   pusher:<login>             main and sign modes: the push's sender (event `sender.login`); default octocat
+#   range:one|many|forced      main mode: the compare of the push's `before` with the main commit. `one` (the default):
+#                              before 4e1a9c3b7d2f6e0a8c5b1d9f3e7a2c6b0d4f8e1a, status ahead, one commit (the main
+#                              commit, GitHub-verified); `many`: before 1f2e3d4c5b6a79880a1b2c3d4e5f60718293a4b5, status
+#                              ahead, three commits, the middle one unsigned (verification reason `unsigned`);
+#                              `forced`: before 1f2e3d4c5b6a79880a1b2c3d4e5f60718293a4b5, status diverged
+#   sign:direct                sign mode: the direct-commit statement report-main wrote for main 5e8d1f2a… (pullRequest
+#                              null), recorded by main's check (id 77)
 #   go                         run the Action
 # After `go` the trace carries `verdict=<pass|fail|incomplete>`, `chain=<ok|broken:<link>>` and `sections=<names>`;
 # `body` is the rendered comment's markdown and `check` the check run's conclusion.
@@ -153,9 +149,9 @@ construct:
   key = the repository's public key, pinned images = the pin file); and a collapsed Verify block with the
   `cosign verify-attestation --key ci/signing/flmnt.pub --insecure-ignore-tlog --type slsaprovenance1 ghcr.io/<o>/<r>-sbom@sha256:<full>`
   command. On failure only the header and the failing row change. After merge one line is appended: merged as the
-  main commit, the merge statement's signature digest, a link to the main report. A direct commit (a push to main by
-  an actor named in `direct-commit-actors`, whose commit has no pull request) is reported on main's check alone, its
-  header naming the commit, its parent and the sender, and its statement is a direct-commit statement. Full detail (the full provenance,
+  main commit, the merge statement's signature digest, a link to the main report. A push to main whose head has no
+  merged pull request is a direct commit: it is reported on main's check alone, its header naming the commit, the
+  push's sender and the commits since the push's `before`. Full detail (the full provenance,
   the referrer manifests) stays in the evidence bundle and the
   attestations, not in the comment. Every digest and commit SHA is printed in full, never shortened.
   The verdict is pass only when every tier's bundle has verify pass and run pass, every job succeeded, and every
@@ -176,9 +172,10 @@ enforce:
   jobs still in progress because they wait on the report, and the report's own check run, are not tallied among the CI jobs
   each evidence bundle is one Tests row, named `<tier> · <package>` when the bundle names its package
   a required attestation subject the run did not produce makes the verdict incomplete, and the header names it and the job that should have produced it
-  on a push to main the Action writes one merge statement naming the pull request number, its head commit, the
-  tested merge-ref commit, the pull request run and its attestation digests, the main commit and main's artifact
-  digests; posts a check run on the main commit in the same report format, recording the statement's digest as its
+  on a push to main the Action writes one statement of predicate type https://feature.mmmnt.dev/attestation/pr-merge/v2
+  naming the pull request number, its head commit, the tested merge-ref commit, the pull request run and its
+  attestation digests (all null for a direct commit), the push (its sender, its `before`, and every commit in
+  `before..main` with its parents and GitHub's verification), the main commit and main's artifact digests; posts a check run on the main commit in the same report format, recording the statement's digest as its
   external_id; and appends "merged as <main sha>" with the statement's full digest and "signature pending (job
   sign-merge)" to the closed pull request's report comment
   the merge statement is signed only in sign mode, never in the run that writes it
@@ -188,14 +185,11 @@ enforce:
   main's build attestation must have the main commit as its source, or the chain is broken at the main-provenance link
   the tested merge-ref commit is the one the pull request run's feat report check recorded (its external_id, else the built commit its summary names); a pull request whose check records none rejects PR_EVIDENCE_MISSING
   rejects NO_PR_CONTEXT when the run is neither a pull request nor a push to main, and nothing is posted
-  rejects NO_PR_FOR_MERGE when no merged pull request is associated with the main commit and the push's sender is not named in `direct-commit-actors`, and nothing is signed or posted
-  a push to main whose commit has a merged pull request is that pull request's merge, whoever pushed it
-  a direct commit is a push to main whose commit has no merged pull request, by a sender named in `direct-commit-actors`
-  a direct commit has exactly one parent, and it is the push's `before`
-  rejects DIRECT_COMMIT_REFUSED when a direct commit has more than one parent or its parent is not the push's `before`, and nothing is stored, written, signed or posted
-  for a direct commit the Action stores main's evidence in GHCR, writes one direct-commit statement naming the commit, its parent, the sender, the run, main's artifact digests, the evidence bundle digests and the store, and no pull request; and posts a check run on the commit recording the statement's digest as its external_id
-  a direct commit posts to no pull request, in the report run or in sign mode
-  sign mode signs a direct-commit statement with the predicate type https://feature.mmmnt.dev/attestation/direct-commit/v1 and a merge statement with https://feature.mmmnt.dev/attestation/pr-merge/v1, never the other way
+  a push to main whose head has a merged pull request is that pull request's merge; one whose head has none is a direct commit, whoever pushed it
+  a direct commit's statement has a null pullRequest and a null prRun, and the Action posts to no pull request for it, in the report run or in sign mode
+  rejects NOT_FAST_FORWARD when the push's `before` is not an ancestor of the main commit, and nothing is stored, written, signed or posted
+  every commit in `before..main` is listed in the statement, none left out; only the main commit is attested
+  sign mode signs every statement with the predicate type https://feature.mmmnt.dev/attestation/pr-merge/v2; nothing is signed with pr-merge/v1
   rejects PR_EVIDENCE_MISSING when the pull request run's attestations cannot be retrieved, and nothing is signed or posted
   on a push to main the evidence bundles are stored in GHCR as a digest-pinned OCI artifact before the merge-linking attestation is signed, and that digest is named in it
   rejects EVIDENCE_STORE_FAILED when the evidence bundles cannot be stored in GHCR, and nothing is signed or posted
@@ -307,7 +301,7 @@ scenario "a merge to main writes the merge statement, checks main and points the
   when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:found prattest:present ghcr:ok mainattest:good evidence:unit:pass jobs:green comment:901 token:full go" }
   predict success:
     response OK ProbeResult {
-      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b/pulls GET /repos/o/r/commits/9f2c41d8a07e5b3c6d1f0e2a4b8c7d9e1f3a5b6c/check-runs?check_name=feat%20report GET /repos/o/r/actions/runs/44153523061/artifacts GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET ghcr.io/o/r/referrers/sha256:9b74c9897bac770ffc029102a200c5de2a4c2a6c2d1e3f4a5b6c7d8e9f0a1b2c PUT ghcr.io/o/r-evidence@sha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae WRITE merge-statement POST /repos/o/r/check-runs GET /repos/o/r/issues/7/comments PATCH /repos/o/r/issues/comments/901 verdict=pass chain=ok sections=header,tests,attestations,chain,verify"
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b/pulls GET /repos/o/r/compare/4e1a9c3b7d2f6e0a8c5b1d9f3e7a2c6b0d4f8e1a...5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b GET /repos/o/r/commits/9f2c41d8a07e5b3c6d1f0e2a4b8c7d9e1f3a5b6c/check-runs?check_name=feat%20report GET /repos/o/r/actions/runs/44153523061/artifacts GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET ghcr.io/o/r/referrers/sha256:9b74c9897bac770ffc029102a200c5de2a4c2a6c2d1e3f4a5b6c7d8e9f0a1b2c PUT ghcr.io/o/r-evidence@sha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae WRITE merge-statement POST /repos/o/r/check-runs GET /repos/o/r/issues/7/comments PATCH /repos/o/r/issues/comments/901 verdict=pass chain=ok sections=header,tests,attestations,chain,verify"
       body: matching "signature pending \\(job sign-merge\\)"
       check: "success"
     }
@@ -317,7 +311,7 @@ scenario "a merge finds the commit the pull request run tested from that run's c
   when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:found prcheck:summary prattest:present ghcr:ok mainattest:good evidence:unit:pass jobs:green comment:901 token:full go" }
   predict success:
     response OK ProbeResult {
-      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b/pulls GET /repos/o/r/commits/9f2c41d8a07e5b3c6d1f0e2a4b8c7d9e1f3a5b6c/check-runs?check_name=feat%20report GET /repos/o/r/actions/runs/44153523061/artifacts GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET ghcr.io/o/r/referrers/sha256:9b74c9897bac770ffc029102a200c5de2a4c2a6c2d1e3f4a5b6c7d8e9f0a1b2c PUT ghcr.io/o/r-evidence@sha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae WRITE merge-statement POST /repos/o/r/check-runs GET /repos/o/r/issues/7/comments PATCH /repos/o/r/issues/comments/901 verdict=pass chain=ok sections=header,tests,attestations,chain,verify"
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b/pulls GET /repos/o/r/compare/4e1a9c3b7d2f6e0a8c5b1d9f3e7a2c6b0d4f8e1a...5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b GET /repos/o/r/commits/9f2c41d8a07e5b3c6d1f0e2a4b8c7d9e1f3a5b6c/check-runs?check_name=feat%20report GET /repos/o/r/actions/runs/44153523061/artifacts GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET ghcr.io/o/r/referrers/sha256:9b74c9897bac770ffc029102a200c5de2a4c2a6c2d1e3f4a5b6c7d8e9f0a1b2c PUT ghcr.io/o/r-evidence@sha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae WRITE merge-statement POST /repos/o/r/check-runs GET /repos/o/r/issues/7/comments PATCH /repos/o/r/issues/comments/901 verdict=pass chain=ok sections=header,tests,attestations,chain,verify"
       body: matching "tested `c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192`"
       check: "success"
     }
@@ -327,16 +321,11 @@ scenario "main's build attested for another commit breaks the chain at main's pr
   when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:found prattest:present ghcr:ok mainattest:wrongsource evidence:unit:pass jobs:green comment:901 token:full go" }
   predict success:
     response OK ProbeResult {
-      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b/pulls GET /repos/o/r/commits/9f2c41d8a07e5b3c6d1f0e2a4b8c7d9e1f3a5b6c/check-runs?check_name=feat%20report GET /repos/o/r/actions/runs/44153523061/artifacts GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET ghcr.io/o/r/referrers/sha256:9b74c9897bac770ffc029102a200c5de2a4c2a6c2d1e3f4a5b6c7d8e9f0a1b2c POST /repos/o/r/check-runs GET /repos/o/r/issues/7/comments PATCH /repos/o/r/issues/comments/901 verdict=fail chain=broken:main-provenance sections=header,tests,attestations,chain,verify"
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b/pulls GET /repos/o/r/compare/4e1a9c3b7d2f6e0a8c5b1d9f3e7a2c6b0d4f8e1a...5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b GET /repos/o/r/commits/9f2c41d8a07e5b3c6d1f0e2a4b8c7d9e1f3a5b6c/check-runs?check_name=feat%20report GET /repos/o/r/actions/runs/44153523061/artifacts GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET ghcr.io/o/r/referrers/sha256:9b74c9897bac770ffc029102a200c5de2a4c2a6c2d1e3f4a5b6c7d8e9f0a1b2c POST /repos/o/r/check-runs GET /repos/o/r/issues/7/comments PATCH /repos/o/r/issues/comments/901 verdict=fail chain=broken:main-provenance sections=header,tests,attestations,chain,verify"
       check: "failure"
     }
     filesystem has []
 
-scenario "a main commit with no merged pull request is refused and nothing is signed":
-  when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:notfound mainattest:good evidence:unit:pass jobs:green token:full go" }
-  predict rejection NO_PR_FOR_MERGE:
-    response ERR ReportError { code: "NO_PR_FOR_MERGE" }
-    filesystem has []
 
 scenario "a pull request run whose attestations are gone is refused and nothing is signed":
   when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:found prattest:missing mainattest:good evidence:unit:pass jobs:green comment:901 token:full go" }
@@ -441,7 +430,7 @@ scenario "sign-merge signs the statement report-main wrote and points the check 
   when: ProbePrReport { script: "sign:good comment:901 token:full go" }
   predict success:
     response OK ProbeResult {
-      trace: "GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b/check-runs?check_name=feat%20report SIGN https://feature.mmmnt.dev/attestation/pr-merge/v1 PATCH /repos/o/r/check-runs/77 GET /repos/o/r/issues/7/comments PATCH /repos/o/r/issues/comments/901 verdict=pass chain=ok sections="
+      trace: "GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b/check-runs?check_name=feat%20report SIGN https://feature.mmmnt.dev/attestation/pr-merge/v2 PATCH /repos/o/r/check-runs/77 GET /repos/o/r/issues/7/comments PATCH /repos/o/r/issues/comments/901 verdict=pass chain=ok sections="
       body: matching "\\*\\*Signed\\*\\* merge statement `sha256:[0-9a-f]{64}` · signature `sha256:e3b98a4da31a127d4bde6e43033f66ba274cab0eb7eb1c70ec41402bf6273dd8` ✅"
       check: "success"
     }
@@ -485,71 +474,75 @@ scenario "a merged fork pull request whose run left no attestation is recorded a
   when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:found prfrom:fork prattest:missing ghcr:ok mainattest:good evidence:unit:pass jobs:green comment:901 token:full go" }
   predict success:
     response OK ProbeResult {
-      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b/pulls GET /repos/o/r/commits/9f2c41d8a07e5b3c6d1f0e2a4b8c7d9e1f3a5b6c/check-runs?check_name=feat%20report GET /repos/o/r/actions/runs/44153523061/artifacts GET ghcr.io/o/r/referrers/sha256:9b74c9897bac770ffc029102a200c5de2a4c2a6c2d1e3f4a5b6c7d8e9f0a1b2c PUT ghcr.io/o/r-evidence@sha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae WRITE merge-statement POST /repos/o/r/check-runs GET /repos/o/r/issues/7/comments PATCH /repos/o/r/issues/comments/901 verdict=pass chain=ok sections=header,tests,attestations,chain,verify"
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b/pulls GET /repos/o/r/compare/4e1a9c3b7d2f6e0a8c5b1d9f3e7a2c6b0d4f8e1a...5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b GET /repos/o/r/commits/9f2c41d8a07e5b3c6d1f0e2a4b8c7d9e1f3a5b6c/check-runs?check_name=feat%20report GET /repos/o/r/actions/runs/44153523061/artifacts GET ghcr.io/o/r/referrers/sha256:9b74c9897bac770ffc029102a200c5de2a4c2a6c2d1e3f4a5b6c7d8e9f0a1b2c PUT ghcr.io/o/r-evidence@sha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae WRITE merge-statement POST /repos/o/r/check-runs GET /repos/o/r/issues/7/comments PATCH /repos/o/r/issues/comments/901 verdict=pass chain=ok sections=header,tests,attestations,chain,verify"
       body: matching "not attested \\(fork PR\\); attested on merge"
       check: "success"
     }
     filesystem has []
 
-scenario "a direct commit by an allowed actor writes a direct-commit statement and checks main, the signature left to sign-merge":
-  when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:notfound pusher:mmmnt-flmnt-roadmap[bot] direct-actors:mmmnt-flmnt-roadmap[bot] direct:single ghcr:ok mainattest:good evidence:unit:pass jobs:green token:full go" }
+scenario "a push to main with no pull request is a direct commit: its statement is written with no pull request and main is checked":
+  when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:notfound pusher:mmmnt-flmnt-roadmap[bot] ghcr:ok mainattest:good evidence:unit:pass jobs:green token:full go" }
   predict success:
     response OK ProbeResult {
-      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b/pulls GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b GET ghcr.io/o/r/referrers/sha256:9b74c9897bac770ffc029102a200c5de2a4c2a6c2d1e3f4a5b6c7d8e9f0a1b2c PUT ghcr.io/o/r-evidence@sha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae WRITE direct-commit-statement POST /repos/o/r/check-runs verdict=pass chain=ok sections=header,tests,attestations,chain,verify"
-      body: matching "Direct commit `5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b` · parent `4e1a9c3b7d2f6e0a8c5b1d9f3e7a2c6b0d4f8e1a` · pushed by `mmmnt-flmnt-roadmap\\[bot\\]`[^\\n]*\\n[\\s\\S]*Direct-commit statement `sha256:[0-9a-f]{64}` · signature pending \\(job sign-merge\\)"
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b/pulls GET /repos/o/r/compare/4e1a9c3b7d2f6e0a8c5b1d9f3e7a2c6b0d4f8e1a...5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b GET ghcr.io/o/r/referrers/sha256:9b74c9897bac770ffc029102a200c5de2a4c2a6c2d1e3f4a5b6c7d8e9f0a1b2c PUT ghcr.io/o/r-evidence@sha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae WRITE merge-statement POST /repos/o/r/check-runs verdict=pass chain=ok sections=header,tests,attestations,chain,verify"
+      body: matching "Direct commit `5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b` · no pull request · pushed by `mmmnt-flmnt-roadmap\\[bot\\]` · 1 commit since `4e1a9c3b7d2f6e0a8c5b1d9f3e7a2c6b0d4f8e1a`[\\s\\S]*Merge statement `sha256:[0-9a-f]{64}` · signature pending \\(job sign-merge\\)"
       check: "success"
     }
     filesystem has []
 
-scenario "a commit with no pull request pushed by an actor not allowed is refused and nothing is signed or posted":
-  when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:notfound pusher:octocat direct-actors:mmmnt-flmnt-roadmap[bot] direct:single ghcr:ok mainattest:good evidence:unit:pass jobs:green token:full go" }
-  predict rejection NO_PR_FOR_MERGE:
-    response ERR ReportError { code: "NO_PR_FOR_MERGE" }
+scenario "a push carrying several commits attests the head and lists every commit since before, unsigned ones as they are":
+  when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:notfound pusher:mmmnt-flmnt-roadmap[bot] range:many ghcr:ok mainattest:good evidence:unit:pass jobs:green token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b/pulls GET /repos/o/r/compare/1f2e3d4c5b6a79880a1b2c3d4e5f60718293a4b5...5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b GET ghcr.io/o/r/referrers/sha256:9b74c9897bac770ffc029102a200c5de2a4c2a6c2d1e3f4a5b6c7d8e9f0a1b2c PUT ghcr.io/o/r-evidence@sha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae WRITE merge-statement POST /repos/o/r/check-runs verdict=pass chain=ok sections=header,tests,attestations,chain,verify"
+      body: matching "3 commits since `1f2e3d4c5b6a79880a1b2c3d4e5f60718293a4b5`[\\s\\S]*\\| commit `[0-9a-f]{40}` signature \\| unsigned \\|"
+      check: "success"
+    }
     filesystem has []
 
-scenario "an allowed actor's push that carried more than one commit is refused and nothing is stored or posted":
-  when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:notfound pusher:mmmnt-flmnt-roadmap[bot] direct-actors:mmmnt-flmnt-roadmap[bot] direct:multi ghcr:ok mainattest:good evidence:unit:pass jobs:green token:full go" }
-  predict rejection DIRECT_COMMIT_REFUSED:
-    response ERR ReportError { code: "DIRECT_COMMIT_REFUSED" }
+scenario "a force push, whose before is not an ancestor of the main commit, is refused and nothing is stored, signed or posted":
+  when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:notfound pusher:mmmnt-flmnt-roadmap[bot] range:forced ghcr:ok mainattest:good evidence:unit:pass jobs:green token:full go" }
+  predict rejection NOT_FAST_FORWARD:
+    response ERR ReportError { code: "NOT_FAST_FORWARD" }
     filesystem has []
 
-scenario "an allowed actor's merge commit with no pull request is refused and nothing is stored or posted":
-  when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:notfound pusher:mmmnt-flmnt-roadmap[bot] direct-actors:mmmnt-flmnt-roadmap[bot] direct:mergecommit ghcr:ok mainattest:good evidence:unit:pass jobs:green token:full go" }
-  predict rejection DIRECT_COMMIT_REFUSED:
-    response ERR ReportError { code: "DIRECT_COMMIT_REFUSED" }
+scenario "a merge pushed as a force push is refused like any other":
+  when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:found range:forced prattest:present ghcr:ok mainattest:good evidence:unit:pass jobs:green comment:901 token:full go" }
+  predict rejection NOT_FAST_FORWARD:
+    response ERR ReportError { code: "NOT_FAST_FORWARD" }
     filesystem has []
 
 scenario "a direct commit whose build attested another commit breaks the chain at main's provenance and writes no statement":
-  when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:notfound pusher:mmmnt-flmnt-roadmap[bot] direct-actors:mmmnt-flmnt-roadmap[bot] direct:single ghcr:ok mainattest:wrongsource evidence:unit:pass jobs:green token:full go" }
+  when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:notfound pusher:mmmnt-flmnt-roadmap[bot] ghcr:ok mainattest:wrongsource evidence:unit:pass jobs:green token:full go" }
   predict success:
     response OK ProbeResult {
-      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b/pulls GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b GET ghcr.io/o/r/referrers/sha256:9b74c9897bac770ffc029102a200c5de2a4c2a6c2d1e3f4a5b6c7d8e9f0a1b2c POST /repos/o/r/check-runs verdict=fail chain=broken:main-provenance sections=header,tests,attestations,chain,verify"
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b/pulls GET /repos/o/r/compare/4e1a9c3b7d2f6e0a8c5b1d9f3e7a2c6b0d4f8e1a...5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b GET ghcr.io/o/r/referrers/sha256:9b74c9897bac770ffc029102a200c5de2a4c2a6c2d1e3f4a5b6c7d8e9f0a1b2c POST /repos/o/r/check-runs verdict=fail chain=broken:main-provenance sections=header,tests,attestations,chain,verify"
       check: "failure"
     }
     filesystem has []
 
 scenario "a direct commit whose evidence cannot be stored in GHCR is refused and nothing is written or posted":
-  when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:notfound pusher:mmmnt-flmnt-roadmap[bot] direct-actors:mmmnt-flmnt-roadmap[bot] direct:single ghcr:fail mainattest:good evidence:unit:pass jobs:green token:full go" }
+  when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:notfound pusher:mmmnt-flmnt-roadmap[bot] ghcr:fail mainattest:good evidence:unit:pass jobs:green token:full go" }
   predict rejection EVIDENCE_STORE_FAILED:
     response ERR ReportError { code: "EVIDENCE_STORE_FAILED" }
     filesystem has []
 
-scenario "an allowed actor's commit that has a merged pull request is reported as that pull request's merge":
-  when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:found pusher:mmmnt-flmnt-roadmap[bot] direct-actors:mmmnt-flmnt-roadmap[bot] prattest:present ghcr:ok mainattest:good evidence:unit:pass jobs:green comment:901 token:full go" }
+scenario "sign-merge signs a direct commit's statement under pr-merge/v2 and posts to no pull request":
+  when: ProbePrReport { script: "sign:direct token:full go" }
   predict success:
     response OK ProbeResult {
-      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b/pulls GET /repos/o/r/commits/9f2c41d8a07e5b3c6d1f0e2a4b8c7d9e1f3a5b6c/check-runs?check_name=feat%20report GET /repos/o/r/actions/runs/44153523061/artifacts GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET ghcr.io/o/r/referrers/sha256:9b74c9897bac770ffc029102a200c5de2a4c2a6c2d1e3f4a5b6c7d8e9f0a1b2c PUT ghcr.io/o/r-evidence@sha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae WRITE merge-statement POST /repos/o/r/check-runs GET /repos/o/r/issues/7/comments PATCH /repos/o/r/issues/comments/901 verdict=pass chain=ok sections=header,tests,attestations,chain,verify"
-      body: matching "signature pending \\(job sign-merge\\)"
+      trace: "GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b/check-runs?check_name=feat%20report SIGN https://feature.mmmnt.dev/attestation/pr-merge/v2 PATCH /repos/o/r/check-runs/77 verdict=pass chain=ok sections="
+      body: matching "\\*\\*Signed\\*\\* merge statement `sha256:[0-9a-f]{64}` · signature `sha256:[0-9a-f]{64}` ✅"
       check: "success"
     }
     filesystem has []
 
-scenario "sign-merge signs a direct-commit statement under the direct-commit predicate and posts to no pull request":
-  when: ProbePrReport { script: "sign:direct token:full go" }
+scenario "main's verify block names the pr-merge/v2 predicate type":
+  when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:found prattest:present ghcr:ok mainattest:good evidence:unit:pass jobs:green comment:901 token:full go" }
   predict success:
     response OK ProbeResult {
-      trace: "GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b/check-runs?check_name=feat%20report SIGN https://feature.mmmnt.dev/attestation/direct-commit/v1 PATCH /repos/o/r/check-runs/77 verdict=pass chain=ok sections="
-      body: matching "\\*\\*Signed\\*\\* direct-commit statement `sha256:[0-9a-f]{64}` · signature `sha256:[0-9a-f]{64}` ✅"
+      trace: any string
+      body: matching "--type https://feature\\.mmmnt\\.dev/attestation/pr-merge/v2 ghcr\\.io/"
       check: "success"
     }
     filesystem has []
