@@ -40,6 +40,12 @@
         },
         "peekEqualsStop": {
           "type": "boolean"
+        },
+        "lastPayloads": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
         }
       }
     },
