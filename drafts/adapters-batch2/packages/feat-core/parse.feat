@@ -1,0 +1,365 @@
+feat 1.0
+
+# SPEC-CORE-001 — the parser's own contract, written in the language it parses.
+# The corpus is the executable ground truth: one golden scenario per exemplar
+# (equals fixture, ADR-0013). Rejection families cover the pragma, the four
+# closed reference spaces, trigger discipline, the query guarantee, and the
+# no-escape-hatch minimums. status agreed proposed per ADR-0008.
+#
+# AMENDMENT (ADR-0022, UpperCamel rejection ids; Sift founder ruling 19878957 (1), "Change
+# Feature's grammar"; flipped to agreed and ordered built by Sift decision 0026e0ea, 2026-11-09).
+#
+# AMENDMENT (ADR-0023, `fault` in given:; Sift founder rulings 05537e6e (3) "reserved inside given:
+# in feat 1.0" and 0026e0ea, 2026-11-09).
+#
+# AMENDMENT (ADR-0025, given steps in written order; founder ruling cd1ed65b, 2026-11-12, "Feature:
+# written order (Recommended)"). A given that has both seed and execute lines records their written
+# order as given.order; the harness runs them in it (SPEC-RT-009). One new exemplar, corpus/given-order;
+# every other scenario and every other exemplar's IR is unchanged.
+#
+# AMENDMENT (ADR-0027, the negation matcher `not <matcher>`; founder ruling 9959cfbc, 2026-11-13, "Add
+# `not` to Feature (Recommended)"). A value block's matcher may be `not <operand>`, recorded as
+# { matcher: "not", operand }; the runtime evaluates it (SPEC-RT-011). One new exemplar, corpus/not-matcher,
+# and six refusal fixtures; every other scenario and every other exemplar's IR is unchanged.
+#
+# AMENDMENT (ADR-0028 and ADR-0029; founder ruling 5f05d5e1, 2026-11-14, "Agree as drafted" and "Seedable
+# randomness"). In a value block's matcher position, `@given.response.<path>` and `@given[i].response.<path>`
+# are the given-response reference, recorded as { matcher: "givenRef", path, index? } (alone and as the
+# operand of `not`); the runtime evaluates it (SPEC-RT-012). A given line `random seed <n>` is recorded as
+# given.random; the harness delivers it (SPEC-RT-013). One new exemplar, corpus/given-ref, and two refusal
+# fixtures; every other scenario and every other exemplar's IR is unchanged.
+#
+# AMENDMENT (ADR-0030, the f32 digest matcher; founder ruling 2026-11-16, "New Feature matcher
+# (Recommended)", agreed "Agree as drafted (Recommended)"). A value block's matcher may be
+# `f32 <dims> sha256 "<hex>"`, recorded as { matcher: "f32Digest", dims, sha256 }; the runtime evaluates it
+# (SPEC-RT-014). One new exemplar, corpus/f32-digest, and seven refusal fixtures; every other scenario and every
+# other exemplar's IR is unchanged.
+#
+# Amendment DRAFT 2026-11-20, awaiting the founder's flip (status below unchanged): ADR-0033 (draft), a spec declares the
+# services it observes. Founder ruling 2026-11-20 N3 "Per-spec services" (NOT the recommendation; flmnt workspace
+# bc674142, decision f2f873a8): "Feature's grammar lets a spec declare the subset of configured services it observes."
+# A header line `observes <service>[, <service>]...` names services of the config; the IR records them, in written order,
+# as a top-level `observes`. INV-6 then reads "every OBSERVED service in every non-query prediction". With no `observes`
+# line a spec observes every configured service and its IR has no `observes` key, so every existing exemplar's IR is
+# unchanged. One new exemplar, corpus/spec-observes (#20), two ok fixtures and eleven refusal fixtures; one new code,
+# UNOBSERVED_SERVICE. Every other scenario is unchanged.
+
+spec SPEC-CORE-001 "Parse a .feat file to BuiltSpec IR"
+context Toolchain
+aggregate Language
+type infrastructure
+status agreed
+
+construct:
+  handler at packages/feat-core/src/parse.ts
+  touches packages/feat-core/**
+  imports BuiltSpec from @mmmnt/feat-types
+  needs SPEC-RT-001
+  Implement as a hand-rolled deterministic recursive-descent parser (amendment 2026-07-16:
+  Langium's role narrowed to the M6 LSP surface; the corpus keeps both grammars in sync).
+  The corpus at corpus/ is ground truth: every exemplar parses to its .ir.json exactly.
+  Agent zones are opaque: parse errors inside construct:/enforce: freeform text are impossible.
+  The response body is the IR WITHOUT loc (ADR-0013 companion ruling); loc serves LSP surfaces only.
+  Parse errors carry line numbers and a hint naming valid alternatives where a closed space is violated.
+  A rejection id (in `rejects <ID> when` and `predict rejection <ID>:`) is UPPER_SNAKE ([A-Z0-9_]+) or
+  UpperCamel ([A-Z][A-Za-z0-9]*) and is kept verbatim in the IR (ADR-0022). Anything else in the
+  rejection-id position of a prediction is MALFORMED_SYNTAX.
+  Inside a scenario's given: block `fault` is a reserved first word (ADR-0023): a line that is exactly
+  `fault`, or starts `fault` followed by a space or tab, is a fault line and is never freeform context.
+  The form is `fault <service> <Operation> <Fault> [{ json }] [once | times <n> | until reset]`, <Operation>
+  UpperCamel, <Fault> UpperCamel or UPPER_SNAKE, <n> a positive integer. A well-formed line lands in the
+  scenario's given.faults, in written order, as { service, operation, fault, detail?, times } with times
+  always present (1 for the default and for once, n, or "reset"). Anything else that begins with the
+  reserved word is MALFORMED_SYNTAX. A word that merely begins with the letters, such as `faults` or
+  `faultline`, is not reserved and stays freeform. The fault's service joins the closed service space.
+  A given whose lines include both a seed and an execute records their kinds in written order as
+  given.order, an array of "seed" and "execute", one per line, the n-th "seed" naming given.seeds[n] and
+  the n-th "execute" given.executes[n] (ADR-0025). A given with only one of the two kinds has no order.
+  In a value block's matcher position, `not` followed by a space or tab and one operand is the negation
+  matcher (ADR-0027), recorded as { matcher: "not", operand } with the operand parsed as a matcher. The
+  operand is a literal, `@when.<path>`, `@deliver[i].<path>`, `@<service>[i].<path>`, `any <type>`,
+  `matching "<regex>"` or an outline placeholder (`<name>`, `matching <name>`). `not not`, `not absent`,
+  `not any` without a type, `not { ... }` and a `not` with no operand are MALFORMED_SYNTAX, each with a hint
+  naming the spelling to use. A capture reference inside `not` joins the closed service space.
+  In a value block's matcher position, `@given.response.<path>` and `@given[i].response.<path>` are the
+  given-response reference (ADR-0028), recorded as { matcher: "givenRef", path } with `index` when written;
+  `given` is never read as a service key. A given line `random seed <n>`, n a whole number from 0 to
+  9007199254740991, is recorded as given.random (ADR-0029); any other line beginning `random seed` is
+  MALFORMED_SYNTAX.
+  In a value block's matcher position, `f32` followed by a positive integer, `sha256` and a string of 64
+  lowercase hexadecimal characters is the f32 digest matcher (ADR-0030), recorded as { matcher: "f32Digest",
+  dims, sha256 }. A length that is not a positive integer, a digest that is not 64 lowercase hex, a missing
+  part, and `not f32 ...` are MALFORMED_SYNTAX, each with a hint giving the form.
+  A header line `observes` followed by one or more service keys separated by commas (spaces or tabs around a comma
+  allowed) declares the services the spec observes (ADR-0033), recorded as the IR's top-level `observes`, an array of
+  the keys in written order. Each key joins the closed service space: one absent from the config's services is
+  UNKNOWN_SERVICE_KEY listing the configured ones. A key written twice, a bare `observes`, an empty item (a leading,
+  trailing or doubled comma) and a second `observes` line are MALFORMED_SYNTAX, each with a hint giving the form.
+  When a spec declares `observes`, every service a scenario names must be one it declares: a `has` or `contains`
+  prediction, a `seed`, a `deliver ... to`, a given `fault` and an `@<service>[i]` capture reference (alone or inside
+  `not`) naming a configured service the spec does not declare is UNOBSERVED_SERVICE, naming the service and listing
+  the declared ones in the hint ("add it to the observes line"). INCOMPLETE_PREDICTION then checks the declared
+  services only, in config order. A spec with no `observes` line is checked against every configured service, as
+  before, and its IR carries no `observes`. Declaring every configured service is allowed and is recorded as written.
+
+enforce:
+  read the version pragma before anything else
+  rejects MISSING_PRAGMA when the first non-comment line is not a feat version pragma
+  rejects UNSUPPORTED_VERSION when the pragma names a version this toolchain does not support
+  rejects MALFORMED_SYNTAX when a compiler-zone block violates the grammar, a fault line in given: included (ADR-0023), a negation whose operand is not a matcher it takes (ADR-0027), a random seed that is not a whole number in range (ADR-0029), and an f32 digest of any other shape (ADR-0030)
+  rejects UNKNOWN_SERVICE_KEY when a prediction or a given fault targets a service absent from the config services, or a cross-surface capture reference names one (ADR-0021 — a reference names a service, so it shares the closed space)
+  rejects UNKNOWN_COMMAND when a when or execute names a command absent from response.commands
+  rejects UNDECLARED_SCHEMA when a scenario references a schema absent from the contract block
+  rejects UNKNOWN_ACTOR when an as-clause names an actor absent from response.actors
+  rejects DUPLICATE_SCENARIO_NAME when two scenarios in one spec share a name
+  rejects TRIGGER_MISMATCH when the trigger form does not match the spec type discipline
+  rejects QUERY_SIDE_EFFECT when a query spec predicts any service write
+  rejects INCOMPLETE_PREDICTION when a non-query prediction omits a configured service, or, when the spec declares observes, an observed one
+  rejects UNOBSERVED_SERVICE when a spec that declares observes names, in a prediction, seed, deliver, fault or capture reference, a configured service it does not observe
+  rejects UNKNOWN_SERVICE_KEY when an observes line names a service absent from the config services
+  rejects MALFORMED_SYNTAX when an observes line names no service, names one twice, has an empty item, or is written twice
+  rejects MISSING_MINIMUM when a spec lacks the required minimum sections
+
+contract:
+  input ParseInput
+  response BuiltSpec
+  error ParseError
+
+scenario "parses the founding exemplar (create-flow)":
+  when: Parse { spec: "corpus/create-flow/create-flow.feat", config: "corpus/create-flow/feat.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "../../corpus/create-flow/create-flow.ir.json"
+    filesystem has []
+
+scenario "parses the CRUD exemplar (create-user)":
+  when: Parse { spec: "corpus/create-user/create-user.feat", config: "corpus/create-user/feat.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "../../corpus/create-user/create-user.ir.json"
+    filesystem has []
+
+scenario "parses the seeds exemplar (tenant-at-limit)":
+  when: Parse { spec: "corpus/tenant-at-limit/tenant-at-limit.feat", config: "corpus/tenant-at-limit/feat.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "../../corpus/tenant-at-limit/tenant-at-limit.ir.json"
+    filesystem has []
+
+scenario "parses the ordering exemplar (publish-order)":
+  when: Parse { spec: "corpus/publish-order/publish-order.feat", config: "corpus/publish-order/feat.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "../../corpus/publish-order/publish-order.ir.json"
+    filesystem has []
+
+scenario "parses the compiler-shaped exemplar (emit-test-file)":
+  when: Parse { spec: "corpus/emit-test-file/emit-test-file.feat", config: "corpus/emit-test-file/feat.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "../../corpus/emit-test-file/emit-test-file.ir.json"
+    filesystem has []
+
+scenario "parses the projection exemplar (flow-view)":
+  when: Parse { spec: "corpus/flow-view/flow-view.feat", config: "corpus/flow-view/feat.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "../../corpus/flow-view/flow-view.ir.json"
+    filesystem has []
+
+scenario "parses the query exemplar (get-flow)":
+  when: Parse { spec: "corpus/get-flow/get-flow.feat", config: "corpus/get-flow/feat.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "../../corpus/get-flow/get-flow.ir.json"
+    filesystem has []
+
+scenario "parses the expressiveness exemplar (suspend-user)":
+  when: Parse { spec: "corpus/suspend-user/suspend-user.feat", config: "corpus/suspend-user/feat.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "../../corpus/suspend-user/suspend-user.ir.json"
+    filesystem has []
+
+scenario "parses the saga exemplar (ship-order)":
+  when: Parse { spec: "corpus/ship-order/ship-order.feat", config: "corpus/ship-order/feat.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "../../corpus/ship-order/ship-order.ir.json"
+    filesystem has []
+
+scenario "parses the quoted-payload-keys exemplar (userinfo-profile)":
+  when: Parse { spec: "corpus/userinfo-profile/userinfo-profile.feat", config: "corpus/userinfo-profile/feat.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "../../corpus/userinfo-profile/userinfo-profile.ir.json"
+    filesystem has []
+
+scenario "parses the dotted-record-types exemplar (capture-charge)":
+  when: Parse { spec: "corpus/capture-charge/capture-charge.feat", config: "corpus/capture-charge/feat.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "../../corpus/capture-charge/capture-charge.ir.json"
+    filesystem has []
+
+scenario "parses the spec-variables exemplar (waitlist-variables, ADR-0017)":
+  when: Parse { spec: "corpus/waitlist-variables/waitlist-variables.feat", config: "corpus/waitlist-variables/feat.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "../../corpus/waitlist-variables/waitlist-variables.ir.json"
+    filesystem has []
+
+scenario "parses the UpperCamel rejection-id exemplar (rejection-camelcase, ADR-0022)":
+  when: Parse { spec: "corpus/rejection-camelcase/rejection-camelcase.feat", config: "corpus/rejection-camelcase/feat.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "../../corpus/rejection-camelcase/rejection-camelcase.ir.json"
+    filesystem has []
+
+scenario "parses the fault exemplar (given-fault, ADR-0023)":
+  when: Parse { spec: "corpus/given-fault/given-fault.feat", config: "corpus/given-fault/feat.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "../../corpus/given-fault/given-fault.ir.json"
+    filesystem has []
+
+scenario "parses the given-order exemplar (given-order, ADR-0025)":
+  when: Parse { spec: "corpus/given-order/given-order.feat", config: "corpus/given-order/feat.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "../../corpus/given-order/given-order.ir.json"
+    filesystem has []
+
+scenario "parses the negation exemplar (not-matcher, ADR-0027)":
+  when: Parse { spec: "corpus/not-matcher/not-matcher.feat", config: "corpus/not-matcher/feat.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "../../corpus/not-matcher/not-matcher.ir.json"
+    filesystem has []
+
+scenario "parses the given-response and random-seed exemplar (given-ref, ADR-0028, ADR-0029)":
+  when: Parse { spec: "corpus/given-ref/given-ref.feat", config: "corpus/given-ref/feat.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "../../corpus/given-ref/given-ref.ir.json"
+    filesystem has []
+
+scenario "parses the f32 digest exemplar (f32-digest, ADR-0030)":
+  when: Parse { spec: "corpus/f32-digest/f32-digest.feat", config: "corpus/f32-digest/feat.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "../../corpus/f32-digest/f32-digest.ir.json"
+    filesystem has []
+
+scenario "parses the observed-services exemplar (spec-observes, ADR-0033)":
+  when: Parse { spec: "corpus/spec-observes/spec-observes.feat", config: "corpus/spec-observes/feat.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "../../corpus/spec-observes/spec-observes.ir.json"
+    filesystem has []
+
+scenario "a command that observes two of three services predicts those two and records them in written order":
+  when: Parse { spec: "packages/feat-core/fixtures/ok/observes-subset.feat", config: "packages/feat-core/fixtures/parse-observes.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "../../packages/feat-core/fixtures/ok/observes-subset.ir.json"
+    filesystem has []
+
+scenario "a query that observes one service may read it with contains":
+  when: Parse { spec: "packages/feat-core/fixtures/ok/observes-query.feat", config: "packages/feat-core/fixtures/parse-observes.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "../../packages/feat-core/fixtures/ok/observes-query.ir.json"
+    filesystem has []
+
+scenario outline "refuses an observes declaration that is not well formed or names an unconfigured service":
+  when: Parse { spec: <spec>, config: "packages/feat-core/fixtures/parse-observes.config.json" }
+  predict rejection <code>:
+    response ERR ParseError { code: <code>, hint: matching <hint> }
+    filesystem has []
+  examples:
+    | spec                                                         | code                  | hint                     |
+    | "packages/feat-core/fixtures/bad/observes-unknown-service.feat" | "UNKNOWN_SERVICE_KEY" | "^Configured services: eventStore, cache, log" |
+    | "packages/feat-core/fixtures/bad/observes-duplicate.feat"    | "MALFORMED_SYNTAX"    | "^Write 'observes <service>, <service>'" |
+    | "packages/feat-core/fixtures/bad/observes-bare.feat"         | "MALFORMED_SYNTAX"    | "^Write 'observes <service>, <service>'" |
+    | "packages/feat-core/fixtures/bad/observes-trailing-comma.feat" | "MALFORMED_SYNTAX"  | "^Write 'observes <service>, <service>'" |
+    | "packages/feat-core/fixtures/bad/observes-twice.feat"        | "MALFORMED_SYNTAX"    | "^Write 'observes <service>, <service>'" |
+
+scenario outline "refuses a service the spec uses but does not observe, naming it and the observed ones":
+  when: Parse { spec: <spec>, config: "packages/feat-core/fixtures/parse-observes.config.json" }
+  predict rejection UNOBSERVED_SERVICE:
+    response ERR ParseError { code: "UNOBSERVED_SERVICE", message: matching "'cache'", hint: matching "^Observed services: eventStore" }
+    filesystem has []
+  examples:
+    | spec                                                              |
+    | "packages/feat-core/fixtures/bad/observes-unobserved-prediction.feat" |
+    | "packages/feat-core/fixtures/bad/observes-unobserved-contains.feat"   |
+    | "packages/feat-core/fixtures/bad/observes-unobserved-seed.feat"       |
+    | "packages/feat-core/fixtures/bad/observes-unobserved-fault.feat"      |
+    | "packages/feat-core/fixtures/bad/observes-unobserved-capture-ref.feat" |
+    | "packages/feat-core/fixtures/bad/observes-unobserved-deliver.feat"   |
+
+scenario "a prediction that omits an observed service is incomplete":
+  when: Parse { spec: "packages/feat-core/fixtures/bad/observes-incomplete.feat", config: "packages/feat-core/fixtures/parse-observes.config.json" }
+  predict rejection INCOMPLETE_PREDICTION:
+    response ERR ParseError { code: "INCOMPLETE_PREDICTION", message: matching "observed service 'cache'" }
+    filesystem has []
+
+scenario "a word that merely begins with fault stays freeform context":
+  when: Parse { spec: "packages/feat-core/fixtures/ok/fault-prefix-word.feat", config: "packages/feat-core/fixtures/parse.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "../../packages/feat-core/fixtures/ok/fault-prefix-word.ir.json"
+    filesystem has []
+
+scenario outline "rejects invalid specs with the precise code":
+  when: Parse { spec: <spec>, config: "packages/feat-core/fixtures/parse.config.json" }
+  predict rejection <code>:
+    response ERR ParseError { code: <code> }
+    filesystem has []
+  examples:
+    | spec                                    | code                      |
+    | "packages/feat-core/fixtures/bad/missing-pragma.feat"      | "MISSING_PRAGMA"          |
+    | "packages/feat-core/fixtures/bad/unsupported-version.feat" | "UNSUPPORTED_VERSION"     |
+    | "packages/feat-core/fixtures/bad/malformed-syntax.feat"    | "MALFORMED_SYNTAX"        |
+    | "packages/feat-core/fixtures/bad/unknown-service.feat"     | "UNKNOWN_SERVICE_KEY"     |
+    | "packages/feat-core/fixtures/bad/unknown-capture-service.feat" | "UNKNOWN_SERVICE_KEY" |
+    | "packages/feat-core/fixtures/bad/unknown-command.feat"     | "UNKNOWN_COMMAND"         |
+    | "packages/feat-core/fixtures/bad/undeclared-schema.feat"   | "UNDECLARED_SCHEMA"       |
+    | "packages/feat-core/fixtures/bad/unknown-actor.feat"       | "UNKNOWN_ACTOR"           |
+    | "packages/feat-core/fixtures/bad/duplicate-scenario.feat"  | "DUPLICATE_SCENARIO_NAME" |
+    | "packages/feat-core/fixtures/bad/trigger-mismatch.feat"    | "TRIGGER_MISMATCH"        |
+    | "packages/feat-core/fixtures/bad/query-side-effect.feat"   | "QUERY_SIDE_EFFECT"       |
+    | "packages/feat-core/fixtures/bad/incomplete-prediction.feat" | "INCOMPLETE_PREDICTION" |
+    | "packages/feat-core/fixtures/bad/missing-minimum.feat"     | "MISSING_MINIMUM"         |
+    | "packages/feat-core/fixtures/bad/rejection-id-lower-camel.feat"      | "MALFORMED_SYNTAX" |
+    | "packages/feat-core/fixtures/bad/rejection-id-mixed-case-snake.feat" | "MALFORMED_SYNTAX" |
+    | "packages/feat-core/fixtures/bad/rejection-id-kebab.feat"            | "MALFORMED_SYNTAX" |
+    | "packages/feat-core/fixtures/bad/fault-missing-operation.feat"      | "MALFORMED_SYNTAX"        |
+    | "packages/feat-core/fixtures/bad/fault-lowercase-operation.feat"    | "MALFORMED_SYNTAX"        |
+    | "packages/feat-core/fixtures/bad/fault-times-zero.feat"             | "MALFORMED_SYNTAX"        |
+    | "packages/feat-core/fixtures/bad/fault-times-without-count.feat"    | "MALFORMED_SYNTAX"        |
+    | "packages/feat-core/fixtures/bad/fault-trailing-junk.feat"          | "MALFORMED_SYNTAX"        |
+    | "packages/feat-core/fixtures/bad/fault-bare-keyword.feat"           | "MALFORMED_SYNTAX"        |
+    | "packages/feat-core/fixtures/bad/fault-unknown-service.feat"        | "UNKNOWN_SERVICE_KEY"     |
+    | "packages/feat-core/fixtures/bad/not-not.feat"                      | "MALFORMED_SYNTAX"        |
+    | "packages/feat-core/fixtures/bad/random-seed-negative.feat"         | "MALFORMED_SYNTAX"        |
+    | "packages/feat-core/fixtures/bad/random-seed-missing.feat"          | "MALFORMED_SYNTAX"        |
+    | "packages/feat-core/fixtures/bad/not-absent.feat"                   | "MALFORMED_SYNTAX"        |
+    | "packages/feat-core/fixtures/bad/not-bare-any.feat"                 | "MALFORMED_SYNTAX"        |
+    | "packages/feat-core/fixtures/bad/not-block.feat"                    | "MALFORMED_SYNTAX"        |
+    | "packages/feat-core/fixtures/bad/not-bare.feat"                     | "MALFORMED_SYNTAX"        |
+    | "packages/feat-core/fixtures/bad/not-unknown-capture-service.feat"  | "UNKNOWN_SERVICE_KEY"     |
+    | "packages/feat-core/fixtures/bad/f32-zero-dims.feat"                | "MALFORMED_SYNTAX"        |
+    | "packages/feat-core/fixtures/bad/f32-fractional-dims.feat"          | "MALFORMED_SYNTAX"        |
+    | "packages/feat-core/fixtures/bad/f32-uppercase-digest.feat"         | "MALFORMED_SYNTAX"        |
+    | "packages/feat-core/fixtures/bad/f32-short-digest.feat"             | "MALFORMED_SYNTAX"        |
+    | "packages/feat-core/fixtures/bad/f32-missing-sha256.feat"           | "MALFORMED_SYNTAX"        |
+    | "packages/feat-core/fixtures/bad/f32-bare.feat"                     | "MALFORMED_SYNTAX"        |
+    | "packages/feat-core/fixtures/bad/not-f32.feat"                      | "MALFORMED_SYNTAX"        |
+
+scenario outline "refuses a negation of a matcher it does not take, naming the spelling to use":
+  when: Parse { spec: <spec>, config: "packages/feat-core/fixtures/parse.config.json" }
+  predict rejection MALFORMED_SYNTAX:
+    response ERR ParseError { code: "MALFORMED_SYNTAX", message: matching <message>, hint: matching <hint> }
+    filesystem has []
+  examples:
+    | spec                                                  | message                 | hint                                |
+    | "packages/feat-core/fixtures/bad/not-not.feat"        | "^'not not' is refused" | "^Write the operand itself"         |
+    | "packages/feat-core/fixtures/bad/not-absent.feat"     | "^'not absent' is refused" | "^Write 'any'"                   |
+    | "packages/feat-core/fixtures/bad/not-bare-any.feat"   | "^'not any' is refused" | "^Write 'absent'"                   |
+    | "packages/feat-core/fixtures/bad/not-block.feat"      | "^'not \\{ … \\}' is refused" | "^Negate a field inside the block" |
+    | "packages/feat-core/fixtures/bad/not-bare.feat"       | "^'not' takes a matcher" | "^Write 'not' and one matcher"     |
+
+scenario outline "refuses an f32 digest of any other shape, giving the form":
+  when: Parse { spec: <spec>, config: "packages/feat-core/fixtures/parse.config.json" }
+  predict rejection MALFORMED_SYNTAX:
+    response ERR ParseError { code: "MALFORMED_SYNTAX", message: matching <message>, hint: matching "^Write 'f32 <dims> sha256" }
+    filesystem has []
+  examples:
+    | spec                                                     | message                                         |
+    | "packages/feat-core/fixtures/bad/f32-zero-dims.feat"        | "^'f32' takes a positive integer length: '0'"   |
+    | "packages/feat-core/fixtures/bad/f32-fractional-dims.feat"  | "^'f32' takes a positive integer length: '1\\.5'" |
+    | "packages/feat-core/fixtures/bad/f32-uppercase-digest.feat" | "^the digest after 'sha256' must be 64 lowercase" |
+    | "packages/feat-core/fixtures/bad/f32-short-digest.feat"     | "^the digest after 'sha256' must be 64 lowercase" |
+    | "packages/feat-core/fixtures/bad/f32-missing-sha256.feat"   | "^'f32' takes a length, the word 'sha256'"      |
+    | "packages/feat-core/fixtures/bad/f32-bare.feat"             | "^'f32' takes a length, the word 'sha256'"      |
+    | "packages/feat-core/fixtures/bad/not-f32.feat"              | "^'not f32 …' is refused"                       |

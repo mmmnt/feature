@@ -1,0 +1,109 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-ADPFS-002",
+  "schemas": {
+    "ObserveInput": {
+      "type": "object",
+      "required": [
+        "script"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "script": {
+          "type": "string",
+          "minLength": 1
+        },
+        "options": {
+          "type": "object"
+        }
+      }
+    },
+    "ObserveResult": {
+      "type": "object",
+      "required": [
+        "trace"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "trace": {
+          "type": "string"
+        },
+        "lastTypes": {
+          "type": "string"
+        },
+        "peekEqualsStop": {
+          "type": "boolean"
+        },
+        "lastPayloads": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "path"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "members": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "name"
+                  ],
+                  "additionalProperties": false,
+                  "minProperties": 2,
+                  "maxProperties": 2,
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "json": {},
+                    "lines": {
+                      "type": "array"
+                    },
+                    "text": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "reason": {
+                "enum": [
+                  "zstd",
+                  "tar",
+                  "json",
+                  "utf8"
+                ]
+              },
+              "member": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "ObserveError": {
+      "type": "object",
+      "required": [
+        "code"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "OPTIONS_INVALID",
+            "CLEAR_SCOPE_UNSAFE",
+            "ZSTD_UNSUPPORTED",
+            "CLEAR_FAILED"
+          ]
+        },
+        "detail": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

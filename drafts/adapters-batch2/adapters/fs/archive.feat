@@ -1,0 +1,289 @@
+feat 1.0
+
+# SPEC-ADPFS-002 — the fs adapter reads the members of a written archive, and may empty its scope at reset.
+# Requested by flmnt for its Export spec (FLMNT-SPEC-LCY-004). Founder rulings 2026-11-20 (flmnt workspace bc674142):
+#   EXP-q4 (16268202) "New files adapter": a spec predicts a written archive's members through a Feature adapter;
+#   N4 (f2f873a8) "Extend fs (Rec.)": that reading lives in @mmmnt/feat-adapter-fs as SPEC-ADPFS-002, options
+#     `archives: [glob]` and `clearOnReset`, replacing the "new adapter" reading of EXP-q4;
+#   N2 (f2f873a8) "Adapter option (Rec.)": `clearOnReset` is opt-in and empties the scope at reset.
+# DRAFT 2026-11-20, awaiting the founder's flip. Lands after SPEC-ADPFS-001 and leaves every one of its scenarios as
+# it is: with neither option set the adapter behaves exactly as 0.1.10 does.
+#
+# Driven through adapters/fs/fixtures/probe.mjs (SPEC-ADPFS-001's probe, extended inside touches).
+# `ObserveFs { script, options? }` makes a scratch directory under the OS temp dir the project root, creates the
+# adapter with `options` (default `{ scope: "." }`), and runs the script. Steps added to SPEC-ADPFS-001's:
+#   setup                  adapter.setup() (SPEC-ADPFS-001's scenarios never call it; it was a no-op)
+#   reset                  adapter.reset()
+#   mkdir:<dir>            create <dir> under the project root, parents included
+#   write:<file>           as before; parents are created, so `write:out/sub/b.txt` works
+#   put:<fixture>:<file>   copy adapters/fs/fixtures/archives/<fixture> to <file> under the project root
+#   ls                     every file and directory under the scope, walked with fs.readdir (not through the
+#                          adapter, so the names it skips are listed too), sorted, `/`-separated, comma-joined:
+#                          `ls=out/a.txt,out/sub` or `ls=` (the scope directory itself is never listed); `ls=absent`
+#                          when the scope directory does not exist
+#   nozstd                 hide node:zlib's zstdDecompressSync from the adapter, as on a Node release without it
+# The answer adds `lastPayloads`: the payloads of the last peek or stop, in capture order. A step the adapter refuses
+# ends the script and is answered ERR ObserveError { code, detail } with the adapter's code.
+#
+# The archive fixtures in adapters/fs/fixtures/archives/ are written by real producers, never by this adapter's own
+# code: bsdtar 3.x (libarchive; ustar and pax headers) and GNU tar 1.35 (GNU long-name headers, the form flmnt's
+# writer, tar 0.4 + ruzstd 0.9 per flmnt 76841c7b, emits for a path over 100 bytes), each piped through zstd 1.5.
+# fixtures/archives/make.sh regenerates them; the corrupt ones are made from the good ones by the byte edits the script
+# names. Every member in them is listed in the scenario that reads it.
+#   members.tar.zst    a.json {"id":1}; b.jsonl two lines {"n":1} {"n":2} with a final newline; c.txt "hello\n";
+#                      in that archive order, then a directory entry d/ and d/e.json {"deep":true}
+#   empty-jsonl.tar.zst e.jsonl, zero bytes
+#   long-gnu.tar.zst / long-pax.tar.zst   one member, workspaces/<36-char id>/<36-char session>/keyframe.jsonl, 113
+#                      bytes of name, one line {"k":1}; GNU long-name header and pax path header respectively
+#   not-zstd.tar.zst   members.tar uncompressed          truncated.tar.zst  members.tar.zst cut at half its length
+#   not-tar.tar.zst    zstd of the text "not a tar\n"    bad-checksum.tar.zst  first header's checksum byte changed
+#   bad-json.tar.zst   x.json "{"                         bad-jsonl.tar.zst  y.jsonl "{\"n\":1}\nnope\n"
+#   bad-utf8.tar.zst   z.txt the bytes ff fe              symlink.tar.zst    a regular a.json, then link -> a.json
+
+spec SPEC-ADPFS-002 "Filesystem adapter: archive members and clear on reset"
+context Toolchain
+aggregate Adapters
+type infrastructure
+status draft
+
+construct:
+  handler at adapters/fs/src/index.ts
+  touches adapters/fs/**
+  needs SPEC-ADPFS-001
+  Two options, both optional. `archives`: an array of non-empty glob strings, matched with node:path matchesGlob
+  against a record's path (relative to scope, `/`-separated). `clearOnReset`: a boolean, default false.
+  setup(): refuse OPTIONS_INVALID when `archives` is present and is not an array of non-empty strings, or
+  `clearOnReset` is present and is not a boolean; refuse CLEAR_SCOPE_UNSAFE when clearOnReset is true and the
+  resolved scope is not strictly inside the project root (the root itself, an ancestor of it, or anywhere outside it);
+  refuse ZSTD_UNSUPPORTED when `archives` is given and node:zlib has no zstdDecompressSync (Node before 22.15).
+  Each refusal is an Error with `code` set and a message naming the option and the value. Without `archives` the
+  adapter never touches zstd, so it runs on every Node it ran on before.
+  A FILE_WRITTEN record whose path matches an `archives` glob is read when the diff is taken (peek and stop alike,
+  so they agree): the file is decompressed with zstdDecompressSync and parsed as a tar stream in-house (512-byte
+  headers, ustar `prefix` + `name`, a GNU long-name `L` entry and a pax `x` `path` record naming the next entry;
+  `g` global headers ignored; the stream ends at two zero blocks or at the end of the data). Its payload is
+  { path, members } with one member per regular file (typeflag `0` or NUL), in archive order, named by its path in
+  the archive as written: a name ending `.json` is { name, json: <the parsed value> }; `.jsonl` is
+  { name, lines: [<each line parsed>] }, where a final newline adds no line and a `\r` before a newline is dropped;
+  any other name is { name, text: <the content decoded as UTF-8> }. A directory entry (typeflag `5`) is not a member.
+  An archive that cannot be read in full is never skipped and never partly reported: the record's type is
+  ARCHIVE_UNREADABLE, key the path, payload { path, reason } plus `member` when one member is to blame. reason is
+  "zstd" (not a zstd frame, or a frame that does not decompress), "tar" (a header whose checksum does not match, a
+  size past the end of the data, or an entry of any other type, which names the member), "json" (a .json member, or
+  a line of a .jsonl member, that does not parse) or "utf8" (a text member that is not valid UTF-8; the decoder is
+  fatal). A FILE_DELETED record is unchanged, { path }, whatever the globs say.
+  reset(): close the window as before; when clearOnReset is true, remove every file and directory under the scope,
+  keeping the scope directory itself and every entry whose name the snapshot never descends into (node_modules,
+  dist, .turbo, .git, coverage, reports), at any depth. A scope that does not exist is left absent. A scope that
+  exists and is not a directory, or an entry that cannot be removed, rejects CLEAR_FAILED naming the path.
+  The adapter's README gains the two options, the member shapes, ARCHIVE_UNREADABLE and the three refusals, and
+  drops "It never writes to the tree" for "It writes to the tree only when clearOnReset is on, and only at reset".
+
+enforce:
+  a written file matching an archives glob is reported with its members in archive order
+  a .json member is its parsed value, a .jsonl member its parsed lines, any other member its UTF-8 text
+  a directory entry is not a member
+  an archive that cannot be read in full is captured as ARCHIVE_UNREADABLE, never skipped and never partly reported
+  a written file matching no archives glob, and every deleted file, is reported as SPEC-ADPFS-001 reports it
+  peekCapture and stopCapture report the same members for the same archive
+  clearOnReset empties the scope at reset and keeps the scope directory and the names the snapshot never descends into
+  without clearOnReset, reset writes nothing to the tree
+  rejects OPTIONS_INVALID when archives is not an array of non-empty strings or clearOnReset is not a boolean
+  rejects CLEAR_SCOPE_UNSAFE when clearOnReset is on and the scope is not strictly inside the project root
+  rejects ZSTD_UNSUPPORTED when archives is given and the running Node has no zstd decompression
+  rejects CLEAR_FAILED when the scope is not a directory or an entry under it cannot be removed
+
+contract:
+  input ObserveInput
+  response ObserveResult
+  error ObserveError
+
+scenario "an archive written in the window is reported with its members in archive order":
+  when: ObserveFs { script: "setup start put:members.tar.zst:export.flmnt stop", options: { scope: ".", archives: ["*.flmnt"] } }
+  predict success:
+    response OK ObserveResult {
+      trace: "setup start put:members.tar.zst:export.flmnt stop=1",
+      lastTypes: "FILE_WRITTEN",
+      lastPayloads: [{ path: "export.flmnt", members: [{ name: "a.json", json: { id: 1 } }, { name: "b.jsonl", lines: [{ n: 1 }, { n: 2 }] }, { name: "c.txt", text: "hello\n" }, { name: "d/e.json", json: { deep: true } }] }]
+    }
+    filesystem has []
+
+scenario "an empty .jsonl member is no lines":
+  when: ObserveFs { script: "setup start put:empty-jsonl.tar.zst:e.flmnt stop", options: { scope: ".", archives: ["*.flmnt"] } }
+  predict success:
+    response OK ObserveResult {
+      trace: "setup start put:empty-jsonl.tar.zst:e.flmnt stop=1",
+      lastPayloads: [{ path: "e.flmnt", members: [{ name: "e.jsonl", lines: [] }] }]
+    }
+    filesystem has []
+
+scenario outline "a member name longer than 100 bytes is read whole, from a GNU long-name or a pax header":
+  when: ObserveFs { script: <script>, options: { scope: ".", archives: ["*.flmnt"] } }
+  predict success:
+    response OK ObserveResult {
+      lastPayloads: [{ path: "k.flmnt", members: [{ name: "workspaces/0b8d2f4e-6f1a-4c8e-9a51-2d3c4b5a6f70/5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b/keyframe.jsonl", lines: [{ k: 1 }] }] }]
+    }
+    filesystem has []
+  examples:
+    | script                                          |
+    | "setup start put:long-gnu.tar.zst:k.flmnt stop" |
+    | "setup start put:long-pax.tar.zst:k.flmnt stop" |
+
+scenario "a glob reaches into subdirectories when it says so":
+  when: ObserveFs { script: "setup start put:members.tar.zst:out/w/export.flmnt write:out/w/notes.txt stop", options: { scope: ".", archives: ["**/*.flmnt"] } }
+  predict success:
+    response OK ObserveResult {
+      trace: "setup start put:members.tar.zst:out/w/export.flmnt write:out/w/notes.txt stop=2",
+      lastTypes: "FILE_WRITTEN,FILE_WRITTEN",
+      lastPayloads: [{ path: "out/w/export.flmnt", members: [{ name: "a.json", json: { id: 1 } }, { name: "b.jsonl", lines: [{ n: 1 }, { n: 2 }] }, { name: "c.txt", text: "hello\n" }, { name: "d/e.json", json: { deep: true } }] }, { path: "out/w/notes.txt" }]
+    }
+    filesystem has []
+
+scenario "a written file that matches no archive glob is reported as before, with no members":
+  when: ObserveFs { script: "setup start put:members.tar.zst:export.tar.zst stop", options: { scope: ".", archives: ["*.flmnt"] } }
+  predict success:
+    response OK ObserveResult {
+      trace: "setup start put:members.tar.zst:export.tar.zst stop=1",
+      lastTypes: "FILE_WRITTEN",
+      lastPayloads: [{ path: "export.tar.zst" }]
+    }
+    filesystem has []
+
+scenario "without the archives option an archive is a file like any other":
+  when: ObserveFs { script: "setup start put:members.tar.zst:export.flmnt stop" }
+  predict success:
+    response OK ObserveResult {
+      trace: "setup start put:members.tar.zst:export.flmnt stop=1",
+      lastPayloads: [{ path: "export.flmnt" }]
+    }
+    filesystem has []
+
+scenario "a deleted archive is reported deleted, with no members":
+  when: ObserveFs { script: "put:members.tar.zst:export.flmnt setup start delete:export.flmnt stop", options: { scope: ".", archives: ["*.flmnt"] } }
+  predict success:
+    response OK ObserveResult {
+      trace: "put:members.tar.zst:export.flmnt setup start delete:export.flmnt stop=1",
+      lastTypes: "FILE_DELETED",
+      lastPayloads: [{ path: "export.flmnt" }]
+    }
+    filesystem has []
+
+scenario "an archive that existed before the window and did not change is not reported":
+  when: ObserveFs { script: "put:members.tar.zst:export.flmnt setup start stop", options: { scope: ".", archives: ["*.flmnt"] } }
+  predict success:
+    response OK ObserveResult { trace: "put:members.tar.zst:export.flmnt setup start stop=0" }
+    filesystem has []
+
+scenario "a peek reports the members and the stop reports the same":
+  when: ObserveFs { script: "setup start put:empty-jsonl.tar.zst:e.flmnt peek stop", options: { scope: ".", archives: ["*.flmnt"] } }
+  predict success:
+    response OK ObserveResult {
+      trace: "setup start put:empty-jsonl.tar.zst:e.flmnt peek=1 stop=1",
+      peekEqualsStop: true,
+      lastPayloads: [{ path: "e.flmnt", members: [{ name: "e.jsonl", lines: [] }] }]
+    }
+    filesystem has []
+
+scenario outline "an archive that cannot be read in full is captured as ARCHIVE_UNREADABLE, never skipped":
+  when: ObserveFs { script: <script>, options: { scope: ".", archives: ["*.flmnt"] } }
+  predict success:
+    response OK ObserveResult { lastTypes: "ARCHIVE_UNREADABLE", lastPayloads: <payloads> }
+    filesystem has []
+  examples:
+    | script                                               | payloads                                                          |
+    | "setup start put:not-zstd.tar.zst:x.flmnt stop"      | [{ "path": "x.flmnt", "reason": "zstd" }]                         |
+    | "setup start put:truncated.tar.zst:x.flmnt stop"     | [{ "path": "x.flmnt", "reason": "zstd" }]                         |
+    | "setup start put:not-tar.tar.zst:x.flmnt stop"       | [{ "path": "x.flmnt", "reason": "tar" }]                          |
+    | "setup start put:bad-checksum.tar.zst:x.flmnt stop"  | [{ "path": "x.flmnt", "reason": "tar" }]                          |
+    | "setup start put:bad-json.tar.zst:x.flmnt stop"      | [{ "path": "x.flmnt", "reason": "json", "member": "x.json" }]     |
+    | "setup start put:bad-jsonl.tar.zst:x.flmnt stop"     | [{ "path": "x.flmnt", "reason": "json", "member": "y.jsonl" }]    |
+    | "setup start put:bad-utf8.tar.zst:x.flmnt stop"      | [{ "path": "x.flmnt", "reason": "utf8", "member": "z.txt" }]      |
+    | "setup start put:symlink.tar.zst:x.flmnt stop"       | [{ "path": "x.flmnt", "reason": "tar", "member": "link" }]        |
+
+scenario "an empty file matching a glob is an unreadable archive, not an archive with no members":
+  when: ObserveFs { script: "setup start write:x.flmnt stop", options: { scope: ".", archives: ["*.flmnt"] } }
+  predict success:
+    response OK ObserveResult {
+      trace: "setup start write:x.flmnt stop=1",
+      lastTypes: "ARCHIVE_UNREADABLE",
+      lastPayloads: [{ path: "x.flmnt", reason: "zstd" }]
+    }
+    filesystem has []
+
+scenario "reset with clearOnReset empties the scope and keeps the scope directory":
+  when: ObserveFs { script: "mkdir:out setup write:out/a.txt write:out/sub/b.txt reset ls", options: { scope: "out", clearOnReset: true } }
+  predict success:
+    response OK ObserveResult { trace: "mkdir:out setup write:out/a.txt write:out/sub/b.txt reset ls=" }
+    filesystem has []
+
+scenario "reset with clearOnReset keeps the names the adapter never descends into":
+  when: ObserveFs { script: "mkdir:out setup write:out/node_modules/m.js write:out/sub/.git/HEAD write:out/a.txt reset ls", options: { scope: "out", clearOnReset: true } }
+  predict success:
+    response OK ObserveResult { trace: "mkdir:out setup write:out/node_modules/m.js write:out/sub/.git/HEAD write:out/a.txt reset ls=node_modules,node_modules/m.js,sub,sub/.git,sub/.git/HEAD" }
+    filesystem has []
+
+scenario "reset without clearOnReset writes nothing to the tree":
+  when: ObserveFs { script: "mkdir:out setup write:out/a.txt reset ls", options: { scope: "out" } }
+  predict success:
+    response OK ObserveResult { trace: "mkdir:out setup write:out/a.txt reset ls=a.txt" }
+    filesystem has []
+
+scenario "reset with clearOnReset and no scope directory leaves it absent":
+  when: ObserveFs { script: "setup reset ls", options: { scope: "out", clearOnReset: true } }
+  predict success:
+    response OK ObserveResult { trace: "setup reset ls=absent" }
+    filesystem has []
+
+scenario "what reset removes is never a record of the next window":
+  when: ObserveFs { script: "mkdir:out setup start write:out/a.txt reset start stop", options: { scope: "out", clearOnReset: true } }
+  predict success:
+    response OK ObserveResult { trace: "mkdir:out setup start write:out/a.txt reset start stop=0" }
+    filesystem has []
+
+scenario "a reset whose scope is a file is refused CLEAR_FAILED, and the file is left":
+  when: ObserveFs { script: "write:out setup reset", options: { scope: "out", clearOnReset: true } }
+  predict rejection CLEAR_FAILED:
+    response ERR ObserveError { code: "CLEAR_FAILED", detail: matching "out" }
+    filesystem has []
+
+scenario outline "an option of the wrong shape is refused at setup":
+  when: ObserveFs { script: "setup", options: <options> }
+  predict rejection OPTIONS_INVALID:
+    response ERR ObserveError { code: "OPTIONS_INVALID", detail: matching <detail> }
+    filesystem has []
+  examples:
+    | options                                   | detail         |
+    | { "scope": ".", "archives": "*.flmnt" }   | "archives"     |
+    | { "scope": ".", "archives": [1] }         | "archives"     |
+    | { "scope": ".", "archives": [""] }        | "archives"     |
+    | { "scope": "out", "clearOnReset": "yes" } | "clearOnReset" |
+
+scenario outline "clearOnReset on a scope that is not strictly inside the project root is refused at setup":
+  when: ObserveFs { script: "setup", options: <options> }
+  predict rejection CLEAR_SCOPE_UNSAFE:
+    response ERR ObserveError { code: "CLEAR_SCOPE_UNSAFE", detail: matching "scope" }
+    filesystem has []
+  examples:
+    | options                                      |
+    | { "scope": ".", "clearOnReset": true }       |
+    | { "scope": "..", "clearOnReset": true }      |
+    | { "scope": "out/..", "clearOnReset": true }  |
+    | { "scope": "/", "clearOnReset": true }       |
+
+scenario "a root scope is not refused when clearOnReset is off":
+  when: ObserveFs { script: "setup", options: { scope: ".", clearOnReset: false } }
+  predict success:
+    response OK ObserveResult { trace: "setup" }
+    filesystem has []
+
+scenario "archives on a Node without zstd is refused at setup":
+  when: ObserveFs { script: "nozstd setup", options: { scope: ".", archives: ["*.flmnt"] } }
+  predict rejection ZSTD_UNSUPPORTED:
+    response ERR ObserveError { code: "ZSTD_UNSUPPORTED", detail: matching "22\\.15" }
+    filesystem has []
+
+scenario "without archives the adapter runs on a Node without zstd":
+  when: ObserveFs { script: "nozstd setup start write:a.txt stop", options: { scope: "." } }
+  predict success:
+    response OK ObserveResult { trace: "nozstd setup start write:a.txt stop=1", lastTypes: "FILE_WRITTEN" }
+    filesystem has []
