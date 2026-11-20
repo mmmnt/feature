@@ -1,0 +1,555 @@
+feat 1.0
+
+# SPEC-PRR-001 — the pull request build report Action (actions/pr-report). Agreed 2026-11-17 by the founder's flip
+# ("Agree as drafted (Recommended)").
+# (ADR-0032-DRAFT; requested 2026-11-17: "I review all PRs, but I won't go through the code … get it into a friendly
+# format, into the PR"; form ruled "GitHub Action in Feature (Recommended)"). Revised 2026-11-17 on the founder's
+# feedback: "we need more detail on the attestations. digest is truncated, and we need to make alignment from the
+# signature to the PR ref so we can establish an easy chain of evidence for an auditor."
+#
+# Amended 2026-11-17 by the founder's flip ("Agree as drafted (Recommended)"; the missing-SBOM check conclusion
+# confirmed "Neutral (Recommended)") — two rulings in one amendment (ADR-0032 decisions 13–14):
+# (1) "Sign with our own key" (flmnt f1530c7d): GitHub artifact attestations are not available to the consumer, so
+# attestations are signed with the consumer's own cosign key, stored as OCI referrers in GHCR, verified with
+# `cosign verify-attestation --key`; no public transparency log. The tlog link becomes the key link.
+# (2) "Add the scenario": evidence present but
+# an expected attestation subject not produced (flmnt's SBOM, from its build job) is an explicit incomplete result,
+# "❌ incomplete: SBOM not produced (job build)", never a pass and never a report that is not posted. The consumer names
+# its required subjects (input `required-subjects: SBOM from build`); the probe step `sbom:missing` is that case.
+# Verify command amended 2026-11-17 by founder ruling "Add the flag": cosign verify-attestation fails on an attestation
+# with no transparency-log entry unless given --insecure-ignore-tlog, so the rendered command carries it.
+# Amended 2026-11-17 after the first real report (flmnt#145), three founder rulings:
+# (A) "Accept a newer base (Recommended)": the event's base sha is a snapshot; GitHub builds the merge ref on the
+#     base branch's tip at that time, so a first parent on the base branch (the event's base or newer) holds the link.
+# (B) "Leave them out (Recommended)": jobs still running because they wait on the report, and the report's own check
+#     run, are not tallied among the CI jobs.
+# (C) "One row per bundle, named (Recommended)": a bundle that names its package is a Tests row `<tier> · <package>`.
+# Amended 2026-11-18 by founder ruling "Action reads .att too (Recommended)": cosign 2's classic key signing keeps its
+# attestations as the layers of the subject's `sha256-<hex>.att` tag, not as OCI referrers (flmnt#145's first signed
+# SBOM read "chain broken at signature" for it); with no referrer, the Action reads that tag.
+# Amended 2026-11-18 by founder ruling "Two-run merge mode (Recommended)": the run on a push to main (report-main)
+# never holds the signing key. It writes the merge statement unsigned, records its digest as the main check's
+# external_id and points the pull request at it with "signature pending (job sign-merge)"; a separate sign run
+# (input `sign-statement`, job sign-merge) signs exactly that statement for that main commit, or refuses
+# STATEMENT_MISMATCH with no effect.
+# Corrected 2026-11-19 after flmnt's first merge to main (run 44446177926, "run 44441336322 has no attested
+# artifacts"): the pulls API names no merge commit a pull request's run tested (its merge_commit_sha is the commit on
+# main; the probe's merge_ref_sha was invented). Merge mode reads the tested commit from the pull request run's own
+# feat report check on the head: its external_id, which PR mode now sets to the built commit, else the "built `<ref>` @
+# `<sha>`" of an older check's summary. The probe's pulls response has the real shape; `prcheck:summary` is an older
+# check with no external_id.
+# Under (A) a first parent other than the event's base is compared with the base branch before the link is judged,
+# so the badparents scenario's trace gains that compare (`0badc0de…` is not on main: diverged, the link still breaks).
+# Amended 2026-11-19 by founder ruling (flmnt f60f6956) "Forks need to work as well.": a fork's run holds no
+# repository secrets. (1) GitHub leaves a fork run's `workflow_run.pull_requests` empty, so the follow-up finds the pull
+# request by `<head owner>:<head branch>` among the open pull requests and accepts only the one whose head is the run's
+# head commit; none is NO_PR_CONTEXT. The follow-up reports only a fork's run and refuses TRUSTED_RUN for any other.
+# (2) Merge mode records a fork's pull request whose run left no attestation as not attested in the merge statement,
+# instead of refusing PR_EVIDENCE_MISSING; main's own attestations start its chain.
+# A Dependabot pull request is a pull request from this repository like any other, by founder ruling (flmnt 6fcbe41f,
+# superseding the Dependabot half of f60f6956) "Provide the secrets": its run is given Dependabot secrets and signs its
+# own attestations in-run.
+#
+# Amendment DRAFT 2026-11-20, awaiting the founder's flip (status below unchanged; this copy lives in drafts/ and is
+# promoted over actions/pr-report/report.feat when agreed). Founder ruling 2026-11-20 "Direct-commit mode" (flmnt
+# 720367d8; context 55d6ee20, 3e87faa8, 95c2f463): flmnt's roadmap App (mmmnt-flmnt-roadmap[bot]) lands built /
+# verified flips on main as one App-signed commit through createCommitOnBranch, a commit with no pull request, which
+# merge mode refuses NO_PR_FOR_MERGE today. A direct-commit mode reports and attests it instead:
+# (1) A push to main whose commit has no merged pull request is a direct commit only when the push's sender is in the
+#     new input `direct-commit-actors` (default empty: every consumer behaves as before). Any other such push still
+#     rejects NO_PR_FOR_MERGE with no effect.
+# (2) A direct commit is one commit with one parent, and that parent is the branch's previous head (the push event's
+#     `before`). Anything else (several commits in one push, a merge commit) rejects DIRECT_COMMIT_REFUSED with no
+#     effect, so no commit reaches main unattested behind an attested one.
+# (3) The report run stores main's evidence in GHCR, writes an unsigned direct-commit statement (the commit, its
+#     parent, the sender, the run, main's artifact digests, the evidence bundle digests and the store; no pull
+#     request fields), records its digest as main's check's external_id, and posts to no pull request.
+# (4) Sign mode signs a direct-commit statement under its own predicate type,
+#     `https://feature.mmmnt.dev/attestation/direct-commit/v1`, and appends the signature to main's check only.
+# (5) A push whose commit has a merged pull request is a merge, whoever pushed it: merge mode is unchanged.
+# Open for the founder: the qualification rule, the refusal codes, the predicate type, the one-commit rule and the
+# identity the allow-list is matched against (drafts/pr-report-direct-commit/ADR-0032-AMENDMENT-DRAFT.md).
+# Driven through actions/pr-report/fixtures/probe.mjs (part of the build, inside touches, not shipped). The probe runs
+# the Action's entry with a recorded GitHub API, a recorded GHCR referrers listing and recorded cosign results (no network): every request is
+# answered from a fixture, and the trace lists the requests made, in order, as `METHOD path`.
+# `ProbePrReport { script }` runs a space-separated script:
+#   pr:<n>                     the run belongs to pull request <n>: head 9f2c41d8a07e5b3c6d1f0e2a4b8c7d9e1f3a5b6c, base
+#                              4e1a9c3b7d2f6e0a8c5b1d9f3e7a2c6b0d4f8e1a, built ref refs/pull/<n>/merge, built commit
+#                              c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192; `push:topic` = a push to a branch other than main
+#   main:<sha>                 merge mode: the run is a push to main at <sha> (main sha below:
+#                              5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b)
+#   prlookup:found|notfound    the pull request associated with the main commit (#7, merged from head
+#                              9f2c41d8a07e5b3c6d1f0e2a4b8c7d9e1f3a5b6c, tested merge ref commit
+#                              c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192, PR run 44153523061), or none
+#   prcheck:summary            the pull request head's feat report check has no external_id; its summary names the
+#                              built commit (a check posted before the Action recorded it)
+#   mainattest:good|wrongsource  main's build attestation: source commit = main sha, or another commit
+#   prattest:present|missing   the PR run's attestation digests are, or are not, retrievable
+#   ghcr:ok|fail               merge mode: storing main's evidence bundles in GHCR as a digest-pinned OCI artifact succeeds or fails
+#   fork:<n>                   follow-up mode: a trusted `workflow_run` run reporting on fork pull request <n> from the
+#                              results its `pull_request` run uploaded; no fork code is checked out or run
+#   prs:empty|stale            follow-up mode: the workflow_run lists no pull request (as GitHub sends a fork's run);
+#                              the open pull requests of contributor:feature are #<n> at head
+#                              9f2c41d8a07e5b3c6d1f0e2a4b8c7d9e1f3a5b6c (`empty`), or #<n> at head
+#                              0badc0de1a2b3c4d5e6f708192a3b4c5d6e7f809 (`stale`: the branch moved since the run)
+#   from:fork|samerepo         follow-up mode: the run's head repository is contributor/r (`fork`, the default) or o/r
+#                              (`samerepo`)
+#   prfrom:fork                merge mode: the merged pull request's head repository is contributor/r (default: o/r)
+#   merge:good|badparents      the built commit's parents are [base, head], or are not
+#   merge:basemoved            the built commit's parents are [1f2e3d4c5b6a79880a1b2c3d4e5f60718293a4b5, head]: the base
+#                              branch (main) moved past the event's base, and that commit is on it (compare: behind)
+#   merge:offbranch            as basemoved, but the first parent is not on the base branch (compare: diverged)
+#   evidence:<tier>:<fixture>[:<package>]  an uploaded feat-evidence/2 bundle for that tier, of that package when named: `pass`, `fail` (one scenario fails
+#                              with one violation row), `noruns` (verify pass, no run block)
+#   jobs:<fixture>             the run's jobs: `green` (install, lint, unit, harness all succeed), `red` (harness fails),
+#                              `aggregate` (green, plus `CI green` still in progress because it needs the report, and
+#                              the report's own `feat report` check run, concluded failure)
+#   attest:<fixture>           cosign attestations (OCI referrers in GHCR) for the run's artifact (subject
+#                              sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b): `verified`;
+#                              `unverified` (cosign verify --key fails); `wrongsource` (provenance gitCommit is
+#                              0badc0de1a2b3c4d5e6f708192a3b4c5d6e7f809); `foreignsigner` (the provenance names another
+#                              repository's workflow); `otherkey` (signed by a key other than the repository's
+#                              public key); `classic` (no OCI referrer; one attestation held by cosign's classic
+#                              `.att` tag, layer sha256:4c6cc238681fcaf230c2a643479538ace0bc675f0eb2b24b083dbccce260956c);
+#                              `none` (no attestation)
+#   comment:<id>|none          an earlier report comment carrying the marker exists with that id, or none does
+#   token:full|readonly        the token's granted permissions (readonly = what a fork pull request receives)
+#   sbom:missing               the run was required to produce the SBOM (job build) and did not: no subject
+#   sign:good|othermain|tampered  sign mode on main 5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b: the statement report-main
+#                              wrote (`good`), one naming another main commit (`othermain`), or one whose bytes differ
+#                              from what main's check (id 77) recorded (`tampered`)
+#   pusher:<login>             a push's sender (event `sender.login`, GITHUB_ACTOR); default octocat
+#   direct-actors:<login>      the input `direct-commit-actors` holds <login> (default: empty)
+#   direct:single|multi|mergecommit  the main commit 5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b with no pull request: one
+#                              parent, 4e1a9c3b7d2f6e0a8c5b1d9f3e7a2c6b0d4f8e1a, which is the push's `before`
+#                              (`single`); one parent, but `before` is 1f2e3d4c5b6a79880a1b2c3d4e5f60718293a4b5, so the
+#                              push carried more commits (`multi`); two parents (`mergecommit`)
+#   sign:direct                sign mode: the direct-commit statement report-main wrote for main 5e8d1f2a…, recorded by
+#                              main's check (id 77)
+#   go                         run the Action
+# After `go` the trace carries `verdict=<pass|fail|incomplete>`, `chain=<ok|broken:<link>>` and `sections=<names>`;
+# `body` is the rendered comment's markdown and `check` the check run's conclusion.
+
+spec SPEC-PRR-001 "PR build report: one updating comment and a check summary, with an auditable chain of evidence"
+context Toolchain
+aggregate Reporting
+type infrastructure
+status agreed
+
+construct:
+  handler at actions/pr-report/src/index.ts
+  touches actions/pr-report/**
+  Read every uploaded feat-evidence bundle (one per tier), the workflow run's jobs, the built commit, and the
+  attestations of the run's artifacts (OCI referrers of the subject, else the layers of cosign's classic
+  `sha256-<hex>.att` tag); verify each attestation with cosign against the repository's public key (`ci/signing/<key>.pub`): the signature,
+  the key's fingerprint, the signer workflow and the provenance source; render one markdown report and post it as ONE pull
+  request comment found again by the marker `<!-- feat-pr-report -->` (update in place, else create), and as the
+  summary of a check run named `feat report` whose conclusion is the verdict.
+  The comment is compact and evidential, with no prose: a header (verdict and PR number; head commit, built ref and
+  built commit, run link); Tests (per tier: specs, scenarios passed, evidence bundle digest; CI jobs passed); Attestations
+  (per artifact: name, full subject digest, signature digest, key fingerprint, signer workflow@ref, source commit,
+  verified); Chain (one row per
+  check: built commit parents = base + head, each source commit = built commit, signer = this repository's workflow,
+  key = the repository's public key, pinned images = the pin file); and a collapsed Verify block with the
+  `cosign verify-attestation --key ci/signing/flmnt.pub --insecure-ignore-tlog --type slsaprovenance1 ghcr.io/<o>/<r>-sbom@sha256:<full>`
+  command. On failure only the header and the failing row change. After merge one line is appended: merged as the
+  main commit, the merge statement's signature digest, a link to the main report. A direct commit (a push to main by
+  an actor named in `direct-commit-actors`, whose commit has no pull request) is reported on main's check alone, its
+  header naming the commit, its parent and the sender, and its statement is a direct-commit statement. Full detail (the full provenance,
+  the referrer manifests) stays in the evidence bundle and the
+  attestations, not in the comment. Every digest and commit SHA is printed in full, never shortened.
+  The verdict is pass only when every tier's bundle has verify pass and run pass, every job succeeded, and every
+  link of the chain holds; fail when any of them failed or any link is broken; incomplete when evidence or a run is
+  missing.
+
+enforce:
+  exactly one report comment exists on the pull request after any number of runs
+  the check run's conclusion equals the report's verdict
+  every digest and commit SHA in the report is printed in full
+  the comment holds only the header, Tests, Attestations, Chain and Verify sections, and on failure differs from a pass only in its header and failing rows
+  the provenance's source commit must equal the commit the run built, or the chain is broken at the provenance link
+  the signer must be one of this repository's workflows at the built ref, or the chain is broken at the signer link
+  an attestation signed by any key other than the repository's public key breaks the chain at the key link
+  there is no transparency log: no step reads or writes one
+  a subject's attestations are its OCI referrers; with none, the layers of its classic `.att` tag; with neither, it has no attestation
+  the built commit's first parent must be a commit on the base branch (the event's base or newer) and its second the head, or the chain is broken at the built-commit link
+  jobs still in progress because they wait on the report, and the report's own check run, are not tallied among the CI jobs
+  each evidence bundle is one Tests row, named `<tier> · <package>` when the bundle names its package
+  a required attestation subject the run did not produce makes the verdict incomplete, and the header names it and the job that should have produced it
+  on a push to main the Action writes one merge statement naming the pull request number, its head commit, the
+  tested merge-ref commit, the pull request run and its attestation digests, the main commit and main's artifact
+  digests; posts a check run on the main commit in the same report format, recording the statement's digest as its
+  external_id; and appends "merged as <main sha>" with the statement's full digest and "signature pending (job
+  sign-merge)" to the closed pull request's report comment
+  the merge statement is signed only in sign mode, never in the run that writes it
+  sign mode signs exactly the statement whose digest main's check recorded, for the run's main commit, then appends
+  the signature's digest to that check and to the pull request's comment
+  rejects STATEMENT_MISMATCH when the statement names another main commit, or its digest is not the one main's check recorded, and nothing is signed or posted
+  main's build attestation must have the main commit as its source, or the chain is broken at the main-provenance link
+  the tested merge-ref commit is the one the pull request run's feat report check recorded (its external_id, else the built commit its summary names); a pull request whose check records none rejects PR_EVIDENCE_MISSING
+  rejects NO_PR_CONTEXT when the run is neither a pull request nor a push to main, and nothing is posted
+  rejects NO_PR_FOR_MERGE when no merged pull request is associated with the main commit and the push's sender is not named in `direct-commit-actors`, and nothing is signed or posted
+  a push to main whose commit has a merged pull request is that pull request's merge, whoever pushed it
+  a direct commit is a push to main whose commit has no merged pull request, by a sender named in `direct-commit-actors`
+  a direct commit has exactly one parent, and it is the push's `before`
+  rejects DIRECT_COMMIT_REFUSED when a direct commit has more than one parent or its parent is not the push's `before`, and nothing is stored, written, signed or posted
+  for a direct commit the Action stores main's evidence in GHCR, writes one direct-commit statement naming the commit, its parent, the sender, the run, main's artifact digests, the evidence bundle digests and the store, and no pull request; and posts a check run on the commit recording the statement's digest as its external_id
+  a direct commit posts to no pull request, in the report run or in sign mode
+  sign mode signs a direct-commit statement with the predicate type https://feature.mmmnt.dev/attestation/direct-commit/v1 and a merge statement with https://feature.mmmnt.dev/attestation/pr-merge/v1, never the other way
+  rejects PR_EVIDENCE_MISSING when the pull request run's attestations cannot be retrieved, and nothing is signed or posted
+  on a push to main the evidence bundles are stored in GHCR as a digest-pinned OCI artifact before the merge-linking attestation is signed, and that digest is named in it
+  rejects EVIDENCE_STORE_FAILED when the evidence bundles cannot be stored in GHCR, and nothing is signed or posted
+  a fork pull request is reported by a trusted workflow_run follow-up from the uploaded results only; it never checks out or runs the fork's code, and shows attestations as "not attested (fork PR); attested on merge"
+  a fork's run lists no pull request; the follow-up takes the open pull request of `<head owner>:<head branch>` whose head is the run's head commit, and rejects NO_PR_CONTEXT when none is, posting nothing
+  the follow-up reports only a run from a fork
+  rejects TRUSTED_RUN when the follow-up's run is from this repository, whoever started it, and nothing is posted
+  merge mode records a fork's pull request whose run left no attestation as not attested in the merge statement, and continues with main's own attestations; any other pull request without them rejects PR_EVIDENCE_MISSING
+  rejects NO_EVIDENCE when no evidence bundle was uploaded, and nothing is posted
+  rejects INSUFFICIENT_PERMISSIONS when the token cannot write pull request comments or check runs, and nothing is posted
+
+contract:
+  input ProbeInput
+  response ProbeResult
+  error ReportError
+
+scenario "a green build with an unbroken chain posts a new report comment and a passing check":
+  when: ProbePrReport { script: "pr:7 merge:good evidence:unit:pass evidence:integration:pass jobs:green attest:verified comment:none token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=pass chain=ok sections=header,tests,attestations,chain,verify"
+      check: "success"
+    }
+    filesystem has []
+
+scenario "a second run updates the same comment instead of adding one":
+  when: ProbePrReport { script: "pr:7 merge:good evidence:unit:pass jobs:green attest:verified comment:901 token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/issues/7/comments PATCH /repos/o/r/issues/comments/901 POST /repos/o/r/check-runs verdict=pass chain=ok sections=header,tests,attestations,chain,verify"
+      check: "success"
+    }
+    filesystem has []
+
+scenario "the report prints every digest and commit in full":
+  when: ProbePrReport { script: "pr:7 merge:good evidence:unit:pass jobs:green attest:verified comment:none token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: any string
+      body: matching "sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b"
+      check: "success"
+    }
+    filesystem has []
+
+scenario "a failing scenario shows its violation and fails the check":
+  when: ProbePrReport { script: "pr:7 merge:good evidence:unit:pass evidence:integration:fail jobs:red attest:verified comment:none token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=fail chain=ok sections=header,tests,attestations,chain,verify"
+      check: "failure"
+    }
+    filesystem has []
+
+scenario "an attestation whose signature fails verification breaks the chain":
+  when: ProbePrReport { script: "pr:7 merge:good evidence:unit:pass jobs:green attest:unverified comment:none token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=fail chain=broken:signature sections=header,tests,attestations,chain,verify"
+      check: "failure"
+    }
+    filesystem has []
+
+scenario "a provenance source commit other than the built commit breaks the chain":
+  when: ProbePrReport { script: "pr:7 merge:good evidence:unit:pass jobs:green attest:wrongsource comment:none token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=fail chain=broken:provenance sections=header,tests,attestations,chain,verify"
+      check: "failure"
+    }
+    filesystem has []
+
+scenario "a signer that is not this repository's workflow breaks the chain":
+  when: ProbePrReport { script: "pr:7 merge:good evidence:unit:pass jobs:green attest:foreignsigner comment:none token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=fail chain=broken:signer sections=header,tests,attestations,chain,verify"
+      check: "failure"
+    }
+    filesystem has []
+
+scenario "an attestation signed by another key breaks the chain":
+  when: ProbePrReport { script: "pr:7 merge:good evidence:unit:pass jobs:green attest:otherkey comment:none token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=fail chain=broken:key sections=header,tests,attestations,chain,verify"
+      check: "failure"
+    }
+    filesystem has []
+
+scenario "a built commit whose parents are not the PR's base and head breaks the chain":
+  when: ProbePrReport { script: "pr:7 merge:badparents evidence:unit:pass jobs:green attest:verified comment:none token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET /repos/o/r/compare/main...0badc0de1a2b3c4d5e6f708192a3b4c5d6e7f809 GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=fail chain=broken:built-commit sections=header,tests,attestations,chain,verify"
+      check: "failure"
+    }
+    filesystem has []
+
+scenario "a bundle with no run is incomplete, not passing":
+  when: ProbePrReport { script: "pr:7 merge:good evidence:unit:noruns jobs:green attest:none comment:none token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=incomplete chain=ok sections=header,tests,chain"
+      check: "neutral"
+    }
+    filesystem has []
+
+scenario "a merge to main writes the merge statement, checks main and points the PR at it, the signature left to sign-merge":
+  when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:found prattest:present ghcr:ok mainattest:good evidence:unit:pass jobs:green comment:901 token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b/pulls GET /repos/o/r/commits/9f2c41d8a07e5b3c6d1f0e2a4b8c7d9e1f3a5b6c/check-runs?check_name=feat%20report GET /repos/o/r/actions/runs/44153523061/artifacts GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET ghcr.io/o/r/referrers/sha256:9b74c9897bac770ffc029102a200c5de2a4c2a6c2d1e3f4a5b6c7d8e9f0a1b2c PUT ghcr.io/o/r-evidence@sha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae WRITE merge-statement POST /repos/o/r/check-runs GET /repos/o/r/issues/7/comments PATCH /repos/o/r/issues/comments/901 verdict=pass chain=ok sections=header,tests,attestations,chain,verify"
+      body: matching "signature pending \\(job sign-merge\\)"
+      check: "success"
+    }
+    filesystem has []
+
+scenario "a merge finds the commit the pull request run tested from that run's check, when the check predates its external_id":
+  when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:found prcheck:summary prattest:present ghcr:ok mainattest:good evidence:unit:pass jobs:green comment:901 token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b/pulls GET /repos/o/r/commits/9f2c41d8a07e5b3c6d1f0e2a4b8c7d9e1f3a5b6c/check-runs?check_name=feat%20report GET /repos/o/r/actions/runs/44153523061/artifacts GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET ghcr.io/o/r/referrers/sha256:9b74c9897bac770ffc029102a200c5de2a4c2a6c2d1e3f4a5b6c7d8e9f0a1b2c PUT ghcr.io/o/r-evidence@sha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae WRITE merge-statement POST /repos/o/r/check-runs GET /repos/o/r/issues/7/comments PATCH /repos/o/r/issues/comments/901 verdict=pass chain=ok sections=header,tests,attestations,chain,verify"
+      body: matching "tested `c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192`"
+      check: "success"
+    }
+    filesystem has []
+
+scenario "main's build attested for another commit breaks the chain at main's provenance":
+  when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:found prattest:present ghcr:ok mainattest:wrongsource evidence:unit:pass jobs:green comment:901 token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b/pulls GET /repos/o/r/commits/9f2c41d8a07e5b3c6d1f0e2a4b8c7d9e1f3a5b6c/check-runs?check_name=feat%20report GET /repos/o/r/actions/runs/44153523061/artifacts GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET ghcr.io/o/r/referrers/sha256:9b74c9897bac770ffc029102a200c5de2a4c2a6c2d1e3f4a5b6c7d8e9f0a1b2c POST /repos/o/r/check-runs GET /repos/o/r/issues/7/comments PATCH /repos/o/r/issues/comments/901 verdict=fail chain=broken:main-provenance sections=header,tests,attestations,chain,verify"
+      check: "failure"
+    }
+    filesystem has []
+
+scenario "a main commit with no merged pull request is refused and nothing is signed":
+  when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:notfound mainattest:good evidence:unit:pass jobs:green token:full go" }
+  predict rejection NO_PR_FOR_MERGE:
+    response ERR ReportError { code: "NO_PR_FOR_MERGE" }
+    filesystem has []
+
+scenario "a pull request run whose attestations are gone is refused and nothing is signed":
+  when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:found prattest:missing mainattest:good evidence:unit:pass jobs:green comment:901 token:full go" }
+  predict rejection PR_EVIDENCE_MISSING:
+    response ERR ReportError { code: "PR_EVIDENCE_MISSING" }
+    filesystem has []
+
+scenario "a push to a branch other than main is refused and nothing is posted":
+  when: ProbePrReport { script: "push:topic evidence:unit:pass jobs:green attest:verified token:full go" }
+  predict rejection NO_PR_CONTEXT:
+    response ERR ReportError { code: "NO_PR_CONTEXT" }
+    filesystem has []
+
+scenario "no uploaded evidence is refused and nothing is posted":
+  when: ProbePrReport { script: "pr:7 merge:good jobs:green attest:verified comment:none token:full go" }
+  predict rejection NO_EVIDENCE:
+    response ERR ReportError { code: "NO_EVIDENCE" }
+    filesystem has []
+
+scenario "a read-only token is refused before anything is posted":
+  when: ProbePrReport { script: "pr:7 merge:good evidence:unit:pass jobs:green attest:verified comment:none token:readonly go" }
+  predict rejection INSUFFICIENT_PERMISSIONS:
+    response ERR ReportError { code: "INSUFFICIENT_PERMISSIONS" }
+    filesystem has []
+
+scenario "main's evidence that cannot be stored in GHCR is refused and nothing is signed":
+  when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:found prattest:present ghcr:fail mainattest:good evidence:unit:pass jobs:green comment:901 token:full go" }
+  predict rejection EVIDENCE_STORE_FAILED:
+    response ERR ReportError { code: "EVIDENCE_STORE_FAILED" }
+    filesystem has []
+
+scenario "a fork pull request is reported by the trusted follow-up, its attestations marked as attested on merge":
+  when: ProbePrReport { script: "fork:9 evidence:unit:pass jobs:green attest:none comment:none token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/actions/runs/1/artifacts GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/issues/9/comments POST /repos/o/r/issues/9/comments POST /repos/o/r/check-runs verdict=pass chain=not-attested sections=header,tests,attestations,chain"
+      body: matching "not attested \\(fork PR\\); attested on merge"
+      check: "success"
+    }
+    filesystem has []
+
+scenario "evidence present but the SBOM not produced is incomplete, naming the build job":
+  when: ProbePrReport { script: "pr:7 merge:good evidence:unit:pass jobs:green sbom:missing comment:none token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=incomplete chain=ok sections=header,tests,attestations,chain"
+      body: matching "❌ PR #7 — incomplete: SBOM not produced \\(job build\\)"
+      check: "neutral"
+    }
+    filesystem has []
+
+scenario "a merge ref built on the base branch's newer tip keeps the chain":
+  when: ProbePrReport { script: "pr:7 merge:basemoved evidence:unit:pass jobs:green attest:verified comment:none token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET /repos/o/r/compare/main...1f2e3d4c5b6a79880a1b2c3d4e5f60718293a4b5 GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=pass chain=ok sections=header,tests,attestations,chain,verify"
+      body: matching "base `1f2e3d4c5b6a79880a1b2c3d4e5f60718293a4b5` \\+ head"
+      check: "success"
+    }
+    filesystem has []
+
+scenario "a merge ref whose first parent is not on the base branch breaks the chain":
+  when: ProbePrReport { script: "pr:7 merge:offbranch evidence:unit:pass jobs:green attest:verified comment:none token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET /repos/o/r/compare/main...1f2e3d4c5b6a79880a1b2c3d4e5f60718293a4b5 GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=fail chain=broken:built-commit sections=header,tests,attestations,chain,verify"
+      check: "failure"
+    }
+    filesystem has []
+
+scenario "jobs waiting on the report and the report's own check run are not tallied":
+  when: ProbePrReport { script: "pr:7 merge:good evidence:unit:pass jobs:aggregate attest:verified comment:none token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=pass chain=ok sections=header,tests,attestations,chain,verify"
+      body: matching "\\| CI jobs \\| — \\| ✅ 4 / 4 \\|"
+      check: "success"
+    }
+    filesystem has []
+
+scenario "each package's bundle is its own named Tests row":
+  when: ProbePrReport { script: "pr:7 merge:good evidence:unit:pass:memory evidence:unit:pass:lifecycle jobs:green attest:verified comment:none token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=pass chain=ok sections=header,tests,attestations,chain,verify"
+      body: matching "\\| unit · memory \\| 2 \\|[^\\n]*\\n\\| unit · lifecycle \\| 2 \\|"
+      check: "success"
+    }
+    filesystem has []
+
+scenario "an attestation held only by cosign's classic .att tag is found and verified":
+  when: ProbePrReport { script: "pr:7 merge:good evidence:unit:pass jobs:green attest:classic comment:none token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET ghcr.io/o/r/manifests/sha256-3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b.att GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=pass chain=ok sections=header,tests,attestations,chain,verify"
+      body: matching "`sha256:4c6cc238681fcaf230c2a643479538ace0bc675f0eb2b24b083dbccce260956c`"
+      check: "success"
+    }
+    filesystem has []
+
+scenario "sign-merge signs the statement report-main wrote and points the check and the PR at it":
+  when: ProbePrReport { script: "sign:good comment:901 token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b/check-runs?check_name=feat%20report SIGN https://feature.mmmnt.dev/attestation/pr-merge/v1 PATCH /repos/o/r/check-runs/77 GET /repos/o/r/issues/7/comments PATCH /repos/o/r/issues/comments/901 verdict=pass chain=ok sections="
+      body: matching "\\*\\*Signed\\*\\* merge statement `sha256:[0-9a-f]{64}` · signature `sha256:e3b98a4da31a127d4bde6e43033f66ba274cab0eb7eb1c70ec41402bf6273dd8` ✅"
+      check: "success"
+    }
+    filesystem has []
+
+scenario "a statement for another main commit is refused and nothing is signed":
+  when: ProbePrReport { script: "sign:othermain comment:901 token:full go" }
+  predict rejection STATEMENT_MISMATCH:
+    response ERR ReportError { code: "STATEMENT_MISMATCH" }
+    filesystem has []
+
+scenario "a statement whose digest differs from the one main's check recorded is refused and nothing is signed":
+  when: ProbePrReport { script: "sign:tampered comment:901 token:full go" }
+  predict rejection STATEMENT_MISMATCH:
+    response ERR ReportError { code: "STATEMENT_MISMATCH" }
+    filesystem has []
+
+scenario "a fork run that lists no pull request is matched to the open pull request of its head branch at its head commit":
+  when: ProbePrReport { script: "fork:9 prs:empty evidence:unit:pass jobs:green comment:none token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/pulls?head=contributor%3Afeature&state=open GET /repos/o/r/actions/runs/1/artifacts GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/issues/9/comments POST /repos/o/r/issues/9/comments POST /repos/o/r/check-runs verdict=pass chain=not-attested sections=header,tests,attestations,chain"
+      body: matching "not attested \\(fork PR\\); attested on merge"
+      check: "success"
+    }
+    filesystem has []
+
+scenario "a fork run whose branch has moved past its head commit matches no pull request and nothing is posted":
+  when: ProbePrReport { script: "fork:9 prs:stale evidence:unit:pass jobs:green comment:none token:full go" }
+  predict rejection NO_PR_CONTEXT:
+    response ERR ReportError { code: "NO_PR_CONTEXT" }
+    filesystem has []
+
+scenario "the follow-up refuses a run a person started from this repository, which reports itself":
+  when: ProbePrReport { script: "fork:9 from:samerepo evidence:unit:pass jobs:green comment:none token:full go" }
+  predict rejection TRUSTED_RUN:
+    response ERR ReportError { code: "TRUSTED_RUN" }
+    filesystem has []
+
+scenario "a merged fork pull request whose run left no attestation is recorded as not attested and main is attested":
+  when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:found prfrom:fork prattest:missing ghcr:ok mainattest:good evidence:unit:pass jobs:green comment:901 token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b/pulls GET /repos/o/r/commits/9f2c41d8a07e5b3c6d1f0e2a4b8c7d9e1f3a5b6c/check-runs?check_name=feat%20report GET /repos/o/r/actions/runs/44153523061/artifacts GET ghcr.io/o/r/referrers/sha256:9b74c9897bac770ffc029102a200c5de2a4c2a6c2d1e3f4a5b6c7d8e9f0a1b2c PUT ghcr.io/o/r-evidence@sha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae WRITE merge-statement POST /repos/o/r/check-runs GET /repos/o/r/issues/7/comments PATCH /repos/o/r/issues/comments/901 verdict=pass chain=ok sections=header,tests,attestations,chain,verify"
+      body: matching "not attested \\(fork PR\\); attested on merge"
+      check: "success"
+    }
+    filesystem has []
+
+scenario "a direct commit by an allowed actor writes a direct-commit statement and checks main, the signature left to sign-merge":
+  when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:notfound pusher:mmmnt-flmnt-roadmap[bot] direct-actors:mmmnt-flmnt-roadmap[bot] direct:single ghcr:ok mainattest:good evidence:unit:pass jobs:green token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b/pulls GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b GET ghcr.io/o/r/referrers/sha256:9b74c9897bac770ffc029102a200c5de2a4c2a6c2d1e3f4a5b6c7d8e9f0a1b2c PUT ghcr.io/o/r-evidence@sha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae WRITE direct-commit-statement POST /repos/o/r/check-runs verdict=pass chain=ok sections=header,tests,attestations,chain,verify"
+      body: matching "Direct commit `5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b` · parent `4e1a9c3b7d2f6e0a8c5b1d9f3e7a2c6b0d4f8e1a` · pushed by `mmmnt-flmnt-roadmap\\[bot\\]`[^\\n]*\\n[\\s\\S]*Direct-commit statement `sha256:[0-9a-f]{64}` · signature pending \\(job sign-merge\\)"
+      check: "success"
+    }
+    filesystem has []
+
+scenario "a commit with no pull request pushed by an actor not allowed is refused and nothing is signed or posted":
+  when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:notfound pusher:octocat direct-actors:mmmnt-flmnt-roadmap[bot] direct:single ghcr:ok mainattest:good evidence:unit:pass jobs:green token:full go" }
+  predict rejection NO_PR_FOR_MERGE:
+    response ERR ReportError { code: "NO_PR_FOR_MERGE" }
+    filesystem has []
+
+scenario "an allowed actor's push that carried more than one commit is refused and nothing is stored or posted":
+  when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:notfound pusher:mmmnt-flmnt-roadmap[bot] direct-actors:mmmnt-flmnt-roadmap[bot] direct:multi ghcr:ok mainattest:good evidence:unit:pass jobs:green token:full go" }
+  predict rejection DIRECT_COMMIT_REFUSED:
+    response ERR ReportError { code: "DIRECT_COMMIT_REFUSED" }
+    filesystem has []
+
+scenario "an allowed actor's merge commit with no pull request is refused and nothing is stored or posted":
+  when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:notfound pusher:mmmnt-flmnt-roadmap[bot] direct-actors:mmmnt-flmnt-roadmap[bot] direct:mergecommit ghcr:ok mainattest:good evidence:unit:pass jobs:green token:full go" }
+  predict rejection DIRECT_COMMIT_REFUSED:
+    response ERR ReportError { code: "DIRECT_COMMIT_REFUSED" }
+    filesystem has []
+
+scenario "a direct commit whose build attested another commit breaks the chain at main's provenance and writes no statement":
+  when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:notfound pusher:mmmnt-flmnt-roadmap[bot] direct-actors:mmmnt-flmnt-roadmap[bot] direct:single ghcr:ok mainattest:wrongsource evidence:unit:pass jobs:green token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b/pulls GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b GET ghcr.io/o/r/referrers/sha256:9b74c9897bac770ffc029102a200c5de2a4c2a6c2d1e3f4a5b6c7d8e9f0a1b2c POST /repos/o/r/check-runs verdict=fail chain=broken:main-provenance sections=header,tests,attestations,chain,verify"
+      check: "failure"
+    }
+    filesystem has []
+
+scenario "a direct commit whose evidence cannot be stored in GHCR is refused and nothing is written or posted":
+  when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:notfound pusher:mmmnt-flmnt-roadmap[bot] direct-actors:mmmnt-flmnt-roadmap[bot] direct:single ghcr:fail mainattest:good evidence:unit:pass jobs:green token:full go" }
+  predict rejection EVIDENCE_STORE_FAILED:
+    response ERR ReportError { code: "EVIDENCE_STORE_FAILED" }
+    filesystem has []
+
+scenario "an allowed actor's commit that has a merged pull request is reported as that pull request's merge":
+  when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:found pusher:mmmnt-flmnt-roadmap[bot] direct-actors:mmmnt-flmnt-roadmap[bot] prattest:present ghcr:ok mainattest:good evidence:unit:pass jobs:green comment:901 token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b/pulls GET /repos/o/r/commits/9f2c41d8a07e5b3c6d1f0e2a4b8c7d9e1f3a5b6c/check-runs?check_name=feat%20report GET /repos/o/r/actions/runs/44153523061/artifacts GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET ghcr.io/o/r/referrers/sha256:9b74c9897bac770ffc029102a200c5de2a4c2a6c2d1e3f4a5b6c7d8e9f0a1b2c PUT ghcr.io/o/r-evidence@sha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae WRITE merge-statement POST /repos/o/r/check-runs GET /repos/o/r/issues/7/comments PATCH /repos/o/r/issues/comments/901 verdict=pass chain=ok sections=header,tests,attestations,chain,verify"
+      body: matching "signature pending \\(job sign-merge\\)"
+      check: "success"
+    }
+    filesystem has []
+
+scenario "sign-merge signs a direct-commit statement under the direct-commit predicate and posts to no pull request":
+  when: ProbePrReport { script: "sign:direct token:full go" }
+  predict success:
+    response OK ProbeResult {
+      trace: "GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b/check-runs?check_name=feat%20report SIGN https://feature.mmmnt.dev/attestation/direct-commit/v1 PATCH /repos/o/r/check-runs/77 verdict=pass chain=ok sections="
+      body: matching "\\*\\*Signed\\*\\* direct-commit statement `sha256:[0-9a-f]{64}` · signature `sha256:[0-9a-f]{64}` ✅"
+      check: "success"
+    }
+    filesystem has []

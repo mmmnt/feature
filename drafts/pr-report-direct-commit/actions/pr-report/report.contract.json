@@ -1,0 +1,30 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-PRR-001",
+  "schemas": {
+    "ProbeInput": {
+      "type": "object",
+      "required": ["script"],
+      "additionalProperties": false,
+      "properties": { "script": { "type": "string", "minLength": 1 } }
+    },
+    "ProbeResult": {
+      "type": "object",
+      "required": ["trace"],
+      "additionalProperties": false,
+      "properties": {
+        "trace": { "type": "string" },
+        "check": { "enum": ["success", "failure", "neutral"] },
+        "body": { "type": "string" }
+      }
+    },
+    "ReportError": {
+      "type": "object",
+      "required": ["code"],
+      "properties": {
+        "code": { "enum": ["NO_PR_CONTEXT", "NO_EVIDENCE", "INSUFFICIENT_PERMISSIONS", "NO_PR_FOR_MERGE", "PR_EVIDENCE_MISSING", "EVIDENCE_STORE_FAILED", "STATEMENT_MISMATCH", "DIRECT_COMMIT_REFUSED", "TRUSTED_RUN"] },
+        "detail": { "type": "string" }
+      }
+    }
+  }
+}
