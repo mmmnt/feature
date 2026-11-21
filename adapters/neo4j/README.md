@@ -321,7 +321,7 @@ same `host`), asks the optional protocol method `transformSeed` **twice** per se
 writes the first answer only when both agree as canonical JSON and each keeps the records'
 count, order, type and identity. Seeds only: what the adapter captures and reads is what is
 stored. Every seed, transformed or plain, is checked against what Neo4j can store before
-anything is written: a property value is a string, a finite number, a boolean, or a non-empty list of one of those kinds.
+anything is written: a property value is a string, a finite number, a boolean, an empty list, or a list of one of those kinds.
 
 Refusals: `OPTIONS_INVALID` (no command), `SEED_TRANSFORM_UNAVAILABLE` (the host cannot be
 started, at setup), `SEED_TRANSFORM_FAILED` (an error, method not found, the host ended, or a
