@@ -21,6 +21,8 @@ feat 1.0
 #   setup:<ns> / observes:<ns>
 #   seed:<ns>:<kind>:<key>           adapter.seed(): a key of that kind (string v0, set [m0], list [i0], hash {f0: v0},
 #                                    zset [{m0, 1}]); `bogus` is no kind, `nokey` as the key leaves values.key out
+#   seedmisfit:<ns>:<kind>:<key>     adapter.seed(): a key of that kind whose value does not fit it (string 1, set [1],
+#                                    list [], hash {f0: 1}, zset [{m0}]) (founder ruling 0c5cae75)
 #   set / sadd / rpush:<ns>:<key>:<value>, hset:<ns>:<key>:<field>:<value>, zadd:<ns>:<key>:<member>:<score>,
 #   xadd:<ns>:<key>, del:<ns>:<key>  the SYSTEM writes under the namespace prefix `<ns>:`
 #   setraw:<key>:<value>             the SYSTEM writes a key with no namespace prefix
@@ -80,7 +82,8 @@ construct:
   namespace. Records { type: kind, key, payload: { key, kind, value } }.
   seed(records): SeedRecord { type: kind, values: { key, value } } written under the prefix in one MULTI, before the
   window; a record whose type is no kind, or whose key is not a non-empty string, is SEED_INVALID, and one whose value does
-  not fit its kind is SEED_VALUE_UNSTORABLE (amended by founder ruling 12081c37, the codes split; SPEC-ADPRDS-002).
+  not fit its kind is SEED_VALUE_UNSTORABLE (amended by founder ruling 12081c37, the codes split; SPEC-ADPRDS-002;
+  its scenario here by founder ruling 0c5cae75, "Add a -001 scenario").
   reset(): UNLINK every key of the namespace, close the window.
   Credentials: a file the options name is read at setup before any connection; relative to the working directory;
   exactly one trailing LF or CRLF is removed and nothing else (the CA file is read as is); a refusal names the option,
@@ -215,6 +218,12 @@ scenario outline "a seed that does not fit a kind is refused":
     | script                     | detail   |
     | "setup:a seed:a:bogus:k1"  | "bogus"  |
     | "setup:a seed:a:set:nokey" | "values.key" |
+
+scenario "a seed whose value does not fit its kind is refused, and nothing is written":
+  when: ObserveRedis { script: "setup:a seedmisfit:a:string:k1" }
+  predict rejection SEED_VALUE_UNSTORABLE:
+    response ERR ObserveError { code: "SEED_VALUE_UNSTORABLE", detail: matching "k1" }
+    filesystem has []
 
 scenario "reset removes every key of the namespace and nothing else":
   when: ObserveRedis { script: "setup:a setup:b seed:a:string:k1 seed:a:hash:k2 seed:b:string:k1 reset:a count:a count:b" }

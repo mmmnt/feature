@@ -357,6 +357,13 @@ async function run(input, mode) {
           trace.push(`seed:${l}`);
           break;
         }
+        // SPEC-ADPRDS-001 (founder ruling 0c5cae75): a seed whose value does not fit its kind.
+        case "seedmisfit": {
+          const value = { string: 1, set: [1], list: [], hash: { f0: 1 }, zset: [{ member: "m0" }] }[a];
+          await adapter(l).seed([{ type: a, values: { key: b, value } }]);
+          trace.push(`seedmisfit:${l}`);
+          break;
+        }
         case "set":
           await write(["SET", k(a), b]);
           trace.push(`set:${l}`);
