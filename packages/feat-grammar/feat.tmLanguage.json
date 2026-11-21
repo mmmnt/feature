@@ -308,7 +308,7 @@
           "name": "support.function.matcher.feat"
         },
         {
-          "match": "(?<=:)\\s*\\b(not)\\b(?=[ \\t])",
+          "match": "(?:(?<=[:\\[])|(?<=,)(?=\\s*not[ \\t]+(?:[\"@<\\[0-9-]|any\\b|matching\\b|true\\b|false\\b|null\\b)))\\s*\\b(not)\\b(?=[ \\t])",
           "captures": {
             "1": {
               "name": "support.function.matcher.feat"

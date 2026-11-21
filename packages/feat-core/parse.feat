@@ -43,6 +43,15 @@ feat 1.0
 # line a spec observes every configured service and its IR has no `observes` key, so every existing exemplar's IR is
 # unchanged. One new exemplar, corpus/spec-observes (#20), two ok fixtures and eleven refusal fixtures; one new code,
 # UNOBSERVED_SERVICE. Every other scenario is unchanged.
+#
+# AMENDMENT (ADR-0034, matchers inside a list; founder ruling cc58ae94, 2026-11-20, "Matchers in list items
+# (Recommended)"; Q1 7ca2385c, "Refuse it (Recommended)"; agreed 2026-11-20, "Agree (Recommended)"). In a value
+# block's matcher position, a list's items, and the fields of an object inside it, are read in matcher position. A
+# list with no matcher at any depth is recorded as before, { matcher: "literal", value }, so every existing
+# exemplar's IR is unchanged. A list that holds one is { matcher: "list", items }; inside it an object that holds one
+# is { matcher: "object", fields } and a matcher-free item or field is a literal; the runtime evaluates them
+# (SPEC-RT-015). One new exemplar, corpus/list-matcher (#21), and six refusal fixtures. Every other scenario is
+# unchanged.
 
 spec SPEC-CORE-001 "Parse a .feat file to BuiltSpec IR"
 context Toolchain
@@ -101,12 +110,24 @@ construct:
   the declared ones in the hint ("add it to the observes line"). INCOMPLETE_PREDICTION then checks the declared
   services only, in config order. A spec with no `observes` line is checked against every configured service, as
   before, and its IR carries no `observes`. Declaring every configured service is allowed and is recorded as written.
+  In a value block's matcher position, a list `[ ... ]` has its items read in matcher position, and inside it
+  `{ ... }` is an object whose fields are read in matcher position, at any depth (ADR-0034). An item or field is a
+  literal, an object, a list, a reference (`@when`, `@deliver`, `@given`, `@<service>[i]`), `any [type]`,
+  `matching ...`, `not <matcher>` or `f32 ...`; an outline placeholder in it is literal data, as in a literal.
+  A list holding no matcher at any depth is recorded as { matcher: "literal", value } exactly as before. Otherwise
+  it is { matcher: "list", items }, each matcher-free item or field recorded as { matcher: "literal", value }, each
+  object that holds a matcher as { matcher: "object", fields } with fields in written order, and each list that
+  holds one as { matcher: "list", items }. `absent` as a list item, `absent` as a field of an object inside a list,
+  and `not` over a list that holds a matcher are MALFORMED_SYNTAX, each with a hint giving the spelling to use;
+  `not` over a list of literals stays a literal operand. A capture reference inside a list joins the closed service
+  space and, when the spec declares observes, the observed space, as one outside it does. A `{ ... }` outside any
+  list keeps its value-block meaning, { matcher: "nested", fields }.
 
 enforce:
   read the version pragma before anything else
   rejects MISSING_PRAGMA when the first non-comment line is not a feat version pragma
   rejects UNSUPPORTED_VERSION when the pragma names a version this toolchain does not support
-  rejects MALFORMED_SYNTAX when a compiler-zone block violates the grammar, a fault line in given: included (ADR-0023), a negation whose operand is not a matcher it takes (ADR-0027), a random seed that is not a whole number in range (ADR-0029), and an f32 digest of any other shape (ADR-0030)
+  rejects MALFORMED_SYNTAX when a compiler-zone block violates the grammar, a fault line in given: included (ADR-0023), a negation whose operand is not a matcher it takes (ADR-0027), a random seed that is not a whole number in range (ADR-0029), an f32 digest of any other shape (ADR-0030), and a list item or a list object's field that is absent, or a negated list that holds a matcher (ADR-0034)
   rejects UNKNOWN_SERVICE_KEY when a prediction or a given fault targets a service absent from the config services, or a cross-surface capture reference names one (ADR-0021 — a reference names a service, so it shares the closed space)
   rejects UNKNOWN_COMMAND when a when or execute names a command absent from response.commands
   rejects UNDECLARED_SCHEMA when a scenario references a schema absent from the contract block
@@ -233,6 +254,12 @@ scenario "parses the f32 digest exemplar (f32-digest, ADR-0030)":
     response OK BuiltSpec equals fixture "../../corpus/f32-digest/f32-digest.ir.json"
     filesystem has []
 
+scenario "parses the list-matcher exemplar (list-matcher, ADR-0034)":
+  when: Parse { spec: "corpus/list-matcher/list-matcher.feat", config: "corpus/list-matcher/feat.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "../../corpus/list-matcher/list-matcher.ir.json"
+    filesystem has []
+
 scenario "parses the observed-services exemplar (spec-observes, ADR-0033)":
   when: Parse { spec: "corpus/spec-observes/spec-observes.feat", config: "corpus/spec-observes/feat.config.json" }
   predict success:
@@ -277,6 +304,7 @@ scenario outline "refuses a service the spec uses but does not observe, naming i
     | "packages/feat-core/fixtures/bad/observes-unobserved-fault.feat"      |
     | "packages/feat-core/fixtures/bad/observes-unobserved-capture-ref.feat" |
     | "packages/feat-core/fixtures/bad/observes-unobserved-deliver.feat"   |
+    | "packages/feat-core/fixtures/bad/list-unobserved-service.feat"       |
 
 scenario "a prediction that omits an observed service is incomplete":
   when: Parse { spec: "packages/feat-core/fixtures/bad/observes-incomplete.feat", config: "packages/feat-core/fixtures/parse-observes.config.json" }
@@ -335,6 +363,11 @@ scenario outline "rejects invalid specs with the precise code":
     | "packages/feat-core/fixtures/bad/f32-missing-sha256.feat"           | "MALFORMED_SYNTAX"        |
     | "packages/feat-core/fixtures/bad/f32-bare.feat"                     | "MALFORMED_SYNTAX"        |
     | "packages/feat-core/fixtures/bad/not-f32.feat"                      | "MALFORMED_SYNTAX"        |
+    | "packages/feat-core/fixtures/bad/list-absent-item.feat"             | "MALFORMED_SYNTAX"        |
+    | "packages/feat-core/fixtures/bad/list-absent-field.feat"            | "MALFORMED_SYNTAX"        |
+    | "packages/feat-core/fixtures/bad/not-list.feat"                     | "MALFORMED_SYNTAX"        |
+    | "packages/feat-core/fixtures/bad/list-unterminated.feat"            | "MALFORMED_SYNTAX"        |
+    | "packages/feat-core/fixtures/bad/list-unknown-capture-service.feat" | "UNKNOWN_SERVICE_KEY"     |
 
 scenario outline "refuses a negation of a matcher it does not take, naming the spelling to use":
   when: Parse { spec: <spec>, config: "packages/feat-core/fixtures/parse.config.json" }
@@ -363,3 +396,14 @@ scenario outline "refuses an f32 digest of any other shape, giving the form":
     | "packages/feat-core/fixtures/bad/f32-missing-sha256.feat"   | "^'f32' takes a length, the word 'sha256'"      |
     | "packages/feat-core/fixtures/bad/f32-bare.feat"             | "^'f32' takes a length, the word 'sha256'"      |
     | "packages/feat-core/fixtures/bad/not-f32.feat"              | "^'not f32 …' is refused"                       |
+
+scenario outline "refuses a list item or a list object's field it does not take, naming the spelling to use":
+  when: Parse { spec: <spec>, config: "packages/feat-core/fixtures/parse.config.json" }
+  predict rejection MALFORMED_SYNTAX:
+    response ERR ParseError { code: "MALFORMED_SYNTAX", message: matching <message>, hint: matching <hint> }
+    filesystem has []
+  examples:
+    | spec                                                     | message                                | hint                             |
+    | "packages/feat-core/fixtures/bad/list-absent-item.feat"  | "^'absent' is not a list item"         | "^Write a shorter list"          |
+    | "packages/feat-core/fixtures/bad/list-absent-field.feat" | "^'absent' is refused inside a list"   | "^Leave the field out"           |
+    | "packages/feat-core/fixtures/bad/not-list.feat"          | "^'not \\[ … \\]' is refused"          | "^Negate a field inside an item" |

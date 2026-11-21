@@ -1,0 +1,191 @@
+feat 1.0
+
+# SPEC-RT-015 — the runtime evaluates a list that holds matchers (founder ruling cc58ae94, 2026-11-20,
+# "Matchers in list items (Recommended)"; Q1 7ca2385c, "Refuse it (Recommended)"; agreed 2026-11-20, "Agree
+# (Recommended)"; ADR-0034). A list in a value block was only ever a literal, so a
+# consumer could not predict a list of archive members in which one member's text is a digest of bytes whose
+# layout the spec leaves open. SPEC-CORE-001 (amended by ADR-0034) parses such a list to
+# { matcher: "list", items } with each object item that holds a matcher as { matcher: "object", fields };
+# this spec makes applyMatcher evaluate them. A list with no matcher in it stays a literal, unchanged.
+#
+# WHAT CHANGES (and nothing else):
+#  1. feat-types: Matcher gains { matcher: "list"; items: Matcher[] } and
+#     { matcher: "object"; fields: Record<string, Matcher> }.
+#  2. applyMatcher on a list: the value must be an array of exactly items.length items, else one violation for
+#     the list and no item is checked; otherwise each item i is matched at "<anchor>[i]", every violation kept.
+#  3. applyMatcher on an object: the value must be an object (not an array, not null); each declared field is
+#     matched at "<anchor> › <key>"; each key of the value that is not declared is one violation. Exact, as a
+#     literal object inside a list is today.
+#  4. An IR list without an items array, an object without a fields object, or an `absent` item in a list, is a
+#     violation (a malformed IR), never a pass.
+#  5. derive (feat-derive) substitutes an outline placeholder inside a list or object as it does elsewhere.
+# Unchanged: every other matcher, `nested` (a value block outside a list stays partial), the record and
+# response diffs, the anchors' form.
+#
+# Driven through the probe `MatchValue` (SPEC-RT-011, packages/feat-runtime/fixtures/matcher/probe.mjs).
+
+spec SPEC-RT-015 "Matcher: a list that holds matchers"
+context Toolchain
+aggregate Runtime
+type infrastructure
+status agreed
+
+construct:
+  handler at packages/feat-runtime/src/matcher.ts
+  touches packages/feat-runtime/**
+  touches packages/feat-types/**
+  touches packages/feat-derive/src/index.ts
+  needs SPEC-CORE-001
+  Types (feat-types): Matcher gains { matcher: "list"; items: Matcher[] } and { matcher: "object"; fields:
+  Record<string, Matcher> }.
+  applyMatcher on a list matcher, n = items.length:
+  an IR whose items is not an array: one violation "<anchor>: 'list' takes items, an array of matchers (a
+  malformed IR)"; an item whose matcher is absent: one violation "<anchor>[<i>]: 'absent' is not a list item the
+  language takes (a malformed IR)", checked before the value;
+  an absent field: "<anchor>: expected a list of <n> item(s), field is absent";
+  a value that is not an array: "<anchor>: expected a list of <n> item(s), got <value as JSON, cut to 80
+  characters with … appended when longer>";
+  an array of another length: "<anchor>: expected a list of <n> item(s), got <length>";
+  otherwise each item i is applyMatcher(value[i], true, items[i], ctx, "<anchor>[<i>]"), in index order, every
+  violation kept.
+  applyMatcher on an object matcher:
+  an IR whose fields is not an object: "<anchor>: 'object' takes fields, an object of matchers (a malformed IR)";
+  an absent field: "<anchor>: expected an object with field(s) <declared keys, comma-separated, in written
+  order>, field is absent";
+  a value that is not an object, or is an array or null: "<anchor>: expected an object with field(s) <keys>, got
+  <value as JSON, cut as above>";
+  otherwise each declared key k, in written order, is applyMatcher(value[k], k in value, fields[k], ctx,
+  "<anchor> › <k>"); then each key of the value not declared, in the value's key order, is one violation
+  "<anchor>: UNPREDICTED field '<key>' = <its value as JSON, cut as above>".
+  derive substitutes a placeholder inside a list's items and an object's fields, at any depth, per outline row.
+
+enforce:
+  pass a list of the predicted length whose items each pass their matcher, in order
+  pass an object whose keys are exactly the declared ones and whose fields each pass their matcher
+  report a list of another length, or a value that is not a list, once, without checking items
+  report each failing item and field at its index and key
+  report a field present in a list's object and not declared, never pass it
+  report a malformed IR, never pass it
+
+contract:
+  input MatchInput
+  response MatchResult
+
+scenario "a list whose one member's text is any string passes on that member's digest":
+  when: MatchValue { value: [ { name: "manifest.json", json: { formatVersion: 1 } }, { name: "manifest.sha256", text: "9c1e…  manifest.json\n" } ], matcher: { matcher: "list", items: [ { matcher: "literal", value: { name: "manifest.json", json: { formatVersion: 1 } } }, { matcher: "object", fields: { name: { matcher: "literal", value: "manifest.sha256" }, text: { matcher: "any", ofType: "string" } } } ] } }
+  predict success:
+    response OK MatchResult { outcome: "passed", count: 0, violation: absent }
+    filesystem has []
+
+scenario "an item's field that fails its matcher is named by index and key":
+  when: MatchValue { value: [ { name: "manifest.sha256", text: 42 } ], matcher: { matcher: "list", items: [ { matcher: "object", fields: { name: { matcher: "literal", value: "manifest.sha256" }, text: { matcher: "any", ofType: "string" } } } ] } }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a[0] › text: expected any string, got 42" }
+    filesystem has []
+
+scenario "a literal item inside a list that holds matchers is still compared exactly":
+  when: MatchValue { value: [ { name: "manifest.json", json: { formatVersion: 2 } }, { text: "x" } ], matcher: { matcher: "list", items: [ { matcher: "literal", value: { name: "manifest.json", json: { formatVersion: 1 } } }, { matcher: "object", fields: { text: { matcher: "any", ofType: "string" } } } ] } }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a[0]: expected {\"name\":\"manifest.json\",\"json\":{\"formatVersion\":1}}, got {\"name\":\"manifest.json\",\"json\":{\"formatVersion\":2}}" }
+    filesystem has []
+
+scenario "a field of an item that the spec does not declare is a violation":
+  when: MatchValue { value: [ { name: "manifest.sha256", text: "d", size: 120 } ], matcher: { matcher: "list", items: [ { matcher: "object", fields: { name: { matcher: "literal", value: "manifest.sha256" }, text: { matcher: "any", ofType: "string" } } } ] } }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a[0]: UNPREDICTED field 'size' = 120" }
+    filesystem has []
+
+scenario "a declared field missing from an item is reported by its matcher":
+  when: MatchValue { value: [ { name: "manifest.sha256" } ], matcher: { matcher: "list", items: [ { matcher: "object", fields: { name: { matcher: "literal", value: "manifest.sha256" }, text: { matcher: "any", ofType: "string" } } } ] } }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a[0] › text: expected a value (any string), field is absent" }
+    filesystem has []
+
+scenario "a list of another length is one violation and no item is checked":
+  when: MatchValue { value: [ "x", 1, 2 ], matcher: { matcher: "list", items: [ { matcher: "any", ofType: "number" }, { matcher: "any", ofType: "number" } ] } }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a: expected a list of 2 item(s), got 3" }
+    filesystem has []
+
+scenario "the same items in another order fail, since a list is ordered":
+  when: MatchValue { value: [ 7, "x" ], matcher: { matcher: "list", items: [ { matcher: "literal", value: "x" }, { matcher: "any", ofType: "number" } ] } }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 2, violation: "a[0]: expected \"x\", got 7" }
+    filesystem has []
+
+scenario "every failing item is reported, in index order":
+  when: MatchValue { value: [ 1, 2 ], matcher: { matcher: "list", items: [ { matcher: "any", ofType: "string" }, { matcher: "any", ofType: "string" } ] } }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 2, violation: "a[0]: expected any string, got 1" }
+    filesystem has []
+
+scenario "a value that is not a list is one violation":
+  when: MatchValue { value: { name: "manifest.json" }, matcher: { matcher: "list", items: [ { matcher: "any" } ] } }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a: expected a list of 1 item(s), got {\"name\":\"manifest.json\"}" }
+    filesystem has []
+
+scenario "an absent list is one violation":
+  when: MatchValue { matcher: { matcher: "list", items: [ { matcher: "any" } ] } }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a: expected a list of 1 item(s), field is absent" }
+    filesystem has []
+
+scenario "an item that is not an object where an object is predicted is one violation":
+  when: MatchValue { value: [ null ], matcher: { matcher: "list", items: [ { matcher: "object", fields: { name: { matcher: "any", ofType: "string" }, text: { matcher: "any", ofType: "string" } } } ] } }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a[0]: expected an object with field(s) name, text, got null" }
+    filesystem has []
+
+scenario "an array item where an object is predicted is one violation":
+  when: MatchValue { value: [ [ "manifest.json" ] ], matcher: { matcher: "list", items: [ { matcher: "object", fields: { name: { matcher: "any", ofType: "string" } } } ] } }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a[0]: expected an object with field(s) name, got [\"manifest.json\"]" }
+    filesystem has []
+
+scenario "a list inside an item's field is matched at its own index":
+  when: MatchValue { value: [ { name: "w", ids: [ "0b7c3c1e-3f4a-4d8e-9a51-2a7c5e9d1f00", "not-a-uuid" ] } ], matcher: { matcher: "list", items: [ { matcher: "object", fields: { name: { matcher: "literal", value: "w" }, ids: { matcher: "list", items: [ { matcher: "any", ofType: "uuid" }, { matcher: "any", ofType: "uuid" } ] } } } ] } }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a[0] › ids[1]: expected any uuid, got \"not-a-uuid\"" }
+    filesystem has []
+
+scenario "an object inside an item's field is exact as well":
+  when: MatchValue { value: [ { meta: { id: "m-1", extra: true } } ], matcher: { matcher: "list", items: [ { matcher: "object", fields: { meta: { matcher: "object", fields: { id: { matcher: "any", ofType: "string" } } } } } ] } }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a[0] › meta: UNPREDICTED field 'extra' = true" }
+    filesystem has []
+
+scenario "a capture reference inside an item resolves against what the service captured":
+  when: MatchValue { value: [ { id: "c-1" } ], matcher: { matcher: "list", items: [ { matcher: "object", fields: { id: { matcher: "captureRef", service: "log", path: "data.cycleId" } } } ] }, captures: { log: [ { data: { cycleId: "c-1" } } ] } }
+  predict success:
+    response OK MatchResult { outcome: "passed", count: 0, violation: absent }
+    filesystem has []
+
+scenario "a negation inside an item fails on the value it excludes":
+  when: MatchValue { value: [ { status: "Failed" } ], matcher: { matcher: "list", items: [ { matcher: "object", fields: { status: { matcher: "not", operand: { matcher: "literal", value: "Failed" } } } } ] } }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a[0] › status: expected not \"Failed\", got \"Failed\"" }
+    filesystem has []
+
+scenario "an empty list predicted by a list matcher passes only on an empty array":
+  when: MatchValue { value: [ 1 ], matcher: { matcher: "list", items: [] } }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a: expected a list of 0 item(s), got 1" }
+    filesystem has []
+
+scenario outline "a malformed list or object IR is a violation, never a pass":
+  when: MatchValue { value: [ "x" ], matcher: <matcher> }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: <violation> }
+    filesystem has []
+  examples:
+    | matcher                                                                 | violation                                                                     |
+    | { matcher: "list" }                                                     | "a: 'list' takes items, an array of matchers (a malformed IR)"                |
+    | { matcher: "list", items: [ { matcher: "absent" } ] }                   | "a[0]: 'absent' is not a list item the language takes (a malformed IR)"       |
+    | { matcher: "list", items: [ { matcher: "object" } ] }                   | "a[0]: 'object' takes fields, an object of matchers (a malformed IR)"         |
+
+scenario "a placeholder inside a list that reached the runtime is a violation, never a pass":
+  when: MatchValue { value: [ "x" ], matcher: { matcher: "list", items: [ { matcher: "placeholder", name: "status" } ] } }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a[0]: unresolved placeholder '<status>' reached the runtime (derive bug)" }
+    filesystem has []

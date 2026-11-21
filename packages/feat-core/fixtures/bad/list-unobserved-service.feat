@@ -1,0 +1,28 @@
+feat 1.0
+
+# ADR-0034: with an observes line, a capture reference inside a list item naming a configured service the spec does not observe is UNOBSERVED_SERVICE (parsed with fixtures/parse-observes.config.json).
+
+spec SPEC-BAD-134 "Capture reference inside a list naming an unobserved service"
+context Bad
+aggregate Thing
+type command
+status draft
+observes eventStore
+
+construct:
+  handler at src/do-thing.ts
+  touches src/**
+
+enforce:
+  do the thing
+
+contract:
+  input ThingInput
+  response ThingResult
+  record ThingRow
+
+scenario "does the thing":
+  when: DoThing { value: 1 }
+  predict success:
+    response OK ThingResult
+    eventStore has [ Wrote with ThingRow { members: [ { id: @cache[0].id } ] } ]

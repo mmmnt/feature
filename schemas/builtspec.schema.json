@@ -780,11 +780,14 @@
               "const": "literal"
             },
             "value": {
+              "description": "Any JSON value: a list or object literal is compared exactly (a list item of a list matcher, ADR-0034, is often one).",
               "type": [
                 "string",
                 "number",
                 "boolean",
-                "null"
+                "null",
+                "array",
+                "object"
               ]
             }
           }
@@ -1010,7 +1013,7 @@
                   "not": {
                     "type": "object",
                     "required": ["matcher"],
-                    "properties": { "matcher": { "enum": ["not", "absent", "nested", "goldenFixture", "f32Digest"] } }
+                    "properties": { "matcher": { "enum": ["not", "absent", "nested", "goldenFixture", "f32Digest", "list", "object"] } }
                   }
                 },
                 {
@@ -1045,6 +1048,52 @@
             "sha256": {
               "type": "string",
               "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "matcher",
+            "items"
+          ],
+          "additionalProperties": false,
+          "description": "A list that holds a matcher (ADR-0034): passes on an array of exactly items.length items, each passing its matcher in order. Never written for a list with no matcher (that is a literal); an item is never absent.",
+          "properties": {
+            "matcher": {
+              "const": "list"
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "allOf": [
+                  { "$ref": "#/definitions/matcher" },
+                  { "not": { "type": "object", "required": ["matcher"], "properties": { "matcher": { "enum": ["absent", "nested"] } } } }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "matcher",
+            "fields"
+          ],
+          "additionalProperties": false,
+          "description": "An object inside a list that holds a matcher (ADR-0034): exact, passing on an object whose keys are exactly the declared ones, each field passing its matcher. A field is never absent.",
+          "properties": {
+            "matcher": {
+              "const": "object"
+            },
+            "fields": {
+              "type": "object",
+              "additionalProperties": {
+                "allOf": [
+                  { "$ref": "#/definitions/matcher" },
+                  { "not": { "type": "object", "required": ["matcher"], "properties": { "matcher": { "enum": ["absent", "nested"] } } } }
+                ]
+              }
             }
           }
         }

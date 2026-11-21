@@ -1,0 +1,56 @@
+feat 1.0
+
+# Corpus exemplar #21 — matchers inside a list (ADR-0034). An archive's members are predicted as a list in
+# which one member's text is a digest of bytes the spec does not fix: `{ name: "manifest.sha256", text: any
+# string }`. The list stays exact (same length, same order); inside it every object is exact (its keys are the
+# declared ones); only the matcher's own field is loosened. Shown in a record's value block, inside a nested
+# block's field, with a capture-free `matching` and a `not` inside items, and beside two lists that hold no
+# matcher (`members` of the response and `tags`), which stay { matcher: "literal" } exactly as before — one with
+# an outline placeholder, which stays literal data. The IR is { matcher: "list", items } and, for an object
+# item that holds a matcher, { matcher: "object", fields }.
+
+spec SPEC-ARC-001 "WriteArchive writes its members in path order"
+context Archive
+aggregate Archive
+type command
+status agreed
+
+construct:
+  handler at features/write-archive/handler.ts
+  touches features/write-archive/**
+
+enforce:
+  write the manifest, its digest and one file per stream, in path order
+
+contract:
+  input WriteInput
+  response Written
+  record ArchiveFile
+
+scenario "an archive is written with its manifest and digest":
+  when: WriteArchive { path: "a.flmnt", tags: ["daily"] }
+  predict success:
+    response 200 Written { path: @when.path, members: ["manifest.json", "manifest.sha256", "streams/domain.jsonl"] }
+    files has [ FILE_WRITTEN with ArchiveFile {
+      path: "a.flmnt"
+      tags: ["daily"]
+      members: [
+        { name: "manifest.json", json: { formatVersion: 1 } },
+        { name: "manifest.sha256", text: matching "^[0-9a-f]{64}  manifest\\.json\\n$" },
+        { name: "streams/domain.jsonl", text: not "" }
+      ]
+    } ]
+
+scenario outline "the tags are written as given":
+  when: WriteArchive { path: "b.flmnt", tags: [<tag>] }
+  predict success:
+    response 200 Written { path: @when.path, members: any }
+    files has [ FILE_WRITTEN with ArchiveFile {
+      path: "b.flmnt"
+      tags: [<tag>]
+      members: [ { name: "manifest.json", json: any }, { name: "manifest.sha256", text: any string } ]
+    } ]
+  examples:
+    | tag      |
+    | "daily"  |
+    | "weekly" |

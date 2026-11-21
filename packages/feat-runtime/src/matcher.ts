@@ -212,7 +212,71 @@ export function applyMatcher(actual: unknown, present: boolean, m: Matcher, ctx:
     case "f32Digest":
       applyF32Digest(actual, present, m, anchor, out);
       return;
+    case "list":
+      applyList(actual, present, m, ctx, anchor, out);
+      return;
+    case "object":
+      applyObject(actual, present, m, ctx, anchor, out);
+      return;
   }
+}
+
+/**
+ * ADR-0034 (SPEC-RT-015): a list that holds a matcher. The value is an array of exactly items.length items, else
+ * one violation for the list and no item is checked (they would be compared out of place); otherwise each item is
+ * matched at its index, every violation kept. An IR without items, or with an absent item, is a violation.
+ */
+function applyList(actual: unknown, present: boolean, m: { items?: unknown }, ctx: MatchContext, anchor: string, out: string[]) {
+  if (!Array.isArray(m.items)) {
+    out.push(`${anchor}: 'list' takes items, an array of matchers (a malformed IR)`);
+    return;
+  }
+  const items = m.items as Matcher[];
+  const absentAt = items.findIndex((item) => item?.matcher === "absent");
+  if (absentAt !== -1) {
+    out.push(`${anchor}[${absentAt}]: 'absent' is not a list item the language takes (a malformed IR)`);
+    return;
+  }
+  const n = items.length;
+  if (!present) {
+    out.push(`${anchor}: expected a list of ${n} item(s), field is absent`);
+    return;
+  }
+  if (!Array.isArray(actual)) {
+    out.push(`${anchor}: expected a list of ${n} item(s), got ${shownCut(actual)}`);
+    return;
+  }
+  if (actual.length !== n) {
+    out.push(`${anchor}: expected a list of ${n} item(s), got ${actual.length}`);
+    return;
+  }
+  items.forEach((item, i) => applyMatcher(actual[i], true, item, ctx, `${anchor}[${i}]`, out));
+}
+
+/**
+ * ADR-0034 (SPEC-RT-015): an object inside a list. Exact: each declared field is matched in written order, then
+ * each key of the value that is not declared is one violation, in the value's key order.
+ */
+function applyObject(actual: unknown, present: boolean, m: { fields?: unknown }, ctx: MatchContext, anchor: string, out: string[]) {
+  if (typeof m.fields !== "object" || m.fields === null || Array.isArray(m.fields)) {
+    out.push(`${anchor}: 'object' takes fields, an object of matchers (a malformed IR)`);
+    return;
+  }
+  const fields = m.fields as ValueBlock;
+  const keys = Object.keys(fields);
+  if (!present) {
+    out.push(`${anchor}: expected an object with field(s) ${keys.join(", ")}, field is absent`);
+    return;
+  }
+  if (typeof actual !== "object" || actual === null || Array.isArray(actual)) {
+    out.push(`${anchor}: expected an object with field(s) ${keys.join(", ")}, got ${shownCut(actual)}`);
+    return;
+  }
+  const value = actual as Record<string, unknown>;
+  for (const k of keys)
+    applyMatcher(value[k], Object.prototype.hasOwnProperty.call(value, k), fields[k]!, ctx, `${anchor} › ${k}`, out);
+  for (const k of Object.keys(value))
+    if (!Object.prototype.hasOwnProperty.call(fields, k)) out.push(`${anchor}: UNPREDICTED field '${k}' = ${shownCut(value[k])}`);
 }
 
 const SHA256_HEX = /^[0-9a-f]{64}$/;
@@ -347,7 +411,7 @@ function showGivenRef(m: { path: string; index?: number }): string {
   return m.index === undefined ? `@given.response.${m.path}` : `@given[${m.index}].response.${m.path}`;
 }
 
-const REFUSED_OPERANDS = new Set(["absent", "not", "nested", "goldenFixture", "f32Digest"]); // ADR-0030: a negated digest pins nothing
+const REFUSED_OPERANDS = new Set(["absent", "not", "nested", "goldenFixture", "f32Digest", "list", "object"]); // ADR-0030: a negated digest pins nothing; ADR-0034: a negated list does not say which item differs
 
 /**
  * `not M` (ADR-0027, SPEC-RT-011): passes when the field is present and M fails on its value. An absent

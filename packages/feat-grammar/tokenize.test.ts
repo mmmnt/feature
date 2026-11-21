@@ -78,6 +78,11 @@ describe("feat grammar tokenization", () => {
     expect(scopesAt('      status: not "Failed"', "not")).toContain("support.function.matcher.feat");
     expect(scopesAt("      cycleId: not @log[0].cycleId", "not")).toContain("support.function.matcher.feat");
     expect(scopesAt("  rejects CYCLE_NOT_FAILED when the cycle has not failed", "not")).not.toContain("support.function.matcher.feat");
+    // ADR-0034 — matchers inside a list: a list item, and a field of an object in one, highlight as a field's value does.
+    expect(scopesAt('      tags: [ not "draft" ]', "not")).toContain("support.function.matcher.feat");
+    expect(scopesAt('      ids: [ "a", not "b" ]', "not")).toContain("support.function.matcher.feat");
+    expect(scopesAt('      members: [ { name: "m", text: any string } ]', "any")).toContain("support.function.matcher.feat");
+    expect(scopesAt("  write the archive, not the log", "not")).not.toContain("support.function.matcher.feat");
     // ADR-0030 — the f32 digest matcher's two words, in the digest form only.
     expect(scopesAt('      embedding: f32 384 sha256 "9c1e"', "f32")).toContain("support.function.matcher.feat");
     expect(scopesAt('      embedding: f32 384 sha256 "9c1e"', "sha256")).toContain("support.function.matcher.feat");

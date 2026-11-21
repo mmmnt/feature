@@ -1,0 +1,36 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-ARC-001",
+  "schemas": {
+    "WriteInput": {
+      "type": "object",
+      "required": ["path", "tags"],
+      "additionalProperties": false,
+      "properties": { "path": { "type": "string", "minLength": 1 }, "tags": { "type": "array", "items": { "type": "string" } } }
+    },
+    "Written": {
+      "type": "object",
+      "required": ["path", "members"],
+      "properties": {
+        "path": { "type": "string" },
+        "members": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "ArchiveFile": {
+      "type": "object",
+      "required": ["path", "members"],
+      "properties": {
+        "path": { "type": "string" },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "members": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name"],
+            "properties": { "name": { "type": "string" }, "json": { "type": "object" }, "text": { "type": "string" } }
+          }
+        }
+      }
+    }
+  }
+}
