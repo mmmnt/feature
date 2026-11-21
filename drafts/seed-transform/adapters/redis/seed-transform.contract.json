@@ -1,0 +1,85 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-ADPRDS-002",
+  "schemas": {
+    "SeedTransformInput": {
+      "type": "object",
+      "required": [
+        "host",
+        "script"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "enum": [
+            "encode",
+            "encodestr",
+            "slow",
+            "random",
+            "fail",
+            "map",
+            "mixed",
+            "scalar",
+            "short",
+            "retype",
+            "rekey",
+            "crash",
+            "nomethod",
+            "absent",
+            "nocommand",
+            "none"
+          ]
+        },
+        "script": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "SeedTransformResult": {
+      "type": "object",
+      "required": [
+        "trace"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "trace": {
+          "type": "string"
+        },
+        "read": {
+          "type": "string"
+        },
+        "readVia": {
+          "enum": [
+            "KeyedLookup",
+            "NamespaceScan"
+          ]
+        },
+        "readPayloads": {
+          "type": "string"
+        }
+      }
+    },
+    "SeedTransformError": {
+      "type": "object",
+      "required": [
+        "code"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "OPTIONS_INVALID",
+            "SEED_TRANSFORM_UNAVAILABLE",
+            "SEED_TRANSFORM_FAILED",
+            "SEED_TRANSFORM_NONDETERMINISTIC",
+            "SEED_VALUE_UNSTORABLE",
+            "SEED_INVALID"
+          ]
+        },
+        "detail": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,168 @@
+feat 1.0
+
+# SPEC-ADPRDS-002 — Redis adapter: a consumer's spec host may transform seed values before they are written, and every seed
+# value is checked against what its kind can store (an amendment to SPEC-ADPRDS-001, in a spec of its own). DRAFT. Founder
+# rulings 944b1d17 ("Feature seed hook") and c141a704 (Q1 spec host only, Q2 optional method v2, Q3 all seeds, Q4 check by
+# doing it twice, Q5 all store adapters). The option, the protocol, the twice-asked transform and the refusals are
+# SPEC-ADPNEO-005's, stated here for Redis. ADR-0035.
+#
+#   options.seedTransform: { host: { command: [<argv>], cwd?, env? } }
+#
+# Storable in Redis, by the record's kind (SPEC-ADPRDS-001's seed form { type: kind, values: { key, value } }):
+#   string  a string
+#   set     a non-empty list of strings
+#   list    a non-empty list of strings
+#   hash    a non-empty map whose every field is a string
+#   zset    a non-empty list of { member: string, score: finite number }
+# A value that does not fit its kind is SEED_VALUE_UNSTORABLE (SPEC-ADPRDS-001 named it SEED_INVALID; this amendment moves
+# the value rule to the shared code). SEED_INVALID stays for a record whose type is no kind or whose key is not a non-empty
+# string. A record's identity is its kind and its key; a transform changes neither.
+#
+# Spec tier, the integration config leaves this file out so it runs once. Driven through the probe of SPEC-ADPRDS-001
+# (adapters/redis/fixtures/probe.mjs) and the shared fake transform host (adapters/stdio-jsonrpc/fixtures/seed-host.mjs, its
+# modes as SPEC-ADPNEO-005 lists them), both inside touches. `ObserveRedisSeedTransform { host, script }` runs the steps of
+# SPEC-ADPRDS-001 plus:
+#   seedenc:<ns>:<kind>:<key>:<text>    seed() of one key whose value is { encode: "<text>" } (string), [{ encode }] (set,
+#                                       list), { f: { encode } } (hash)
+#   seedmix:<ns>                        ONE seed() call: string k1 { encode: "a" } and string k2 { encode: "b" }
+#   seedraw:<ns>:<case>                 a plain seed: strnum (string k1 = 1), setempty (set k1 = []), setnum (set k1 = [1]),
+#                                       hashnum (hash k1 = { f: 1 }), zsetnoscore (zset k1 = [{ member: "m" }]),
+#                                       nokind (type "blob"), nokey (no values.key)
+#   calls:<ns>                          the number of transformSeed requests the fake host received
+# `readPayloads` is SPEC-ADPRDS-001's, the JSON of the read records.
+
+spec SPEC-ADPRDS-002 "Redis adapter: a consumer's spec host may transform seed values, and every seed value must fit its kind"
+context Toolchain
+aggregate Adapters
+type infrastructure
+status draft
+
+construct:
+  handler at adapters/redis/src/index.ts
+  touches adapters/redis/**
+  touches adapters/stdio-jsonrpc/fixtures/seed-host.mjs
+  touches feat.config.json
+  touches feat.integration.config.json
+  needs SPEC-ADPRDS-001
+  needs SPEC-ADPNEO-005
+  needs SPEC-RPC-001
+  options.seedTransform, setup(), the twice-asked transformSeed and teardown() exactly as SPEC-ADPNEO-005 states them, with a
+  record's identity being its kind (type) and values.key. Then every record, transformed or plain, is checked against its
+  kind's storable form, and only then written under the prefix in SPEC-ADPRDS-001's one MULTI. The transform applies to seeds
+  only: capture, read and state never pass through it.
+
+enforce:
+  rejects OPTIONS_INVALID when options.seedTransform is not { host } with a host whose command is a non-empty list of strings
+  rejects SEED_TRANSFORM_UNAVAILABLE when the seed-transform host cannot be started at setup()
+  rejects SEED_TRANSFORM_FAILED when the host answers transformSeed with an error, does not implement it, ends, or answers with records that differ in number, order, kind or key
+  rejects SEED_TRANSFORM_NONDETERMINISTIC when the two answers to one seed call's transformSeed differ
+  rejects SEED_VALUE_UNSTORABLE when a seed record's value, transformed or plain, does not fit its kind, naming the key
+  rejects SEED_INVALID when a seed record's type is no kind or its key is not a non-empty string
+  nothing of a seed call is written unless every record of it was transformed and checked
+  a transform applies to seeds only, never to what the adapter observes or reads
+
+contract:
+  input SeedTransformInput
+  response SeedTransformResult
+  error SeedTransformError
+
+scenario outline "a seed value is written as the host transformed it":
+  when: ObserveRedisSeedTransform { host: "encodestr", script: <script> }
+  predict success:
+    response OK SeedTransformResult { trace: <trace>, readPayloads: <payloads> }
+    filesystem has []
+  examples:
+    | script                                   | trace                          | payloads                                                       |
+    | "setup:a seedenc:a:string:k1:ab read:a:k1" | "setup:a seedenc:a read:a:k1=1" | "[{\"key\":\"k1\",\"kind\":\"string\",\"value\":\"enc:ab\"}]"     |
+    | "setup:a seedenc:a:set:k1:ab read:a:k1"    | "setup:a seedenc:a read:a:k1=1" | "[{\"key\":\"k1\",\"kind\":\"set\",\"value\":[\"enc:ab\"]}]"     |
+    | "setup:a seedenc:a:hash:k1:ab read:a:k1"   | "setup:a seedenc:a read:a:k1=1" | "[{\"key\":\"k1\",\"kind\":\"hash\",\"value\":{\"f\":\"enc:ab\"}}]" |
+
+scenario "one seed call is transformed in one request, asked twice":
+  when: ObserveRedisSeedTransform { host: "encodestr", script: "setup:a seedmix:a calls:a read:a" }
+  predict success:
+    response OK SeedTransformResult { trace: "setup:a seedmix:a calls:a=2 read:a=2", read: "string:k1,string:k2", readVia: "NamespaceScan" }
+    filesystem has []
+
+scenario "a transformed seed is state: the window that follows reports nothing":
+  when: ObserveRedisSeedTransform { host: "encodestr", script: "setup:a seedenc:a:string:k1:ab start:a stop:a" }
+  predict success:
+    response OK SeedTransformResult { trace: "setup:a seedenc:a start:a stop:a=0" }
+    filesystem has []
+
+scenario "without seedTransform no host is asked and a plain seed is written as before":
+  when: ObserveRedisSeedTransform { host: "none", script: "setup:a seed:a:string:k1 read:a" }
+  predict success:
+    response OK SeedTransformResult { trace: "setup:a seed:a read:a=1", read: "string:k1", readVia: "NamespaceScan" }
+    filesystem has []
+
+scenario "a host that cannot be started is refused at setup":
+  when: ObserveRedisSeedTransform { host: "absent", script: "setup:a" }
+  predict rejection SEED_TRANSFORM_UNAVAILABLE:
+    response ERR SeedTransformError { code: "SEED_TRANSFORM_UNAVAILABLE", detail: matching "seedTransform" }
+    filesystem has []
+
+scenario "a seedTransform without a command is refused at setup":
+  when: ObserveRedisSeedTransform { host: "nocommand", script: "setup:a" }
+  predict rejection OPTIONS_INVALID:
+    response ERR SeedTransformError { code: "OPTIONS_INVALID", detail: matching "seedTransform.host.command" }
+    filesystem has []
+
+scenario outline "a transform that fails writes nothing":
+  when: ObserveRedisSeedTransform { host: <host>, script: "setup:a seedmix:a" }
+  predict rejection SEED_TRANSFORM_FAILED:
+    response ERR SeedTransformError { code: "SEED_TRANSFORM_FAILED", detail: matching <detail> }
+    filesystem has []
+  examples:
+    | host       | detail               |
+    | "fail"     | "encoder not loaded" |
+    | "nomethod" | "transformSeed"      |
+    | "crash"    | "ended"              |
+    | "short"    | "2 records"          |
+    | "retype"   | "string"             |
+    | "rekey"    | "k1"                 |
+
+scenario "two answers that differ are refused as nondeterministic":
+  when: ObserveRedisSeedTransform { host: "random", script: "setup:a seedenc:a:set:k1:ab" }
+  predict rejection SEED_TRANSFORM_NONDETERMINISTIC:
+    response ERR SeedTransformError { code: "SEED_TRANSFORM_NONDETERMINISTIC", detail: matching "k1" }
+    filesystem has []
+
+scenario outline "after a refused seed call the namespace holds nothing of it":
+  when: ObserveRedisSeedTransform { host: <host>, script: "setup:a seedmix:a! read:a" }
+  predict success:
+    response OK SeedTransformResult { trace: <trace>, read: "", readVia: "NamespaceScan" }
+    filesystem has []
+  examples:
+    | host     | trace                                                        |
+    | "short"  | "setup:a seedmix:a!SEED_TRANSFORM_FAILED read:a=0"           |
+    | "random" | "setup:a seedmix:a!SEED_TRANSFORM_NONDETERMINISTIC read:a=0" |
+    | "encode" | "setup:a seedmix:a!SEED_VALUE_UNSTORABLE read:a=0"           |
+
+scenario "a transformed value that does not fit its kind is refused":
+  when: ObserveRedisSeedTransform { host: "encode", script: "setup:a seedenc:a:string:k1:ab" }
+  predict rejection SEED_VALUE_UNSTORABLE:
+    response ERR SeedTransformError { code: "SEED_VALUE_UNSTORABLE", detail: matching "k1" }
+    filesystem has []
+
+scenario outline "a plain seed value that does not fit its kind is refused":
+  when: ObserveRedisSeedTransform { host: "none", script: <script> }
+  predict rejection SEED_VALUE_UNSTORABLE:
+    response ERR SeedTransformError { code: "SEED_VALUE_UNSTORABLE", detail: matching "k1" }
+    filesystem has []
+  examples:
+    | script                          |
+    | "setup:a seedraw:a:strnum"      |
+    | "setup:a seedraw:a:setempty"    |
+    | "setup:a seedraw:a:setnum"      |
+    | "setup:a seedraw:a:hashnum"     |
+    | "setup:a seedraw:a:zsetnoscore" |
+
+scenario outline "a record with no kind or no key is still SEED_INVALID":
+  when: ObserveRedisSeedTransform { host: "none", script: <script> }
+  predict rejection SEED_INVALID:
+    response ERR SeedTransformError { code: "SEED_INVALID", detail: matching <detail> }
+    filesystem has []
+  examples:
+    | script                     | detail       |
+    | "setup:a seedraw:a:nokind" | "blob"       |
+    | "setup:a seedraw:a:nokey"  | "values.key" |
