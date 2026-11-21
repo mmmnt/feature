@@ -11,6 +11,8 @@
 import { readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { createClient } from "redis";
+import { parseSeedTransform, SeedTransform, SeedTransformError } from "@mmmnt/feat-adapter-stdio-jsonrpc";
+import type { HostRegistry, SeedIdentity } from "@mmmnt/feat-adapter-stdio-jsonrpc";
 import type {
   CapturedRecord,
   FaultArm,
@@ -27,7 +29,12 @@ export type RedisAdapterErrorCode =
   | "SEED_INVALID"
   | "FAULT_UNSUPPORTED"
   | "OPTIONS_INVALID"
-  | "CREDENTIAL_FILE_UNREADABLE";
+  | "CREDENTIAL_FILE_UNREADABLE"
+  // SPEC-ADPRDS-002 (ADR-0035): the seed transform and the storability of every seed.
+  | "SEED_TRANSFORM_UNAVAILABLE"
+  | "SEED_TRANSFORM_FAILED"
+  | "SEED_TRANSFORM_NONDETERMINISTIC"
+  | "SEED_VALUE_UNSTORABLE";
 
 export class RedisAdapterError extends Error {
   constructor(
@@ -66,12 +73,16 @@ export interface RedisOptions {
   auth?: RedisAuthFromEnv | RedisAuthFromFile;
   /** Path of a PEM file of the CA the server's certificate is verified against; only with a rediss:// URL. */
   tlsCAFile?: string;
+  /** SPEC-ADPRDS-002: a spec host that transforms every seed call's records before they are written. */
+  seedTransform?: unknown;
 }
 
 interface RedisConfig {
   key?: string;
   namespace?: string;
   options?: RedisOptions;
+  /** Tests give a simulated spec file its own host registry (SPEC-RPC-002). */
+  registry?: HostRegistry;
 }
 
 /** What one key holds, as JSON: the Redis type and its value in a canonical order. */
@@ -163,6 +174,9 @@ class RedisAdapter implements FeatServiceAdapter {
   private readonly options: RedisOptions;
   private client: Client | undefined;
   private baseline: Map<string, KeyState> | undefined;
+  private readonly key: string;
+  private readonly registry: HostRegistry | undefined;
+  private transformer: SeedTransform | undefined;
   /** How the last read() found its records: "KeyedLookup" or "NamespaceScan". */
   lastReadVia: "KeyedLookup" | "NamespaceScan" | null = null;
 
@@ -176,6 +190,8 @@ class RedisAdapter implements FeatServiceAdapter {
     }
     this.namespace = ns;
     this.options = config.options ?? {};
+    this.key = config.key ?? "redis";
+    this.registry = config.registry;
   }
 
   reportedNamespace(): string {
@@ -267,6 +283,13 @@ class RedisAdapter implements FeatServiceAdapter {
   }
 
   async setup(): Promise<void> {
+    // SPEC-ADPRDS-002: the seed-transform host is checked and joined before any connection.
+    const transform = translate(() => parseSeedTransform(this.options.seedTransform));
+    if (transform !== undefined && this.transformer === undefined) {
+      const t = new SeedTransform(transform, this.key, this.namespace, this.registry);
+      await translateAsync(() => t.setup());
+      this.transformer = t;
+    }
     const { url } = this.resolve();
     try {
       await this.db().connect();
@@ -286,6 +309,9 @@ class RedisAdapter implements FeatServiceAdapter {
 
   async teardown(): Promise<void> {
     this.baseline = undefined;
+    const t = this.transformer;
+    this.transformer = undefined;
+    if (t !== undefined) await t.teardown();
     await this.closeClient();
   }
 
@@ -395,8 +421,20 @@ class RedisAdapter implements FeatServiceAdapter {
 
   /** SeedRecord { type: one of the kinds, values: { key, value } }, written under the namespace before the window. */
   async seed(records: SeedRecord[]): Promise<void> {
+    // SPEC-ADPRDS-002: the transform (asked twice) before anything else; a record's identity is its kind and its key.
+    if (this.transformer !== undefined) {
+      const t = this.transformer;
+      const id: SeedIdentity = {
+        describe: (r) => `${r.type} ${String((r.values ?? {}).key ?? "?")}`,
+        identity: (r) => ({ key: (r.values ?? {}).key ?? null }),
+      };
+      records = await translateAsync(() => t.transform(records, id));
+    }
     const commands: string[][] = [];
     for (const r of records) {
+      if (r.values === null || typeof r.values !== "object" || Array.isArray(r.values)) {
+        throw new RedisAdapterError("SEED_VALUE_UNSTORABLE", `the ${r.type} seed's values are not { key, value }: ${JSON.stringify(r.values)}`);
+      }
       const key = r.values.key;
       const value = r.values.value;
       if (typeof key !== "string" || key === "") throw new RedisAdapterError("SEED_INVALID", `a ${r.type} seed needs values.key, a non-empty string`);
@@ -404,29 +442,29 @@ class RedisAdapter implements FeatServiceAdapter {
       const strings = (v: unknown): v is string[] => Array.isArray(v) && v.length > 0 && v.every((x) => typeof x === "string");
       switch (r.type) {
         case "string":
-          if (typeof value !== "string") throw new RedisAdapterError("SEED_INVALID", `the string seed ${key} needs values.value, a string`);
+          if (typeof value !== "string") throw new RedisAdapterError("SEED_VALUE_UNSTORABLE", `the string seed ${key} needs values.value, a string`);
           commands.push(["SET", full, value]);
           break;
         case "set":
-          if (!strings(value)) throw new RedisAdapterError("SEED_INVALID", `the set seed ${key} needs values.value, a non-empty array of strings`);
+          if (!strings(value)) throw new RedisAdapterError("SEED_VALUE_UNSTORABLE", `the set seed ${key} needs values.value, a non-empty array of strings`);
           commands.push(["SADD", full, ...value]);
           break;
         case "list":
-          if (!strings(value)) throw new RedisAdapterError("SEED_INVALID", `the list seed ${key} needs values.value, a non-empty array of strings`);
+          if (!strings(value)) throw new RedisAdapterError("SEED_VALUE_UNSTORABLE", `the list seed ${key} needs values.value, a non-empty array of strings`);
           commands.push(["RPUSH", full, ...value]);
           break;
         case "hash": {
           const entries = value !== null && typeof value === "object" && !Array.isArray(value) ? Object.entries(value as Record<string, unknown>) : [];
           if (entries.length === 0 || entries.some(([, v]) => typeof v !== "string")) {
-            throw new RedisAdapterError("SEED_INVALID", `the hash seed ${key} needs values.value, an object of string fields`);
+            throw new RedisAdapterError("SEED_VALUE_UNSTORABLE", `the hash seed ${key} needs values.value, an object of string fields`);
           }
           commands.push(["HSET", full, ...entries.flatMap(([f, v]) => [f, v as string])]);
           break;
         }
         case "zset": {
           const members = Array.isArray(value) ? value : [];
-          const ok = members.length > 0 && members.every((m) => m !== null && typeof m === "object" && typeof (m as { member?: unknown }).member === "string" && typeof (m as { score?: unknown }).score === "number");
-          if (!ok) throw new RedisAdapterError("SEED_INVALID", `the zset seed ${key} needs values.value, a non-empty array of { member, score }`);
+          const ok = members.length > 0 && members.every((m) => m !== null && typeof m === "object" && typeof (m as { member?: unknown }).member === "string" && Number.isFinite((m as { score?: unknown }).score));
+          if (!ok) throw new RedisAdapterError("SEED_VALUE_UNSTORABLE", `the zset seed ${key} needs values.value, a non-empty array of { member, score }`);
           commands.push(["ZADD", full, ...members.flatMap((m) => [String((m as { score: number }).score), (m as { member: string }).member])]);
           break;
         }
@@ -450,6 +488,24 @@ class RedisAdapter implements FeatServiceAdapter {
     const keys = await this.keys();
     for (let i = 0; i < keys.length; i += 500) await this.cmd(["UNLINK", ...keys.slice(i, i + 500)]);
     this.baseline = undefined;
+  }
+}
+
+/** The shared transform's refusals, as this adapter's error (the same code). */
+function translate<T>(fn: () => T): T {
+  try {
+    return fn();
+  } catch (e) {
+    if (e instanceof SeedTransformError) throw new RedisAdapterError(e.code, e.detail);
+    throw e;
+  }
+}
+async function translateAsync<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    if (e instanceof SeedTransformError) throw new RedisAdapterError(e.code, e.detail);
+    throw e;
   }
 }
 

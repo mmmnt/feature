@@ -21,7 +21,8 @@
       "kurrent/node26-tls-host.feat",
       "kurrent/credential-files.feat",
       "neo4j/credential-files.feat",
-      "neo4j/relationship-seeds.feat"
+      "neo4j/relationship-seeds.feat",
+      "*/seed-transform.feat"
     ]
   },
   "environment": "integration"

@@ -22,6 +22,7 @@ import "reflect-metadata";
 import * as x509 from "@peculiar/x509";
 import { createClient } from "redis";
 import { createAdapter, RedisAdapterError } from "../src/index.ts";
+import { seedTransformOption, transformCalls } from "../../stdio-jsonrpc/fixtures/seed-host.mjs";
 
 // Every container this file starts carries the pid of the run that owns it (ci-local's, passed in as
 // FEAT_CI_LOCAL_PID, else this process; scripts/test-owner.mjs adds the container it runs in), so scripts/docker-sweep.sh can remove what a killed run left.
@@ -267,8 +268,13 @@ function credentialOptions(input, db, dir, direct, tls) {
   }
 }
 
-export async function observe(input) {
+export const observe = (input) => run(input, "observe");
+export const observeSeedTransform = (input) => run(input, "seedtransform");
+
+async function run(input, mode) {
   const db = await redisServer();
+  // SPEC-ADPRDS-002: the fake transform host in mode input.host, its requests counted in a log of this run.
+  const transform = mode === "seedtransform" ? seedTransformOption(input.host, ["key"]) : undefined;
   const credentialDir = input.source !== undefined ? mkdtempSync(path.join(os.tmpdir(), "feat-redis-cred-")) : undefined;
   const tls = input.source === "tlsCAFile" || input.source === "tlsCAFileOther" ? await tlsServer() : undefined;
   const steps = input.script.trim().split(/\s+/);
@@ -284,6 +290,7 @@ export async function observe(input) {
       credentialDir !== undefined
         ? credentialOptions(input, db, credentialDir, direct, tls)
         : { urlEnv: "FEAT_REDIS_TEST_URL", auth: { password: "FEAT_REDIS_TEST_PASSWORD" } };
+    if (transform?.option !== undefined) options.seedTransform = transform.option;
     return createAdapter({ key: "cache", namespace: nsOf(l), options });
   };
   const adapter = (l) => {
@@ -314,7 +321,23 @@ export async function observe(input) {
   let peekEqualsStop;
   const records = (rs) => rs.map((r) => `${r.type}:${r.key}`).join(",");
   try {
-    for (const step of steps) {
+    for (const raw of steps) {
+      // SPEC-ADPRDS-002: a step written with a trailing `!` records its refusal in the trace and the script goes on.
+      const tolerant = raw.endsWith("!");
+      const step = tolerant ? raw.slice(0, -1) : raw;
+      const [kind, l] = step.split(":");
+      if (!tolerant) {
+        await runStep(step);
+        continue;
+      }
+      try {
+        await runStep(step);
+      } catch (err) {
+        if (!(err instanceof RedisAdapterError)) throw err;
+        trace.push(`${kind}:${l}!${err.code}`);
+      }
+    }
+    async function runStep(step) {
       const [kind, l, a, b, c] = step.split(":");
       const ns = kind === "setraw" ? undefined : nsOf(l);
       const k = (key) => `${ns}:${key}`;
@@ -378,7 +401,8 @@ export async function observe(input) {
         case "stop": {
           const rs = await adapter(l).stopCapture();
           last = records(rs);
-          body.payloads = JSON.stringify(rs.map((r) => r.payload));
+          // SPEC-ADPRDS-001's answer only (founder ruling c786e54d): SPEC-ADPRDS-002's result does not carry it.
+          if (mode === "observe") body.payloads = JSON.stringify(rs.map((r) => r.payload));
           if (lastPeek !== undefined) peekEqualsStop = JSON.stringify(lastPeek.map(({ timestamp, ...r }) => r)) === JSON.stringify(rs.map(({ timestamp, ...r }) => r));
           lastPeek = undefined;
           trace.push(`stop:${l}=${rs.length}`);
@@ -412,6 +436,39 @@ export async function observe(input) {
           trace.push(`fault:${l}:${a}`);
           break;
         }
+        // SPEC-ADPRDS-002: seeds whose values the fake transform host rewrites, plain seeds that do not fit their kind,
+        // and the number of transformSeed requests the host received.
+        case "seedenc": {
+          const enc = { encode: c };
+          const value = { string: enc, set: [enc], list: [enc], hash: { f: enc } }[a];
+          await adapter(l).seed([{ type: a, values: { key: b, value } }]);
+          trace.push(`seedenc:${l}`);
+          break;
+        }
+        case "seedmix":
+          await adapter(l).seed([
+            { type: "string", values: { key: "k1", value: { encode: "a" } } },
+            { type: "string", values: { key: "k2", value: { encode: "b" } } },
+          ]);
+          trace.push(`seedmix:${l}`);
+          break;
+        case "seedraw": {
+          const r = {
+            strnum: { type: "string", values: { key: "k1", value: 1 } },
+            setempty: { type: "set", values: { key: "k1", value: [] } },
+            setnum: { type: "set", values: { key: "k1", value: [1] } },
+            hashnum: { type: "hash", values: { key: "k1", value: { f: 1 } } },
+            zsetnoscore: { type: "zset", values: { key: "k1", value: [{ member: "m" }] } },
+            nokind: { type: "blob", values: { key: "k1", value: "x" } },
+            nokey: { type: "string", values: { value: "x" } },
+          }[a];
+          await adapter(l).seed([r]);
+          trace.push(`seedraw:${l}`);
+          break;
+        }
+        case "calls":
+          trace.push(`calls:${l}=${transformCalls(transform)}`);
+          break;
         default:
           throw new Error(`unknown probe step '${step}'`);
       }
@@ -428,5 +485,6 @@ export async function observe(input) {
     for (const x of adapters.values()) await x.teardown().catch(() => {});
     if (system !== undefined && system.isOpen) await system.quit().catch(() => {});
     if (credentialDir !== undefined) rmSync(credentialDir, { recursive: true, force: true });
+    transform?.cleanup();
   }
 }

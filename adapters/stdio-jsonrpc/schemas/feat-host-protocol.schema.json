@@ -27,6 +27,7 @@
         { "$ref": "#/definitions/requests/setSeed" },
         { "$ref": "#/definitions/requests/invoke" },
         { "$ref": "#/definitions/requests/seed" },
+        { "$ref": "#/definitions/requests/transformSeed" },
         { "$ref": "#/definitions/requests/startCapture" },
         { "$ref": "#/definitions/requests/peekCapture" },
         { "$ref": "#/definitions/requests/stopCapture" },
@@ -156,6 +157,26 @@
           "jsonrpc": { "const": "2.0" },
           "id": { "$ref": "#/definitions/id" },
           "method": { "const": "seed" },
+          "params": {
+            "type": "object",
+            "required": ["service", "records"],
+            "additionalProperties": false,
+            "properties": {
+              "service": { "$ref": "#/definitions/service" },
+              "records": { "type": "array", "items": { "$ref": "#/definitions/seedRecord" } }
+            }
+          }
+        }
+      },
+      "transformSeed": {
+        "description": "Optional (ADR-0035, founder rulings 944b1d17 and c141a704): a store adapter configured with options.seedTransform sends one seed call's records, twice, and writes what comes back. A host that serves no seed transform answers -32601 (method not found).",
+        "type": "object",
+        "required": ["jsonrpc", "id", "method", "params"],
+        "additionalProperties": false,
+        "properties": {
+          "jsonrpc": { "const": "2.0" },
+          "id": { "$ref": "#/definitions/id" },
+          "method": { "const": "transformSeed" },
           "params": {
             "type": "object",
             "required": ["service", "records"],
@@ -361,6 +382,25 @@
       "setClock": { "$ref": "#/definitions/empty" },
       "setSeed": { "$ref": "#/definitions/empty" },
       "seed": { "$ref": "#/definitions/empty" },
+      "transformSeed": {
+        "type": "object",
+        "required": ["records"],
+        "additionalProperties": false,
+        "properties": {
+          "records": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["type", "values"],
+              "additionalProperties": false,
+              "properties": {
+                "type": { "type": "string" },
+                "values": { "description": "Opaque: the store adapter judges what comes back (SEED_VALUE_UNSTORABLE)." }
+              }
+            }
+          }
+        }
+      },
       "startCapture": { "$ref": "#/definitions/empty" },
       "deliver": { "$ref": "#/definitions/empty" },
       "fault": { "$ref": "#/definitions/empty" },

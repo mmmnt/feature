@@ -14,6 +14,7 @@
     "test": "vitest run --exclude '**/observe.test.ts' --exclude '**/transport.test.ts' --exclude '**/credential-files.test.ts' --exclude '**/relationship-seeds.test.ts' --passWithNoTests"
   },
   "dependencies": {
+    "@mmmnt/feat-adapter-stdio-jsonrpc": "workspace:^",
     "@mmmnt/feat-fault-proxy": "workspace:^",
     "@mmmnt/feat-types": "workspace:^",
     "neo4j-driver": "6.3.0"

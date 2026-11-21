@@ -154,6 +154,22 @@
         "module": "adapters/neo4j/fixtures/probe.mjs",
         "export": "observeSeeds"
       },
+      "ObserveNeo4jSeedTransform": {
+        "module": "adapters/neo4j/fixtures/probe.mjs",
+        "export": "observeSeedTransform"
+      },
+      "ObserveRedisSeedTransform": {
+        "module": "adapters/redis/fixtures/probe.mjs",
+        "export": "observeSeedTransform"
+      },
+      "ObserveKurrentSeedTransform": {
+        "module": "adapters/kurrent/fixtures/probe.mjs",
+        "export": "observeSeedTransform"
+      },
+      "ObserveDynamoSeedTransform": {
+        "module": "adapters/dynamodb/fixtures/query-probe.mjs",
+        "export": "observeSeedTransform"
+      },
       "ObserveModel": {
         "module": "adapters/model/fixtures/probe.mjs",
         "export": "observe"

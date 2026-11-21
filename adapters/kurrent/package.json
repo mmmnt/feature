@@ -14,6 +14,7 @@
     "test": "vitest run --exclude '**/observe.test.ts' --exclude '**/transport.test.ts' --exclude '**/broker-loss.test.ts' --exclude '**/node26-tls-host.test.ts' --exclude '**/credential-files.test.ts' --passWithNoTests"
   },
   "dependencies": {
+    "@mmmnt/feat-adapter-stdio-jsonrpc": "workspace:^",
     "@kurrent/kurrentdb-client": "1.3.2",
     "@mmmnt/feat-fault-proxy": "workspace:^",
     "@mmmnt/feat-types": "workspace:^"

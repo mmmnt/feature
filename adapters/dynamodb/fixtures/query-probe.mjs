@@ -10,6 +10,7 @@
 // refused or reset connection; in the shared namespace it sees what a real client of the product would see.
 // The adapter's own clients use the published port directly, never the proxy. Only containers this probe
 // created, by name, are ever touched. Credentials are fake and static; no real AWS endpoint is ever named.
+import { seedTransformOption, transformCalls } from "../../stdio-jsonrpc/fixtures/seed-host.mjs";
 import { spawn, spawnSync } from "node:child_process";
 import { dockerAsync } from "../../fault-proxy/fixtures/docker-async.mjs";
 import { createHash, randomBytes } from "node:crypto";
@@ -234,15 +235,28 @@ async function wipe(env) {
 const namespaceOf = (label) =>
   label.startsWith("raw=") ? label.slice(4) : `s${createHash("sha256").update(label, "utf8").digest("hex").slice(0, 12)}`;
 
-const KNOWN_ERRORS = new Set(["NAMESPACE_INVALID", "NAMESPACE_KEY_NOT_STRING", "STREAM_NOT_ENABLED", "FAULT_UNSUPPORTED"]);
+const KNOWN_ERRORS = new Set([
+  "NAMESPACE_INVALID",
+  "NAMESPACE_KEY_NOT_STRING",
+  "STREAM_NOT_ENABLED",
+  "FAULT_UNSUPPORTED",
+  // SPEC-ADPDDB-003
+  "OPTIONS_INVALID",
+  "SEED_TRANSFORM_UNAVAILABLE",
+  "SEED_TRANSFORM_FAILED",
+  "SEED_TRANSFORM_NONDETERMINISTIC",
+  "SEED_VALUE_UNSTORABLE",
+]);
 
 const countOf = (word) => (word === undefined || word === "reset" ? "reset" : word === "once" ? 1 : Number(word.replace(/^times/, "")));
 
 const keyOf = (r) => `${r.type}:${r.payload.PK}/${r.payload.SK}`;
 
-async function run(input, { transport }) {
+async function run(input, { transport, seedTransform = false }) {
   const env = await environment(transport);
   await wipe(env);
+  // SPEC-ADPDDB-003: the fake transform host in mode input.host, its requests counted in a log of this run.
+  const transform = seedTransform ? seedTransformOption(input.host, ["PK", "SK"]) : undefined;
 
   const adapters = new Map();
   const trace = [];
@@ -257,7 +271,23 @@ async function run(input, { transport }) {
   };
 
   try {
-    for (const step of input.script.trim().split(/\s+/)) {
+    for (const raw of input.script.trim().split(/\s+/)) {
+      // SPEC-ADPDDB-003: a step written with a trailing `!` records its refusal in the trace and the script goes on.
+      const tolerant = raw.endsWith("!");
+      const step = tolerant ? raw.slice(0, -1) : raw;
+      if (!tolerant) {
+        await runStep(step);
+        continue;
+      }
+      try {
+        await runStep(step);
+      } catch (err) {
+        if (!(err instanceof DynamoAdapterError)) throw err;
+        const [kind, label] = step.split(":");
+        trace.push(`${kind}:${label}!${err.code}`);
+      }
+    }
+    async function runStep(step) {
       const [kind, label, ...rest] = step.split(":");
       const ns = namespaceOf(label ?? "");
       switch (kind) {
@@ -271,6 +301,7 @@ async function run(input, { transport }) {
             ...(proxied
               ? { fence: true, proxy: { api: env.api, name: PRODUCT, upstream: "127.0.0.1:8000" } }
               : { ...(input.fence === true ? { fence: true } : {}), ...(input.stream === "off" ? { stream: false } : {}) }),
+            ...(transform?.option !== undefined ? { seedTransform: transform.option } : {}),
           };
           const adapter = createAdapter({ key: "database", options, namespace: ns });
           adapters.set(label, adapter);
@@ -376,6 +407,8 @@ async function run(input, { transport }) {
           const out = await adapter.read(pk === undefined ? {} : { expect: [{ type: "ITEM", key }] });
           trace.push(`${step}=${out.length}`);
           body.readVia = adapter.lastReadVia;
+          // SPEC-ADPDDB-003 (founder ruling c786e54d): each item's attributes in name order, not the SDK's.
+          if (seedTransform) body.readItems = JSON.stringify(out.map((r) => Object.fromEntries(Object.entries(r.payload).sort(([a], [b]) => (a < b ? -1 : 1)))));
           break;
         }
         case "fault": {
@@ -397,6 +430,37 @@ async function run(input, { transport }) {
           trace.push(`fired:${label}=${typeof a.firedFaults === "function" ? "observed" : "unobserved"}`);
           break;
         }
+        // SPEC-ADPDDB-003: items whose attributes the fake transform host rewrites, plain seeds DynamoDB cannot store,
+        // and the number of transformSeed requests the host received.
+        case "seedenc": {
+          const [pk, sk, text] = rest;
+          await adapterFor(label).seed([{ type: "ITEM", values: { PK: pk, SK: sk, v: { encode: text } } }]);
+          trace.push(`seedenc:${label}`);
+          break;
+        }
+        case "seedmix":
+          await adapterFor(label).seed([
+            { type: "ITEM", values: { PK: "o1", SK: "1", v: { encode: "a" } } },
+            { type: "ITEM", values: { PK: "o2", SK: "1", v: { encode: "b" } } },
+          ]);
+          trace.push(`seedmix:${label}`);
+          break;
+        case "seedraw": {
+          const values = {
+            nokey: { SK: "1", v: "x" },
+            keynull: { PK: null, SK: "1", v: "x" },
+            keyempty: { PK: "", SK: "1", v: "x" },
+            keymap: { PK: { x: 1 }, SK: "1", v: "x" },
+            bignum: { PK: "o1", SK: "1", v: 1e200 },
+            huge: { PK: "o1", SK: "1", v: "x".repeat(401 * 1024) },
+          }[rest[0]];
+          await adapterFor(label).seed([{ type: "ITEM", values }]);
+          trace.push(`seedraw:${label}`);
+          break;
+        }
+        case "calls":
+          trace.push(`calls:${label}=${transformCalls(transform)}`);
+          break;
         default:
           throw new Error(`unknown probe step '${step}'`);
       }
@@ -408,11 +472,13 @@ async function run(input, { transport }) {
     throw e;
   } finally {
     for (const a of adapters.values()) await a.teardown().catch(() => {});
+    transform?.cleanup();
   }
 }
 
 export const observe = (input) => run(input, { transport: false });
 export const observeTransport = (input) => run(input, { transport: true });
+export const observeSeedTransform = (input) => run(input, { transport: false, seedTransform: true });
 
 // SPEC-ADPHND-003 (founder ruling ba21abb2, "Transport envs start at load"): every one-time start-up of this
 // probe, DynamoDB Local, and the transport environment (its own DynamoDB Local, Toxiproxy and the peer), runs when the module is evaluated. The handler adapter imports the module in setup(), in the
