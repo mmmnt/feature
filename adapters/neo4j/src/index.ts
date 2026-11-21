@@ -748,7 +748,7 @@ function unstorable(x: unknown): string | undefined {
   if (x === null) return "it is null";
   if (typeof x === "number") return `${x} is not a finite number`;
   if (Array.isArray(x)) {
-    if (x.length === 0) return "it is an empty list";
+    if (x.length === 0) return undefined; // SPEC-ADPNEO-005, founder ruling 6a6aa65c: Neo4j stores an empty list
     const kinds = new Set(x.map(scalar));
     if (kinds.has(undefined)) return `the list holds ${JSON.stringify(x.find((y) => scalar(y) === undefined))}, which is not a string, a finite number or a boolean`;
     if (kinds.size > 1) return `the list mixes ${[...kinds].join(" and ")} items`;

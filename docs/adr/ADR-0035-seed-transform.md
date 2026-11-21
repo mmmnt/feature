@@ -29,7 +29,8 @@ earlier records of the same call were written.
    property and a relationship's ends, Redis's key, Kurrent's stream, DynamoDB's key attributes); otherwise
    SEED_TRANSFORM_FAILED.
 6. **Every seed is checked against its store's storable forms before anything is written** (Q3), transformed or not, as
-   SEED_VALUE_UNSTORABLE. Each adapter's spec defines its store's rule.
+   SEED_VALUE_UNSTORABLE. Each adapter's spec defines its store's rule, which follows what the real store stores (amended by
+   founder ruling 6a6aa65c, 2026-11-21: Neo4j stores an empty list, so SPEC-ADPNEO-005 calls it storable).
 7. **Seeds only.** What an adapter observes and reads is what is stored.
 8. **One release** for all four adapters (Q5), with the same option, protocol and refusal codes.
 
