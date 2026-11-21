@@ -1,6 +1,6 @@
 {
   "name": "@mmmnt/feat-adapter-dynamodb",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "DynamoDB service adapter for Feat: table writes become a capture window via DynamoDB Streams — an unpredicted INSERT/MODIFY/REMOVE fails the suite",
   "type": "module",
   "main": "dist/index.js",
@@ -11,9 +11,10 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --exclude '**/query-mode.test.ts' --exclude '**/transport.test.ts' --passWithNoTests"
+    "test": "vitest run --exclude '**/seed-transform.test.ts' --exclude '**/query-mode.test.ts' --exclude '**/transport.test.ts' --passWithNoTests"
   },
   "dependencies": {
+    "@mmmnt/feat-adapter-stdio-jsonrpc": "workspace:^",
     "@aws-sdk/client-dynamodb": "^3.700.0",
     "@aws-sdk/client-dynamodb-streams": "^3.700.0",
     "@aws-sdk/credential-providers": "^3.700.0",

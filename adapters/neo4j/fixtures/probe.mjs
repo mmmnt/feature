@@ -21,6 +21,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import neo4j from "neo4j-driver";
 import { createAdapter, Neo4jAdapterError } from "../src/index.ts";
+import { seedTransformOption, transformCalls } from "../../stdio-jsonrpc/fixtures/seed-host.mjs";
 import { ensurePeerInstall } from "../../fault-proxy/fixtures/peer-install.mjs";
 
 // Every container this file starts carries the pid of the run that owns it (ci-local's, passed in as
@@ -279,7 +280,9 @@ function credentialOptions(input, db, dir, direct) {
 
 async function run(input, mode) {
   const db = await neo4jServer();
-  const env = mode === "observe" || mode === "credentials" || mode === "seeds" ? undefined : await proxyEnvironment();
+  const env = mode === "observe" || mode === "credentials" || mode === "seeds" || mode === "seedtransform" ? undefined : await proxyEnvironment();
+  // SPEC-ADPNEO-005: the fake transform host in mode input.host, its requests counted in a log of this run.
+  const transform = mode === "seedtransform" ? seedTransformOption(input.host, ["orderId", "customerId"]) : undefined;
   const credentialDir = mode === "credentials" ? mkdtempSync(path.join(os.tmpdir(), "feat-neo4j-cred-")) : undefined;
   if (env !== undefined) {
     const all = await (await fetch(`${env.api}/proxies`)).json();
@@ -306,6 +309,7 @@ async function run(input, mode) {
       keys: KEYS,
       ...(input.settleTimeoutMs !== undefined ? { settleTimeoutMs: input.settleTimeoutMs } : {}),
       ...(env !== undefined ? { proxy: { api: env.api, upstream: `host.docker.internal:${db.port}` } } : {}),
+      ...(transform?.option !== undefined ? { seedTransform: transform.option } : {}),
     };
     return createAdapter({ key: "neo4j", namespace: nsOf(l), options });
   };
@@ -338,8 +342,23 @@ async function run(input, mode) {
   let peekEqualsStop;
   const records = (rs) => rs.map((r) => `${r.type}:${r.key}`).join(",");
   try {
-    for (const step of steps) {
+    for (const raw of steps) {
+      // SPEC-ADPNEO-005: a step written with a trailing `!` records its refusal in the trace and the script goes on.
+      const tolerant = raw.endsWith("!");
+      const step = tolerant ? raw.slice(0, -1) : raw;
       const [kind, l, a, b, c, d, e] = step.split(":");
+      if (tolerant) {
+        try {
+          await runStep(kind, l, a, b, c, d, e, step);
+        } catch (err) {
+          if (!(err instanceof Neo4jAdapterError)) throw err;
+          trace.push(`${kind}:${l}!${err.code}`);
+        }
+        continue;
+      }
+      await runStep(kind, l, a, b, c, d, e, step);
+    }
+    async function runStep(kind, l, a, b, c, d, e, step) {
       const ns = kind === "createraw" ? undefined : nsOf(l);
       switch (kind) {
         case "setup":
@@ -478,6 +497,7 @@ async function run(input, mode) {
           const rs = await x.read(a === undefined ? {} : { expect: [{ type: a, key: { [KEYS[a]]: b } }] });
           trace.push(`read:${l}${a === undefined ? "" : `:${a}:${b}`}=${rs.length}`);
           body.readVia = x.lastReadVia;
+          if (mode === "seedtransform") body.readValues = rs.map(renderValues).join(",");
           if (mode === "seeds") {
             body.readKeys = rs
               .map((r) => {
@@ -511,6 +531,32 @@ async function run(input, mode) {
           trace.push(`fired:${l}=${fired}`);
           break;
         }
+        // SPEC-ADPNEO-005: seeds whose values the fake transform host rewrites, plain seeds Neo4j cannot store, and the
+        // number of transformSeed requests the host received.
+        case "seedenc":
+          await adapter(l).seed([{ type: a, values: { [KEYS[a]]: b, v: { encode: c } } }]);
+          trace.push(`seedenc:${l}`);
+          break;
+        case "seedrelenc":
+          await adapter(l).seed([{ type: c, values: { from: `${a}:${b}`, to: `${d}:${e}`, w: { encode: step.split(":")[7] } } }]);
+          trace.push(`seedrelenc:${l}`);
+          break;
+        case "seedmix":
+          await adapter(l).seed([
+            { type: "Order", values: { orderId: "o1", v: { encode: "a" } } },
+            { type: "Order", values: { orderId: "o2", v: { encode: "b" } } },
+          ]);
+          trace.push(`seedmix:${l}`);
+          break;
+        case "seedraw": {
+          const v = { map: { x: 1 }, empty: [], mixed: [1, "a"], nulls: [1, null], nested: [[1]], null: null }[a];
+          await adapter(l).seed([{ type: "Order", values: { orderId: "o1", v } }]);
+          trace.push(`seedraw:${l}`);
+          break;
+        }
+        case "calls":
+          trace.push(`calls:${l}=${transformCalls(transform)}`);
+          break;
         default:
           throw new Error(`unknown probe step '${step}'`);
       }
@@ -532,6 +578,7 @@ async function run(input, mode) {
     for (const x of adapters.values()) await x.teardown().catch(() => {});
     if (system !== undefined) await system.close().catch(() => {});
     if (credentialDir !== undefined) rmSync(credentialDir, { recursive: true, force: true });
+    transform?.cleanup();
   }
 }
 
@@ -539,6 +586,14 @@ export const observe = (input) => run(input, "observe");
 export const observeTransport = (input) => run(input, "transport");
 export const observeCredentials = (input) => run(input, "credentials");
 export const observeSeeds = (input) => run(input, "seeds");
+export const observeSeedTransform = (input) => run(input, "seedtransform");
+
+// SPEC-ADPNEO-005's readValues: a record's key, with its v (a node) or w (a relationship) as stored, `{v=[2,97,1]}`.
+function renderValues(r) {
+  const p = r.payload ?? {};
+  const own = p.relType === undefined ? p.v : p.w;
+  return `${r.key}${own === undefined ? "" : `{${p.relType === undefined ? "v" : "w"}=${typeof own === "string" ? own : JSON.stringify(own)}}`}`;
+}
 
 // SPEC-ADPHND-003 (founder ruling ba21abb2, "Transport envs start at load"): every one-time start-up of this
 // probe, the Neo4j server and the transport environment (Toxiproxy and the peer agent; the peer install already runs above), runs when the module is evaluated. The handler adapter imports the module in setup(), in the

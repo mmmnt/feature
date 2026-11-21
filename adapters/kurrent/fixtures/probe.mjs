@@ -23,6 +23,7 @@ import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ANY, jsonEvent, KurrentDBClient, NO_STREAM, START, streamNameFilter } from "@kurrent/kurrentdb-client";
+import { seedTransformOption, transformCalls } from "../../stdio-jsonrpc/fixtures/seed-host.mjs";
 import { createAdapter, KurrentAdapterError } from "../src/index.ts";
 import { ensurePeerInstall } from "../../fault-proxy/fixtures/peer-install.mjs";
 import { dockerAsync } from "../../fault-proxy/fixtures/docker-async.mjs";
@@ -304,7 +305,9 @@ function credentialOptions(input, kdb, dir) {
 
 async function run(input, mode) {
   const kdb = await kurrent();
-  const env = mode === "observe" || mode === "tls-host" || mode === "credentials" ? undefined : await proxyEnvironment();
+  const env = mode === "observe" || mode === "tls-host" || mode === "credentials" || mode === "seedtransform" ? undefined : await proxyEnvironment();
+  // SPEC-ADPKUR-006: the fake transform host in mode input.host, its requests counted in a log of this run.
+  const transform = mode === "seedtransform" ? seedTransformOption(input.host, ["stream"]) : undefined;
   const credentialDir = mode === "credentials" ? mkdtempSync(path.join(os.tmpdir(), "feat-kurrent-cred-")) : undefined;
   if ((await containerState(kdb.name)) === "paused") await dockerAsync(["unpause", kdb.name]);
   if (env !== undefined) {
@@ -353,6 +356,7 @@ async function run(input, mode) {
             },
           }
         : {}),
+      ...(transform?.option !== undefined ? { seedTransform: transform.option } : {}),
     };
     return createAdapter({ key: "kurrent", namespace: nsOf(l), options });
   };
@@ -370,12 +374,29 @@ async function run(input, mode) {
   let lastPeek;
   let peekEqualsStop;
   let lastPayloads;
+  let readPayloads;
   const records = (rs) => rs.map((r) => `${r.key}/${r.type}`).join(",");
   // A stream may hold `:` (flmnt's ids do, `<workspace>::domain`): kind and label first, a type last, the stream between.
   const TYPED = new Set(["seed", "write", "writenew", "writeuser", "meta"]);
   const STREAMED = new Set(["delete", "tombstone"]);
   try {
-    for (const step of steps) {
+    for (const raw of steps) {
+      // SPEC-ADPKUR-006: a step written with a trailing `!` records its refusal in the trace and the script goes on.
+      const tolerant = raw.endsWith("!");
+      const step = tolerant ? raw.slice(0, -1) : raw;
+      if (!tolerant) {
+        await runStep(step);
+        continue;
+      }
+      try {
+        await runStep(step);
+      } catch (err) {
+        if (!(err instanceof KurrentAdapterError)) throw err;
+        const [kind, l] = step.split(":");
+        trace.push(`${kind}:${l}!${err.code}`);
+      }
+    }
+    async function runStep(step) {
       const parts = step.split(":");
       let [kind, l, a, b, c] = parts;
       if (TYPED.has(kind) && parts.length > 4) [a, b] = [parts.slice(2, -1).join(":"), parts.at(-1)];
@@ -482,6 +503,7 @@ async function run(input, mode) {
         case "read": {
           const rs = await adapter(l).read(a === undefined ? {} : { expect: [{ type: "*", key: { stream: a } }] });
           trace.push(`read:${l}${a === undefined ? "" : `:${a}`}=${rs.length}`);
+          readPayloads = JSON.stringify(rs.map((r) => r.payload));
           break;
         }
         case "fault": {
@@ -503,6 +525,34 @@ async function run(input, mode) {
         case "container":
           trace.push(`container=${await containerState(kdb.name)}`);
           break;
+        // SPEC-ADPKUR-006: seeds whose data the fake transform host rewrites, plain seeds Kurrent cannot hold, and the
+        // number of transformSeed requests the host received.
+        case "seedenc": {
+          // seedenc:<ns>:<stream>:<Type>:<text>
+          const [, , stream, type, text] = parts;
+          dirty.add(adapter(l));
+          await adapter(l).seed([{ type, values: { stream, v: { encode: text } } }]);
+          trace.push(`seedenc:${l}`);
+          break;
+        }
+        case "seedmix":
+          dirty.add(adapter(l));
+          await adapter(l).seed([
+            { type: "Placed", values: { stream: "orders", v: { encode: "a" } } },
+            { type: "Placed", values: { stream: "orders", v: { encode: "b" } } },
+          ]);
+          trace.push(`seedmix:${l}`);
+          break;
+        case "seedraw": {
+          const stream = { streamnum: 1, streamempty: "" }[a];
+          dirty.add(adapter(l));
+          await adapter(l).seed([{ type: "Placed", values: { stream } }]);
+          trace.push(`seedraw:${l}`);
+          break;
+        }
+        case "calls":
+          trace.push(`calls:${l}=${transformCalls(transform)}`);
+          break;
         default:
           throw new Error(`unknown probe step '${step}'`);
       }
@@ -511,6 +561,7 @@ async function run(input, mode) {
     if (last) body.last = last;
     // lastPayloads is SPEC-ADPKUR-001's answer (its 2026-11-20 amendment); the other specs' results do not carry it.
     if (mode === "observe" && lastPayloads !== undefined && lastPayloads.length > 0) body.lastPayloads = lastPayloads;
+    if (mode === "seedtransform" && readPayloads !== undefined) body.readPayloads = readPayloads;
     if (peekEqualsStop !== undefined) body.peekEqualsStop = peekEqualsStop;
     return { status: "OK", body };
   } catch (e) {
@@ -525,6 +576,7 @@ async function run(input, mode) {
     }
     for (const w of writers.values()) await w.dispose().catch(() => {});
     if (credentialDir !== undefined) rmSync(credentialDir, { recursive: true, force: true });
+    transform?.cleanup();
   }
 }
 
@@ -533,6 +585,7 @@ export const observeTransport = (input) => run(input, "transport");
 export const observeBrokerLoss = (input) => run(input, "broker-loss");
 export const observeTlsHost = (input) => run(input, "tls-host");
 export const observeCredentials = (input) => run(input, "credentials");
+export const observeSeedTransform = (input) => run(input, "seedtransform");
 
 // SPEC-ADPHND-003 (founder ruling ba21abb2, "Transport envs start at load"): every one-time start-up of this
 // probe, the KurrentDB server and the transport environment (Toxiproxy and the peer agent; the peer install already runs above), runs when the module is evaluated. The handler adapter imports the module in setup(), in the

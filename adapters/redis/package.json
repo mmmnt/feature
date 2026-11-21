@@ -1,6 +1,6 @@
 {
   "name": "@mmmnt/feat-adapter-redis",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Redis service adapter for Feat: a snapshot diff of the namespace's keys, state by key or namespace scan, and credentials and a CA read from files",
   "type": "module",
   "main": "dist/index.js",
@@ -11,9 +11,10 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --exclude '**/observe.test.ts' --passWithNoTests"
+    "test": "vitest run --exclude '**/seed-transform.test.ts' --exclude '**/observe.test.ts' --passWithNoTests"
   },
   "dependencies": {
+    "@mmmnt/feat-adapter-stdio-jsonrpc": "workspace:^",
     "@mmmnt/feat-types": "workspace:^",
     "redis": "6.3.1"
   },

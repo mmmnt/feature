@@ -319,6 +319,23 @@ fake static credentials and `us-east-1` for the instrument.
 (`docker run -p 8000:8000 amazon/dynamodb-local`). The adapter's own suite runs against the real engine
 either way.
 
+## Seed transform and storable seeds (SPEC-ADPDDB-003, ADR-0035)
+
+`options.seedTransform: { host: { command: [...], cwd?, env? } }` names a spec host that
+transforms every seed call's records before they are written (a consumer computing a value
+only it can, e.g. a vector from its own pinned encoder). The adapter joins the spec file's
+shared host (@mmmnt/feat-adapter-stdio-jsonrpc; the same process as a response role with the
+same `host`), asks the optional protocol method `transformSeed` **twice** per seed call, and
+writes the first answer only when both agree as canonical JSON and each keeps the records'
+count, order, type and identity. Seeds only: what the adapter captures and reads is what is
+stored. Every seed, transformed or plain, is checked against what DynamoDB can store before
+anything is written: the key attributes are present and each a non-empty string or a finite number, every number is in DynamoDB's range, and the item is at most 400 KB. Every record of a call is checked before the first put.
+
+Refusals: `OPTIONS_INVALID` (no command), `SEED_TRANSFORM_UNAVAILABLE` (the host cannot be
+started, at setup), `SEED_TRANSFORM_FAILED` (an error, method not found, the host ended, or a
+changed count, order, type or identity), `SEED_TRANSFORM_NONDETERMINISTIC` (the two answers
+differ), `SEED_VALUE_UNSTORABLE`.
+
 ## Errors and refusals
 
 Four refusals are `DynamoAdapterError`s, with a stable `code` and a `detail` that names the offender.

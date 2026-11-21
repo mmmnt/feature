@@ -20,6 +20,8 @@ import { readFileSync, statSync } from "node:fs";
 import { isIP } from "node:net";
 import path from "node:path";
 import { createFaultProxy } from "@mmmnt/feat-fault-proxy";
+import { parseSeedTransform, SeedTransform, SeedTransformError } from "@mmmnt/feat-adapter-stdio-jsonrpc";
+import type { HostRegistry, SeedIdentity } from "@mmmnt/feat-adapter-stdio-jsonrpc";
 import type { FaultProxy, OpenProxy } from "@mmmnt/feat-fault-proxy";
 import type { ReadPosition } from "@kurrent/kurrentdb-client";
 import type {
@@ -31,7 +33,18 @@ import type {
   SeedRecord,
 } from "@mmmnt/feat-types";
 
-export type KurrentAdapterErrorCode = "NAMESPACE_INVALID" | "ALL_READ_DENIED" | "FAULT_UNSUPPORTED" | "TLS_HOST_UNSUPPORTED" | "OPTIONS_INVALID" | "CREDENTIAL_FILE_UNREADABLE";
+export type KurrentAdapterErrorCode =
+  | "NAMESPACE_INVALID"
+  | "ALL_READ_DENIED"
+  | "FAULT_UNSUPPORTED"
+  | "TLS_HOST_UNSUPPORTED"
+  | "OPTIONS_INVALID"
+  | "CREDENTIAL_FILE_UNREADABLE"
+  // SPEC-ADPKUR-006 (ADR-0035): the seed transform and the storability of every seed.
+  | "SEED_TRANSFORM_UNAVAILABLE"
+  | "SEED_TRANSFORM_FAILED"
+  | "SEED_TRANSFORM_NONDETERMINISTIC"
+  | "SEED_VALUE_UNSTORABLE";
 
 export class KurrentAdapterError extends Error {
   constructor(
@@ -84,12 +97,16 @@ export interface KurrentOptions {
   proxy?: KurrentProxyOptions;
   /** The Node major the TLS host rule judges by (SPEC-ADPKUR-004). Default: the running Node's. */
   nodeMajor?: number;
+  /** SPEC-ADPKUR-006: a spec host that transforms every seed call's records before they are appended. */
+  seedTransform?: unknown;
 }
 
 interface KurrentConfig {
   key?: string;
   namespace?: string;
   options?: KurrentOptions;
+  /** Tests give a simulated spec file its own host registry (SPEC-RPC-002). */
+  registry?: HostRegistry;
 }
 
 type Position = { commit: bigint; prepare: bigint };
@@ -235,6 +252,9 @@ class KurrentAdapter implements FeatServiceAdapter {
   private readCredentials: { username: string; password: string } | undefined;
   private proxy: FaultProxy | undefined;
   private opened: OpenProxy | undefined;
+  private readonly key: string;
+  private readonly registry: HostRegistry | undefined;
+  private transformer: SeedTransform | undefined;
 
   /** The window: the last position read (exclusive cursor) and what has been captured since. */
   private cursor: Position | undefined;
@@ -252,6 +272,8 @@ class KurrentAdapter implements FeatServiceAdapter {
     this.namespace = ns;
     this.options = config.options ?? {};
     this.settleTimeoutMs = this.options.settleTimeoutMs ?? 5000;
+    this.key = config.key ?? "kurrent";
+    this.registry = config.registry;
 
     const catalog: Record<string, Record<string, readonly ("once" | "times" | "reset")[]>> = {
       AppendToStream: { WRONG_EXPECTED_VERSION: ["reset"], ACCESS_DENIED: ["reset"] },
@@ -450,6 +472,13 @@ class KurrentAdapter implements FeatServiceAdapter {
         `options.nodeMajor must be an integer, 1 or more; got ${typeof major === "string" ? JSON.stringify(major) : String(major)}`,
       );
     }
+    // SPEC-ADPKUR-006: the seed-transform host is checked and joined before any connection.
+    const transform = translate(() => parseSeedTransform(this.options.seedTransform));
+    if (transform !== undefined && this.transformer === undefined) {
+      const t = new SeedTransform(transform, this.key, this.namespace, this.registry);
+      await translateAsync(() => t.setup());
+      this.transformer = t;
+    }
     const db = this.db();
     try {
       for await (const _ of db.readAll({ fromPosition: START, maxCount: 1, ...this.readAuth() })) break;
@@ -465,6 +494,9 @@ class KurrentAdapter implements FeatServiceAdapter {
   async teardown(): Promise<void> {
     this.windowOpen = false;
     this.cursor = undefined;
+    const t = this.transformer;
+    this.transformer = undefined;
+    if (t !== undefined) await t.teardown();
     try {
       if (this.proxy !== undefined) await this.proxy.close();
     } finally {
@@ -644,6 +676,26 @@ class KurrentAdapter implements FeatServiceAdapter {
 
   /** The stream of a seed: `values.stream` when the record names one, else its type. */
   async seed(records: SeedRecord[]): Promise<void> {
+    // SPEC-ADPKUR-006: the transform (asked twice), then every record checked, before the first append; a record's
+    // identity is its type and its stream.
+    const streamOf = (r: SeedRecord): unknown => (r.values !== null && typeof r.values === "object" && "stream" in r.values ? r.values.stream : r.type);
+    if (this.transformer !== undefined) {
+      const t = this.transformer;
+      const id: SeedIdentity = {
+        describe: (r) => `${r.type} in ${String(streamOf(r))}`,
+        identity: (r) => ({ stream: streamOf(r) ?? null }),
+      };
+      records = await translateAsync(() => t.transform(records, id));
+    }
+    for (const r of records) {
+      const v = r.values as unknown;
+      if (v === null || typeof v !== "object" || Array.isArray(v)) {
+        throw new KurrentAdapterError("SEED_VALUE_UNSTORABLE", `the ${r.type} seed's values are not a JSON object: ${JSON.stringify(v)}`);
+      }
+      if ("stream" in (v as object) && (typeof (v as { stream: unknown }).stream !== "string" || (v as { stream: string }).stream === "")) {
+        throw new KurrentAdapterError("SEED_VALUE_UNSTORABLE", `the ${r.type} seed's values.stream must be a non-empty string; got ${JSON.stringify((v as { stream: unknown }).stream)}`);
+      }
+    }
     for (const r of records) {
       const stream = typeof r.values.stream === "string" ? r.values.stream : r.type;
       await this.db().appendToStream(this.full(stream), jsonEvent({ type: r.type, data: r.values as never }), { streamState: ANY });
@@ -702,6 +754,24 @@ class KurrentAdapter implements FeatServiceAdapter {
     this.windowOpen = false;
     this.cursor = undefined;
     this.captured = [];
+  }
+}
+
+/** The shared transform's refusals, as this adapter's error (the same code). */
+function translate<T>(fn: () => T): T {
+  try {
+    return fn();
+  } catch (e) {
+    if (e instanceof SeedTransformError) throw new KurrentAdapterError(e.code, e.detail);
+    throw e;
+  }
+}
+async function translateAsync<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    if (e instanceof SeedTransformError) throw new KurrentAdapterError(e.code, e.detail);
+    throw e;
   }
 }
 

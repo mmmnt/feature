@@ -34,6 +34,12 @@ feat 1.0
 # bad-invoke, bad-record, bad-settle, both, parse-error, null-id-other, other-ns, other-protocol, bad-setup-none, bad-setup-no-protocol, bad-setup-pattern;
 # canned and echo answer setup with protocol 2 and the namespace they were sent) is part of the
 # build and sits inside touches. The schema is draft-07, compiled by Ajv strict.
+# AMENDED by founder rulings 944b1d17 and c141a704 (Q2 "Optional method, v2 (Recommended)"), agreed 094b5dcc
+# (ADR-0035): the protocol gains the OPTIONAL method `transformSeed` { service, records: [{ type, values }] } ->
+# { records: [{ type, values }] }, sent only by a store adapter configured with options.seedTransform (SPEC-ADPNEO-005,
+# SPEC-ADPRDS-002, SPEC-ADPKUR-006, SPEC-ADPDDB-003). The version stays 2. The answer's values travel opaque (the store
+# adapter judges them); a host that serves no transform answers -32601. Its scenarios drive the shared fake transform host
+# adapters/stdio-jsonrpc/fixtures/seed-host.mjs (modes as SPEC-ADPNEO-005 lists them), also inside touches.
 
 spec SPEC-RPC-001 "Exchange one request with a spec host"
 context Toolchain
@@ -387,4 +393,22 @@ scenario "an adapter configured with no catalog offers no faults":
   when: ArmFault { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, arm: { operation: "AppendToStream", fault: "NotLeader", times: 1 } }
   predict rejection FAULT_UNSUPPORTED:
     response ERR ArmError { code: "FAULT_UNSUPPORTED", detail: matching "offers", hostSawFault: false }
+    filesystem has []
+
+scenario "a transformSeed round-trips its records":
+  when: Exchange { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/seed-host.mjs", "--mode", "encodestr"] }, method: "transformSeed", params: { service: "graph", records: [{ type: "Entry", values: { id: "e1", v: { encode: "ab" } } }] } }
+  predict success:
+    response OK ExchangeResult { method: "transformSeed", hostSpawned: true, hostAlive: false, result: { records: [{ type: "Entry", values: { id: "e1", v: "enc:ab" } }] } }
+    filesystem has []
+
+scenario "transformSeed's values travel opaque, in both directions":
+  when: Exchange { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/seed-host.mjs", "--mode", "map"] }, method: "transformSeed", params: { service: "graph", records: [{ type: "Entry", values: { id: "e1", deep: { a: [1, { b: null }] } } }] } }
+  predict success:
+    response OK ExchangeResult { method: "transformSeed", hostSpawned: true, hostAlive: false, result: { records: [{ type: "Entry", values: { id: "e1", deep: { a: [1, { b: null }] } } }] } }
+    filesystem has []
+
+scenario "a host that serves no seed transform answers method not found":
+  when: Exchange { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/seed-host.mjs", "--mode", "nomethod"] }, method: "transformSeed", params: { service: "graph", records: [] } }
+  predict rejection HOST_ERROR:
+    response ERR ExchangeError { code: "HOST_ERROR", rpcCode: -32601, hostSpawned: true, hostAlive: false }
     filesystem has []

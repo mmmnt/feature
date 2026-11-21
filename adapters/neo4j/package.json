@@ -1,6 +1,6 @@
 {
   "name": "@mmmnt/feat-adapter-neo4j",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Neo4j service adapter for Feat: a snapshot diff of the namespace label's graph, a transaction-aware settle, state by keyed MATCH or namespace scan, node and relationship seeds, and a unique-constraint fault",
   "type": "module",
   "main": "dist/index.js",
@@ -11,9 +11,10 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --exclude '**/observe.test.ts' --exclude '**/transport.test.ts' --exclude '**/credential-files.test.ts' --exclude '**/relationship-seeds.test.ts' --passWithNoTests"
+    "test": "vitest run --exclude '**/seed-transform.test.ts' --exclude '**/observe.test.ts' --exclude '**/transport.test.ts' --exclude '**/credential-files.test.ts' --exclude '**/relationship-seeds.test.ts' --passWithNoTests"
   },
   "dependencies": {
+    "@mmmnt/feat-adapter-stdio-jsonrpc": "workspace:^",
     "@mmmnt/feat-fault-proxy": "workspace:^",
     "@mmmnt/feat-types": "workspace:^",
     "neo4j-driver": "6.3.0"

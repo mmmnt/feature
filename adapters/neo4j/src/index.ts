@@ -15,6 +15,8 @@ import path from "node:path";
 import neo4j from "neo4j-driver";
 import type { Driver, QueryResult, Session } from "neo4j-driver";
 import { createFaultProxy } from "@mmmnt/feat-fault-proxy";
+import { parseSeedTransform, SeedTransform, SeedTransformError } from "@mmmnt/feat-adapter-stdio-jsonrpc";
+import type { HostRegistry, SeedIdentity } from "@mmmnt/feat-adapter-stdio-jsonrpc";
 import type { FaultProxy, OpenProxy } from "@mmmnt/feat-fault-proxy";
 import type {
   CapturedRecord,
@@ -34,7 +36,12 @@ export type Neo4jAdapterErrorCode =
   | "OPTIONS_INVALID"
   | "CREDENTIAL_FILE_UNREADABLE"
   | "SEED_RELATIONSHIP_INVALID"
-  | "SEED_END_NOT_FOUND";
+  | "SEED_END_NOT_FOUND"
+  // SPEC-ADPNEO-005 (ADR-0035): the seed transform and the storability of every seed.
+  | "SEED_TRANSFORM_UNAVAILABLE"
+  | "SEED_TRANSFORM_FAILED"
+  | "SEED_TRANSFORM_NONDETERMINISTIC"
+  | "SEED_VALUE_UNSTORABLE";
 
 export class Neo4jAdapterError extends Error {
   constructor(
@@ -86,12 +93,16 @@ export interface Neo4jOptions {
   keys: Record<string, string>;
   settleTimeoutMs?: number;
   proxy?: Neo4jProxyOptions;
+  /** SPEC-ADPNEO-005: a spec host that transforms every seed call's records before they are written. */
+  seedTransform?: unknown;
 }
 
 interface Neo4jConfig {
   key?: string;
   namespace?: string;
   options?: Neo4jOptions;
+  /** Tests give a simulated spec file its own host registry (SPEC-RPC-002); a real worker's module is its file. */
+  registry?: HostRegistry;
 }
 
 type Props = Record<string, unknown>;
@@ -193,6 +204,9 @@ class Neo4jAdapter implements FeatServiceAdapter {
   private driver: Driver | undefined;
   private proxy: FaultProxy | undefined;
   private opened: OpenProxy | undefined;
+  private readonly key: string;
+  private readonly registry: HostRegistry | undefined;
+  private transformer: SeedTransform | undefined;
 
   private baseline: Snapshot | undefined;
   /** How the last read() found its records: "KeyedMatch" or "NamespaceScan". */
@@ -207,6 +221,8 @@ class Neo4jAdapter implements FeatServiceAdapter {
       );
     }
     this.namespace = ns;
+    this.key = config.key ?? "neo4j";
+    this.registry = config.registry;
     this.options = config.options ?? ({} as Neo4jOptions); // keys is required: setup() refuses a config without it
     this.settleTimeoutMs = this.options.settleTimeoutMs ?? 5000;
     this.tag = `feat-instrument-${ns}`;
@@ -346,6 +362,13 @@ class Neo4jAdapter implements FeatServiceAdapter {
         "options.keys is required: an object mapping each label the system writes to a non-empty key property name",
       );
     }
+    // SPEC-ADPNEO-005: the seed-transform host is checked and joined before any connection.
+    const transform = translate(() => parseSeedTransform(this.options.seedTransform));
+    if (transform !== undefined && this.transformer === undefined) {
+      const t = new SeedTransform(transform, this.key, this.namespace, this.registry);
+      await translateAsync(() => t.setup());
+      this.transformer = t;
+    }
     const uri = this.uri();
     try {
       await this.db().verifyConnectivity();
@@ -365,6 +388,9 @@ class Neo4jAdapter implements FeatServiceAdapter {
 
   async teardown(): Promise<void> {
     this.baseline = undefined;
+    const t = this.transformer;
+    this.transformer = undefined;
+    if (t !== undefined) await t.teardown();
     try {
       if (this.proxy !== undefined) await this.proxy.close();
     } finally {
@@ -589,7 +615,44 @@ class Neo4jAdapter implements FeatServiceAdapter {
     return { relType: r.type, from: end("from", from), to: end("to", to), props };
   }
 
+  /** How a seed record is named in a refusal, and what a transform must not change (SPEC-ADPNEO-005). */
+  private seedIdentity(): SeedIdentity {
+    const keys = this.options.keys ?? {};
+    const rel = (r: SeedRecord) => keys[r.type] === undefined && typeof r.values?.from === "string" && typeof r.values?.to === "string";
+    return {
+      describe: (r) => (rel(r) ? `${String(r.values.from)}-[${r.type}]->${String(r.values.to)}` : `${r.type}:${String((r.values ?? {})[keys[r.type] ?? ""] ?? "?")}`),
+      identity: (r) => {
+        const v = (r.values ?? {}) as Props;
+        return keys[r.type] !== undefined ? { [keys[r.type]!]: v[keys[r.type]!] ?? null } : { from: v.from ?? null, to: v.to ?? null };
+      },
+    };
+  }
+
+  /** SPEC-ADPNEO-005: every value of every record is one Neo4j can store as a property, or the call is refused. */
+  private checkStorable(records: SeedRecord[]): void {
+    const keys = this.options.keys ?? {};
+    const id = this.seedIdentity();
+    for (const r of records) {
+      const v = r.values as unknown;
+      if (v === null || typeof v !== "object" || Array.isArray(v)) {
+        throw new Neo4jAdapterError("SEED_VALUE_UNSTORABLE", `the ${r.type} seed's values are not a map of properties: ${JSON.stringify(v)}`);
+      }
+      const isRel = keys[r.type] === undefined && typeof (v as Props).from === "string" && typeof (v as Props).to === "string";
+      for (const [k, x] of Object.entries(v as Props)) {
+        if (isRel && (k === "from" || k === "to")) continue;
+        const why = unstorable(x);
+        if (why !== undefined) throw new Neo4jAdapterError("SEED_VALUE_UNSTORABLE", `${id.describe(r)} › ${k}: ${why}, which Neo4j cannot store as a property`);
+      }
+    }
+  }
+
   async seed(records: SeedRecord[]): Promise<void> {
+    // SPEC-ADPNEO-005: the transform (asked twice), then storability, before anything else; nothing is written on a refusal.
+    if (this.transformer !== undefined) {
+      const t = this.transformer;
+      records = await translateAsync(() => t.transform(records, this.seedIdentity()));
+    }
+    this.checkStorable(records);
     // Validate every record before anything is written, then write nodes first and relationships after them, in one
     // transaction: a relationship may name a node seeded in the same call, wherever its record stands in the list.
     const rels = records.map((r) => this.relationshipOf(r));
@@ -674,6 +737,41 @@ class Neo4jAdapter implements FeatServiceAdapter {
       if (deleted === undefined || Number(plain(deleted)) === 0) break;
     }
     this.baseline = undefined;
+  }
+}
+
+/** Why a value is not one Neo4j stores as a property, or undefined when it is (SPEC-ADPNEO-005). */
+function unstorable(x: unknown): string | undefined {
+  const scalar = (y: unknown): "string" | "number" | "boolean" | undefined =>
+    typeof y === "string" ? "string" : typeof y === "number" && Number.isFinite(y) ? "number" : typeof y === "boolean" ? "boolean" : undefined;
+  if (scalar(x) !== undefined) return undefined;
+  if (x === null) return "it is null";
+  if (typeof x === "number") return `${x} is not a finite number`;
+  if (Array.isArray(x)) {
+    if (x.length === 0) return "it is an empty list";
+    const kinds = new Set(x.map(scalar));
+    if (kinds.has(undefined)) return `the list holds ${JSON.stringify(x.find((y) => scalar(y) === undefined))}, which is not a string, a finite number or a boolean`;
+    if (kinds.size > 1) return `the list mixes ${[...kinds].join(" and ")} items`;
+    return undefined;
+  }
+  return `it is a map ${JSON.stringify(x)}`;
+}
+
+/** The shared transform's refusals, as this adapter's error (the same code). */
+function translate<T>(fn: () => T): T {
+  try {
+    return fn();
+  } catch (e) {
+    if (e instanceof SeedTransformError) throw new Neo4jAdapterError(e.code, e.detail);
+    throw e;
+  }
+}
+async function translateAsync<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    if (e instanceof SeedTransformError) throw new Neo4jAdapterError(e.code, e.detail);
+    throw e;
   }
 }
 

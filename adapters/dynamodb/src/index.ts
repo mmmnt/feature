@@ -22,6 +22,8 @@
 // DynamoDB requires SigV4 signing.
 import { execFile as execFileCb, execFileSync } from "node:child_process";
 import { createServer } from "node:net";
+import { parseSeedTransform, SeedTransform, SeedTransformError } from "@mmmnt/feat-adapter-stdio-jsonrpc";
+import type { HostRegistry, SeedIdentity } from "@mmmnt/feat-adapter-stdio-jsonrpc";
 import { randomBytes } from "node:crypto";
 import { promisify } from "node:util";
 import {
@@ -127,7 +129,12 @@ interface DynamoAdapterConfig {
      * use the proxy; the system under test is pointed at the proxy's listen address.
      */
     proxy?: { api: string; name?: string; upstream?: string; container?: string; metrics?: string; runtime?: string };
+    /** SPEC-ADPDDB-003: a spec host that transforms every seed call's records before they are put. */
+    seedTransform?: unknown;
   };
+  /** SPEC-ADPDDB-003: the service key the transform names; tests give a simulated spec file its own host registry. */
+  key?: string;
+  registry?: HostRegistry;
   /** SPEC-RT-006: the runner's namespace, handed to every adapter as the config's top-level `namespace`. */
   namespace?: string;
 }
@@ -136,7 +143,13 @@ export type DynamoAdapterErrorCode =
   | "NAMESPACE_INVALID"
   | "NAMESPACE_KEY_NOT_STRING"
   | "STREAM_NOT_ENABLED"
-  | "FAULT_UNSUPPORTED";
+  | "FAULT_UNSUPPORTED"
+  // SPEC-ADPDDB-003 (ADR-0035): the seed transform and the storability of every seed.
+  | "OPTIONS_INVALID"
+  | "SEED_TRANSFORM_UNAVAILABLE"
+  | "SEED_TRANSFORM_FAILED"
+  | "SEED_TRANSFORM_NONDETERMINISTIC"
+  | "SEED_VALUE_UNSTORABLE";
 
 /** A refusal the adapter makes by name (SPEC-ADPDDB-001): `code` is stable, `detail` names the offender. */
 export class DynamoAdapterError extends Error {
@@ -286,6 +299,9 @@ class DynamoAdapter implements FeatServiceAdapter {
   private proxy: FaultProxy | null = null;
   private readonly namespace: string | undefined;
   private readonly snapshotMode: boolean;
+  private readonly key: string;
+  private readonly registry: HostRegistry | undefined;
+  private transformer: SeedTransform | undefined;
   readonly observes: ObservationSupport;
   readonly faults: FaultCatalog;
   /** The DynamoDB operation the last read() used (SPEC-ADPDDB-001); a probe reads it, the harness does not. */
@@ -298,6 +314,8 @@ class DynamoAdapter implements FeatServiceAdapter {
     if (config.namespace !== undefined && !NAMESPACE_PATTERN.test(config.namespace))
       throw new DynamoAdapterError("NAMESPACE_INVALID", config.namespace);
     this.namespace = config.namespace;
+    this.key = config.key ?? "dynamodb";
+    this.registry = config.registry;
     this.snapshotMode = this.opts.stream === false;
     this.observes = { diff: this.snapshotMode ? "snapshot" : "native", state: true };
     this.faults = {
@@ -405,6 +423,13 @@ class DynamoAdapter implements FeatServiceAdapter {
   }
 
   async setup(): Promise<void> {
+    // SPEC-ADPDDB-003: the seed-transform host is checked and joined before any connection.
+    const transform = translate(() => parseSeedTransform(this.opts.seedTransform));
+    if (transform !== undefined && this.transformer === undefined) {
+      const t = new SeedTransform(transform, this.key, this.namespace ?? "", this.registry);
+      await translateAsync(() => t.setup());
+      this.transformer = t;
+    }
     if (this.opts.ephemeral) {
       await this.scaffoldEphemeral();
     } else {
@@ -588,6 +613,9 @@ class DynamoAdapter implements FeatServiceAdapter {
   }
 
   async teardown(): Promise<void> {
+    const t = this.transformer;
+    this.transformer = undefined;
+    if (t !== undefined) await t.teardown();
     if (this.proxy !== null) {
       await this.proxy.close().catch(() => {});
       this.proxy = null;
@@ -797,7 +825,45 @@ class DynamoAdapter implements FeatServiceAdapter {
     return items;
   }
 
+  /** The table's key attributes, hash first (SPEC-ADPDDB-003: a record's identity). */
+  private keyNames(): string[] {
+    return [this.hashKey, ...(this.rangeKey !== null ? [this.rangeKey] : [])];
+  }
+
+  /** SPEC-ADPDDB-003: every record is an item DynamoDB can store, or the call is refused before anything is put. */
+  private checkStorable(records: SeedRecord[]): void {
+    const describe = (r: SeedRecord) => `${r.type} ${this.keyNames().map((k) => `${k}=${JSON.stringify((r.values ?? {})[k])}`).join(" ")}`;
+    for (const r of records) {
+      const v = r.values as unknown;
+      if (v === null || typeof v !== "object" || Array.isArray(v))
+        throw new DynamoAdapterError("SEED_VALUE_UNSTORABLE", `the ${r.type} seed's values are not an item (a map of attributes): ${JSON.stringify(v)}`);
+      for (const k of this.keyNames()) {
+        const x = (v as Record<string, unknown>)[k];
+        if (!((typeof x === "string" && x !== "") || (typeof x === "number" && Number.isFinite(x))))
+          throw new DynamoAdapterError("SEED_VALUE_UNSTORABLE", `${describe(r)}: the key attribute ${k} must be a non-empty string or a finite number; got ${x === undefined ? "nothing" : JSON.stringify(x)}`);
+      }
+      const bad = badNumber(v, "");
+      if (bad !== undefined)
+        throw new DynamoAdapterError("SEED_VALUE_UNSTORABLE", `${describe(r)} › ${bad.path}: ${bad.value} is outside the numbers DynamoDB stores (0, or a magnitude from 1e-130 to 9.9999999999999999999999999999999999999e125)`);
+      const size = itemSize(v as Record<string, unknown>);
+      if (size > MAX_ITEM_BYTES)
+        throw new DynamoAdapterError("SEED_VALUE_UNSTORABLE", `${describe(r)}: the item is ${size} bytes, over DynamoDB's 400 KB (${MAX_ITEM_BYTES} bytes)`);
+    }
+  }
+
   async seed(records: SeedRecord[]): Promise<void> {
+    // SPEC-ADPDDB-003: the transform (asked twice), then every record checked, before the first put; a record's
+    // identity is its type and its key attributes.
+    if (this.transformer !== undefined) {
+      const t = this.transformer;
+      const names = this.keyNames();
+      const id: SeedIdentity = {
+        describe: (r) => `${r.type} ${names.map((k) => `${k}=${JSON.stringify((r.values ?? {})[k])}`).join(" ")}`,
+        identity: (r) => Object.fromEntries(names.map((k) => [k, (r.values ?? {})[k] ?? null])),
+      };
+      records = await translateAsync(() => t.transform(records, id));
+    }
+    this.checkStorable(records);
     const { ddb } = this.clients();
     const pre = this.prefix();
     for (const r of records) {
@@ -898,6 +964,64 @@ export function isFenceRecord(r: StreamImageRecord): boolean {
 function fenceToken(r: StreamImageRecord): string {
   const v = fenceImage(r)?.[FENCE_ATTR] as { S?: string } | undefined;
   return String(v?.S ?? "");
+}
+
+/** DynamoDB's largest item, 400 KB (SPEC-ADPDDB-003). */
+const MAX_ITEM_BYTES = 400 * 1024;
+
+/** The first number, at any depth, DynamoDB cannot store, with its path; undefined when there is none. */
+function badNumber(v: unknown, at: string): { path: string; value: number } | undefined {
+  if (typeof v === "number") {
+    const m = Math.abs(v);
+    return Number.isFinite(v) && (m === 0 || (m >= 1e-130 && m < 1e126)) ? undefined : { path: at || "(value)", value: v };
+  }
+  if (Array.isArray(v)) {
+    for (let i = 0; i < v.length; i++) {
+      const b = badNumber(v[i], `${at}[${i}]`);
+      if (b !== undefined) return b;
+    }
+    return undefined;
+  }
+  if (v !== null && typeof v === "object") {
+    for (const [k, x] of Object.entries(v)) {
+      const b = badNumber(x, at === "" ? k : `${at}.${k}`);
+      if (b !== undefined) return b;
+    }
+  }
+  return undefined;
+}
+
+/** An item's size as DynamoDB counts it, closely enough: attribute names and values in UTF-8 bytes. */
+function itemSize(item: Record<string, unknown>): number {
+  const size = (x: unknown): number =>
+    typeof x === "string"
+      ? Buffer.byteLength(x, "utf8")
+      : typeof x === "number"
+        ? Math.ceil(String(x).length / 2) + 1
+        : typeof x === "boolean" || x === null
+          ? 1
+          : Array.isArray(x)
+            ? 3 + x.reduce((n: number, y) => n + 1 + size(y), 0)
+            : 3 + Object.entries(x as Record<string, unknown>).reduce((n, [k, y]) => n + 1 + Buffer.byteLength(k, "utf8") + size(y), 0);
+  return Object.entries(item).reduce((n, [k, y]) => n + Buffer.byteLength(k, "utf8") + size(y), 0);
+}
+
+/** The shared transform's refusals, as this adapter's error (the same code). */
+function translate<T>(fn: () => T): T {
+  try {
+    return fn();
+  } catch (e) {
+    if (e instanceof SeedTransformError) throw new DynamoAdapterError(e.code, e.detail);
+    throw e;
+  }
+}
+async function translateAsync<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    if (e instanceof SeedTransformError) throw new DynamoAdapterError(e.code, e.detail);
+    throw e;
+  }
 }
 
 export function createAdapter(config: Record<string, unknown>): FeatServiceAdapter {

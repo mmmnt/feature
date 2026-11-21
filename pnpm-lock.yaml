@@ -68,6 +68,9 @@ importers:
       '@aws-sdk/util-dynamodb':
         specifier: ^3.700.0
         version: 3.996.7(@aws-sdk/client-dynamodb@3.1094.0)
+      '@mmmnt/feat-adapter-stdio-jsonrpc':
+        specifier: workspace:^
+        version: link:../stdio-jsonrpc
       '@mmmnt/feat-fault-proxy':
         specifier: workspace:^
         version: link:../fault-proxy
@@ -195,6 +198,9 @@ importers:
       '@kurrent/kurrentdb-client':
         specifier: 1.3.2
         version: 1.3.2
+      '@mmmnt/feat-adapter-stdio-jsonrpc':
+        specifier: workspace:^
+        version: link:../stdio-jsonrpc
       '@mmmnt/feat-fault-proxy':
         specifier: workspace:^
         version: link:../fault-proxy
@@ -255,6 +261,9 @@ importers:
 
   adapters/neo4j:
     dependencies:
+      '@mmmnt/feat-adapter-stdio-jsonrpc':
+        specifier: workspace:^
+        version: link:../stdio-jsonrpc
       '@mmmnt/feat-fault-proxy':
         specifier: workspace:^
         version: link:../fault-proxy
@@ -299,6 +308,9 @@ importers:
 
   adapters/redis:
     dependencies:
+      '@mmmnt/feat-adapter-stdio-jsonrpc':
+        specifier: workspace:^
+        version: link:../stdio-jsonrpc
       '@mmmnt/feat-types':
         specifier: workspace:^
         version: link:../../packages/feat-types
