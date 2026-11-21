@@ -98,6 +98,7 @@
             "REDIS_UNREACHABLE",
             "KIND_UNSUPPORTED",
             "SEED_INVALID",
+            "SEED_VALUE_UNSTORABLE",
             "FAULT_UNSUPPORTED",
             "OPTIONS_INVALID",
             "CREDENTIAL_FILE_UNREADABLE"

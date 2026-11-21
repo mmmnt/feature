@@ -1,10 +1,11 @@
 feat 1.0
 
 # SPEC-ADPRDS-002 — Redis adapter: a consumer's spec host may transform seed values before they are written, and every seed
-# value is checked against what its kind can store (an amendment to SPEC-ADPRDS-001, in a spec of its own). DRAFT. Founder
+# value is checked against what its kind can store (an amendment to SPEC-ADPRDS-001, in a spec of its own). Agreed by founder ruling 094b5dcc (2026-11-21, the set agreed), with the follow-ups ruled in 12081c37 (Redis's value code split, an identity change refused as SEED_TRANSFORM_FAILED, an oversized Kurrent event left to the server, canonical-JSON equality). Founder
 # rulings 944b1d17 ("Feature seed hook") and c141a704 (Q1 spec host only, Q2 optional method v2, Q3 all seeds, Q4 check by
 # doing it twice, Q5 all store adapters). The option, the protocol, the twice-asked transform and the refusals are
-# SPEC-ADPNEO-005's, stated here for Redis. ADR-0035.
+# SPEC-ADPNEO-005's, stated here for Redis. ADR-0035. Its probe answers per founder ruling c786e54d (2026-11-21, "Amend all, stay agreed (Recommended)"): SPEC-ADPRDS-001's
+# `payloads` is not part of this spec's answer.
 #
 #   options.seedTransform: { host: { command: [<argv>], cwd?, env? } }
 #
@@ -35,7 +36,7 @@ spec SPEC-ADPRDS-002 "Redis adapter: a consumer's spec host may transform seed v
 context Toolchain
 aggregate Adapters
 type infrastructure
-status draft
+status agreed
 
 construct:
   handler at adapters/redis/src/index.ts

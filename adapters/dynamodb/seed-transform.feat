@@ -1,10 +1,10 @@
 feat 1.0
 
 # SPEC-ADPDDB-003 — DynamoDB adapter: a consumer's spec host may transform seed values before they are put, and every seed is
-# checked against what DynamoDB can store (an amendment to SPEC-ADPDDB-001, in a spec of its own). DRAFT. Founder rulings
+# checked against what DynamoDB can store (an amendment to SPEC-ADPDDB-001, in a spec of its own). Agreed by founder ruling 094b5dcc (2026-11-21, the set agreed), with the follow-ups ruled in 12081c37 (Redis's value code split, an identity change refused as SEED_TRANSFORM_FAILED, an oversized Kurrent event left to the server, canonical-JSON equality). Founder rulings
 # 944b1d17 ("Feature seed hook") and c141a704 (Q1 spec host only, Q2 optional method v2, Q3 all seeds, Q4 check by doing it
 # twice, Q5 all store adapters). The option, the protocol, the twice-asked transform and the refusals are SPEC-ADPNEO-005's,
-# stated here for DynamoDB. ADR-0035.
+# stated here for DynamoDB. ADR-0035. Amended by founder ruling c786e54d (2026-11-21, "Amend all, stay agreed (Recommended)"): its literals follow the store and the adapter's existing spec.
 #
 #   options.seedTransform: { host: { command: [<argv>], cwd?, env? } }
 #
@@ -21,18 +21,20 @@ feat 1.0
 # (adapters/dynamodb/fixtures/probe.mjs) and the shared fake transform host (adapters/stdio-jsonrpc/fixtures/seed-host.mjs, its
 # modes as SPEC-ADPNEO-005 lists them), both inside touches. `ObserveDynamoSeedTransform { host, script }` runs the steps of
 # SPEC-ADPDDB-001 plus:
-#   seedenc:<ns>:<pk>:<sk>:<text>   seed() of one item whose attribute v is { encode: "<text>" }
-#   seedmix:<ns>                    ONE seed() call: o1/1 with v { encode: "a" } and o2/1 with v { encode: "b" }
-#   seedraw:<ns>:<case>             a plain seed of o1/1: nokey (no hash key), keynull (hash key null), keyempty (hash key ""),
-#                                   keymap (hash key { x: 1 }), bignum (v 1e200), huge (v a string of 401 KB)
+#   seedenc:<ns>:<pk>:<sk>:<text>   seed() of one ITEM { PK: <pk>, SK: <sk> (a string, as SPEC-ADPDDB-001's probe seeds it) } whose
+#                                   attribute v is { encode: "<text>" }
+#   seedmix:<ns>                    ONE seed() call: ITEM PK o1 / SK "1" with v { encode: "a" } and PK o2 / SK "1" with v { encode: "b" }
+#   seedraw:<ns>:<case>             a plain ITEM seed of PK o1 / SK "1": nokey (no PK), keynull (PK null), keyempty (PK ""),
+#                                   keymap (PK { x: 1 }), bignum (v 1e200), huge (v a string of 401 KB)
 #   calls:<ns>                      the number of transformSeed requests the fake host received
-# `readItems` is the JSON of the items read, without the namespace prefix.
+# `readItems` is the JSON of the items read, without the namespace prefix, each item's attributes in name order. A read
+# with no key is a Scan, as SPEC-ADPDDB-001's read with no key part is.
 
 spec SPEC-ADPDDB-003 "DynamoDB adapter: a consumer's spec host may transform seed values, and every seed must be an item DynamoDB can store"
 context Toolchain
 aggregate Adapters
 type infrastructure
-status draft
+status agreed
 
 construct:
   handler at adapters/dynamodb/src/index.ts
@@ -65,13 +67,13 @@ contract:
 scenario "a seed item is put as the host transformed it":
   when: ObserveDynamoSeedTransform { host: "encode", script: "setup:a seedenc:a:o1:1:ab read:a:o1:1" }
   predict success:
-    response OK SeedTransformResult { trace: "setup:a seedenc:a read:a:o1:1=1", readVia: "GetItem", readItems: "[{\"pk\":\"o1\",\"sk\":1,\"v\":[2,97,1.0]}]" }
+    response OK SeedTransformResult { trace: "setup:a seedenc:a read:a:o1:1=1", readVia: "GetItem", readItems: "[{\"PK\":\"o1\",\"SK\":\"1\",\"v\":[2,97,1]}]" }
     filesystem has []
 
 scenario "one seed call is transformed in one request, asked twice":
   when: ObserveDynamoSeedTransform { host: "encode", script: "setup:a seedmix:a calls:a read:a:o1:1" }
   predict success:
-    response OK SeedTransformResult { trace: "setup:a seedmix:a calls:a=2 read:a:o1:1=1", readVia: "GetItem", readItems: "[{\"pk\":\"o1\",\"sk\":1,\"v\":[1,97,1.0]}]" }
+    response OK SeedTransformResult { trace: "setup:a seedmix:a calls:a=2 read:a:o1:1=1", readVia: "GetItem", readItems: "[{\"PK\":\"o1\",\"SK\":\"1\",\"v\":[1,97,1]}]" }
     filesystem has []
 
 scenario "a transformed seed is state: the window that follows reports nothing":
@@ -109,8 +111,8 @@ scenario outline "a transform that fails puts nothing":
     | "nomethod" | "transformSeed"      |
     | "crash"    | "ended"              |
     | "short"    | "2 records"          |
-    | "retype"   | "Item"               |
-    | "rekey"    | "pk"                 |
+    | "retype"   | "ITEM"               |
+    | "rekey"    | "PK"                 |
 
 scenario "two answers that differ are refused as nondeterministic":
   when: ObserveDynamoSeedTransform { host: "random", script: "setup:a seedenc:a:o1:1:ab" }
@@ -121,7 +123,7 @@ scenario "two answers that differ are refused as nondeterministic":
 scenario outline "after a refused seed call the table holds nothing of it":
   when: ObserveDynamoSeedTransform { host: <host>, script: "setup:a seedmix:a! read:a" }
   predict success:
-    response OK SeedTransformResult { trace: <trace>, readVia: "Query", readItems: "[]" }
+    response OK SeedTransformResult { trace: <trace>, readVia: "Scan", readItems: "[]" }
     filesystem has []
   examples:
     | host     | trace                                                        |
@@ -136,9 +138,9 @@ scenario outline "a plain seed DynamoDB cannot store is refused before anything 
     filesystem has []
   examples:
     | script                       | detail   |
-    | "setup:a seedraw:a:nokey"    | "pk"     |
-    | "setup:a seedraw:a:keynull"  | "pk"     |
-    | "setup:a seedraw:a:keyempty" | "pk"     |
-    | "setup:a seedraw:a:keymap"   | "pk"     |
+    | "setup:a seedraw:a:nokey"    | "PK"     |
+    | "setup:a seedraw:a:keynull"  | "PK"     |
+    | "setup:a seedraw:a:keyempty" | "PK"     |
+    | "setup:a seedraw:a:keymap"   | "PK"     |
     | "setup:a seedraw:a:bignum"   | "v"      |
     | "setup:a seedraw:a:huge"     | "400 KB" |

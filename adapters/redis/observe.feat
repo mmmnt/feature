@@ -79,7 +79,8 @@ construct:
   read(query): with `query.expect` entries that each name `key.key`, a lookup of those keys; otherwise every key of the
   namespace. Records { type: kind, key, payload: { key, kind, value } }.
   seed(records): SeedRecord { type: kind, values: { key, value } } written under the prefix in one MULTI, before the
-  window; a record whose type is no kind, or whose key or value does not fit its kind, is SEED_INVALID.
+  window; a record whose type is no kind, or whose key is not a non-empty string, is SEED_INVALID, and one whose value does
+  not fit its kind is SEED_VALUE_UNSTORABLE (amended by founder ruling 12081c37, the codes split; SPEC-ADPRDS-002).
   reset(): UNLINK every key of the namespace, close the window.
   Credentials: a file the options name is read at setup before any connection; relative to the working directory;
   exactly one trailing LF or CRLF is removed and nothing else (the CA file is read as is); a refusal names the option,
@@ -89,7 +90,8 @@ enforce:
   rejects NAMESPACE_INVALID when the namespace does not match ^s[0-9a-f]{12}$, the pattern the runner derives (SPEC-RT-006); defensive, the runner never passes another
   rejects REDIS_UNREACHABLE when the server does not answer at setup
   rejects KIND_UNSUPPORTED when a namespaced key holds a type the adapter does not read
-  rejects SEED_INVALID when a seed record's type is no kind, or its key or value does not fit the kind
+  rejects SEED_INVALID when a seed record's type is no kind, or its key is not a non-empty string
+  rejects SEED_VALUE_UNSTORABLE when a seed record's value does not fit its kind (SPEC-ADPRDS-002)
   rejects FAULT_UNSUPPORTED when any fault is armed (the catalog is empty)
   rejects OPTIONS_INVALID when urlFile is given with another url source, auth mixes its two forms, the file form names no user, the url carries credentials, or tlsCAFile is given without rediss://
   a rediss:// connection verifies the server's certificate against tlsCAFile, and one signed by another CA does not connect

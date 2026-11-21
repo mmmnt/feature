@@ -1,10 +1,10 @@
 feat 1.0
 
 # SPEC-ADPKUR-006 — Kurrent adapter: a consumer's spec host may transform seed values before they are appended, and every seed
-# is checked against what an event can hold (an amendment to SPEC-ADPKUR-001, in a spec of its own). DRAFT. Founder rulings
+# is checked against what an event can hold (an amendment to SPEC-ADPKUR-001, in a spec of its own). Agreed by founder ruling 094b5dcc (2026-11-21, the set agreed), with the follow-ups ruled in 12081c37 (Redis's value code split, an identity change refused as SEED_TRANSFORM_FAILED, an oversized Kurrent event left to the server, canonical-JSON equality). Founder rulings
 # 944b1d17 ("Feature seed hook") and c141a704 (Q1 spec host only, Q2 optional method v2, Q3 all seeds, Q4 check by doing it
 # twice, Q5 all store adapters). The option, the protocol, the twice-asked transform and the refusals are SPEC-ADPNEO-005's,
-# stated here for Kurrent. ADR-0035.
+# stated here for Kurrent. ADR-0035. Amended by founder ruling c786e54d (2026-11-21, "Amend all, stay agreed (Recommended)"): its literals follow the store and the adapter's existing spec.
 #
 #   options.seedTransform: { host: { command: [<argv>], cwd?, env? } }
 #
@@ -24,14 +24,15 @@ feat 1.0
 #   seedenc:<ns>:<stream>:<Type>:<text>  seed() of one record whose data v is { encode: "<text>" }
 #   seedmix:<ns>                         ONE seed() call: Placed into orders with v { encode: "a" }, then with v { encode: "b" }
 #   seedraw:<ns>:<case>                  a plain seed: streamnum (values.stream = 1), streamempty (values.stream = "")
-#   read:<ns>:<stream>                   adapter.read() of that stream; `readPayloads` is the JSON of its events' data
+#   read:<ns>:<stream>                   adapter.read() of that stream, traced `read:<ns>:<stream>=<n>` as SPEC-ADPKUR-001 traces it;
+#                                        `readPayloads` is the JSON of its events' data, values.stream included
 #   calls:<ns>                           the number of transformSeed requests the fake host received
 
 spec SPEC-ADPKUR-006 "Kurrent adapter: a consumer's spec host may transform seed values, and every seed must be an event Kurrent can hold"
 context Toolchain
 aggregate Adapters
 type infrastructure
-status draft
+status agreed
 
 construct:
   handler at adapters/kurrent/src/index.ts
@@ -64,13 +65,13 @@ contract:
 scenario "a seed's data is appended as the host transformed it":
   when: ObserveKurrentSeedTransform { host: "encode", script: "setup:a seedenc:a:orders:Placed:ab read:a:orders" }
   predict success:
-    response OK SeedTransformResult { trace: "setup:a seedenc:a read:a=1", readPayloads: "[{\"v\":[2,97,1.0]}]" }
+    response OK SeedTransformResult { trace: "setup:a seedenc:a read:a:orders=1", readPayloads: "[{\"stream\":\"orders\",\"v\":[2,97,1]}]" }
     filesystem has []
 
 scenario "one seed call is transformed in one request, asked twice, and appended in order":
   when: ObserveKurrentSeedTransform { host: "encode", script: "setup:a seedmix:a calls:a read:a:orders" }
   predict success:
-    response OK SeedTransformResult { trace: "setup:a seedmix:a calls:a=2 read:a=2", readPayloads: "[{\"v\":[1,97,1.0]},{\"v\":[1,98,1.0]}]" }
+    response OK SeedTransformResult { trace: "setup:a seedmix:a calls:a=2 read:a:orders=2", readPayloads: "[{\"stream\":\"orders\",\"v\":[1,97,1]},{\"stream\":\"orders\",\"v\":[1,98,1]}]" }
     filesystem has []
 
 scenario "a transformed seed is state: the window that follows reports nothing":
@@ -82,7 +83,7 @@ scenario "a transformed seed is state: the window that follows reports nothing":
 scenario "without seedTransform no host is asked and a plain seed is appended as before":
   when: ObserveKurrentSeedTransform { host: "none", script: "setup:a seed:a:orders:Placed read:a:orders" }
   predict success:
-    response OK SeedTransformResult { trace: "setup:a seed:a read:a=1" }
+    response OK SeedTransformResult { trace: "setup:a seed:a read:a:orders=1" }
     filesystem has []
 
 scenario "a host that cannot be started is refused at setup":
@@ -124,9 +125,9 @@ scenario outline "after a refused seed call the stream holds nothing of it":
     filesystem has []
   examples:
     | host     | trace                                                        |
-    | "short"  | "setup:a seedmix:a!SEED_TRANSFORM_FAILED read:a=0"           |
-    | "random" | "setup:a seedmix:a!SEED_TRANSFORM_NONDETERMINISTIC read:a=0" |
-    | "scalar" | "setup:a seedmix:a!SEED_VALUE_UNSTORABLE read:a=0"           |
+    | "short"  | "setup:a seedmix:a!SEED_TRANSFORM_FAILED read:a:orders=0"           |
+    | "random" | "setup:a seedmix:a!SEED_TRANSFORM_NONDETERMINISTIC read:a:orders=0" |
+    | "scalar" | "setup:a seedmix:a!SEED_VALUE_UNSTORABLE read:a:orders=0"           |
 
 scenario "a transformed record that is not an object is refused":
   when: ObserveKurrentSeedTransform { host: "scalar", script: "setup:a seedenc:a:orders:Placed:ab" }

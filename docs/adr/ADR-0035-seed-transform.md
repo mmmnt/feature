@@ -1,10 +1,10 @@
-# ADR-0035 — a consumer's spec host may transform the store adapters' seeds, and every seed must be storable (DRAFT)
+# ADR-0035 — a consumer's spec host may transform the store adapters' seeds, and every seed must be storable
 
-Status: Draft. Founder ruling 944b1d17 (2026-11-21, "Feature seed hook"); form and scope ruled in c141a704 (2026-11-21):
+Status: Accepted (founder, 2026-11-21: the set agreed, 094b5dcc; follow-ups ruled in 12081c37, all as recommended: Redis's value code split, identity changes refused, an oversized Kurrent event left to the server, canonical-JSON equality). Founder ruling 944b1d17 (2026-11-21, "Feature seed hook"); form and scope ruled in c141a704 (2026-11-21):
 Q1 "Spec host only (Recommended)", Q2 "Optional method, v2 (Recommended)", Q3 "All seeds", Q4 "Check by doing it twice",
-Q5 "All store adapters". Specs: SPEC-ADPNEO-005, SPEC-ADPRDS-002, SPEC-ADPKUR-006, SPEC-ADPDDB-003 (new, one per adapter,
+Q5 "All store adapters". Built in SPEC-ADPNEO-005, SPEC-ADPRDS-002, SPEC-ADPKUR-006, SPEC-ADPDDB-003 (new, one per adapter,
 each an amendment of that adapter's seed spec in a spec of its own, as SPEC-ADPNEO-003/-004 and SPEC-ADPKUR-005 are), and
-a SPEC-RPC-001 amendment (adapters/stdio-jsonrpc/protocol.change.md).
+the SPEC-RPC-001 amendment (the optional `transformSeed` method in adapters/stdio-jsonrpc/transport.feat and schemas/feat-host-protocol.schema.json).
 
 ## Context
 
@@ -42,6 +42,11 @@ earlier records of the same call were written.
 - **Trust the host's determinism.** A nondeterministic host makes a spec pass or fail by chance; asking twice costs one more
   request per seed call (Q4).
 - **Neo4j only, the others later.** Each later adapter would re-decide the same questions (Q5).
+- **Kurrent: refuse an oversized event before the first append** (12081c37, "Leave it to the server"). The server's
+  limit is its own configuration; guessing it would refuse events the server accepts. An event the server refuses is the
+  server's error, after the call's earlier appends.
+- **Equality by bytes** (12081c37, "Canonical JSON"). Key order and number spelling are not values; two answers are
+  equal when their canonical JSON is.
 - **The consumer routes graph seeds through its own spec host** and writes Neo4j itself: every consumer would re-implement
   the namespace label, the one-transaction rule and the relationship seeds of SPEC-ADPNEO-004.
 - **Literal vectors in the spec**: unreadable, and it gives up flmnt's R3.

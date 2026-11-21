@@ -2,11 +2,11 @@ feat 1.0
 
 # SPEC-ADPNEO-005 — Neo4j adapter: a consumer's spec host may transform seed values before they are written, and every seed
 # value is checked against what Neo4j can store (an amendment to SPEC-ADPNEO-001 and SPEC-ADPNEO-004, in a spec of its own,
-# as SPEC-ADPNEO-003 and -004 are). DRAFT. Founder ruling 944b1d17 ("Feature seed hook"); its form and scope ruled in
+# as SPEC-ADPNEO-003 and -004 are). Agreed by founder ruling 094b5dcc (2026-11-21, the set agreed), with the follow-ups ruled in 12081c37 (Redis's value code split, an identity change refused as SEED_TRANSFORM_FAILED, an oversized Kurrent event left to the server, canonical-JSON equality). Founder ruling 944b1d17 ("Feature seed hook"); its form and scope ruled in
 # c141a704: Q1 "Spec host only (Recommended)", Q2 "Optional method, v2 (Recommended)", Q3 "All seeds" (the storability check
 # applies to plain seeds too), Q4 "Check by doing it twice" (each seed call is transformed twice and must agree), Q5 "All
 # store adapters" (the same option, protocol and refusals ship for Neo4j, Redis, Kurrent and DynamoDB in one release:
-# SPEC-ADPRDS-002, SPEC-ADPKUR-006 and SPEC-ADPDDB-003 state it for theirs). ADR-0035.
+# SPEC-ADPRDS-002, SPEC-ADPKUR-006 and SPEC-ADPDDB-003 state it for theirs). ADR-0035. Amended by founder ruling c786e54d (2026-11-21, "Amend all, stay agreed (Recommended)"): its literals follow the store and the adapter's existing spec.
 #
 # Why: a seed is written with `SET n = $values`, and Neo4j stores only scalars and homogeneous lists of scalars as a
 # property. A consumer whose spec states a value only it can compute (a text its own pinned model encodes to a vector) has no
@@ -52,13 +52,13 @@ feat 1.0
 #   "none"       no options.seedTransform at all
 # A step written with a trailing `!` records its refusal in the trace (`seedmix:a!SEED_TRANSFORM_FAILED`) and the script goes
 # on, as SPEC-ADPNEO-001's refused writes do. `readValues` is each record's key, as readKeys, with its v or w as stored:
-# `Order:o1{v=[2,97,1.0]}`.
+# `Order:o1{v=[2,97,1]}`.
 
 spec SPEC-ADPNEO-005 "Neo4j adapter: a consumer's spec host may transform seed values, and every seed value must be one Neo4j can store"
 context Toolchain
 aggregate Adapters
 type infrastructure
-status draft
+status agreed
 
 construct:
   handler at adapters/neo4j/src/index.ts
@@ -100,7 +100,7 @@ scenario "a node seed's value is written as the host transformed it":
     response OK SeedTransformResult {
       trace: "setup:a seedenc:a read:a=1",
       readVia: "NamespaceScan",
-      readValues: "Order:o1{v=[2,97,1.0]}"
+      readValues: "Order:o1{v=[2,97,1]}"
     }
     filesystem has []
 
@@ -116,7 +116,7 @@ scenario "a relationship seed's own property is transformed too":
     response OK SeedTransformResult {
       trace: "setup:a seed:a seed:a seedrelenc:a read:a=3",
       readVia: "NamespaceScan",
-      readValues: "Customer:c1,Order:o1,Order:o1-[PLACED_BY]->Customer:c1{w=[3,120,1.0]}"
+      readValues: "Customer:c1,Order:o1,Order:o1-[PLACED_BY]->Customer:c1{w=[3,120,1]}"
     }
     filesystem has []
 
@@ -126,7 +126,7 @@ scenario "one seed call is transformed in one request, asked twice, and written 
     response OK SeedTransformResult {
       trace: "setup:a seedmix:a calls:a=2 read:a=2",
       readVia: "NamespaceScan",
-      readValues: "Order:o1{v=[1,97,1.0]},Order:o2{v=[1,98,1.0]}"
+      readValues: "Order:o1{v=[1,97,1]},Order:o2{v=[1,98,1]}"
     }
     filesystem has []
 
@@ -136,7 +136,7 @@ scenario "a host that answers late is awaited before the seed is written":
     response OK SeedTransformResult {
       trace: "setup:a seedenc:a read:a=1",
       readVia: "NamespaceScan",
-      readValues: "Order:o1{v=[2,97,1.0]}"
+      readValues: "Order:o1{v=[2,97,1]}"
     }
     filesystem has []
 
@@ -145,7 +145,7 @@ scenario "a read and a capture report the stored value, never the seed's origina
   predict success:
     response OK SeedTransformResult {
       trace: "setup:a seedenc:a start:a setprop:a stop:a=1 read:a=1",
-      last: "UPDATE:Order:o1",
+      last: "MODIFY:Order:o1",
       readVia: "NamespaceScan",
       readValues: "Order:o1{v=z}"
     }
