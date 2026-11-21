@@ -1,0 +1,196 @@
+feat 1.0
+
+# SPEC-ADPNEO-005 — Neo4j adapter: a consumer may transform seed values before they are written (an amendment to
+# SPEC-ADPNEO-001 and SPEC-ADPNEO-004, in a spec of its own, as those amendments are). DRAFT for founder ruling
+# 944b1d17 ("Feature seed hook"): "Feature's @mmmnt/feat-adapter-neo4j gains a seed-transform hook that a consumer config
+# supplies, so flmnt resolves `embedding: { encode: "<text>" }` (R3, e4d584d6) to a real vector before the adapter writes a
+# graph seed at the integration tier."
+#
+# Why: a seed is written with `SET n = $values`, and Neo4j stores only scalars and homogeneous lists of scalars as a
+# property. A consumer whose spec states a value in a form only the consumer can compute (a text it encodes to a vector with
+# its own pinned model) has no way to state it at the integration tier: a map is refused by the server, and a literal vector
+# of 384 numbers makes the spec unreadable. The hook lets the consumer's own program turn the record into what is stored.
+#
+# The hook is a spec host (the Spec Host Protocol of SPEC-RPC-001, one JSON line each way), not a JavaScript module: a
+# consumer whose code does not run on Node (flmnt, FLMNT-ADR-008 §5) already runs a spec host, and the shared host registry
+# lets the adapter reach that same process. The method is `transformSeed` (SPEC-RPC-001's amendment, protocol.change.md).
+#
+#   options.seedTransform: { host: { command: [<argv>], cwd?, env? } }
+#
+# Without options.seedTransform the adapter seeds exactly as SPEC-ADPNEO-001 and SPEC-ADPNEO-004 say; nothing below applies.
+#
+# Spec tier, as SPEC-ADPNEO-003/-004: the integration config leaves this file out so it runs once.
+# Driven through the probe of SPEC-ADPNEO-001 (adapters/neo4j/fixtures/probe.mjs) with a fake transform host
+# (adapters/neo4j/fixtures/seed-host.mjs), both inside touches and never shipped. `ObserveNeo4jSeedTransform { host, script }`
+# creates the adapter with options.seedTransform pointing at the fake host in the mode `host`, then runs the steps of
+# SPEC-ADPNEO-004 plus:
+#   seedenc:<ns>:<Label>:<key>:<text>   adapter.seed() of one node whose `v` is { encode: "<text>" }
+#   seedrelenc:<ns>:<Label>:<key>:<REL>:<Label2>:<key2>:<text>   one relationship whose `w` is { encode: "<text>" }
+#   seedmix:<ns>                         ONE seed() call: node Order:o1 with v { encode: "a" } and node Order:o2 with v { encode: "b" }
+# Fake host modes (host):
+#   "encode"     answers each record with every { encode: t } value replaced by [len(t), first char code of t, 1.0]
+#   "slow"       as encode, answering after 200 ms
+#   "fail"       answers transformSeed with a JSON-RPC error { code: -32000, message: "encoder not loaded" }
+#   "map"        answers with v left as the map { encode: t }
+#   "mixed"      answers with v as [1, "a"]
+#   "short"      answers with one record fewer than it was sent
+#   "retype"     answers with each record's type changed to "Other"
+#   "crash"      exits on the first transformSeed
+#   "nomethod"   implements every method but transformSeed (method not found)
+#   "absent"     the command names a file that does not exist
+#   "nocommand"  options.seedTransform is { host: {} }
+#   "none"       no options.seedTransform at all
+# A step written with a trailing `!` records its refusal in the trace (`seedmix:a!SEED_TRANSFORM_FAILED`) and the script
+# goes on, as SPEC-ADPNEO-001's refused writes do.
+# `readValues` is each record's key, as readKeys, with its v or w as stored: `Order:o1{v=[1,97,1.0]}`.
+
+spec SPEC-ADPNEO-005 "Neo4j adapter: a consumer's spec host may transform seed values before they are written"
+context Toolchain
+aggregate Adapters
+type infrastructure
+status draft
+
+construct:
+  handler at adapters/neo4j/src/index.ts
+  touches adapters/neo4j/**
+  touches feat.config.json
+  touches feat.integration.config.json
+  needs SPEC-ADPNEO-001
+  needs SPEC-ADPNEO-004
+  needs SPEC-RPC-001
+  options.seedTransform { host: HostConfig } names a spec host. setup() joins it through the shared host registry of
+  @mmmnt/feat-adapter-stdio-jsonrpc (the same process as any other role of the spec file naming the same command), so an
+  unreachable host is refused before any case runs. seed(records) sends every record of the call, in order, as
+  transformSeed { service, records: [{ type, values }] } and awaits the answer before anything else: the answer must hold
+  the same number of records, in the same order, each with the same type; its values replace the record's values. The
+  transformed records are then validated and written exactly as SPEC-ADPNEO-001 and SPEC-ADPNEO-004 say, in one
+  transaction. A value is storable when it is a string, a number, a boolean, or a list whose items are all strings, all
+  numbers or all booleans; any other value of a transformed record is refused before anything is written. The transform
+  applies to seeds only: capture, peek, stop, read and state never pass through it, so they report what is stored.
+  teardown() leaves the registry. The adapter never retries a transform and never caches one.
+
+enforce:
+  rejects OPTIONS_INVALID when options.seedTransform is not { host } with a host whose command is a non-empty list of strings
+  rejects SEED_TRANSFORM_UNAVAILABLE when the seed-transform host cannot be started at setup()
+  rejects SEED_TRANSFORM_FAILED when the host answers transformSeed with an error, does not implement it, ends, or answers with records that differ in number, order or type
+  rejects SEED_VALUE_UNSTORABLE when a transformed record holds a value Neo4j cannot store as a property, naming the record and the property
+  nothing of a seed call is written unless every record of it was transformed and validated
+  a transform applies to seeds only, never to what the adapter observes or reads
+  without options.seedTransform a seed is written exactly as SPEC-ADPNEO-001 and SPEC-ADPNEO-004 say
+
+contract:
+  input SeedTransformInput
+  response SeedTransformResult
+  error SeedTransformError
+
+scenario "a node seed's value is written as the host transformed it":
+  when: ObserveNeo4jSeedTransform { host: "encode", script: "setup:a seedenc:a:Order:o1:ab read:a" }
+  predict success:
+    response OK SeedTransformResult {
+      trace: "setup:a seedenc:a read:a=1",
+      readVia: "NamespaceScan",
+      readValues: "Order:o1{v=[2,97,1.0]}"
+    }
+    filesystem has []
+
+scenario "a transformed seed is state: the window that follows reports nothing":
+  when: ObserveNeo4jSeedTransform { host: "encode", script: "setup:a seedenc:a:Order:o1:ab start:a stop:a" }
+  predict success:
+    response OK SeedTransformResult { trace: "setup:a seedenc:a start:a stop:a=0" }
+    filesystem has []
+
+scenario "a relationship seed's own property is transformed too":
+  when: ObserveNeo4jSeedTransform { host: "encode", script: "setup:a seed:a:Order:o1 seed:a:Customer:c1 seedrelenc:a:Order:o1:PLACED_BY:Customer:c1:xyz read:a" }
+  predict success:
+    response OK SeedTransformResult {
+      trace: "setup:a seed:a seed:a seedrelenc:a read:a=3",
+      readVia: "NamespaceScan",
+      readValues: "Customer:c1,Order:o1,Order:o1-[PLACED_BY]->Customer:c1{w=[3,120,1.0]}"
+    }
+    filesystem has []
+
+scenario "every record of one seed call is sent in one request and written in order":
+  when: ObserveNeo4jSeedTransform { host: "encode", script: "setup:a seedmix:a read:a" }
+  predict success:
+    response OK SeedTransformResult {
+      trace: "setup:a seedmix:a read:a=2",
+      readVia: "NamespaceScan",
+      readValues: "Order:o1{v=[1,97,1.0]},Order:o2{v=[1,98,1.0]}"
+    }
+    filesystem has []
+
+scenario "a host that answers late is awaited before the seed is written":
+  when: ObserveNeo4jSeedTransform { host: "slow", script: "setup:a seedenc:a:Order:o1:ab read:a" }
+  predict success:
+    response OK SeedTransformResult {
+      trace: "setup:a seedenc:a read:a=1",
+      readVia: "NamespaceScan",
+      readValues: "Order:o1{v=[2,97,1.0]}"
+    }
+    filesystem has []
+
+scenario "a read and a capture report the stored value, never the seed's original form":
+  when: ObserveNeo4jSeedTransform { host: "encode", script: "setup:a seedenc:a:Order:o1:ab start:a setprop:a:Order:o1:z stop:a read:a" }
+  predict success:
+    response OK SeedTransformResult {
+      trace: "setup:a seedenc:a start:a setprop:a stop:a=1 read:a=1",
+      last: "UPDATE:Order:o1",
+      readVia: "NamespaceScan",
+      readValues: "Order:o1{v=z}"
+    }
+    filesystem has []
+
+scenario "without seedTransform a plain seed is written as before":
+  when: ObserveNeo4jSeedTransform { host: "none", script: "setup:a seed:a:Order:o1 read:a" }
+  predict success:
+    response OK SeedTransformResult {
+      trace: "setup:a seed:a read:a=1",
+      readVia: "NamespaceScan",
+      readValues: "Order:o1"
+    }
+    filesystem has []
+
+scenario "a host that cannot be started is refused at setup, before any case":
+  when: ObserveNeo4jSeedTransform { host: "absent", script: "setup:a" }
+  predict rejection SEED_TRANSFORM_UNAVAILABLE:
+    response ERR SeedTransformError { code: "SEED_TRANSFORM_UNAVAILABLE", detail: matching "seedTransform" }
+    filesystem has []
+
+scenario "a seedTransform without a command is refused at setup":
+  when: ObserveNeo4jSeedTransform { host: "nocommand", script: "setup:a" }
+  predict rejection OPTIONS_INVALID:
+    response ERR SeedTransformError { code: "OPTIONS_INVALID", detail: matching "seedTransform.host.command" }
+    filesystem has []
+
+scenario outline "a transform that fails writes nothing":
+  when: ObserveNeo4jSeedTransform { host: <host>, script: "setup:a seedmix:a" }
+  predict rejection SEED_TRANSFORM_FAILED:
+    response ERR SeedTransformError { code: "SEED_TRANSFORM_FAILED", detail: matching <detail> }
+    filesystem has []
+  examples:
+    | host       | detail               |
+    | "fail"     | "encoder not loaded" |
+    | "nomethod" | "transformSeed"      |
+    | "crash"    | "ended"              |
+    | "short"    | "2 records"          |
+    | "retype"   | "Order"              |
+
+scenario "after a failed transform the namespace holds nothing of that call":
+  when: ObserveNeo4jSeedTransform { host: "short", script: "setup:a seedmix:a! read:a" }
+  predict success:
+    response OK SeedTransformResult {
+      trace: "setup:a seedmix:a!SEED_TRANSFORM_FAILED read:a=0",
+      readVia: "NamespaceScan",
+      readValues: ""
+    }
+    filesystem has []
+
+scenario outline "a transformed value Neo4j cannot store is refused before anything is written":
+  when: ObserveNeo4jSeedTransform { host: <host>, script: "setup:a seedenc:a:Order:o1:ab" }
+  predict rejection SEED_VALUE_UNSTORABLE:
+    response ERR SeedTransformError { code: "SEED_VALUE_UNSTORABLE", detail: matching <detail> }
+    filesystem has []
+  examples:
+    | host    | detail          |
+    | "map"   | "Order:o1 › v"  |
+    | "mixed" | "Order:o1 › v"  |

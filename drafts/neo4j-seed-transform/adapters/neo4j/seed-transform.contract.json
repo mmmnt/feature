@@ -1,0 +1,38 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-ADPNEO-005",
+  "schemas": {
+    "SeedTransformInput": {
+      "type": "object",
+      "required": ["host", "script"],
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "enum": ["encode", "slow", "fail", "map", "mixed", "short", "retype", "crash", "nomethod", "absent", "nocommand", "none"]
+        },
+        "script": { "type": "string", "minLength": 1 }
+      }
+    },
+    "SeedTransformResult": {
+      "type": "object",
+      "required": ["trace"],
+      "additionalProperties": false,
+      "properties": {
+        "trace": { "type": "string" },
+        "last": { "type": "string" },
+        "readVia": { "enum": ["KeyedMatch", "NamespaceScan"] },
+        "readValues": { "type": "string" }
+      }
+    },
+    "SeedTransformError": {
+      "type": "object",
+      "required": ["code"],
+      "properties": {
+        "code": {
+          "enum": ["OPTIONS_INVALID", "SEED_TRANSFORM_UNAVAILABLE", "SEED_TRANSFORM_FAILED", "SEED_VALUE_UNSTORABLE"]
+        },
+        "detail": { "type": "string" }
+      }
+    }
+  }
+}
