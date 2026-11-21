@@ -647,7 +647,15 @@ Every refusal is an `ExchangeError` with a `code` and a `detail`.
 | `HOST_CONFIG_MISMATCH` | A role's host configuration differs from the host already open for its file. |
 | `FAULT_UNSUPPORTED` | The harness refuses an arm outside the service's fault catalog, or with a count the catalog does not declare for that fault. Raised by the runner before the case has any effect. |
 
-## This release (0.2.0)
+## This release (0.4.0)
+
+- **`transformSeed`** (SPEC-RPC-001 amended, ADR-0035): an optional protocol method,
+  `{ service, records: [{ type, values }] }` -> `{ records: [{ type, values }] }`, sent only by a
+  store adapter configured with `options.seedTransform`; the version stays 2, and a host that
+  serves no transform answers -32601. `SeedTransform`, `parseSeedTransform`, `canonicalJson` and
+  `SeedTransformError` are exported for the store adapters (Neo4j, Redis, Kurrent, DynamoDB).
+
+## 0.2.0
 
 - **Fault shape C** (SPEC-RPC-001 amended, founder ruling 2026-11-13). The
   `fault` request gains `untilReset` and `detail`, both optional; `times` and

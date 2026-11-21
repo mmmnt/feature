@@ -372,6 +372,23 @@ returns the code `setup()` would refuse with (or `undefined`), and
 `connectionTarget()` returns the string the client is created from. Neither
 connects, and neither throws for a refusal.
 
+## Seed transform and storable seeds (SPEC-ADPKUR-006, ADR-0035)
+
+`options.seedTransform: { host: { command: [...], cwd?, env? } }` names a spec host that
+transforms every seed call's records before they are written (a consumer computing a value
+only it can, e.g. a vector from its own pinned encoder). The adapter joins the spec file's
+shared host (@mmmnt/feat-adapter-stdio-jsonrpc; the same process as a response role with the
+same `host`), asks the optional protocol method `transformSeed` **twice** per seed call, and
+writes the first answer only when both agree as canonical JSON and each keeps the records'
+count, order, type and identity. Seeds only: what the adapter captures and reads is what is
+stored. Every seed, transformed or plain, is checked against what Kurrent can store before
+anything is written: values is a JSON object and `values.stream`, when given, a non-empty string. Every record of a call is checked before the first append.
+
+Refusals: `OPTIONS_INVALID` (no command), `SEED_TRANSFORM_UNAVAILABLE` (the host cannot be
+started, at setup), `SEED_TRANSFORM_FAILED` (an error, method not found, the host ended, or a
+changed count, order, type or identity), `SEED_TRANSFORM_NONDETERMINISTIC` (the two answers
+differ), `SEED_VALUE_UNSTORABLE`.
+
 ## Errors and refusals
 
 Adapter errors are `KurrentAdapterError`, with a `code` and a `detail`.
