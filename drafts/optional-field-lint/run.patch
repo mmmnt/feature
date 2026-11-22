@@ -1,0 +1,124 @@
+diff --git a/packages/feat-analyze/src/index.ts b/packages/feat-analyze/src/index.ts
+index 0a2353c..91f5ae2 100644
+--- a/packages/feat-analyze/src/index.ts
++++ b/packages/feat-analyze/src/index.ts
+@@ -151,3 +151,63 @@ export function formatSource(source: string): FormatResult {
+   const formatted = out.join("\n") + "\n";
+   return { formatted, changed: formatted !== source, hasLeadingTab };
+ }
++
++// ── DRAFT (ADR-0038, founder ruling 7d3026eb): an omitted optional property ─────────────────────
++// A value block is partial (ADR-0002): a property it leaves out is never checked, so an optional
++// property of the block's schema can appear unpredicted and pass. The rule names every optional
++// property a top-level response or record block omits, unless the block is marked partial.
++type JsonSchema = {
++  properties?: Record<string, unknown>;
++  required?: string[];
++  allOf?: JsonSchema[];
++  $ref?: string;
++  $defs?: Record<string, JsonSchema>;
++};
++
++/** Follow a local ref ("#/$defs/x") inside the bundled schema the schema adapter returned. */
++function local(root: JsonSchema, node: JsonSchema | undefined): JsonSchema | undefined {
++  let cur = node;
++  for (let i = 0; cur?.$ref && cur.$ref.startsWith("#/") && i < 10; i++) {
++    let target: unknown = root;
++    for (const t of cur.$ref.slice(2).split("/")) target = (target as Record<string, unknown> | undefined)?.[t];
++    cur = target as JsonSchema | undefined;
++  }
++  return cur;
++}
++
++function optionalProperties(schema: JsonSchema | undefined): string[] {
++  if (!schema || typeof schema !== "object") return [];
++  const props: Record<string, unknown> = {};
++  const required = new Set<string>();
++  const add = (node: JsonSchema | undefined) => {
++    const n = local(schema, node);
++    if (!n) return;
++    Object.assign(props, n.properties ?? {});
++    for (const r of n.required ?? []) required.add(r);
++    for (const part of n.allOf ?? []) add(part);
++  };
++  add(schema);
++  return Object.keys(props).filter((p) => !required.has(p)).sort();
++}
++
++export function lintOptionalFields(spec: BuiltSpec, registry: Record<string, object>): Finding[] {
++  const findings: Finding[] = [];
++  const check = (where: string, schemaName: string, block: Record<string, unknown> | undefined, partial: boolean) => {
++    if (!block || partial) return;
++    const omitted = optionalProperties(registry[schemaName] as JsonSchema).filter((p) => !(p in block));
++    if (omitted.length > 0)
++      findings.push({
++        level: "warn",
++        message: `warn: ${where}: ${schemaName} leaves out optional ${omitted.map((p) => `'${p}'`).join(", ")} — state each (absent, any, or a value), or mark the block partial with '...'`,
++      });
++  };
++  for (const sc of spec.scenarios) {
++    const r = sc.prediction.response;
++    if (r?.valueBlock) check(`scenario "${sc.name}" › response`, r.schemaName, r.valueBlock, (r as { partial?: boolean }).partial === true);
++    for (const [svc, p] of Object.entries(sc.prediction.services ?? {}))
++      for (const rec of [...(p.records ?? []), ...(p.contains ?? [])])
++        if (rec.valueBlock)
++          check(`scenario "${sc.name}" › ${svc} ${rec.type}`, rec.schemaName, rec.valueBlock, (rec as { partial?: boolean }).partial === true);
++  }
++  return findings;
++}
+diff --git a/packages/feature/src/commands/lint.ts b/packages/feature/src/commands/lint.ts
+index 958ba3c..5e8d300 100644
+--- a/packages/feature/src/commands/lint.ts
++++ b/packages/feature/src/commands/lint.ts
+@@ -8,8 +8,8 @@ import path from "node:path";
+ import { Command, Flags } from "@oclif/core";
+ import type { BuiltSpec, FeatConfig } from "@mmmnt/feat-types";
+ import { parse } from "@mmmnt/feat-core";
+-import { lintSpec } from "@mmmnt/feat-analyze";
+-import { discoverSpecs } from "../pipeline.js";
++import { lintOptionalFields, lintSpec } from "@mmmnt/feat-analyze";
++import { discoverSpecs, loadSchemaAdapter, resolveContract } from "../pipeline.js";
+ 
+ export default class Lint extends Command {
+   static override description = "Lint all specs: unused declarations, style, lifecycle surfacing";
+@@ -25,6 +25,7 @@ export default class Lint extends Command {
+     const specs = discoverSpecs(root, config.specs.dir, config.specs.exclude);
+     let errors = 0;
+     let warnings = 0;
++    const schemaAdapter = await loadSchemaAdapter(config, root);
+ 
+     for (const specAbs of specs) {
+       const rel = path.relative(root, specAbs);
+@@ -35,7 +36,9 @@ export default class Lint extends Command {
+         errors++;
+         continue;
+       }
+-      const findings = lintSpec(parsed.body as unknown as BuiltSpec);
++      const contractPath = specAbs.replace(/\.feat$/, ".contract.json");
++      const { registry } = await resolveContract(contractPath, schemaAdapter);
++      const findings = [...lintSpec(parsed.body as unknown as BuiltSpec), ...lintOptionalFields(parsed.body as unknown as BuiltSpec, registry)];
+ 
+       if (findings.length === 0) this.log(`✓ ${rel}`);
+       else {
+diff --git a/packages/feature/src/pipeline.ts b/packages/feature/src/pipeline.ts
+index 7b97f9b..8d26eb2 100644
+--- a/packages/feature/src/pipeline.ts
++++ b/packages/feature/src/pipeline.ts
+@@ -72,7 +72,7 @@ export function discoverSpecs(root: string, specsDir: string, exclude: readonly
+ // generates. It is loaded the same way every other adapter is (@mmmnt/feat-runtime).
+ const DEFAULT_SCHEMA_ADAPTER = "@mmmnt/feat-schema-json";
+ 
+-async function loadSchemaAdapter(config: FeatConfig, projectRoot: string): Promise<FeatSchemaAdapter> {
++export async function loadSchemaAdapter(config: FeatConfig, projectRoot: string): Promise<FeatSchemaAdapter> {
+   const specifier = config.schemas?.adapter ?? DEFAULT_SCHEMA_ADAPTER;
+   let mod;
+   try {
+@@ -125,7 +125,7 @@ function needsBundling(schema: unknown): boolean {
+ // Resolution belongs to the adapter: what it returns as `normalized` is what gets inlined,
+ // so it must already be self-contained (the generated test lands in a different directory
+ // and nothing resolves at run time). Entries authored inline are already where they belong.
+-async function resolveContract(
++export async function resolveContract(
+   contractPath: string,
+   adapter: FeatSchemaAdapter,
+ ): Promise<{ registry: Record<string, object>; text: string }> {
