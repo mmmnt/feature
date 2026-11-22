@@ -1,0 +1,265 @@
+feat 1.0
+
+# SPEC-RT-016 — where a delivered event goes (ADR-0036; flmnt founder ruling aee7d787, 2026-11-22, B5-q3; form ruled in 28f7d2d6, agreed b680b51c;
+# "Feature change"). A `type policy` / `projection` / `saga` scenario is triggered by `deliver <Event> { … } to
+# <target>` (ADR-0011). Until now the target had to be a configured service whose adapter offers deliver(); a
+# service adapter that does not (a real store's adapter, such as Kurrent's) refused the case DELIVER_UNSUPPORTED.
+# A product whose policies run inside its spec host therefore could not run its policy specs on real stores: the
+# store adapter observes the writes but cannot receive the stimulus, and only the response role's host can.
+#
+# The rule: the target `response` names the response role. The harness hands the event to the response
+# adapter's optional deliver(event, payload); every other target is a configured service, as before. A case
+# may deliver to services and to the response role in one sequence, and each delivery goes out in the order the
+# scenario lists it, inside the capture window. A delivery the target cannot take is refused
+# DELIVER_UNSUPPORTED naming the target ("response" for the response role), before the window closes and
+# without diffing anything. `response` is reserved: a config that names a service `response` is refused
+# INVALID_CONFIG at load (SPEC-RT-001), and `to response` is never UNKNOWN_SERVICE_KEY or UNOBSERVED_SERVICE
+# (SPEC-CORE-001).
+#
+# Amended (ADR-0037; flmnt founder ruling 814db4fb-8c72-577a-9f9e-132ec6916422, 2026-11-22, "Feature change (Recommended)", the mechanism for ruling
+# 10d35eb4-a501-5547-b264-84224be37944 — a spec host reports what a delivered policy issued): what the response role
+# answers to a delivery is the case's captured response, so a delivery-only case can predict `response` like a
+# `when:` case does. A case has no `when:` beside its deliveries (TRIGGER_MISMATCH, ADR-0011), so there is one
+# response per case: the answer of the last delivery to response that answered one. A delivery to a service is
+# never a response, whatever its adapter returns. A response predicted when nothing delivered to response answered is
+# the prediction failure every case already has: "no response captured". A response adapter's deliver() that answers
+# nothing leaves the case as before, so every existing host and spec runs unchanged.
+#
+# Driven through packages/feat-runtime/fixtures/harness/probe.mjs `RunHarnessCase` (SPEC-RT-002): its stub
+# offers deliver() on a role when that role's options say `deliver: true`, and notes each delivery as
+# `deliver:<role>=<Event>/<payload n>` in the shared call log; a delivered payload carrying `answer` is answered
+# { status: "OK", body: answer } by either role's stub (ADR-0037).
+
+spec SPEC-RT-016 "Harness: deliver to a service or to the response role"
+context Toolchain
+aggregate Runtime
+type infrastructure
+status draft
+
+construct:
+  handler at packages/feat-runtime/src/harness.ts
+  touches packages/feat-runtime/**
+  touches packages/feat-types/src/**
+  needs SPEC-RT-002
+  For each delivery of a case, in order and inside the capture window: the target `response` is the response
+  adapter, any other target is the configured service of that key. Call the target's deliver(event, payload)
+  with the payload after its @given.response references resolve. A target without deliver(), or `response`
+  with no response adapter configured, throws HarnessConfigurationError DELIVER_UNSUPPORTED carrying the
+  target as service, before any later delivery and before the capture window closes. ADR-0037: when the target is
+  response and its deliver() answers a response, that answer becomes the case's captured response (the last such
+  answer, when several deliveries to response answer); a service's answer is never kept.
+
+enforce:
+  deliver each event to its target in the order the scenario lists it, inside the capture window
+  hand a delivery whose target is response to the response adapter's deliver()
+  keep the response role's answer to a delivery as the case's captured response, the last one when several answer
+  never keep a service's answer to a delivery as the case's response
+  rejects DELIVER_UNSUPPORTED when the target's adapter has no deliver(), naming the target
+  rejects DELIVER_UNSUPPORTED when a case delivers to response and no response adapter is configured
+
+contract:
+  input RunInput
+  response RunResult
+  error HarnessError
+
+scenario "an event delivered to a service reaches that service's deliver() inside the capture window":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/deliver-both.config.json"
+    cases: [ { anchor: "c1", name: "c1", delivers: [ { event: "Placed", payload: { n: 1 }, service: "store" } ], prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } } ]
+  }
+  predict success:
+    response OK RunResult {
+      outcome: "passed"
+      calls: "reset:store start:store deliver:store=Placed/1 stop:store"
+    }
+    filesystem has []
+
+scenario "an event delivered to response reaches the response adapter, and no service is handed it":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/deliver-both.config.json"
+    cases: [ { anchor: "c1", name: "c1", delivers: [ { event: "Placed", payload: { n: 1 }, service: "response" } ], prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } } ]
+  }
+  predict success:
+    response OK RunResult {
+      outcome: "passed"
+      calls: "reset:store start:store deliver:response=Placed/1 stop:store"
+    }
+    filesystem has []
+
+scenario "a sequence that delivers to a service and to response goes out in the order it is listed":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/deliver-both.config.json"
+    cases: [ { anchor: "c1", name: "c1", delivers: [ { event: "Placed", payload: { n: 1 }, service: "store" }, { event: "Placed", payload: { n: 2 }, service: "response" }, { event: "Shipped", payload: { n: 3 }, service: "store" } ], prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } } ]
+  }
+  predict success:
+    response OK RunResult {
+      outcome: "passed"
+      calls: "reset:store start:store deliver:store=Placed/1 deliver:response=Placed/2 deliver:store=Shipped/3 stop:store"
+    }
+    filesystem has []
+
+scenario "a response delivery reaches a response adapter even when no service can take a delivery":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/deliver-response-only.config.json"
+    cases: [ { anchor: "c1", name: "c1", delivers: [ { event: "Placed", payload: { n: 1 }, service: "response" } ], prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } } ]
+  }
+  predict success:
+    response OK RunResult {
+      outcome: "passed"
+      calls: "reset:store start:store deliver:response=Placed/1 stop:store"
+    }
+    filesystem has []
+
+scenario "a delivery to response is refused when the response adapter has no deliver()":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/deliver-service-only.config.json"
+    cases: [ { anchor: "c1", name: "c1", delivers: [ { event: "Placed", payload: { n: 1 }, service: "response" } ], prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } } ]
+  }
+  predict rejection DELIVER_UNSUPPORTED:
+    response ERR HarnessError {
+      code: "DELIVER_UNSUPPORTED"
+      service: "response"
+      calls: "reset:store start:store"
+      detail: matching "adapter for 'response' does not support deliver"
+    }
+    filesystem has []
+
+scenario "a delivery to a service whose adapter has no deliver() is refused, naming the service":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/deliver-response-only.config.json"
+    cases: [ { anchor: "c1", name: "c1", delivers: [ { event: "Placed", payload: { n: 1 }, service: "store" } ], prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } } ]
+  }
+  predict rejection DELIVER_UNSUPPORTED:
+    response ERR HarnessError {
+      code: "DELIVER_UNSUPPORTED"
+      service: "store"
+      calls: "reset:store start:store"
+      detail: matching "adapter for 'store' does not support deliver"
+    }
+    filesystem has []
+
+scenario "a refused delivery stops the sequence: no later delivery is made":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/deliver-service-only.config.json"
+    cases: [ { anchor: "c1", name: "c1", delivers: [ { event: "Placed", payload: { n: 1 }, service: "store" }, { event: "Placed", payload: { n: 2 }, service: "response" }, { event: "Shipped", payload: { n: 3 }, service: "store" } ], prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } } ]
+  }
+  predict rejection DELIVER_UNSUPPORTED:
+    response ERR HarnessError {
+      code: "DELIVER_UNSUPPORTED"
+      service: "response"
+      calls: "reset:store start:store deliver:store=Placed/1"
+    }
+    filesystem has []
+
+scenario "a delivery to response with no response adapter configured is refused":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/deliver-no-response.config.json"
+    cases: [ { anchor: "c1", name: "c1", delivers: [ { event: "Placed", payload: { n: 1 }, service: "response" } ], prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } } ]
+  }
+  predict rejection DELIVER_UNSUPPORTED:
+    response ERR HarnessError {
+      code: "DELIVER_UNSUPPORTED"
+      service: "response"
+      calls: "reset:store start:store"
+      detail: matching "needs a response adapter"
+    }
+    filesystem has []
+
+scenario "a delivery to response that answers is the case's response, and its prediction passes":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/deliver-both.config.json"
+    cases: [ { anchor: "c1", name: "c1", delivers: [ { event: "Placed", payload: { n: 1, answer: { issued: [ { context: "c", command: "X", status: 409, code: "E" } ] } }, service: "response" } ], prediction: { type: "success", response: { status: "OK", schemaName: "Placed", valueBlock: { issued: { matcher: "literal", value: [ { context: "c", command: "X", status: 409, code: "E" } ] } } }, services: { store: { ordering: "ordered", records: [] } } } } ]
+  }
+  predict success:
+    response OK RunResult {
+      outcome: "passed"
+      calls: "reset:store start:store deliver:response=Placed/1 stop:store"
+    }
+    filesystem has []
+
+scenario "a delivery to response whose answer differs from the predicted response fails the case":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/deliver-both.config.json"
+    cases: [ { anchor: "c1", name: "c1", delivers: [ { event: "Placed", payload: { n: 1, answer: { issued: [ { context: "c", command: "Y", status: 200 } ] } }, service: "response" } ], prediction: { type: "success", response: { status: "OK", schemaName: "Placed", valueBlock: { issued: { matcher: "literal", value: [ { context: "c", command: "X", status: 409, code: "E" } ] } } }, services: { store: { ordering: "ordered", records: [] } } } } ]
+  }
+  predict success:
+    response OK RunResult {
+      outcome: "failed"
+      calls: "reset:store start:store deliver:response=Placed/1 stop:store"
+      violations: [ matching "c1 › response" ]
+    }
+    filesystem has []
+
+scenario "a response predicted when nothing was delivered to response fails as no response captured":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/deliver-both.config.json"
+    cases: [ { anchor: "c1", name: "c1", delivers: [ { event: "Placed", payload: { n: 1, answer: { issued: [ { context: "c", command: "X", status: 409, code: "E" } ] } }, service: "store" } ], prediction: { type: "success", response: { status: "OK", schemaName: "Placed", valueBlock: { issued: { matcher: "literal", value: [ { context: "c", command: "X", status: 409, code: "E" } ] } } }, services: { store: { ordering: "ordered", records: [] } } } } ]
+  }
+  predict success:
+    response OK RunResult {
+      outcome: "failed"
+      calls: "reset:store start:store deliver:store=Placed/1 stop:store"
+      violations: [ "c1 › response: no response captured" ]
+    }
+    filesystem has []
+
+scenario "a delivery to response that answers nothing leaves the case with no response":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/deliver-both.config.json"
+    cases: [ { anchor: "c1", name: "c1", delivers: [ { event: "Placed", payload: { n: 1 }, service: "response" } ], prediction: { type: "success", response: { status: "OK", schemaName: "Placed", valueBlock: { issued: { matcher: "literal", value: [ { context: "c", command: "X", status: 409, code: "E" } ] } } }, services: { store: { ordering: "ordered", records: [] } } } } ]
+  }
+  predict success:
+    response OK RunResult {
+      outcome: "failed"
+      calls: "reset:store start:store deliver:response=Placed/1 stop:store"
+      violations: [ "c1 › response: no response captured" ]
+    }
+    filesystem has []
+
+scenario "when several deliveries to response answer, the last answer is the case's response":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/deliver-both.config.json"
+    cases: [ { anchor: "c1", name: "c1", delivers: [ { event: "Placed", payload: { n: 1, answer: { issued: [ { context: "c", command: "X", status: 409, code: "E" } ] } }, service: "response" }, { event: "Placed", payload: { n: 2, answer: { issued: [ { context: "c", command: "Y", status: 200 } ] } }, service: "response" } ], prediction: { type: "success", response: { status: "OK", schemaName: "Placed", valueBlock: { issued: { matcher: "literal", value: [ { context: "c", command: "Y", status: 200 } ] } } }, services: { store: { ordering: "ordered", records: [] } } } } ]
+  }
+  predict success:
+    response OK RunResult {
+      outcome: "passed"
+      calls: "reset:store start:store deliver:response=Placed/1 deliver:response=Placed/2 stop:store"
+    }
+    filesystem has []
+
+scenario "a later delivery to response that answers nothing keeps the earlier answer":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/deliver-both.config.json"
+    cases: [ { anchor: "c1", name: "c1", delivers: [ { event: "Placed", payload: { n: 1, answer: { issued: [ { context: "c", command: "X", status: 409, code: "E" } ] } }, service: "response" }, { event: "Placed", payload: { n: 2 }, service: "response" } ], prediction: { type: "success", response: { status: "OK", schemaName: "Placed", valueBlock: { issued: { matcher: "literal", value: [ { context: "c", command: "X", status: 409, code: "E" } ] } } }, services: { store: { ordering: "ordered", records: [] } } } } ]
+  }
+  predict success:
+    response OK RunResult {
+      outcome: "passed"
+      calls: "reset:store start:store deliver:response=Placed/1 deliver:response=Placed/2 stop:store"
+    }
+    filesystem has []
+
+scenario "a service's answer to a delivery is never the case's response":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/deliver-both.config.json"
+    cases: [ { anchor: "c1", name: "c1", delivers: [ { event: "Placed", payload: { n: 1, answer: { issued: [ { context: "c", command: "Y", status: 200 } ] } }, service: "response" }, { event: "Placed", payload: { n: 2, answer: { issued: [ { context: "c", command: "X", status: 409, code: "E" } ] } }, service: "store" } ], prediction: { type: "success", response: { status: "OK", schemaName: "Placed", valueBlock: { issued: { matcher: "literal", value: [ { context: "c", command: "Y", status: 200 } ] } } }, services: { store: { ordering: "ordered", records: [] } } } } ]
+  }
+  predict success:
+    response OK RunResult {
+      outcome: "passed"
+      calls: "reset:store start:store deliver:response=Placed/1 deliver:store=Placed/2 stop:store"
+    }
+    filesystem has []
+
+scenario "a delivery that answers, with no response predicted, is judged on its services alone":
+  when: RunHarnessCase {
+    config: "packages/feat-runtime/fixtures/harness/deliver-both.config.json"
+    cases: [ { anchor: "c1", name: "c1", delivers: [ { event: "Placed", payload: { n: 1, answer: { issued: [ { context: "c", command: "X", status: 409, code: "E" } ] } }, service: "response" } ], prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } } ]
+  }
+  predict success:
+    response OK RunResult {
+      outcome: "passed"
+      calls: "reset:store start:store deliver:response=Placed/1 stop:store"
+    }
+    filesystem has []

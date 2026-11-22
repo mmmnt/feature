@@ -1,0 +1,149 @@
+diff --git a/crates/flmnt-workspaces/src/features/finish_erasure_on_graph_erased/finish_erasure_on_graph_erased.contract.json b/crates/flmnt-workspaces/src/features/finish_erasure_on_graph_erased/finish_erasure_on_graph_erased.contract.json
+index 9d6c03c..d4f9ef9 100644
+--- a/crates/flmnt-workspaces/src/features/finish_erasure_on_graph_erased/finish_erasure_on_graph_erased.contract.json
++++ b/crates/flmnt-workspaces/src/features/finish_erasure_on_graph_erased/finish_erasure_on_graph_erased.contract.json
+@@ -3,7 +3,7 @@
+   "specId": "FLMNT-SPEC-WSP-009",
+   "schemas": {
+     "StoredNodeEntry": {
+-      "description": "A Node event delivered to the policy: the stored envelope (FLMNT-ADR-004 §1) and, beside it, the stream it is on (node::lifecycle)",
++      "description": "A Node event delivered to the policy: the stored envelope (FLMNT-ADR-004 \u00a71) and, beside it, the stream it is on (node::lifecycle)",
+       "type": "object",
+       "additionalProperties": false,
+       "required": [
+@@ -61,7 +61,7 @@
+       }
+     },
+     "StoredRegistryEntry": {
+-      "description": "A registry event delivered to the policy: the stored envelope (FLMNT-ADR-004 §1) and, beside it, the stream it is on (workspaces::registry)",
++      "description": "A registry event delivered to the policy: the stored envelope (FLMNT-ADR-004 \u00a71) and, beside it, the stream it is on (workspaces::registry)",
+       "type": "object",
+       "additionalProperties": false,
+       "required": [
+@@ -117,7 +117,7 @@
+       }
+     },
+     "SeededRegistryEntry": {
+-      "description": "A registry event already in the log, seeded: the stored envelope (FLMNT-ADR-004 §1) and, beside it, the stream it is on (the Kurrent adapter's seed convention)",
++      "description": "A registry event already in the log, seeded: the stored envelope (FLMNT-ADR-004 \u00a71) and, beside it, the stream it is on (the Kurrent adapter's seed convention)",
+       "type": "object",
+       "additionalProperties": false,
+       "required": [
+@@ -179,7 +179,7 @@
+       }
+     },
+     "SeededNodeEntry": {
+-      "description": "A Node event already in the log, seeded: the stored envelope (FLMNT-ADR-004 §1) and, beside it, the stream it is on (the Kurrent adapter's seed convention)",
++      "description": "A Node event already in the log, seeded: the stored envelope (FLMNT-ADR-004 \u00a71) and, beside it, the stream it is on (the Kurrent adapter's seed convention)",
+       "type": "object",
+       "additionalProperties": false,
+       "required": [
+@@ -246,7 +246,7 @@
+         "at"
+       ],
+       "additionalProperties": false,
+-      "description": "workspace.deleted payload, as the existing local registry writes it: {id, by, at}, by the connection's sub (PRD §7.4 Events, HELD-52)",
++      "description": "workspace.deleted payload, as the existing local registry writes it: {id, by, at}, by the connection's sub (PRD \u00a77.4 Events, HELD-52)",
+       "properties": {
+         "id": {
+           "type": "string",
+@@ -282,6 +282,41 @@
+           }
+         }
+       ]
++    },
++    "DeliveryAnswer": {
++      "type": "object",
++      "required": [
++        "issued"
++      ],
++      "additionalProperties": false,
++      "properties": {
++        "issued": {
++          "type": "array",
++          "items": {
++            "type": "object",
++            "required": [
++              "context",
++              "command",
++              "status"
++            ],
++            "additionalProperties": false,
++            "properties": {
++              "context": {
++                "type": "string"
++              },
++              "command": {
++                "type": "string"
++              },
++              "status": {
++                "type": "integer"
++              },
++              "code": {
++                "type": "string"
++              }
++            }
++          }
++        }
++      }
+     }
+   }
+ }
+diff --git a/crates/flmnt-workspaces/src/features/finish_erasure_on_graph_erased/finish_erasure_on_graph_erased.feat b/crates/flmnt-workspaces/src/features/finish_erasure_on_graph_erased/finish_erasure_on_graph_erased.feat
+index 9e1d47d..324e684 100644
+--- a/crates/flmnt-workspaces/src/features/finish_erasure_on_graph_erased/finish_erasure_on_graph_erased.feat
++++ b/crates/flmnt-workspaces/src/features/finish_erasure_on_graph_erased/finish_erasure_on_graph_erased.feat
+@@ -55,6 +55,7 @@ contract:
+   record SeededRegistryEntry
+   record SeededNodeEntry
+   event RegistryEntry
++  response DeliveryAnswer
+ 
+ scenario "the graph.erased of the last purged stream records the deletion":
+   given:
+@@ -63,6 +64,7 @@ scenario "the graph.erased of the last purged stream records the deletion":
+     seed log [ workspace.created with SeededRegistryEntry { stream: "workspaces::registry", entryType: "workspace.created", payload: { id: "6f9619ff-8b86-4d11-b42d-00c04fc964ff", name: "field notes", by: "person-1", at: "2026-11-01T00:00:00.000Z" }, timestamp: "2026-11-01T00:00:00.000Z", correlationId: "9a1b2c3d-4e5f-4a6b-8c7d-0e1f2a3b4c5d", causationId: "6f9619ff-8b86-4d11-b42d-00c04fc964ff", tokenSize: 0, actor: { sub: "person-1", clientId: "tool-1" } }, workspace.deletion_started with SeededRegistryEntry { stream: "workspaces::registry", entryType: "workspace.deletion_started", payload: { id: "6f9619ff-8b86-4d11-b42d-00c04fc964ff", by: "person-1", at: "2026-11-20T09:59:00.000Z" }, timestamp: "2026-11-20T09:59:00.000Z", correlationId: "1f2e3d4c-5b6a-4978-8695-a4b3c2d1e0f9", causationId: "6f9619ff-8b86-4d11-b42d-00c04fc964ff", tokenSize: 0, actor: { sub: "person-1", clientId: "tool-1" } }, workspace.streams_purged with SeededRegistryEntry { stream: "workspaces::registry", entryType: "workspace.streams_purged", payload: { workspaceId: "6f9619ff-8b86-4d11-b42d-00c04fc964ff", streams: ["6f9619ff-8b86-4d11-b42d-00c04fc964ff::domain", "6f9619ff-8b86-4d11-b42d-00c04fc964ff::operational"] }, timestamp: "2026-11-20T09:59:10.000Z", correlationId: "2a3b4c5d-6e7f-4a8b-9c0d-1e2f3a4b5c6d", causationId: "1f2e3d4c-5b6a-4978-8695-a4b3c2d1e0f9", tokenSize: 0, actor: { sub: "person-1", clientId: "tool-1" } }, graph.erased with SeededNodeEntry { stream: "node::lifecycle", entryType: "graph.erased", payload: { streamId: "6f9619ff-8b86-4d11-b42d-00c04fc964ff::domain" }, timestamp: "2026-11-20T09:59:20.000Z", correlationId: "3b4c5d6e-7f8a-4b9c-8d0e-1f2a3b4c5d6e", causationId: "3b4c5d6e-7f8a-4b9c-8d0e-1f2a3b4c5d6e", tokenSize: 0, actor: { sub: "person-1", clientId: "tool-1" } }, graph.erased with SeededNodeEntry { stream: "node::lifecycle", entryType: "graph.erased", payload: { streamId: "6f9619ff-8b86-4d11-b42d-00c04fc964ff::operational" }, timestamp: "2026-11-20T09:59:30.000Z", correlationId: "4c5d6e7f-8a9b-4c0d-9e1f-2a3b4c5d6e7f", causationId: "4c5d6e7f-8a9b-4c0d-9e1f-2a3b4c5d6e7f", tokenSize: 0, actor: { sub: "person-1", clientId: "tool-1" } } ]
+   deliver GraphErased { stream: "node::lifecycle", entryType: "graph.erased", payload: { streamId: "6f9619ff-8b86-4d11-b42d-00c04fc964ff::operational" }, timestamp: "2026-11-20T09:59:30.000Z", correlationId: "4c5d6e7f-8a9b-4c0d-9e1f-2a3b4c5d6e7f", causationId: "4c5d6e7f-8a9b-4c0d-9e1f-2a3b4c5d6e7f", tokenSize: 0, actor: { sub: "person-1", clientId: "tool-1" } } to response
+   predict success:
++    response 200 DeliveryAnswer { issued: [ { context: "flmnt-workspaces", command: "CompleteDeletion", status: 200 } ] }
+     log has [ workspace.deleted with RegistryEntry {
+       entryType: "workspace.deleted"
+       payload: { id: "6f9619ff-8b86-4d11-b42d-00c04fc964ff", by: "person-1", at: "2026-11-20T10:00:00.000Z" }
+@@ -77,6 +79,7 @@ scenario "the graph.erased of a stream while another purged stream is not yet er
+     seed log [ workspace.created with SeededRegistryEntry { stream: "workspaces::registry", entryType: "workspace.created", payload: { id: "6f9619ff-8b86-4d11-b42d-00c04fc964ff", name: "field notes", by: "person-1", at: "2026-11-01T00:00:00.000Z" }, timestamp: "2026-11-01T00:00:00.000Z", correlationId: "9a1b2c3d-4e5f-4a6b-8c7d-0e1f2a3b4c5d", causationId: "6f9619ff-8b86-4d11-b42d-00c04fc964ff", tokenSize: 0, actor: { sub: "person-1", clientId: "tool-1" } }, workspace.deletion_started with SeededRegistryEntry { stream: "workspaces::registry", entryType: "workspace.deletion_started", payload: { id: "6f9619ff-8b86-4d11-b42d-00c04fc964ff", by: "person-1", at: "2026-11-20T09:59:00.000Z" }, timestamp: "2026-11-20T09:59:00.000Z", correlationId: "1f2e3d4c-5b6a-4978-8695-a4b3c2d1e0f9", causationId: "6f9619ff-8b86-4d11-b42d-00c04fc964ff", tokenSize: 0, actor: { sub: "person-1", clientId: "tool-1" } }, workspace.streams_purged with SeededRegistryEntry { stream: "workspaces::registry", entryType: "workspace.streams_purged", payload: { workspaceId: "6f9619ff-8b86-4d11-b42d-00c04fc964ff", streams: ["6f9619ff-8b86-4d11-b42d-00c04fc964ff::domain", "6f9619ff-8b86-4d11-b42d-00c04fc964ff::operational"] }, timestamp: "2026-11-20T09:59:10.000Z", correlationId: "2a3b4c5d-6e7f-4a8b-9c0d-1e2f3a4b5c6d", causationId: "1f2e3d4c-5b6a-4978-8695-a4b3c2d1e0f9", tokenSize: 0, actor: { sub: "person-1", clientId: "tool-1" } }, graph.erased with SeededNodeEntry { stream: "node::lifecycle", entryType: "graph.erased", payload: { streamId: "6f9619ff-8b86-4d11-b42d-00c04fc964ff::domain" }, timestamp: "2026-11-20T09:59:20.000Z", correlationId: "3b4c5d6e-7f8a-4b9c-8d0e-1f2a3b4c5d6e", causationId: "3b4c5d6e-7f8a-4b9c-8d0e-1f2a3b4c5d6e", tokenSize: 0, actor: { sub: "person-1", clientId: "tool-1" } } ]
+   deliver GraphErased { stream: "node::lifecycle", entryType: "graph.erased", payload: { streamId: "6f9619ff-8b86-4d11-b42d-00c04fc964ff::domain" }, timestamp: "2026-11-20T09:59:20.000Z", correlationId: "3b4c5d6e-7f8a-4b9c-8d0e-1f2a3b4c5d6e", causationId: "3b4c5d6e-7f8a-4b9c-8d0e-1f2a3b4c5d6e", tokenSize: 0, actor: { sub: "person-1", clientId: "tool-1" } } to response
+   predict success:
++    response 200 DeliveryAnswer { issued: [ { context: "flmnt-workspaces", command: "CompleteDeletion", status: 409, code: "ERASURE_INCOMPLETE" } ] }
+     log has []
+ 
+ scenario "a graph.erased delivered again after the deletion is recorded appends nothing":
+@@ -85,6 +88,7 @@ scenario "a graph.erased delivered again after the deletion is recorded appends
+     seed log [ workspace.created with SeededRegistryEntry { stream: "workspaces::registry", entryType: "workspace.created", payload: { id: "6f9619ff-8b86-4d11-b42d-00c04fc964ff", name: "field notes", by: "person-1", at: "2026-11-01T00:00:00.000Z" }, timestamp: "2026-11-01T00:00:00.000Z", correlationId: "9a1b2c3d-4e5f-4a6b-8c7d-0e1f2a3b4c5d", causationId: "6f9619ff-8b86-4d11-b42d-00c04fc964ff", tokenSize: 0, actor: { sub: "person-1", clientId: "tool-1" } }, workspace.deletion_started with SeededRegistryEntry { stream: "workspaces::registry", entryType: "workspace.deletion_started", payload: { id: "6f9619ff-8b86-4d11-b42d-00c04fc964ff", by: "person-1", at: "2026-11-20T09:59:00.000Z" }, timestamp: "2026-11-20T09:59:00.000Z", correlationId: "1f2e3d4c-5b6a-4978-8695-a4b3c2d1e0f9", causationId: "6f9619ff-8b86-4d11-b42d-00c04fc964ff", tokenSize: 0, actor: { sub: "person-1", clientId: "tool-1" } }, workspace.streams_purged with SeededRegistryEntry { stream: "workspaces::registry", entryType: "workspace.streams_purged", payload: { workspaceId: "6f9619ff-8b86-4d11-b42d-00c04fc964ff", streams: ["6f9619ff-8b86-4d11-b42d-00c04fc964ff::domain", "6f9619ff-8b86-4d11-b42d-00c04fc964ff::operational"] }, timestamp: "2026-11-20T09:59:10.000Z", correlationId: "2a3b4c5d-6e7f-4a8b-9c0d-1e2f3a4b5c6d", causationId: "1f2e3d4c-5b6a-4978-8695-a4b3c2d1e0f9", tokenSize: 0, actor: { sub: "person-1", clientId: "tool-1" } }, graph.erased with SeededNodeEntry { stream: "node::lifecycle", entryType: "graph.erased", payload: { streamId: "6f9619ff-8b86-4d11-b42d-00c04fc964ff::domain" }, timestamp: "2026-11-20T09:59:20.000Z", correlationId: "3b4c5d6e-7f8a-4b9c-8d0e-1f2a3b4c5d6e", causationId: "3b4c5d6e-7f8a-4b9c-8d0e-1f2a3b4c5d6e", tokenSize: 0, actor: { sub: "person-1", clientId: "tool-1" } }, graph.erased with SeededNodeEntry { stream: "node::lifecycle", entryType: "graph.erased", payload: { streamId: "6f9619ff-8b86-4d11-b42d-00c04fc964ff::operational" }, timestamp: "2026-11-20T09:59:30.000Z", correlationId: "4c5d6e7f-8a9b-4c0d-9e1f-2a3b4c5d6e7f", causationId: "4c5d6e7f-8a9b-4c0d-9e1f-2a3b4c5d6e7f", tokenSize: 0, actor: { sub: "person-1", clientId: "tool-1" } }, workspace.deleted with SeededRegistryEntry { stream: "workspaces::registry", entryType: "workspace.deleted", payload: { id: "6f9619ff-8b86-4d11-b42d-00c04fc964ff", by: "person-1", at: "2026-11-20T09:59:40.000Z" }, timestamp: "2026-11-20T09:59:40.000Z", correlationId: "5d6e7f8a-9b0c-4d1e-8f2a-3b4c5d6e7f8a", causationId: "1f2e3d4c-5b6a-4978-8695-a4b3c2d1e0f9", tokenSize: 0, actor: { sub: "person-1", clientId: "tool-1" } } ]
+   deliver GraphErased { stream: "node::lifecycle", entryType: "graph.erased", payload: { streamId: "6f9619ff-8b86-4d11-b42d-00c04fc964ff::operational" }, timestamp: "2026-11-20T09:59:30.000Z", correlationId: "4c5d6e7f-8a9b-4c0d-9e1f-2a3b4c5d6e7f", causationId: "4c5d6e7f-8a9b-4c0d-9e1f-2a3b4c5d6e7f", tokenSize: 0, actor: { sub: "person-1", clientId: "tool-1" } } to response
+   predict success:
++    response 200 DeliveryAnswer { issued: [ { context: "flmnt-workspaces", command: "CompleteDeletion", status: 404, code: "WORKSPACE_NOT_FOUND" } ] }
+     log has []
+ 
+ scenario "a graph.erased of a workspace whose deletion has not started issues nothing":
+@@ -93,6 +97,7 @@ scenario "a graph.erased of a workspace whose deletion has not started issues no
+     seed log [ workspace.created with SeededRegistryEntry { stream: "workspaces::registry", entryType: "workspace.created", payload: { id: "6f9619ff-8b86-4d11-b42d-00c04fc964ff", name: "field notes", by: "person-1", at: "2026-11-01T00:00:00.000Z" }, timestamp: "2026-11-01T00:00:00.000Z", correlationId: "9a1b2c3d-4e5f-4a6b-8c7d-0e1f2a3b4c5d", causationId: "6f9619ff-8b86-4d11-b42d-00c04fc964ff", tokenSize: 0, actor: { sub: "person-1", clientId: "tool-1" } }, graph.erased with SeededNodeEntry { stream: "node::lifecycle", entryType: "graph.erased", payload: { streamId: "6f9619ff-8b86-4d11-b42d-00c04fc964ff::domain" }, timestamp: "2026-11-20T09:59:20.000Z", correlationId: "3b4c5d6e-7f8a-4b9c-8d0e-1f2a3b4c5d6e", causationId: "3b4c5d6e-7f8a-4b9c-8d0e-1f2a3b4c5d6e", tokenSize: 0, actor: { sub: "person-1", clientId: "tool-1" } } ]
+   deliver GraphErased { stream: "node::lifecycle", entryType: "graph.erased", payload: { streamId: "6f9619ff-8b86-4d11-b42d-00c04fc964ff::domain" }, timestamp: "2026-11-20T09:59:20.000Z", correlationId: "3b4c5d6e-7f8a-4b9c-8d0e-1f2a3b4c5d6e", causationId: "3b4c5d6e-7f8a-4b9c-8d0e-1f2a3b4c5d6e", tokenSize: 0, actor: { sub: "person-1", clientId: "tool-1" } } to response
+   predict success:
++    response 200 DeliveryAnswer { issued: [ { context: "flmnt-workspaces", command: "CompleteDeletion", status: 409, code: "DELETION_NOT_STARTED" } ] }
+     log has []
+ 
+ scenario "a purge that lists no stream records the deletion on that event alone":
+@@ -102,6 +107,7 @@ scenario "a purge that lists no stream records the deletion on that event alone"
+     seed log [ workspace.created with SeededRegistryEntry { stream: "workspaces::registry", entryType: "workspace.created", payload: { id: "6f9619ff-8b86-4d11-b42d-00c04fc964ff", name: "field notes", by: "person-1", at: "2026-11-01T00:00:00.000Z" }, timestamp: "2026-11-01T00:00:00.000Z", correlationId: "9a1b2c3d-4e5f-4a6b-8c7d-0e1f2a3b4c5d", causationId: "6f9619ff-8b86-4d11-b42d-00c04fc964ff", tokenSize: 0, actor: { sub: "person-1", clientId: "tool-1" } }, workspace.deletion_started with SeededRegistryEntry { stream: "workspaces::registry", entryType: "workspace.deletion_started", payload: { id: "6f9619ff-8b86-4d11-b42d-00c04fc964ff", by: "person-1", at: "2026-11-20T09:59:00.000Z" }, timestamp: "2026-11-20T09:59:00.000Z", correlationId: "1f2e3d4c-5b6a-4978-8695-a4b3c2d1e0f9", causationId: "6f9619ff-8b86-4d11-b42d-00c04fc964ff", tokenSize: 0, actor: { sub: "person-1", clientId: "tool-1" } }, workspace.streams_purged with SeededRegistryEntry { stream: "workspaces::registry", entryType: "workspace.streams_purged", payload: { workspaceId: "6f9619ff-8b86-4d11-b42d-00c04fc964ff", streams: [] }, timestamp: "2026-11-20T09:59:10.000Z", correlationId: "2a3b4c5d-6e7f-4a8b-9c0d-1e2f3a4b5c6d", causationId: "1f2e3d4c-5b6a-4978-8695-a4b3c2d1e0f9", tokenSize: 0, actor: { sub: "person-1", clientId: "tool-1" } } ]
+   deliver StreamsPurged { stream: "workspaces::registry", entryType: "workspace.streams_purged", payload: { workspaceId: "6f9619ff-8b86-4d11-b42d-00c04fc964ff", streams: [] }, timestamp: "2026-11-20T09:59:10.000Z", correlationId: "2a3b4c5d-6e7f-4a8b-9c0d-1e2f3a4b5c6d", causationId: "1f2e3d4c-5b6a-4978-8695-a4b3c2d1e0f9", tokenSize: 0, actor: { sub: "person-1", clientId: "tool-1" } } to response
+   predict success:
++    response 200 DeliveryAnswer { issued: [ { context: "flmnt-workspaces", command: "CompleteDeletion", status: 200 } ] }
+     log has [ workspace.deleted with RegistryEntry {
+       entryType: "workspace.deleted"
+       payload: { id: "6f9619ff-8b86-4d11-b42d-00c04fc964ff", by: "person-1", at: "2026-11-20T10:00:00.000Z" }
+@@ -116,4 +122,5 @@ scenario "a purge that lists streams issues nothing: the last graph.erased finis
+     seed log [ workspace.created with SeededRegistryEntry { stream: "workspaces::registry", entryType: "workspace.created", payload: { id: "6f9619ff-8b86-4d11-b42d-00c04fc964ff", name: "field notes", by: "person-1", at: "2026-11-01T00:00:00.000Z" }, timestamp: "2026-11-01T00:00:00.000Z", correlationId: "9a1b2c3d-4e5f-4a6b-8c7d-0e1f2a3b4c5d", causationId: "6f9619ff-8b86-4d11-b42d-00c04fc964ff", tokenSize: 0, actor: { sub: "person-1", clientId: "tool-1" } }, workspace.deletion_started with SeededRegistryEntry { stream: "workspaces::registry", entryType: "workspace.deletion_started", payload: { id: "6f9619ff-8b86-4d11-b42d-00c04fc964ff", by: "person-1", at: "2026-11-20T09:59:00.000Z" }, timestamp: "2026-11-20T09:59:00.000Z", correlationId: "1f2e3d4c-5b6a-4978-8695-a4b3c2d1e0f9", causationId: "6f9619ff-8b86-4d11-b42d-00c04fc964ff", tokenSize: 0, actor: { sub: "person-1", clientId: "tool-1" } }, workspace.streams_purged with SeededRegistryEntry { stream: "workspaces::registry", entryType: "workspace.streams_purged", payload: { workspaceId: "6f9619ff-8b86-4d11-b42d-00c04fc964ff", streams: ["6f9619ff-8b86-4d11-b42d-00c04fc964ff::domain"] }, timestamp: "2026-11-20T09:59:10.000Z", correlationId: "2a3b4c5d-6e7f-4a8b-9c0d-1e2f3a4b5c6d", causationId: "1f2e3d4c-5b6a-4978-8695-a4b3c2d1e0f9", tokenSize: 0, actor: { sub: "person-1", clientId: "tool-1" } } ]
+   deliver StreamsPurged { stream: "workspaces::registry", entryType: "workspace.streams_purged", payload: { workspaceId: "6f9619ff-8b86-4d11-b42d-00c04fc964ff", streams: ["6f9619ff-8b86-4d11-b42d-00c04fc964ff::domain"] }, timestamp: "2026-11-20T09:59:10.000Z", correlationId: "2a3b4c5d-6e7f-4a8b-9c0d-1e2f3a4b5c6d", causationId: "1f2e3d4c-5b6a-4978-8695-a4b3c2d1e0f9", tokenSize: 0, actor: { sub: "person-1", clientId: "tool-1" } } to response
+   predict success:
++    response 200 DeliveryAnswer { issued: [] }
+     log has []

@@ -1,0 +1,127 @@
+diff --git a/adapters/stdio-jsonrpc/fixtures/fake-host.mjs b/adapters/stdio-jsonrpc/fixtures/fake-host.mjs
+index 11cd0e9..dbd4651 100644
+--- a/adapters/stdio-jsonrpc/fixtures/fake-host.mjs
++++ b/adapters/stdio-jsonrpc/fixtures/fake-host.mjs
+@@ -84,6 +84,9 @@ async function canned(req) {
+       // ADR-0036: a host that serves no response-role delivery answers it method-not-found.
+       if (mode === "no-response-deliver" && p.service === "response") return { error: { code: -32601, message: "Method not found: deliver to response" } };
+       log(`deliver ${p.service} ${p.event}`);
++      // ADR-0037: a host may answer a response-role delivery in the invoke result's shape; a shape without body breaks it.
++      if (mode === "deliver-answers" && p.service === "response") return { result: { status: 200, body: { issued: [] } } };
++      if (mode === "deliver-answers-bad" && p.service === "response") return { result: { status: 200 } };
+       return { result: {} };
+     default:
+       return { result: {} };
+diff --git a/adapters/stdio-jsonrpc/schemas/feat-host-protocol.schema.json b/adapters/stdio-jsonrpc/schemas/feat-host-protocol.schema.json
+index 80e5ddc..27fbf6b 100644
+--- a/adapters/stdio-jsonrpc/schemas/feat-host-protocol.schema.json
++++ b/adapters/stdio-jsonrpc/schemas/feat-host-protocol.schema.json
+@@ -402,7 +402,10 @@
+         }
+       },
+       "startCapture": { "$ref": "#/definitions/empty" },
+-      "deliver": { "$ref": "#/definitions/empty" },
++      "deliver": {
++        "description": "ADR-0037: a delivery answers nothing ({}), or, for the response role, what it answers in the invoke result's shape, which becomes the case's captured response.",
++        "anyOf": [{ "$ref": "#/definitions/empty" }, { "$ref": "#/definitions/results/invoke" }]
++      },
+       "fault": { "$ref": "#/definitions/empty" },
+       "invoke": {
+         "type": "object",
+diff --git a/adapters/stdio-jsonrpc/src/adapters.ts b/adapters/stdio-jsonrpc/src/adapters.ts
+index 346486b..efe5567 100644
+--- a/adapters/stdio-jsonrpc/src/adapters.ts
++++ b/adapters/stdio-jsonrpc/src/adapters.ts
+@@ -95,8 +95,11 @@ export class StdioResponseAdapter extends Role implements FeatResponseAdapter {
+     return (await this.call("invoke", { command, input, ...(actor !== undefined ? { actor } : {}) })) as CapturedResponse;
+   }
+   /** ADR-0036: `deliver … to response` — the host's deliver method, with the response role as its service. */
+-  async deliver(event: string, payload: Record<string, unknown>): Promise<void> {
+-    await this.call("deliver", { service: "response", event, payload });
++  async deliver(event: string, payload: Record<string, unknown>): Promise<CapturedResponse | void> {
++    const answer = (await this.call("deliver", { service: "response", event, payload })) as Partial<CapturedResponse> | undefined;
++    // ADR-0037: a host that answers a delivery with { status, body } answers the case's response; an
++    // empty answer (every host before it) leaves the case with none.
++    if (answer && "status" in answer && "body" in answer) return answer as CapturedResponse;
+   }
+ }
+ 
+diff --git a/packages/feat-runtime/fixtures/harness/stub.mjs b/packages/feat-runtime/fixtures/harness/stub.mjs
+index bf0fff7..d6ddb13 100644
+--- a/packages/feat-runtime/fixtures/harness/stub.mjs
++++ b/packages/feat-runtime/fixtures/harness/stub.mjs
+@@ -5,7 +5,7 @@
+ // firedFaults(); default true). The response stub's Ping { appends: n } makes n calls of AppendToStream
+ // on the `store` service stub, each answering ok or the name of the fault that was consumed.
+ // Ping { hold: true } blocks inside invoke until the probe calls the shared log's release() (SPEC-RT-007).
+-// deliver (bool, ADR-0036): offers deliver() on either role.
++// deliver (bool, ADR-0036): offers deliver() on either role; a payload `answer` is answered (ADR-0037).
+ // setupThrows (response only): its setup() throws an Error with that code (SPEC-RT-008).
+ 
+ const log = () => (globalThis.__featHarnessProbe ??= { calls: [], readHint: undefined });
+@@ -26,7 +26,13 @@ export function createAdapter(config) {
+   if (o.clock === true) adapter.setClock = async (c) => note(`clock:${key}=${c}`);
+   if (o.seed === true) adapter.setSeed = async (s) => note(`seed:${key}=${s}`);
+   // deliver (bool, ADR-0036): offers deliver(); each delivery is noted with the event and the payload's n.
+-  if (o.deliver === true) adapter.deliver = async (event, payload) => note(`deliver:${key}=${event}${payload?.n !== undefined ? `/${payload.n}` : ""}`);
++  // A delivery whose payload carries `answer` (ADR-0037) is answered { status: "OK", body: answer } on either
++  // role (the harness keeps only the response role's answer); without it the delivery answers nothing.
++  if (o.deliver === true)
++    adapter.deliver = async (event, payload) => {
++      note(`deliver:${key}=${event}${payload?.n !== undefined ? `/${payload.n}` : ""}`);
++      if (payload?.answer !== undefined) return { status: "OK", body: payload.answer };
++    };
+   if (config.key === undefined) {
+     // the response adapter. SPEC-RT-008: its setup() records the commands it was handed (none without a
+     // context); with the invoke option setupThrows: <code> it throws an Error with that code.
+diff --git a/packages/feat-runtime/src/harness.ts b/packages/feat-runtime/src/harness.ts
+index 33ffdc0..ffb47cf 100644
+--- a/packages/feat-runtime/src/harness.ts
++++ b/packages/feat-runtime/src/harness.ts
+@@ -462,7 +462,11 @@ export async function createHarness(opts: { configPath: string; specPath?: strin
+       // A delivered stimulus may also name what a precondition produced.
+       const sent = resolveGivenRefs(d.payload, givenResponse, c.anchor) as Record<string, unknown>;
+       sentDelivers.push(sent);
+-      await adapter.deliver(d.event, sent);
++      const answered = await adapter.deliver(d.event, sent);
++      // ADR-0037: the response role's answer to a delivery is the case's captured response. A case has
++      // no `when:` beside its deliveries (TRIGGER_MISMATCH), so the last delivery to response that
++      // answered one is the response a `response` prediction is compared against.
++      if (d.service === "response" && answered) captured = answered;
+     }
+ 
+     await awaitConvergence(c.prediction.services, config.services, services);
+diff --git a/packages/feat-types/src/index.ts b/packages/feat-types/src/index.ts
+index 91276a6..17ee762 100644
+--- a/packages/feat-types/src/index.ts
++++ b/packages/feat-types/src/index.ts
+@@ -286,9 +286,11 @@ export interface FeatResponseAdapter extends ReportsNamespace {
+   invoke(command: string, input: Record<string, unknown>, actor?: string): Promise<CapturedResponse>;
+   /**
+    * Optional (ADR-0036): receive an event a scenario delivers `to response`. A response adapter without
+-   * it cannot run such a scenario (DELIVER_UNSUPPORTED, service "response").
++   * it cannot run such a scenario (DELIVER_UNSUPPORTED, service "response"). ADR-0037: what it answers, when it
++   * answers a response, is the case's captured response, so a delivery-only case can predict `response`; an
++   * adapter that answers nothing (undefined) leaves the case with no captured response.
+    */
+-  deliver?(event: string, payload: Record<string, unknown>): Promise<void>;
++  deliver?(event: string, payload: Record<string, unknown>): Promise<CapturedResponse | void>;
+ }
+ 
+ /** What the harness hands a response adapter's setup() besides its invoke options (SPEC-RT-008). */
+diff --git a/schemas/feat-host-protocol.schema.json b/schemas/feat-host-protocol.schema.json
+index 80e5ddc..27fbf6b 100644
+--- a/schemas/feat-host-protocol.schema.json
++++ b/schemas/feat-host-protocol.schema.json
+@@ -402,7 +402,10 @@
+         }
+       },
+       "startCapture": { "$ref": "#/definitions/empty" },
+-      "deliver": { "$ref": "#/definitions/empty" },
++      "deliver": {
++        "description": "ADR-0037: a delivery answers nothing ({}), or, for the response role, what it answers in the invoke result's shape, which becomes the case's captured response.",
++        "anyOf": [{ "$ref": "#/definitions/empty" }, { "$ref": "#/definitions/results/invoke" }]
++      },
+       "fault": { "$ref": "#/definitions/empty" },
+       "invoke": {
+         "type": "object",
