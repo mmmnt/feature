@@ -38,7 +38,10 @@ feat 1.0
 # (ADR-0035): the protocol gains the OPTIONAL method `transformSeed` { service, records: [{ type, values }] } ->
 # { records: [{ type, values }] }, sent only by a store adapter configured with options.seedTransform (SPEC-ADPNEO-005,
 # SPEC-ADPRDS-002, SPEC-ADPKUR-006, SPEC-ADPDDB-003). The version stays 2. The answer's values travel opaque (the store
-# adapter judges them); a host that serves no transform answers -32601. Its scenarios drive the shared fake transform host
+# adapter judges them); a host that serves no transform answers -32601. The shared transform that sends it compares each
+# answered record's identity with the record sent for every answer, whatever its values are: an answer whose values are not
+# a map carries no key, so its identity differs and it is SEED_TRANSFORM_FAILED (amended by founder ruling 57cc575c,
+# 2026-11-21, T2). Agreed by founder decision 6ecd9f57. Its scenarios drive the shared fake transform host
 # adapters/stdio-jsonrpc/fixtures/seed-host.mjs (modes as SPEC-ADPNEO-005 lists them), also inside touches.
 
 spec SPEC-RPC-001 "Exchange one request with a spec host"

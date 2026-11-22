@@ -27,7 +27,8 @@ earlier records of the same call were written.
    (canonical JSON), else SEED_TRANSFORM_NONDETERMINISTIC and nothing of the call is written.
 5. **An answer keeps each record's count, order, type and identity** (the key that says where the record goes: Neo4j's key
    property and a relationship's ends, Redis's key, Kurrent's stream, DynamoDB's key attributes); otherwise
-   SEED_TRANSFORM_FAILED.
+   SEED_TRANSFORM_FAILED. Identity is compared for every answer, whatever its values are: an answer whose values are
+   not a map has no key, so it is refused this way (amended by founder ruling 57cc575c, 2026-11-21, T2; agreed 6ecd9f57).
 6. **Every seed is checked against its store's storable forms before anything is written** (Q3), transformed or not, as
    SEED_VALUE_UNSTORABLE. Each adapter's spec defines its store's rule, which follows what the real store stores (amended by
    founder ruling 6a6aa65c, 2026-11-21: Neo4j stores an empty list, so SPEC-ADPNEO-005 calls it storable).

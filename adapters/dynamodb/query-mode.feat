@@ -31,6 +31,8 @@ feat 1.0
 # refused put `putcond:a!CONDITIONAL_CHECK_FAILED`. `last` is the last peek or stop as
 # `TYPE:pk/sk` joined by comma, in stream order (native) or key order (snapshot); `readVia` is the
 # DynamoDB operation the last read used.
+# Amended by founder ruling 57cc575c (2026-11-21, T4): options.ephemeral gains partitionKeyType and sortKeyType ("S" or
+# "N", default "S"), the attribute types of the scaffolded table's keys; SPEC-ADPDDB-003 drives an N sort key through it. Agreed by founder decision 6ecd9f57.
 
 spec SPEC-ADPDDB-001 "DynamoDB adapter: query mode, snapshot diff, namespace and faults"
 context Toolchain
