@@ -640,6 +640,7 @@ class Neo4jAdapter implements FeatServiceAdapter {
       const isRel = keys[r.type] === undefined && typeof (v as Props).from === "string" && typeof (v as Props).to === "string";
       for (const [k, x] of Object.entries(v as Props)) {
         if (isRel && (k === "from" || k === "to")) continue;
+        if (x === null) throw new Neo4jAdapterError("SEED_VALUE_UNSTORABLE", `${id.describe(r)} › ${k}: it is null, which Neo4j drops rather than stores; leave the property out to state it absent`);
         const why = unstorable(x);
         if (why !== undefined) throw new Neo4jAdapterError("SEED_VALUE_UNSTORABLE", `${id.describe(r)} › ${k}: ${why}, which Neo4j cannot store as a property`);
       }

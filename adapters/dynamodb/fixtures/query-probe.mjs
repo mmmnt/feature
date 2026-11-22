@@ -309,6 +309,16 @@ async function run(input, { transport, seedTransform = false }) {
           trace.push(`setup:${label}`);
           break;
         }
+        case "setupeph": {
+          // SPEC-ADPDDB-003 (founder ruling 57cc575c, T4): an adapter on its own ephemeral instrument whose sort key is of
+          // type rest[0] (S or N); the partition key stays S so the namespace prefix is carried.
+          const options = { ephemeral: { sortKeyType: rest[0] }, ...(transform?.option !== undefined ? { seedTransform: transform.option } : {}) };
+          const adapter = createAdapter({ key: "database", options, namespace: ns });
+          adapters.set(label, adapter);
+          await adapter.setup();
+          trace.push(`setupeph:${label}`);
+          break;
+        }
         case "observes": {
           const o = adapterFor(label).observes;
           trace.push(`observes:${label}=${o.diff}/${o.state}`);
@@ -451,6 +461,9 @@ async function run(input, { transport, seedTransform = false }) {
             keynull: { PK: null, SK: "1", v: "x" },
             keyempty: { PK: "", SK: "1", v: "x" },
             keymap: { PK: { x: 1 }, SK: "1", v: "x" },
+            keynum: { PK: 1, SK: "1", v: "x" },
+            sknum: { PK: "o1", SK: 1, v: "x" },
+            skstr: { PK: "o1", SK: "1", v: "x" },
             bignum: { PK: "o1", SK: "1", v: 1e200 },
             huge: { PK: "o1", SK: "1", v: "x".repeat(401 * 1024) },
           }[rest[0]];

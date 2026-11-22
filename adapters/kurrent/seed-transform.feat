@@ -4,14 +4,16 @@ feat 1.0
 # is checked against what an event can hold (an amendment to SPEC-ADPKUR-001, in a spec of its own). Agreed by founder ruling 094b5dcc (2026-11-21, the set agreed), with the follow-ups ruled in 12081c37 (Redis's value code split, an identity change refused as SEED_TRANSFORM_FAILED, an oversized Kurrent event left to the server, canonical-JSON equality). Founder rulings
 # 944b1d17 ("Feature seed hook") and c141a704 (Q1 spec host only, Q2 optional method v2, Q3 all seeds, Q4 check by doing it
 # twice, Q5 all store adapters). The option, the protocol, the twice-asked transform and the refusals are SPEC-ADPNEO-005's,
-# stated here for Kurrent. ADR-0035. Amended by founder ruling c786e54d (2026-11-21, "Amend all, stay agreed (Recommended)"): its literals follow the store and the adapter's existing spec.
+# stated here for Kurrent. ADR-0035. Amended by founder ruling c786e54d (2026-11-21, "Amend all, stay agreed (Recommended)"): its literals follow the store and the adapter's existing spec. Amended by founder ruling 99212372 (2026-11-21, S2 "Allow any JSON"): a seed's values may be any JSON value, as KurrentDB appends any JSON as event data. Its follow-ups ruled in 57cc575c (2026-11-21): T1 a non-object seed goes to the stream named by its type, T2 the shared transform compares identity for every answer, T3 a null seed reads back as null. The amendments agreed by founder decision 6ecd9f57 (2026-11-21, "Agree (Recommended)").
 #
 #   options.seedTransform: { host: { command: [<argv>], cwd?, env? } }
 #
 # Storable in Kurrent (SPEC-ADPKUR-001's seed: { type, values } appended as a JSON event of that type to values.stream, else to
-# the stream named by type): values is a JSON object, and values.stream, when present, is a non-empty string. Any JSON object is
-# event data, so for a plain seed only the stream can be unstorable; a transformed record can also come back as something that
-# is not an object. A record's identity is its type and its stream; a transform changes neither.
+# the stream named by type): values is any JSON value (KurrentDB appends an object, a scalar, a string, null or a list as event
+# data alike). Only an object can carry values.stream; a seed whose values is not an object, or is an object without `stream`,
+# is appended to the stream named by its type. values.stream, when present, is a non-empty string. A record's identity is its
+# type and its stream; a transform changes neither, so a transform that turns an object naming a stream into a non-object moves
+# the record to its type's stream and is refused as a changed identity.
 #
 # This amendment also moves SPEC-ADPKUR-001's seed from append-as-you-go to check-then-append: every record of a call is
 # transformed and checked before the first append, so a refused call appends nothing. (The appends of one call stay
@@ -23,7 +25,8 @@ feat 1.0
 # SPEC-ADPKUR-001 plus:
 #   seedenc:<ns>:<stream>:<Type>:<text>  seed() of one record whose data v is { encode: "<text>" }
 #   seedmix:<ns>                         ONE seed() call: Placed into orders with v { encode: "a" }, then with v { encode: "b" }
-#   seedraw:<ns>:<case>                  a plain seed: streamnum (values.stream = 1), streamempty (values.stream = "")
+#   seedraw:<ns>:<case>                  a plain Placed seed: streamnum (values.stream = 1), streamempty (values.stream = ""),
+#                                        scalar (values 5), string (values "x"), list (values [1]), null (values null)
 #   read:<ns>:<stream>                   adapter.read() of that stream, traced `read:<ns>:<stream>=<n>` as SPEC-ADPKUR-001 traces it;
 #                                        `readPayloads` is the JSON of its events' data, values.stream included
 #   calls:<ns>                           the number of transformSeed requests the fake host received
@@ -53,7 +56,7 @@ enforce:
   rejects SEED_TRANSFORM_UNAVAILABLE when the seed-transform host cannot be started at setup()
   rejects SEED_TRANSFORM_FAILED when the host answers transformSeed with an error, does not implement it, ends, or answers with records that differ in number, order, type or stream
   rejects SEED_TRANSFORM_NONDETERMINISTIC when the two answers to one seed call's transformSeed differ
-  rejects SEED_VALUE_UNSTORABLE when a seed record's values, transformed or plain, is not a JSON object or names a stream that is not a non-empty string
+  rejects SEED_VALUE_UNSTORABLE when a seed record's values, transformed or plain, is an object whose stream is not a non-empty string
   nothing of a seed call is appended unless every record of it was transformed and checked
   a transform applies to seeds only, never to what the adapter observes or reads
 
@@ -127,13 +130,25 @@ scenario outline "after a refused seed call the stream holds nothing of it":
     | host     | trace                                                        |
     | "short"  | "setup:a seedmix:a!SEED_TRANSFORM_FAILED read:a:orders=0"           |
     | "random" | "setup:a seedmix:a!SEED_TRANSFORM_NONDETERMINISTIC read:a:orders=0" |
-    | "scalar" | "setup:a seedmix:a!SEED_VALUE_UNSTORABLE read:a:orders=0"           |
+    | "scalar" | "setup:a seedmix:a!SEED_TRANSFORM_FAILED read:a:orders=0"           |
 
-scenario "a transformed record that is not an object is refused":
+scenario "a transform that turns a seed naming a stream into a non-object moves its stream and is refused as a changed identity":
   when: ObserveKurrentSeedTransform { host: "scalar", script: "setup:a seedenc:a:orders:Placed:ab" }
-  predict rejection SEED_VALUE_UNSTORABLE:
-    response ERR SeedTransformError { code: "SEED_VALUE_UNSTORABLE", detail: matching "not a JSON object" }
+  predict rejection SEED_TRANSFORM_FAILED:
+    response ERR SeedTransformError { code: "SEED_TRANSFORM_FAILED", detail: matching "orders" }
     filesystem has []
+
+scenario outline "a plain seed whose values is not an object is appended, as event data, to the stream named by its type":
+  when: ObserveKurrentSeedTransform { host: "none", script: <script> }
+  predict success:
+    response OK SeedTransformResult { trace: <trace>, readPayloads: <payloads> }
+    filesystem has []
+  examples:
+    | script                                      | trace                                       | payloads    |
+    | "setup:a seedraw:a:scalar read:a:Placed"    | "setup:a seedraw:a read:a:Placed=1"         | "[5]"       |
+    | "setup:a seedraw:a:string read:a:Placed"    | "setup:a seedraw:a read:a:Placed=1"         | "[\"x\"]" |
+    | "setup:a seedraw:a:list read:a:Placed"      | "setup:a seedraw:a read:a:Placed=1"         | "[[1]]"     |
+    | "setup:a seedraw:a:null read:a:Placed"      | "setup:a seedraw:a read:a:Placed=1"         | "[null]"    |
 
 scenario outline "a plain seed whose stream is not a non-empty string is refused":
   when: ObserveKurrentSeedTransform { host: "none", script: <script> }

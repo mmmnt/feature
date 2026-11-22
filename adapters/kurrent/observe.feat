@@ -6,6 +6,8 @@ feat 1.0
 # server writes on the first append after a soft delete; and by founder ruling 2026-11-09, Kurrent secure dev node
 # (the test node is secure, not insecure). Amended by founder ruling 2026-11-10 ("Flip it (Recommended)"): the connection string's loopback
 # IP host is connected to as localhost and another IP host with tls=true is refused on Node 26, see SPEC-ADPKUR-004.
+# Amended by founder ruling 57cc575c (2026-11-21, T3): an event's JSON data is reported as stored by capture and read alike,
+# a null data included (it was reported as {}). Agreed by founder decision 6ecd9f57.
 #
 # Amended 2026-11-20, requested by flmnt for FLMNT-SPEC-WSP-006 PurgeStreams; agreed by founder decision 2d6e954c
 # ("Agree once revised (Rec.)") once revised to rulings bcce4098 F2-a "Any max $tb (Rec.)" and F2-b "Flag it hard": a hard
@@ -54,6 +56,9 @@ feat 1.0
 # SPEC-ADPMEM-001. Step added by this amendment:
 #   meta:<ns>:<stream>:maxAge=<n>    the SYSTEM sets <ns>.<stream>'s metadata to { maxAge: n } with its own admin client
 #   tombstone:<ns>:<stream>          the SYSTEM hard-deletes <ns>.<stream> (tombstoneStream) with its own admin client
+#   writenull:<ns>:<stream>:<Type>   the SYSTEM appends one JSON event of <Type> whose data is null (amended by founder ruling
+#                                    57cc575c, 2026-11-21, T3: an event's JSON data is reported as stored, null included,
+#                                    never replaced by {}; `lastPayloads` holds any JSON value)
 # and a `<stream>` may itself hold `:` (flmnt's stream ids do, `<workspace>::domain`): the step's kind and namespace
 # label are its first two fields, a step that takes a type has it as its last field, and the stream is what lies between.
 #
@@ -110,7 +115,7 @@ construct:
   payload: { streamId: <stream>, hard: true }, metadata: { revision, commitPosition } } (ruling bcce4098 F2-b), the
   JSON filter applying to every other event; a soft delete's payload has no `hard`; return everything
   else in commit-position order as CapturedRecord { type: eventType, key: stream name without the namespace prefix,
-  payload: the JSON data, timestamp: the event's created time in ms, metadata: { revision, commitPosition } }.
+  payload: the JSON data as stored, null included (founder ruling 57cc575c, T3), timestamp: the event's created time in ms, metadata: { revision, commitPosition } }.
   peek advances the in-adapter cursor and accumulates; stop returns the accumulation and closes.
   settle(): false with no window open; otherwise append a fence marker to `feat-fence.<ns>`,
   read `$all` from the cursor with prefixes `<ns>.`, `$$<ns>.`, `feat-fence.<ns>` until an event at
@@ -418,3 +423,13 @@ scenario outline "a fault the binding cannot produce faithfully is refused befor
     | "setup:a fault:a:AppendToStream.WRONG_EXPECTED_VERSION:orders:times2" | "times"          |
     | "setup:a fault:a:AppendToStream.STREAM_DELETED:orders"              | "STREAM_DELETED"   |
     | "setup:a fault:a:ReadStream.ACCESS_DENIED:orders"                   | "ReadStream"       |
+
+scenario "an event whose JSON data is null is captured with a null payload, as stored":
+  when: ObserveKurrent { script: "setup:a start:a writenull:a:orders:Placed stop:a" }
+  predict success:
+    response OK ObserveResult {
+      trace: "setup:a start:a writenull:a stop:a=1",
+      last: "orders/Placed",
+      lastPayloads: [null]
+    }
+    filesystem has []

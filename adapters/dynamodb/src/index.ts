@@ -72,6 +72,22 @@ export interface AuthOptions {
   sessionTokenEnv?: string;
 }
 
+async function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const srv = createServer();
+    srv.listen(0, "127.0.0.1", () => {
+      const address = srv.address();
+      if (typeof address === "object" && address) {
+        const port = address.port;
+        srv.close(() => resolve(port));
+      } else {
+        srv.close(() => reject(new Error("could not allocate a port")));
+      }
+    });
+    srv.on("error", reject);
+  });
+}
+
 export interface EphemeralOptions {
   /** Table name inside the scaffolded instrument (default feat-ephemeral). */
   table?: string;
@@ -79,6 +95,10 @@ export interface EphemeralOptions {
   partitionKey?: string;
   /** Sort key attribute (string type). Default "SK"; null for a HASH-only table. */
   sortKey?: string | null;
+  /** The partition key's attribute type, "S" (default) or "N" (SPEC-ADPDDB-001, founder ruling 57cc575c T4). */
+  partitionKeyType?: "S" | "N";
+  /** The sort key's attribute type, "S" (default) or "N" (SPEC-ADPDDB-001, founder ruling 57cc575c T4). */
+  sortKeyType?: "S" | "N";
   /** Container image override (default amazon/dynamodb-local). */
   image?: string;
   /**
@@ -266,22 +286,6 @@ export function mapStreamRecord(r: StreamImageRecord): CapturedRecord {
   };
 }
 
-async function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const srv = createServer();
-    srv.listen(0, "127.0.0.1", () => {
-      const address = srv.address();
-      if (typeof address === "object" && address) {
-        const port = address.port;
-        srv.close(() => resolve(port));
-      } else {
-        srv.close(() => reject(new Error("could not allocate a port")));
-      }
-    });
-    srv.on("error", reject);
-  });
-}
-
 class DynamoAdapter implements FeatServiceAdapter {
   private readonly opts: NonNullable<DynamoAdapterConfig["options"]>;
   private table: string;
@@ -358,11 +362,21 @@ class DynamoAdapter implements FeatServiceAdapter {
           "(install docker, or point options.endpoint at an existing DynamoDB Local) — configuration error.",
       );
     }
-    const port = await freePort();
+    // A free port is picked here and handed to docker (a host-network client reaches only an explicitly mapped port); if
+    // another container takes it first, docker refuses the bind and a fresh port is tried.
     this.container = `feat-ddb-${randomBytes(4).toString("hex")}`;
-    await execFile("docker", [
-      "run", "-d", "--rm", "--name", this.container, "-p", `${port}:8000`, eph.image ?? "amazon/dynamodb-local",
-    ]);
+    let port = 0;
+    for (let attempt = 1; ; attempt++) {
+      port = await freePort();
+      try {
+        await execFile("docker", ["run", "-d", "--rm", "--name", this.container, "-p", `${port}:8000`, eph.image ?? "amazon/dynamodb-local"]);
+        break;
+      } catch (e) {
+        const taken = /address already in use|port is already allocated|ports are not available/i.test(String((e as { stderr?: string }).stderr ?? e));
+        await execFile("docker", ["rm", "-f", "-v", this.container]).catch(() => {});
+        if (!taken || attempt >= 5) throw e;
+      }
+    }
     const clientOpts = {
       region: "us-east-1",
       endpoint: `http://127.0.0.1:${port}`,
@@ -401,8 +415,8 @@ class DynamoAdapter implements FeatServiceAdapter {
       new CreateTableCommand({
         TableName: this.table,
         AttributeDefinitions: [
-          { AttributeName: pk, AttributeType: "S" },
-          ...(sk ? [{ AttributeName: sk, AttributeType: "S" as const }] : []),
+          { AttributeName: pk, AttributeType: eph.partitionKeyType ?? "S" },
+          ...(sk ? [{ AttributeName: sk, AttributeType: eph.sortKeyType ?? "S" }] : []),
         ],
         KeySchema: [
           { AttributeName: pk, KeyType: "HASH" },
@@ -837,10 +851,15 @@ class DynamoAdapter implements FeatServiceAdapter {
       const v = r.values as unknown;
       if (v === null || typeof v !== "object" || Array.isArray(v))
         throw new DynamoAdapterError("SEED_VALUE_UNSTORABLE", `the ${r.type} seed's values are not an item (a map of attributes): ${JSON.stringify(v)}`);
+      // SPEC-ADPDDB-003, founder ruling 99212372 (S3): each key attribute has the type the table's key schema declares.
       for (const k of this.keyNames()) {
         const x = (v as Record<string, unknown>)[k];
-        if (!((typeof x === "string" && x !== "") || (typeof x === "number" && Number.isFinite(x))))
-          throw new DynamoAdapterError("SEED_VALUE_UNSTORABLE", `${describe(r)}: the key attribute ${k} must be a non-empty string or a finite number; got ${x === undefined ? "nothing" : JSON.stringify(x)}`);
+        const type = this.keySchema.find((e) => e.name === k)?.type ?? "";
+        const fits = type === "S" ? typeof x === "string" && x !== "" : type === "N" ? typeof x === "number" && Number.isFinite(x) : false;
+        if (!fits) {
+          const want = type === "S" ? "a non-empty string" : type === "N" ? "a finite number" : "binary, which a JSON seed cannot state";
+          throw new DynamoAdapterError("SEED_VALUE_UNSTORABLE", `${describe(r)}: the key attribute ${k} is an ${type || "untyped"} key in the table, so it must be ${want}; got ${x === undefined ? "nothing" : JSON.stringify(x)}`);
+        }
       }
       const bad = badNumber(v, "");
       if (bad !== undefined)
