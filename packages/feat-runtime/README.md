@@ -545,7 +545,7 @@ before the case has any effect. None is a silent pass.
 | `NAMESPACE_NOT_HONOURED` | An adapter reports a namespace other than the one delivered, or none. | A service adapter at setup. The response adapter after the invoke. |
 | `NAMESPACE_CONFIGURED` | The response config or a service's `options` carries a `namespace` key. | `createHarness`, after the config loads |
 | `SEED_UNSUPPORTED` | A case seeds a service whose adapter has no `seed()`. `service` is set. | The case, before it runs |
-| `DELIVER_UNSUPPORTED` | A case delivers an event to a service whose adapter has no `deliver()`. `service` is set. | The case, before the capture window closes |
+| `DELIVER_UNSUPPORTED` | A case delivers an event to a target that has no `deliver()`: a service whose adapter lacks it, or `to response` when the response adapter lacks it or none is configured (ADR-0036). `service` is the target. | The case, before the capture window closes |
 | `NO_ENVIRONMENT` | `resolveEnvironment` finds neither `config.environment`, `FEAT_ENVIRONMENT` nor `ENVIRONMENT`. | `resolveEnvironment` |
 | `INVALID_CONFIG` | A module named as an adapter cannot be resolved, cannot be loaded, or exports no `createAdapter`. | `importAdapter` |
 | `ROUTE_UNLOADABLE` | The response adapter's `setup()` threw an error with this code: a route the file invokes cannot be loaded (SPEC-RT-008, SPEC-ADPHND-003). The message is the adapter's. | `createHarness`, at the response adapter's setup |

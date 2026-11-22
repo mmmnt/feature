@@ -449,8 +449,14 @@ export async function createHarness(opts: { configPath: string; specPath?: strin
     // window; the delivered stimuli themselves are excluded from capture by the adapter.
     const sentDelivers: Array<Record<string, unknown>> = [];
     for (const d of c.delivers ?? []) {
-      const adapter = services.get(d.service);
-      if (!adapter) throw new Error(`${c.anchor}: deliver targets unknown service '${d.service}'`);
+      // ADR-0036: `to response` hands the event to the response adapter (its invoke host), so a
+      // policy spec runs on real stores without a service that accepts delivery.
+      const adapter = d.service === "response" ? response : services.get(d.service);
+      if (!adapter) {
+        if (d.service === "response")
+          throw new HarnessConfigurationError("DELIVER_UNSUPPORTED", `${c.anchor}: 'deliver … to response' needs a response adapter — none is configured.`, "response");
+        throw new Error(`${c.anchor}: deliver targets unknown service '${d.service}'`);
+      }
       if (!adapter.deliver)
         throw new HarnessConfigurationError("DELIVER_UNSUPPORTED", `${c.anchor}: adapter for '${d.service}' does not support deliver().`, d.service);
       // A delivered stimulus may also name what a precondition produced.

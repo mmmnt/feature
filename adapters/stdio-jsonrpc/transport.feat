@@ -44,6 +44,10 @@ feat 1.0
 # 2026-11-21, T2). Agreed by founder decision 6ecd9f57. Its scenarios drive the shared fake transform host
 # adapters/stdio-jsonrpc/fixtures/seed-host.mjs (modes as SPEC-ADPNEO-005 lists them), also inside touches.
 
+# AMENDED by founder rulings aee7d787 and 28f7d2d6, agreed b680b51c (ADR-0036): the response role delivers an event a
+# scenario sends `to response` with the existing `deliver` method, `service: "response"`; a host that serves no such
+# delivery answers an error, relayed as HOST_ERROR. No schema change; the version stays 2.
+
 spec SPEC-RPC-001 "Exchange one request with a spec host"
 context Toolchain
 aggregate Host
@@ -324,6 +328,18 @@ scenario "an answer that carries both result and error is a protocol violation":
   when: Exchange { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "both"] }, method: "reset", params: {} }
   predict rejection PROTOCOL_VIOLATION:
     response ERR ExchangeError { code: "PROTOCOL_VIOLATION", hostSpawned: true, hostAlive: false }
+    filesystem has []
+
+scenario "a delivery to the response role is a deliver whose service is response":
+  when: Exchange { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, method: "deliver", params: { service: "response", event: "deletion.started", payload: { n: 1 } } }
+  predict success:
+    response OK ExchangeResult { method: "deliver", sent: { method: "deliver", params: { service: "response", event: "deletion.started", payload: { n: 1 } } }, hostSpawned: true, hostAlive: false, result: {} }
+    filesystem has []
+
+scenario "a host that serves no response-role delivery answers an error, relayed as HOST_ERROR":
+  when: Exchange { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "no-response-deliver"] }, method: "deliver", params: { service: "response", event: "deletion.started", payload: { n: 1 } } }
+  predict rejection HOST_ERROR:
+    response ERR ExchangeError { code: "HOST_ERROR", rpcCode: -32601, message: "Method not found: deliver to response", hostSpawned: true, hostAlive: false }
     filesystem has []
 
 scenario "a JSON-RPC error from the host is relayed verbatim":

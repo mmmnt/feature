@@ -181,6 +181,9 @@ export async function loadConfig(input: LoadConfigInput): Promise<CapturedRespon
 
   const config = doc as { services: Record<string, ServiceConfig> };
   for (const [key, svc] of Object.entries(config.services)) {
+    // ADR-0036: `deliver … to response` names the response role, so no service may take that key.
+    if (key === "response")
+      return err("INVALID_CONFIG", `Service key 'response' is reserved: 'deliver … to response' names the response role.`, { detail: key });
     if (svc.consistency === "eventual" && svc.convergenceTimeout === undefined) {
       return err(
         "MISSING_CONVERGENCE_TIMEOUT",

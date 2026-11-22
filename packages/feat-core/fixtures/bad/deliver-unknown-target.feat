@@ -1,0 +1,24 @@
+feat 1.0
+
+spec SPEC-BAD-135 "a deliver names neither response nor a configured service"
+context Bad
+aggregate Thing
+type policy
+status draft
+observes eventStore
+
+construct:
+  handler at src/react.ts
+  touches src/**
+
+enforce:
+  react to the thing
+
+contract:
+  event ThingResult
+
+scenario "the policy reacts to an event its host receives":
+  deliver ThingHappened { id: "t-1" } to response
+  deliver ThingNoted { id: "t-1" } to cash
+  predict success:
+    eventStore has []

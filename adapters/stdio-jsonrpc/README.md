@@ -134,7 +134,7 @@ line on stdout is a `PROTOCOL_VIOLATION`.
 | `stopCapture` | `{ service }` | `CapturedRecord[]` | service roles |
 | `settle` | `{ service }` | `{ settled: boolean }` | service roles |
 | `read` | `{ service, query }` | `null` or an array of objects | service roles |
-| `deliver` | `{ service, event, payload }` | `{}` | service roles |
+| `deliver` | `{ service, event, payload }` | `{}` | service roles; the response role with `service: "response"` for a scenario's `deliver … to response` (ADR-0036) |
 | `fault` | `{ service, kind, times? \| untilReset?, detail? }` | `{}` | service roles |
 
 - A `CapturedRecord` is `{ type, key?, payload, timestamp, metadata? }`.

@@ -80,6 +80,11 @@ async function canned(req) {
     }
     case "read":
       return { result: [{ n: 1 }] };
+    case "deliver":
+      // ADR-0036: a host that serves no response-role delivery answers it method-not-found.
+      if (mode === "no-response-deliver" && p.service === "response") return { error: { code: -32601, message: "Method not found: deliver to response" } };
+      log(`deliver ${p.service} ${p.event}`);
+      return { result: {} };
     default:
       return { result: {} };
   }

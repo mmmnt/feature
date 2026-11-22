@@ -1,0 +1,65 @@
+{
+  "featVersion": "1.0",
+  "identity": {
+    "id": "SPEC-OK-202",
+    "name": "a policy delivers to its response host and to a service in one sequence",
+    "context": "Ok",
+    "aggregate": "Thing",
+    "type": "policy",
+    "status": "draft"
+  },
+  "observes": [
+    "eventStore"
+  ],
+  "construct": [
+    {
+      "kind": "handler",
+      "path": "src/react.ts"
+    },
+    {
+      "kind": "touches",
+      "glob": "src/**"
+    }
+  ],
+  "enforce": [
+    {
+      "kind": "constraint",
+      "text": "react to the thing"
+    }
+  ],
+  "contract": [
+    {
+      "kind": "event",
+      "schemaName": "ThingResult"
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "the policy reacts to an event its host receives",
+      "delivers": [
+        {
+          "event": "ThingHappened",
+          "payload": {
+            "id": "t-1"
+          },
+          "service": "response"
+        },
+        {
+          "event": "ThingNoted",
+          "payload": {
+            "id": "t-1"
+          },
+          "service": "eventStore"
+        }
+      ],
+      "prediction": {
+        "type": "success",
+        "services": {
+          "eventStore": {
+            "records": []
+          }
+        }
+      }
+    }
+  ]
+}
