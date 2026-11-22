@@ -348,7 +348,7 @@ class DynamoAdapter implements FeatServiceAdapter {
     // Docker picks the host port: a port chosen here and handed to docker can be taken by another container first.
     this.container = `feat-ddb-${randomBytes(4).toString("hex")}`;
     await execFile("docker", [
-      "run", "-d", "--rm", "--name", this.container, "-p", "127.0.0.1::8000", eph.image ?? "amazon/dynamodb-local",
+      "run", "-d", "--rm", "--name", this.container, "-p", "8000", eph.image ?? "amazon/dynamodb-local",
     ]);
     const mapped = (await execFile("docker", ["port", this.container, "8000/tcp"])).stdout.split("\n")[0] ?? "";
     const port = Number(mapped.slice(mapped.lastIndexOf(":") + 1));
