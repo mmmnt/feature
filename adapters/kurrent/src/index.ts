@@ -558,7 +558,7 @@ class KurrentAdapter implements FeatServiceAdapter {
       this.captured.push({
         type: event.type,
         key,
-        payload: (event.data ?? {}) as Record<string, unknown>,
+        payload: event.data as Record<string, unknown>, // the JSON data as stored, null included (founder ruling 57cc575c, T3)
         timestamp,
         metadata: meta,
       });
@@ -660,7 +660,7 @@ class KurrentAdapter implements FeatServiceAdapter {
           records.push({
             type: event.type,
             key: name.slice(this.prefix.length),
-            payload: (event.data ?? {}) as Record<string, unknown>,
+            payload: event.data as Record<string, unknown>, // the JSON data as stored, null included (founder ruling 57cc575c, T3)
             timestamp: new Date(event.created).getTime(),
             metadata: { revision: Number(event.revision) },
           });
@@ -678,7 +678,7 @@ class KurrentAdapter implements FeatServiceAdapter {
   async seed(records: SeedRecord[]): Promise<void> {
     // SPEC-ADPKUR-006: the transform (asked twice), then every record checked, before the first append; a record's
     // identity is its type and its stream.
-    const streamOf = (r: SeedRecord): unknown => (r.values !== null && typeof r.values === "object" && "stream" in r.values ? r.values.stream : r.type);
+    const streamOf = (r: SeedRecord): unknown => (r.values !== null && typeof r.values === "object" && !Array.isArray(r.values) && "stream" in r.values ? r.values.stream : r.type);
     if (this.transformer !== undefined) {
       const t = this.transformer;
       const id: SeedIdentity = {
@@ -687,17 +687,17 @@ class KurrentAdapter implements FeatServiceAdapter {
       };
       records = await translateAsync(() => t.transform(records, id));
     }
+    // SPEC-ADPKUR-006, founder ruling 99212372 (S2): values may be any JSON value; only an object can name a stream.
+    const isObject = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
     for (const r of records) {
       const v = r.values as unknown;
-      if (v === null || typeof v !== "object" || Array.isArray(v)) {
-        throw new KurrentAdapterError("SEED_VALUE_UNSTORABLE", `the ${r.type} seed's values are not a JSON object: ${JSON.stringify(v)}`);
-      }
-      if ("stream" in (v as object) && (typeof (v as { stream: unknown }).stream !== "string" || (v as { stream: string }).stream === "")) {
-        throw new KurrentAdapterError("SEED_VALUE_UNSTORABLE", `the ${r.type} seed's values.stream must be a non-empty string; got ${JSON.stringify((v as { stream: unknown }).stream)}`);
+      if (isObject(v) && "stream" in v && (typeof v.stream !== "string" || v.stream === "")) {
+        throw new KurrentAdapterError("SEED_VALUE_UNSTORABLE", `the ${r.type} seed's values.stream must be a non-empty string; got ${JSON.stringify(v.stream)}`);
       }
     }
     for (const r of records) {
-      const stream = typeof r.values.stream === "string" ? r.values.stream : r.type;
+      const v = r.values as unknown;
+      const stream = isObject(v) && typeof v.stream === "string" ? v.stream : r.type;
       await this.db().appendToStream(this.full(stream), jsonEvent({ type: r.type, data: r.values as never }), { streamState: ANY });
     }
   }

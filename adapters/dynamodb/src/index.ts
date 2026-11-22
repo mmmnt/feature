@@ -79,6 +79,10 @@ export interface EphemeralOptions {
   partitionKey?: string;
   /** Sort key attribute (string type). Default "SK"; null for a HASH-only table. */
   sortKey?: string | null;
+  /** The partition key's attribute type, "S" (default) or "N" (SPEC-ADPDDB-001, founder ruling 57cc575c T4). */
+  partitionKeyType?: "S" | "N";
+  /** The sort key's attribute type, "S" (default) or "N" (SPEC-ADPDDB-001, founder ruling 57cc575c T4). */
+  sortKeyType?: "S" | "N";
   /** Container image override (default amazon/dynamodb-local). */
   image?: string;
   /**
@@ -401,8 +405,8 @@ class DynamoAdapter implements FeatServiceAdapter {
       new CreateTableCommand({
         TableName: this.table,
         AttributeDefinitions: [
-          { AttributeName: pk, AttributeType: "S" },
-          ...(sk ? [{ AttributeName: sk, AttributeType: "S" as const }] : []),
+          { AttributeName: pk, AttributeType: eph.partitionKeyType ?? "S" },
+          ...(sk ? [{ AttributeName: sk, AttributeType: eph.sortKeyType ?? "S" }] : []),
         ],
         KeySchema: [
           { AttributeName: pk, KeyType: "HASH" },
@@ -837,10 +841,15 @@ class DynamoAdapter implements FeatServiceAdapter {
       const v = r.values as unknown;
       if (v === null || typeof v !== "object" || Array.isArray(v))
         throw new DynamoAdapterError("SEED_VALUE_UNSTORABLE", `the ${r.type} seed's values are not an item (a map of attributes): ${JSON.stringify(v)}`);
+      // SPEC-ADPDDB-003, founder ruling 99212372 (S3): each key attribute has the type the table's key schema declares.
       for (const k of this.keyNames()) {
         const x = (v as Record<string, unknown>)[k];
-        if (!((typeof x === "string" && x !== "") || (typeof x === "number" && Number.isFinite(x))))
-          throw new DynamoAdapterError("SEED_VALUE_UNSTORABLE", `${describe(r)}: the key attribute ${k} must be a non-empty string or a finite number; got ${x === undefined ? "nothing" : JSON.stringify(x)}`);
+        const type = this.keySchema.find((e) => e.name === k)?.type ?? "";
+        const fits = type === "S" ? typeof x === "string" && x !== "" : type === "N" ? typeof x === "number" && Number.isFinite(x) : false;
+        if (!fits) {
+          const want = type === "S" ? "a non-empty string" : type === "N" ? "a finite number" : "binary, which a JSON seed cannot state";
+          throw new DynamoAdapterError("SEED_VALUE_UNSTORABLE", `${describe(r)}: the key attribute ${k} is an ${type || "untyped"} key in the table, so it must be ${want}; got ${x === undefined ? "nothing" : JSON.stringify(x)}`);
+        }
       }
       const bad = badNumber(v, "");
       if (bad !== undefined)

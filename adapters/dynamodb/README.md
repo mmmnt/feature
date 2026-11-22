@@ -306,7 +306,9 @@ DynamoDB engine, not a mock.
 | --- | --- | --- |
 | `table` | `"feat-ephemeral"` | Table name in the instrument. |
 | `partitionKey` | `"PK"` | Partition key attribute, a string. |
-| `sortKey` | `"SK"` | Sort key attribute, a string. `null` makes a hash-only table. |
+| `sortKey` | `"SK"` | Sort key attribute. `null` makes a hash-only table. |
+| `partitionKeyType` | `"S"` | The partition key's type, `"S"` or `"N"`. A namespace needs `"S"`, since it prefixes the partition key. |
+| `sortKeyType` | `"S"` | The sort key's type, `"S"` or `"N"`. |
 | `image` | `"amazon/dynamodb-local"` | Container image. Pin a tag in CI. |
 | `exposeEnv` | none | Names of environment variables to publish the instrument's table and endpoint under, so in-process handlers read them as the deployed code will. Restored at teardown. |
 

@@ -122,7 +122,8 @@ export class SeedTransform {
     sent.forEach((s, i) => {
       const g = got[i]!;
       if (g.type !== s.type) throw new SeedTransformError("SEED_TRANSFORM_FAILED", `record ${i} (${id.describe(s)}) came back as type '${g.type}'`);
-      if (g.values !== null && typeof g.values === "object" && !Array.isArray(g.values) && canonicalJson(id.identity(g)) !== canonicalJson(id.identity(s)))
+      // Founder ruling 57cc575c (T2): identity is compared for every answer, whatever its values are.
+      if (canonicalJson(id.identity(g)) !== canonicalJson(id.identity(s)))
         throw new SeedTransformError("SEED_TRANSFORM_FAILED", `record ${i} (${id.describe(s)}) came back with another identity: ${canonicalJson(id.identity(g))}`);
     });
   }

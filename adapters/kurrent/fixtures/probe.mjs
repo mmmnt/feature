@@ -430,6 +430,7 @@ async function run(input, mode) {
           break;
         case "write":
         case "writenew":
+        case "writenull":
         case "writeuser": {
           dirty.add(adapter(l));
           const stream = `${nsOf(l)}.${a}`;
@@ -441,7 +442,7 @@ async function run(input, mode) {
             outcome = await peerAppend(env, { cs, stream, type: b, state });
           } else {
             try {
-              await writerFor(kind === "writeuser" ? "writer" : "admin").appendToStream(stream, jsonEvent({ type: b, data: {} }), { streamState: state === "nostream" ? NO_STREAM : ANY });
+              await writerFor(kind === "writeuser" ? "writer" : "admin").appendToStream(stream, jsonEvent({ type: b, data: kind === "writenull" ? null : {} }), { streamState: state === "nostream" ? NO_STREAM : ANY });
               outcome = "ok";
             } catch (e) {
               outcome = { type: e.type ?? "unknown", code: e.code };
@@ -544,9 +545,9 @@ async function run(input, mode) {
           trace.push(`seedmix:${l}`);
           break;
         case "seedraw": {
-          const stream = { streamnum: 1, streamempty: "" }[a];
+          const values = { streamnum: { stream: 1 }, streamempty: { stream: "" }, scalar: 5, string: "x", list: [1], null: null }[a];
           dirty.add(adapter(l));
-          await adapter(l).seed([{ type: "Placed", values: { stream } }]);
+          await adapter(l).seed([{ type: "Placed", values }]);
           trace.push(`seedraw:${l}`);
           break;
         }
