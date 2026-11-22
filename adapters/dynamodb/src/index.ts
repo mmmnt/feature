@@ -21,7 +21,6 @@
 // lags the writes that cause it. AWS SDK v3 clients are real dependencies:
 // DynamoDB requires SigV4 signing.
 import { execFile as execFileCb, execFileSync } from "node:child_process";
-import { createServer } from "node:net";
 import { parseSeedTransform, SeedTransform, SeedTransformError } from "@mmmnt/feat-adapter-stdio-jsonrpc";
 import type { HostRegistry, SeedIdentity } from "@mmmnt/feat-adapter-stdio-jsonrpc";
 import { randomBytes } from "node:crypto";
@@ -270,22 +269,6 @@ export function mapStreamRecord(r: StreamImageRecord): CapturedRecord {
   };
 }
 
-async function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const srv = createServer();
-    srv.listen(0, "127.0.0.1", () => {
-      const address = srv.address();
-      if (typeof address === "object" && address) {
-        const port = address.port;
-        srv.close(() => resolve(port));
-      } else {
-        srv.close(() => reject(new Error("could not allocate a port")));
-      }
-    });
-    srv.on("error", reject);
-  });
-}
-
 class DynamoAdapter implements FeatServiceAdapter {
   private readonly opts: NonNullable<DynamoAdapterConfig["options"]>;
   private table: string;
@@ -362,11 +345,14 @@ class DynamoAdapter implements FeatServiceAdapter {
           "(install docker, or point options.endpoint at an existing DynamoDB Local) — configuration error.",
       );
     }
-    const port = await freePort();
+    // Docker picks the host port: a port chosen here and handed to docker can be taken by another container first.
     this.container = `feat-ddb-${randomBytes(4).toString("hex")}`;
     await execFile("docker", [
-      "run", "-d", "--rm", "--name", this.container, "-p", `${port}:8000`, eph.image ?? "amazon/dynamodb-local",
+      "run", "-d", "--rm", "--name", this.container, "-p", "127.0.0.1::8000", eph.image ?? "amazon/dynamodb-local",
     ]);
+    const mapped = (await execFile("docker", ["port", this.container, "8000/tcp"])).stdout.split("\n")[0] ?? "";
+    const port = Number(mapped.slice(mapped.lastIndexOf(":") + 1));
+    if (!Number.isInteger(port) || port <= 0) throw new Error(`@mmmnt/feat-adapter-dynamodb: could not read the instrument's port (${mapped})`);
     const clientOpts = {
       region: "us-east-1",
       endpoint: `http://127.0.0.1:${port}`,
