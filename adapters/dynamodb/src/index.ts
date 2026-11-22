@@ -373,7 +373,7 @@ class DynamoAdapter implements FeatServiceAdapter {
         break;
       } catch (e) {
         const taken = /address already in use|port is already allocated|ports are not available/i.test(String((e as { stderr?: string }).stderr ?? e));
-        await execFile("docker", ["rm", "-f", this.container]).catch(() => {});
+        await execFile("docker", ["rm", "-f", "-v", this.container]).catch(() => {});
         if (!taken || attempt >= 5) throw e;
       }
     }
