@@ -2,7 +2,8 @@
 
 - **Status:** Draft
 - **Rulings:** flmnt founder ruling `814db4fb-8c72-577a-9f9e-132ec6916422` (2026-11-22, "Feature change (Recommended)"), the
-  mechanism for flmnt ruling `10d35eb4-a501-5547-b264-84224be37944` (a spec host reports what a delivered policy issued).
+  mechanism for flmnt ruling `10d35eb4-a501-5547-b264-84224be37944` (a spec host reports what a delivered policy issued);
+  DA1–DA4 ruled `78c4b277-1afa-5363-bc0c-b7bbe9286caa`.
 - **Amends:** SPEC-RT-016 (harness deliver), SPEC-RPC-001 (the `deliver` result), ADR-0036.
 
 ## Context
@@ -19,15 +20,18 @@ reads three refusals of CompleteDeletion, and a dropped empty-purge check went u
 1. The response adapter's optional `deliver(event, payload)` may answer a `CapturedResponse`. When the target is
    `response` and it answers one, the harness keeps it as the case's captured response, and a `response` prediction
    is compared against it exactly as against a `when:` answer.
-2. One response per case: the last delivery to response that answered one. A later delivery that answers nothing does
-   not clear it.
-3. A service's answer to a delivery is never the case's response.
-4. A response predicted when no delivery to response answered fails as every case already does: `response: no response
-   captured`. No new refusal code.
-5. Protocol (SPEC-RPC-001): `deliver`'s result is either empty, as before, or the invoke result's shape `{ status, body,
-   headers?, metadata? }`. Any other shape violates the closed result. This only widens the result: every existing host's
-   `{}` conforms, and the protocol stays version 2.
-6. No grammar change. A policy scenario could already write a `response` line; it now has something to compare against.
+2. One response per case (DA1): the last delivery to response that answered one. A later delivery that answers nothing
+   does not clear it.
+3. A host may answer a delivery to any role (DA4). The harness keeps only the response role's answer; a service's
+   answer is never the case's response.
+4. A response predicted when no delivery to response answered fails as every case already does (DA2): `response: no
+   response captured`. No new refusal code.
+5. Protocol (SPEC-RPC-001): `deliver`'s result, for a delivery to any role, is either empty, as before, or the invoke
+   result's shape `{ status, body, headers?, metadata? }`. Any other shape violates the closed result. This only widens the
+   result: every existing host's `{}` conforms, and the protocol stays version 2.
+6. What the body carries is the host's own business. flmnt's answers `{ issued: [ { context, command, status, body } ] }`,
+   each issued command with its whole reply body (DA3).
+7. No grammar change. A policy scenario could already write a `response` line; it now has something to compare against.
 
 ## Rejected alternatives
 

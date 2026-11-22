@@ -17,12 +17,14 @@ feat 1.0
 # (SPEC-CORE-001).
 #
 # Amended (ADR-0037; flmnt founder ruling 814db4fb-8c72-577a-9f9e-132ec6916422, 2026-11-22, "Feature change (Recommended)", the mechanism for ruling
-# 10d35eb4-a501-5547-b264-84224be37944 — a spec host reports what a delivered policy issued): what the response role
+# 10d35eb4-a501-5547-b264-84224be37944 — a spec host reports what a delivered policy issued; DA1 and DA2 ruled
+# 78c4b277-1afa-5363-bc0c-b7bbe9286caa): what the response role
 # answers to a delivery is the case's captured response, so a delivery-only case can predict `response` like a
 # `when:` case does. A case has no `when:` beside its deliveries (TRIGGER_MISMATCH, ADR-0011), so there is one
-# response per case: the answer of the last delivery to response that answered one. A delivery to a service is
-# never a response, whatever its adapter returns. A response predicted when nothing delivered to response answered is
-# the prediction failure every case already has: "no response captured". A response adapter's deliver() that answers
+# response per case: the answer of the last delivery to response that answered one, and a later delivery that answers
+# nothing does not clear it (DA1). A delivery to a service is never a response, whatever its adapter returns: a host
+# may answer every delivery (DA4), and the harness keeps the response role's alone. A response predicted when nothing delivered to response answered is
+# the prediction failure every case already has: "no response captured" (DA2). A response adapter's deliver() that answers
 # nothing leaves the case as before, so every existing host and spec runs unchanged.
 #
 # Driven through packages/feat-runtime/fixtures/harness/probe.mjs `RunHarnessCase` (SPEC-RT-002): its stub

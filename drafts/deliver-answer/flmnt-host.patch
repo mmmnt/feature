@@ -1,8 +1,8 @@
 diff --git a/crates/flmnt-feat-host/src/host.rs b/crates/flmnt-feat-host/src/host.rs
-index eca5be9..51b69df 100644
+index eca5be9..df00e34 100644
 --- a/crates/flmnt-feat-host/src/host.rs
 +++ b/crates/flmnt-feat-host/src/host.rs
-@@ -1313,9 +1313,17 @@ impl Host {
+@@ -1313,10 +1313,15 @@ impl Host {
          // carries (FLMNT-HELD-58, flmnt decision 23eac814); an entry with no actor is delivered with no connection
          let payload = params["payload"].clone();
          let connection = self.delivered_connection(&payload);
@@ -10,21 +10,20 @@ index eca5be9..51b69df 100644
          for handle in handles {
              self.run_with(handle, payload.clone(), None, connection.clone())?;
          }
-+        // Feature ADR-0037 (flmnt founder ruling 10d35eb4): a delivery to the response role answers what the policies
-+        // issued, in order, with each command's status and refusal code, so a spec can predict it; a delivery to a
-+        // service answers nothing, as before.
+-        Ok(json!({}))
++        // Feature ADR-0037 (flmnt founder rulings 10d35eb4, 78c4b277): a delivery answers what the policies issued, in
++        // order, each command with its status and whole reply body (DA3), whichever role delivered it (DA4); the harness
++        // keeps only the response role's answer as the case's response.
 +        let issued = flmnt_kernel::registration::take_issued();
-+        if params["service"].as_str() == Some("response") {
-+            return Ok(json!({ "status": 200, "body": { "issued": issued } }));
-+        }
-         Ok(json!({}))
++        Ok(json!({ "status": 200, "body": { "issued": issued } }))
      }
  
+     /// The connection a delivered entry's actor names: a declared connection with that actor, or, when none is
 diff --git a/crates/flmnt-kernel/src/registration.rs b/crates/flmnt-kernel/src/registration.rs
-index dabb56d..c09c524 100644
+index dabb56d..31e056e 100644
 --- a/crates/flmnt-kernel/src/registration.rs
 +++ b/crates/flmnt-kernel/src/registration.rs
-@@ -291,5 +291,36 @@ pub async fn issue(
+@@ -291,5 +291,35 @@ pub async fn issue(
      let command = COMMANDS
          .iter()
          .find(|c| c.context == context && c.name == name)?;
@@ -35,26 +34,25 @@ index dabb56d..c09c524 100644
 +}
 +
 +/// What one in-process [`issue`] answered, as the spec host reports a delivered policy's outcomes (Feature ADR-0037;
-+/// flmnt founder ruling 10d35eb4): the command's context and name, its status, and the refusal's code when it refused.
++/// flmnt founder rulings 10d35eb4 and 78c4b277 DA3, "Whole reply body"): the command's context and name, its status, and
++/// the whole body it answered (null when it answered none).
 +#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 +pub struct Issued {
 +    pub context: String,
 +    pub command: String,
 +    pub status: Value,
-+    #[serde(skip_serializing_if = "Option::is_none")]
-+    pub code: Option<String>,
++    pub body: Value,
 +}
 +
 +static ISSUED: std::sync::Mutex<Vec<Issued>> = std::sync::Mutex::new(Vec::new());
 +
 +fn record_issued(context: &str, name: &str, reply: &Reply) {
-+    let code = reply
-+        .body
-+        .as_ref()
-+        .and_then(|b| b.get("code"))
-+        .and_then(Value::as_str)
-+        .map(str::to_owned);
-+    let issued = Issued { context: context.to_owned(), command: name.to_owned(), status: reply.status.clone(), code };
++    let issued = Issued {
++        context: context.to_owned(),
++        command: name.to_owned(),
++        status: reply.status.clone(),
++        body: reply.body.clone().unwrap_or(Value::Null),
++    };
 +    ISSUED.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(issued);
 +}
 +
