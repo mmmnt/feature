@@ -1,0 +1,17 @@
+diff --git a/packages/feat-runtime/load-config.feat b/packages/feat-runtime/load-config.feat
+index c57715a..40d74b5 100644
+--- a/packages/feat-runtime/load-config.feat
++++ b/packages/feat-runtime/load-config.feat
+@@ -24,6 +24,7 @@ enforce:
+   rejects CONFIG_NOT_FOUND when no file exists at the given path
+   validate the parsed document against the config JSON Schema
+   rejects INVALID_CONFIG when schema validation fails
++  rejects INVALID_CONFIG when a service is named response, the reserved deliver target of the response role (ADR-0036)
+   rejects MISSING_CONVERGENCE_TIMEOUT when a service declares eventual consistency without a convergenceTimeout
+   return the validated config
+ 
+@@ -72,3 +73,4 @@ scenario outline "schema-invalid configs are rejected":
+     | "packages/feat-runtime/fixtures/empty-commands.config.json" | "commands"      |
+     | "packages/feat-runtime/fixtures/not-json.config.json"       | "JSON"          |
+     | "packages/feat-runtime/fixtures/bad-environment.config.json"| "environment"   |
++    | "packages/feat-runtime/fixtures/reserved-response.config.json"| "^response$"   |

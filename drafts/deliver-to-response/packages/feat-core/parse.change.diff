@@ -1,0 +1,31 @@
+diff --git a/packages/feat-core/parse.feat b/packages/feat-core/parse.feat
+index 3e37e58..66ed3e5 100644
+--- a/packages/feat-core/parse.feat
++++ b/packages/feat-core/parse.feat
+@@ -137,6 +137,7 @@ enforce:
+   rejects QUERY_SIDE_EFFECT when a query spec predicts any service write
+   rejects INCOMPLETE_PREDICTION when a non-query prediction omits a configured service, or, when the spec declares observes, an observed one
+   rejects UNOBSERVED_SERVICE when a spec that declares observes names, in a prediction, seed, deliver, fault or capture reference, a configured service it does not observe
++  accept `deliver … to response` as the response role, never a service reference (ADR-0036)
+   rejects UNKNOWN_SERVICE_KEY when an observes line names a service absent from the config services
+   rejects MALFORMED_SYNTAX when an observes line names no service, names one twice, has an empty item, or is written twice
+   rejects MISSING_MINIMUM when a spec lacks the required minimum sections
+@@ -291,6 +292,18 @@ scenario outline "refuses an observes declaration that is not well formed or nam
+     | "packages/feat-core/fixtures/bad/observes-trailing-comma.feat" | "MALFORMED_SYNTAX"  | "^Write 'observes <service>, <service>'" |
+     | "packages/feat-core/fixtures/bad/observes-twice.feat"        | "MALFORMED_SYNTAX"    | "^Write 'observes <service>, <service>'" |
+ 
++scenario "a delivery to response names the response role, so it is neither an unknown nor an unobserved service":
++  when: Parse { spec: "packages/feat-core/fixtures/ok/deliver-response.feat", config: "packages/feat-core/fixtures/parse-observes.config.json" }
++  predict success:
++    response OK BuiltSpec equals fixture "../../packages/feat-core/fixtures/ok/deliver-response.ir.json"
++    filesystem has []
++
++scenario "a delivery to a target that is neither response nor a configured service is refused":
++  when: Parse { spec: "packages/feat-core/fixtures/bad/deliver-unknown-target.feat", config: "packages/feat-core/fixtures/parse-observes.config.json" }
++  predict rejection UNKNOWN_SERVICE_KEY:
++    response ERR ParseError { code: "UNKNOWN_SERVICE_KEY", message: matching "'cash'", hint: matching "^Configured services: eventStore, cache, log" }
++    filesystem has []
++
+ scenario outline "refuses a service the spec uses but does not observe, naming it and the observed ones":
+   when: Parse { spec: <spec>, config: "packages/feat-core/fixtures/parse-observes.config.json" }
+   predict rejection UNOBSERVED_SERVICE:

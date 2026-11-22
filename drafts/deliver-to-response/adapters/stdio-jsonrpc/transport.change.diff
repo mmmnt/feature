@@ -1,0 +1,23 @@
+diff --git a/adapters/stdio-jsonrpc/transport.feat b/adapters/stdio-jsonrpc/transport.feat
+index 3ec1a3d..ec5958a 100644
+--- a/adapters/stdio-jsonrpc/transport.feat
++++ b/adapters/stdio-jsonrpc/transport.feat
+@@ -326,6 +326,18 @@ scenario "an answer that carries both result and error is a protocol violation":
+     response ERR ExchangeError { code: "PROTOCOL_VIOLATION", hostSpawned: true, hostAlive: false }
+     filesystem has []
+ 
++scenario "a delivery to the response role is a deliver whose service is response":
++  when: Exchange { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, method: "deliver", params: { service: "response", event: "deletion.started", payload: { n: 1 } } }
++  predict success:
++    response OK ExchangeResult { method: "deliver", sent: { method: "deliver", params: { service: "response", event: "deletion.started", payload: { n: 1 } } }, hostSpawned: true, hostAlive: false, result: {} }
++    filesystem has []
++
++scenario "a host that serves no response-role delivery answers an error, relayed as HOST_ERROR":
++  when: Exchange { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "no-response-deliver"] }, method: "deliver", params: { service: "response", event: "deletion.started", payload: { n: 1 } } }
++  predict rejection HOST_ERROR:
++    response ERR ExchangeError { code: "HOST_ERROR", rpcCode: -32601, message: "Method not found: deliver to response", hostSpawned: true, hostAlive: false }
++    filesystem has []
++
+ scenario "a JSON-RPC error from the host is relayed verbatim":
+   when: Exchange { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "rpc-error"] }, method: "reset", params: {} }
+   predict rejection HOST_ERROR:

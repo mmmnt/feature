@@ -1,0 +1,433 @@
+diff --git a/adapters/stdio-jsonrpc/fixtures/fake-host.mjs b/adapters/stdio-jsonrpc/fixtures/fake-host.mjs
+index 43ddd24..11cd0e9 100644
+--- a/adapters/stdio-jsonrpc/fixtures/fake-host.mjs
++++ b/adapters/stdio-jsonrpc/fixtures/fake-host.mjs
+@@ -80,6 +80,11 @@ async function canned(req) {
+     }
+     case "read":
+       return { result: [{ n: 1 }] };
++    case "deliver":
++      // ADR-0036: a host that serves no response-role delivery answers it method-not-found.
++      if (mode === "no-response-deliver" && p.service === "response") return { error: { code: -32601, message: "Method not found: deliver to response" } };
++      log(`deliver ${p.service} ${p.event}`);
++      return { result: {} };
+     default:
+       return { result: {} };
+   }
+diff --git a/adapters/stdio-jsonrpc/src/adapters.ts b/adapters/stdio-jsonrpc/src/adapters.ts
+index 016a72f..346486b 100644
+--- a/adapters/stdio-jsonrpc/src/adapters.ts
++++ b/adapters/stdio-jsonrpc/src/adapters.ts
+@@ -94,6 +94,10 @@ export class StdioResponseAdapter extends Role implements FeatResponseAdapter {
+   async invoke(command: string, input: Record<string, unknown>, actor?: string): Promise<CapturedResponse> {
+     return (await this.call("invoke", { command, input, ...(actor !== undefined ? { actor } : {}) })) as CapturedResponse;
+   }
++  /** ADR-0036: `deliver … to response` — the host's deliver method, with the response role as its service. */
++  async deliver(event: string, payload: Record<string, unknown>): Promise<void> {
++    await this.call("deliver", { service: "response", event, payload });
++  }
+ }
+ 
+ export class StdioServiceAdapter extends Role implements FeatServiceAdapter {
+diff --git a/packages/feat-core/fixtures/bad/deliver-unknown-target.feat b/packages/feat-core/fixtures/bad/deliver-unknown-target.feat
+new file mode 100644
+index 0000000..92d50d5
+--- /dev/null
++++ b/packages/feat-core/fixtures/bad/deliver-unknown-target.feat
+@@ -0,0 +1,24 @@
++feat 1.0
++
++spec SPEC-BAD-135 "a deliver names neither response nor a configured service"
++context Bad
++aggregate Thing
++type policy
++status draft
++observes eventStore
++
++construct:
++  handler at src/react.ts
++  touches src/**
++
++enforce:
++  react to the thing
++
++contract:
++  event ThingResult
++
++scenario "the policy reacts to an event its host receives":
++  deliver ThingHappened { id: "t-1" } to response
++  deliver ThingNoted { id: "t-1" } to cash
++  predict success:
++    eventStore has []
+diff --git a/packages/feat-core/fixtures/ok/deliver-response.feat b/packages/feat-core/fixtures/ok/deliver-response.feat
+new file mode 100644
+index 0000000..5c15194
+--- /dev/null
++++ b/packages/feat-core/fixtures/ok/deliver-response.feat
+@@ -0,0 +1,24 @@
++feat 1.0
++
++spec SPEC-OK-202 "a policy delivers to its response host and to a service in one sequence"
++context Ok
++aggregate Thing
++type policy
++status draft
++observes eventStore
++
++construct:
++  handler at src/react.ts
++  touches src/**
++
++enforce:
++  react to the thing
++
++contract:
++  event ThingResult
++
++scenario "the policy reacts to an event its host receives":
++  deliver ThingHappened { id: "t-1" } to response
++  deliver ThingNoted { id: "t-1" } to eventStore
++  predict success:
++    eventStore has []
+diff --git a/packages/feat-core/fixtures/ok/deliver-response.ir.json b/packages/feat-core/fixtures/ok/deliver-response.ir.json
+new file mode 100644
+index 0000000..fa487f4
+--- /dev/null
++++ b/packages/feat-core/fixtures/ok/deliver-response.ir.json
+@@ -0,0 +1,65 @@
++{
++  "featVersion": "1.0",
++  "identity": {
++    "id": "SPEC-OK-202",
++    "name": "a policy delivers to its response host and to a service in one sequence",
++    "context": "Ok",
++    "aggregate": "Thing",
++    "type": "policy",
++    "status": "draft"
++  },
++  "observes": [
++    "eventStore"
++  ],
++  "construct": [
++    {
++      "kind": "handler",
++      "path": "src/react.ts"
++    },
++    {
++      "kind": "touches",
++      "glob": "src/**"
++    }
++  ],
++  "enforce": [
++    {
++      "kind": "constraint",
++      "text": "react to the thing"
++    }
++  ],
++  "contract": [
++    {
++      "kind": "event",
++      "schemaName": "ThingResult"
++    }
++  ],
++  "scenarios": [
++    {
++      "name": "the policy reacts to an event its host receives",
++      "delivers": [
++        {
++          "event": "ThingHappened",
++          "payload": {
++            "id": "t-1"
++          },
++          "service": "response"
++        },
++        {
++          "event": "ThingNoted",
++          "payload": {
++            "id": "t-1"
++          },
++          "service": "eventStore"
++        }
++      ],
++      "prediction": {
++        "type": "success",
++        "services": {
++          "eventStore": {
++            "records": []
++          }
++        }
++      }
++    }
++  ]
++}
+diff --git a/packages/feat-core/src/parse.ts b/packages/feat-core/src/parse.ts
+index 41f998f..34abd89 100644
+--- a/packages/feat-core/src/parse.ts
++++ b/packages/feat-core/src/parse.ts
+@@ -987,7 +987,10 @@ function parseFeat(source: string, ctx: ConfigContext): Record<string, unknown>
+     const services = prediction.services as Record<string, Record<string, unknown>> | undefined;
+     for (const key of Object.keys(services ?? {})) serviceRefs.push(key);
+     for (const seed of (given?.seeds as Record<string, unknown>[] | undefined) ?? []) serviceRefs.push(seed.service as string);
+-    for (const del of (sc.delivers as Record<string, unknown>[] | undefined) ?? []) serviceRefs.push(del.service as string);
++    // ADR-0036: `to response` names the response role, not a configured service, so it is neither
++    // UNKNOWN_SERVICE_KEY nor UNOBSERVED_SERVICE.
++    for (const del of (sc.delivers as Record<string, unknown>[] | undefined) ?? [])
++      if (del.service !== "response") serviceRefs.push(del.service as string);
+     for (const f of (given?.faults as Record<string, unknown>[] | undefined) ?? []) serviceRefs.push(f.service as string);
+     /**
+      * A cross-surface capture reference names a service too, so it joins the same closed space —
+diff --git a/packages/feat-runtime/fixtures/harness/deliver-both.config.json b/packages/feat-runtime/fixtures/harness/deliver-both.config.json
+new file mode 100644
+index 0000000..6c96376
+--- /dev/null
++++ b/packages/feat-runtime/fixtures/harness/deliver-both.config.json
+@@ -0,0 +1,32 @@
++{
++  "featVersion": "1.0",
++  "schemas": {
++    "adapter": "@mmmnt/feat-schema-json"
++  },
++  "response": {
++    "adapter": "./stub.mjs",
++    "invoke": {
++      "clock": false,
++      "deliver": true
++    },
++    "commands": {
++      "Ping": {}
++    }
++  },
++  "services": {
++    "store": {
++      "adapter": "./stub.mjs",
++      "consistency": "strong",
++      "options": {
++        "clock": false,
++        "deliver": true
++      }
++    }
++  },
++  "specs": {
++    "dir": ".",
++    "pattern": "**/*.feat",
++    "contractPattern": "**/*.contract.json",
++    "outputPattern": "{name}.test.ts"
++  }
++}
+diff --git a/packages/feat-runtime/fixtures/harness/deliver-no-response.config.json b/packages/feat-runtime/fixtures/harness/deliver-no-response.config.json
+new file mode 100644
+index 0000000..dd04852
+--- /dev/null
++++ b/packages/feat-runtime/fixtures/harness/deliver-no-response.config.json
+@@ -0,0 +1,22 @@
++{
++  "featVersion": "1.0",
++  "schemas": {
++    "adapter": "@mmmnt/feat-schema-json"
++  },
++  "services": {
++    "store": {
++      "adapter": "./stub.mjs",
++      "consistency": "strong",
++      "options": {
++        "clock": false,
++        "deliver": true
++      }
++    }
++  },
++  "specs": {
++    "dir": ".",
++    "pattern": "**/*.feat",
++    "contractPattern": "**/*.contract.json",
++    "outputPattern": "{name}.test.ts"
++  }
++}
+diff --git a/packages/feat-runtime/fixtures/harness/deliver-response-only.config.json b/packages/feat-runtime/fixtures/harness/deliver-response-only.config.json
+new file mode 100644
+index 0000000..a8fd94e
+--- /dev/null
++++ b/packages/feat-runtime/fixtures/harness/deliver-response-only.config.json
+@@ -0,0 +1,31 @@
++{
++  "featVersion": "1.0",
++  "schemas": {
++    "adapter": "@mmmnt/feat-schema-json"
++  },
++  "response": {
++    "adapter": "./stub.mjs",
++    "invoke": {
++      "clock": false,
++      "deliver": true
++    },
++    "commands": {
++      "Ping": {}
++    }
++  },
++  "services": {
++    "store": {
++      "adapter": "./stub.mjs",
++      "consistency": "strong",
++      "options": {
++        "clock": false
++      }
++    }
++  },
++  "specs": {
++    "dir": ".",
++    "pattern": "**/*.feat",
++    "contractPattern": "**/*.contract.json",
++    "outputPattern": "{name}.test.ts"
++  }
++}
+diff --git a/packages/feat-runtime/fixtures/harness/deliver-service-only.config.json b/packages/feat-runtime/fixtures/harness/deliver-service-only.config.json
+new file mode 100644
+index 0000000..8b430a1
+--- /dev/null
++++ b/packages/feat-runtime/fixtures/harness/deliver-service-only.config.json
+@@ -0,0 +1,31 @@
++{
++  "featVersion": "1.0",
++  "schemas": {
++    "adapter": "@mmmnt/feat-schema-json"
++  },
++  "response": {
++    "adapter": "./stub.mjs",
++    "invoke": {
++      "clock": false
++    },
++    "commands": {
++      "Ping": {}
++    }
++  },
++  "services": {
++    "store": {
++      "adapter": "./stub.mjs",
++      "consistency": "strong",
++      "options": {
++        "clock": false,
++        "deliver": true
++      }
++    }
++  },
++  "specs": {
++    "dir": ".",
++    "pattern": "**/*.feat",
++    "contractPattern": "**/*.contract.json",
++    "outputPattern": "{name}.test.ts"
++  }
++}
+diff --git a/packages/feat-runtime/fixtures/harness/stub.mjs b/packages/feat-runtime/fixtures/harness/stub.mjs
+index 577c396..bf0fff7 100644
+--- a/packages/feat-runtime/fixtures/harness/stub.mjs
++++ b/packages/feat-runtime/fixtures/harness/stub.mjs
+@@ -5,6 +5,7 @@
+ // firedFaults(); default true). The response stub's Ping { appends: n } makes n calls of AppendToStream
+ // on the `store` service stub, each answering ok or the name of the fault that was consumed.
+ // Ping { hold: true } blocks inside invoke until the probe calls the shared log's release() (SPEC-RT-007).
++// deliver (bool, ADR-0036): offers deliver() on either role.
+ // setupThrows (response only): its setup() throws an Error with that code (SPEC-RT-008).
+ 
+ const log = () => (globalThis.__featHarnessProbe ??= { calls: [], readHint: undefined });
+@@ -24,6 +25,8 @@ export function createAdapter(config) {
+   if (o.observes !== undefined) adapter.observes = o.observes;
+   if (o.clock === true) adapter.setClock = async (c) => note(`clock:${key}=${c}`);
+   if (o.seed === true) adapter.setSeed = async (s) => note(`seed:${key}=${s}`);
++  // deliver (bool, ADR-0036): offers deliver(); each delivery is noted with the event and the payload's n.
++  if (o.deliver === true) adapter.deliver = async (event, payload) => note(`deliver:${key}=${event}${payload?.n !== undefined ? `/${payload.n}` : ""}`);
+   if (config.key === undefined) {
+     // the response adapter. SPEC-RT-008: its setup() records the commands it was handed (none without a
+     // context); with the invoke option setupThrows: <code> it throws an Error with that code.
+diff --git a/packages/feat-runtime/fixtures/reserved-response.config.json b/packages/feat-runtime/fixtures/reserved-response.config.json
+new file mode 100644
+index 0000000..74c47ee
+--- /dev/null
++++ b/packages/feat-runtime/fixtures/reserved-response.config.json
+@@ -0,0 +1,37 @@
++{
++  "featVersion": "1.0",
++  "environment": "local",
++  "schemas": {
++    "adapter": "@mmmnt/feat-schema-json"
++  },
++  "response": {
++    "adapter": "@mmmnt/feat-adapter-handler",
++    "commands": {
++      "Ping": {
++        "module": "src/ping.ts",
++        "export": "ping"
++      }
++    }
++  },
++  "services": {
++    "filesystem": {
++      "adapter": "@mmmnt/feat-adapter-fs",
++      "consistency": "acid"
++    },
++    "response": {
++      "adapter": "@mmmnt/feat-adapter-fs",
++      "consistency": "acid"
++    }
++  },
++  "specs": {
++    "dir": ".",
++    "pattern": "**/*.feat",
++    "contractPattern": "**/*.contract.json",
++    "outputPattern": "{name}.test.ts"
++  },
++  "report": {
++    "format": [
++      "console"
++    ]
++  }
++}
+diff --git a/packages/feat-runtime/src/harness.ts b/packages/feat-runtime/src/harness.ts
+index 600bd9f..33ffdc0 100644
+--- a/packages/feat-runtime/src/harness.ts
++++ b/packages/feat-runtime/src/harness.ts
+@@ -449,8 +449,14 @@ export async function createHarness(opts: { configPath: string; specPath?: strin
+     // window; the delivered stimuli themselves are excluded from capture by the adapter.
+     const sentDelivers: Array<Record<string, unknown>> = [];
+     for (const d of c.delivers ?? []) {
+-      const adapter = services.get(d.service);
+-      if (!adapter) throw new Error(`${c.anchor}: deliver targets unknown service '${d.service}'`);
++      // ADR-0036: `to response` hands the event to the response adapter (its invoke host), so a
++      // policy spec runs on real stores without a service that accepts delivery.
++      const adapter = d.service === "response" ? response : services.get(d.service);
++      if (!adapter) {
++        if (d.service === "response")
++          throw new HarnessConfigurationError("DELIVER_UNSUPPORTED", `${c.anchor}: 'deliver … to response' needs a response adapter — none is configured.`, "response");
++        throw new Error(`${c.anchor}: deliver targets unknown service '${d.service}'`);
++      }
+       if (!adapter.deliver)
+         throw new HarnessConfigurationError("DELIVER_UNSUPPORTED", `${c.anchor}: adapter for '${d.service}' does not support deliver().`, d.service);
+       // A delivered stimulus may also name what a precondition produced.
+diff --git a/packages/feat-runtime/src/load-config.ts b/packages/feat-runtime/src/load-config.ts
+index f1976b5..9d03b5f 100644
+--- a/packages/feat-runtime/src/load-config.ts
++++ b/packages/feat-runtime/src/load-config.ts
+@@ -181,6 +181,9 @@ export async function loadConfig(input: LoadConfigInput): Promise<CapturedRespon
+ 
+   const config = doc as { services: Record<string, ServiceConfig> };
+   for (const [key, svc] of Object.entries(config.services)) {
++    // ADR-0036: `deliver … to response` names the response role, so no service may take that key.
++    if (key === "response")
++      return err("INVALID_CONFIG", `Service key 'response' is reserved: 'deliver … to response' names the response role.`, { detail: key });
+     if (svc.consistency === "eventual" && svc.convergenceTimeout === undefined) {
+       return err(
+         "MISSING_CONVERGENCE_TIMEOUT",
+diff --git a/packages/feat-types/src/index.ts b/packages/feat-types/src/index.ts
+index 09dd5b5..91276a6 100644
+--- a/packages/feat-types/src/index.ts
++++ b/packages/feat-types/src/index.ts
+@@ -284,6 +284,11 @@ export interface FeatResponseAdapter extends ReportsNamespace {
+   setup(config: Record<string, unknown>, context?: ResponseSetupContext): Promise<void>;
+   teardown(): Promise<void>;
+   invoke(command: string, input: Record<string, unknown>, actor?: string): Promise<CapturedResponse>;
++  /**
++   * Optional (ADR-0036): receive an event a scenario delivers `to response`. A response adapter without
++   * it cannot run such a scenario (DELIVER_UNSUPPORTED, service "response").
++   */
++  deliver?(event: string, payload: Record<string, unknown>): Promise<void>;
+ }
+ 
+ /** What the harness hands a response adapter's setup() besides its invoke options (SPEC-RT-008). */
