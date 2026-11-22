@@ -1,6 +1,6 @@
 # ADR-0036 — a scenario may deliver its event to the response role
 
-Status: Draft. Founder ruling aee7d787 (flmnt, 2026-11-22, batch 5 workshop B5-q3, "Feature change", NOT the
+Status: Accepted (founder, 2026-11-22: agreed b680b51c; D1–D4 ruled in 28f7d2d6, all as recommended). Founder ruling aee7d787 (flmnt, 2026-11-22, batch 5 workshop B5-q3, "Feature change", NOT the
 recommendation): Feature lets `deliver` reach the invoke host, so a policy spec runs on real stores with no relay service
 and no `observes` lines added to the consumer's verified specs. Specified in SPEC-RT-016 (new, harness delivery), and in
 amendments to SPEC-CORE-001 (parse), SPEC-RT-001 (config load) and SPEC-RPC-001 (host protocol).

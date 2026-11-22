@@ -299,7 +299,7 @@ The spec `type` declares its trigger discipline (parse error on mismatch):
 | Spec types | Trigger | Form |
 | --- | --- | --- |
 | `command`, `query` | `when:` | `when [(as <actor>)]: <Command> { <json> }` — exactly one; command ∈ `response.commands`; actor ∈ `response.actors` or reserved `anonymous`, omitted = `actors.default` (ADR-0012) |
-| `projection`, `policy`, `saga` | `deliver` | `deliver <EventType> { <json> }` `to <service>` — one or more, in order; saga sequences chain multiple lines |
+| `projection`, `policy`, `saga` | `deliver` | `deliver <EventType> { <json> }` `to <service>` or `to response` (ADR-0036: the response role's invoke host; `response` is reserved, never a service key) — one or more, in order; saga sequences chain multiple lines |
 
 Delivered stimuli are **excluded from capture** — they are the input, not the output — so
 `eventStore has []` on a projection asserts "the projection emitted nothing new."

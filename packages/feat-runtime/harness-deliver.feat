@@ -1,6 +1,6 @@
 feat 1.0
 
-# SPEC-RT-016 — where a delivered event goes (ADR-0036, flmnt founder ruling aee7d787, 2026-11-22, B5-q3
+# SPEC-RT-016 — where a delivered event goes (ADR-0036; flmnt founder ruling aee7d787, 2026-11-22, B5-q3; form ruled in 28f7d2d6, agreed b680b51c;
 # "Feature change"). A `type policy` / `projection` / `saga` scenario is triggered by `deliver <Event> { … } to
 # <target>` (ADR-0011). Until now the target had to be a configured service whose adapter offers deliver(); a
 # service adapter that does not (a real store's adapter, such as Kurrent's) refused the case DELIVER_UNSUPPORTED.
@@ -24,7 +24,7 @@ spec SPEC-RT-016 "Harness: deliver to a service or to the response role"
 context Toolchain
 aggregate Runtime
 type infrastructure
-status draft
+status agreed
 
 construct:
   handler at packages/feat-runtime/src/harness.ts

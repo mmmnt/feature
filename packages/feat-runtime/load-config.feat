@@ -5,6 +5,9 @@ feat 1.0
 # tests need config without dragging the parser into the test process).
 # status agreed proposed by the agent per ADR-0008 — human may revert.
 
+# AMENDED by founder rulings aee7d787 and 28f7d2d6, agreed b680b51c (ADR-0036): a service named `response` is refused
+# INVALID_CONFIG, since `deliver … to response` reserves that name for the response role.
+
 spec SPEC-RT-001 "Load and validate feat.config.json"
 context Toolchain
 aggregate Config
@@ -24,6 +27,7 @@ enforce:
   rejects CONFIG_NOT_FOUND when no file exists at the given path
   validate the parsed document against the config JSON Schema
   rejects INVALID_CONFIG when schema validation fails
+  rejects INVALID_CONFIG when a service is named response, the reserved deliver target of the response role (ADR-0036)
   rejects MISSING_CONVERGENCE_TIMEOUT when a service declares eventual consistency without a convergenceTimeout
   return the validated config
 
@@ -72,3 +76,4 @@ scenario outline "schema-invalid configs are rejected":
     | "packages/feat-runtime/fixtures/empty-commands.config.json" | "commands"      |
     | "packages/feat-runtime/fixtures/not-json.config.json"       | "JSON"          |
     | "packages/feat-runtime/fixtures/bad-environment.config.json"| "environment"   |
+    | "packages/feat-runtime/fixtures/reserved-response.config.json"| "^response$"   |
