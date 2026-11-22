@@ -1,21 +1,76 @@
+diff --git a/adapters/dynamodb/README.md b/adapters/dynamodb/README.md
+index 2738f37..75154a7 100644
+--- a/adapters/dynamodb/README.md
++++ b/adapters/dynamodb/README.md
+@@ -306,7 +306,9 @@ DynamoDB engine, not a mock.
+ | --- | --- | --- |
+ | `table` | `"feat-ephemeral"` | Table name in the instrument. |
+ | `partitionKey` | `"PK"` | Partition key attribute, a string. |
+-| `sortKey` | `"SK"` | Sort key attribute, a string. `null` makes a hash-only table. |
++| `sortKey` | `"SK"` | Sort key attribute. `null` makes a hash-only table. |
++| `partitionKeyType` | `"S"` | The partition key's type, `"S"` or `"N"`. A namespace needs `"S"`, since it prefixes the partition key. |
++| `sortKeyType` | `"S"` | The sort key's type, `"S"` or `"N"`. |
+ | `image` | `"amazon/dynamodb-local"` | Container image. Pin a tag in CI. |
+ | `exposeEnv` | none | Names of environment variables to publish the instrument's table and endpoint under, so in-process handlers read them as the deployed code will. Restored at teardown. |
+ 
 diff --git a/adapters/dynamodb/fixtures/query-probe.mjs b/adapters/dynamodb/fixtures/query-probe.mjs
-index 35e21db..531db0f 100644
+index 35e21db..0ce2ca9 100644
 --- a/adapters/dynamodb/fixtures/query-probe.mjs
 +++ b/adapters/dynamodb/fixtures/query-probe.mjs
-@@ -451,6 +451,8 @@ async function run(input, { transport, seedTransform = false }) {
+@@ -309,6 +309,16 @@ async function run(input, { transport, seedTransform = false }) {
+           trace.push(`setup:${label}`);
+           break;
+         }
++        case "setupeph": {
++          // SPEC-ADPDDB-003 (founder ruling 57cc575c, T4): an adapter on its own ephemeral instrument whose sort key is of
++          // type rest[0] (S or N); the partition key stays S so the namespace prefix is carried.
++          const options = { ephemeral: { sortKeyType: rest[0] }, ...(transform?.option !== undefined ? { seedTransform: transform.option } : {}) };
++          const adapter = createAdapter({ key: "database", options, namespace: ns });
++          adapters.set(label, adapter);
++          await adapter.setup();
++          trace.push(`setupeph:${label}`);
++          break;
++        }
+         case "observes": {
+           const o = adapterFor(label).observes;
+           trace.push(`observes:${label}=${o.diff}/${o.state}`);
+@@ -451,6 +461,9 @@ async function run(input, { transport, seedTransform = false }) {
              keynull: { PK: null, SK: "1", v: "x" },
              keyempty: { PK: "", SK: "1", v: "x" },
              keymap: { PK: { x: 1 }, SK: "1", v: "x" },
 +            keynum: { PK: 1, SK: "1", v: "x" },
 +            sknum: { PK: "o1", SK: 1, v: "x" },
++            skstr: { PK: "o1", SK: "1", v: "x" },
              bignum: { PK: "o1", SK: "1", v: 1e200 },
              huge: { PK: "o1", SK: "1", v: "x".repeat(401 * 1024) },
            }[rest[0]];
 diff --git a/adapters/dynamodb/src/index.ts b/adapters/dynamodb/src/index.ts
-index d4095a0..44cb618 100644
+index d4095a0..a428abe 100644
 --- a/adapters/dynamodb/src/index.ts
 +++ b/adapters/dynamodb/src/index.ts
-@@ -837,10 +837,15 @@ class DynamoAdapter implements FeatServiceAdapter {
+@@ -79,6 +79,10 @@ export interface EphemeralOptions {
+   partitionKey?: string;
+   /** Sort key attribute (string type). Default "SK"; null for a HASH-only table. */
+   sortKey?: string | null;
++  /** The partition key's attribute type, "S" (default) or "N" (SPEC-ADPDDB-001, founder ruling 57cc575c T4). */
++  partitionKeyType?: "S" | "N";
++  /** The sort key's attribute type, "S" (default) or "N" (SPEC-ADPDDB-001, founder ruling 57cc575c T4). */
++  sortKeyType?: "S" | "N";
+   /** Container image override (default amazon/dynamodb-local). */
+   image?: string;
+   /**
+@@ -401,8 +405,8 @@ class DynamoAdapter implements FeatServiceAdapter {
+       new CreateTableCommand({
+         TableName: this.table,
+         AttributeDefinitions: [
+-          { AttributeName: pk, AttributeType: "S" },
+-          ...(sk ? [{ AttributeName: sk, AttributeType: "S" as const }] : []),
++          { AttributeName: pk, AttributeType: eph.partitionKeyType ?? "S" },
++          ...(sk ? [{ AttributeName: sk, AttributeType: eph.sortKeyType ?? "S" }] : []),
+         ],
+         KeySchema: [
+           { AttributeName: pk, KeyType: "HASH" },
+@@ -837,10 +841,15 @@ class DynamoAdapter implements FeatServiceAdapter {
        const v = r.values as unknown;
        if (v === null || typeof v !== "object" || Array.isArray(v))
          throw new DynamoAdapterError("SEED_VALUE_UNSTORABLE", `the ${r.type} seed's values are not an item (a map of attributes): ${JSON.stringify(v)}`);
@@ -34,15 +89,32 @@ index d4095a0..44cb618 100644
        const bad = badNumber(v, "");
        if (bad !== undefined)
 diff --git a/adapters/kurrent/fixtures/probe.mjs b/adapters/kurrent/fixtures/probe.mjs
-index 6911ecb..d4c6202 100644
+index 6911ecb..eac936a 100644
 --- a/adapters/kurrent/fixtures/probe.mjs
 +++ b/adapters/kurrent/fixtures/probe.mjs
-@@ -544,9 +544,9 @@ async function run(input, mode) {
+@@ -430,6 +430,7 @@ async function run(input, mode) {
+           break;
+         case "write":
+         case "writenew":
++        case "writenull":
+         case "writeuser": {
+           dirty.add(adapter(l));
+           const stream = `${nsOf(l)}.${a}`;
+@@ -441,7 +442,7 @@ async function run(input, mode) {
+             outcome = await peerAppend(env, { cs, stream, type: b, state });
+           } else {
+             try {
+-              await writerFor(kind === "writeuser" ? "writer" : "admin").appendToStream(stream, jsonEvent({ type: b, data: {} }), { streamState: state === "nostream" ? NO_STREAM : ANY });
++              await writerFor(kind === "writeuser" ? "writer" : "admin").appendToStream(stream, jsonEvent({ type: b, data: kind === "writenull" ? null : {} }), { streamState: state === "nostream" ? NO_STREAM : ANY });
+               outcome = "ok";
+             } catch (e) {
+               outcome = { type: e.type ?? "unknown", code: e.code };
+@@ -544,9 +545,9 @@ async function run(input, mode) {
            trace.push(`seedmix:${l}`);
            break;
          case "seedraw": {
 -          const stream = { streamnum: 1, streamempty: "" }[a];
-+          const values = { streamnum: { stream: 1 }, streamempty: { stream: "" }, scalar: 5, string: "x", list: [1] }[a];
++          const values = { streamnum: { stream: 1 }, streamempty: { stream: "" }, scalar: 5, string: "x", list: [1], null: null }[a];
            dirty.add(adapter(l));
 -          await adapter(l).seed([{ type: "Placed", values: { stream } }]);
 +          await adapter(l).seed([{ type: "Placed", values }]);
@@ -50,10 +122,28 @@ index 6911ecb..d4c6202 100644
            break;
          }
 diff --git a/adapters/kurrent/src/index.ts b/adapters/kurrent/src/index.ts
-index 5393e52..ef63aa0 100644
+index 5393e52..a914f72 100644
 --- a/adapters/kurrent/src/index.ts
 +++ b/adapters/kurrent/src/index.ts
-@@ -678,26 +678,33 @@ class KurrentAdapter implements FeatServiceAdapter {
+@@ -558,7 +558,7 @@ class KurrentAdapter implements FeatServiceAdapter {
+       this.captured.push({
+         type: event.type,
+         key,
+-        payload: (event.data ?? {}) as Record<string, unknown>,
++        payload: event.data as Record<string, unknown>, // the JSON data as stored, null included (founder ruling 57cc575c, T3)
+         timestamp,
+         metadata: meta,
+       });
+@@ -660,7 +660,7 @@ class KurrentAdapter implements FeatServiceAdapter {
+           records.push({
+             type: event.type,
+             key: name.slice(this.prefix.length),
+-            payload: (event.data ?? {}) as Record<string, unknown>,
++            payload: event.data as Record<string, unknown>, // the JSON data as stored, null included (founder ruling 57cc575c, T3)
+             timestamp: new Date(event.created).getTime(),
+             metadata: { revision: Number(event.revision) },
+           });
+@@ -678,7 +678,7 @@ class KurrentAdapter implements FeatServiceAdapter {
    async seed(records: SeedRecord[]): Promise<void> {
      // SPEC-ADPKUR-006: the transform (asked twice), then every record checked, before the first append; a record's
      // identity is its type and its stream.
@@ -62,17 +152,9 @@ index 5393e52..ef63aa0 100644
      if (this.transformer !== undefined) {
        const t = this.transformer;
        const id: SeedIdentity = {
-         describe: (r) => `${r.type} in ${String(streamOf(r))}`,
-         identity: (r) => ({ stream: streamOf(r) ?? null }),
+@@ -687,17 +687,17 @@ class KurrentAdapter implements FeatServiceAdapter {
        };
-+      const sent = records;
        records = await translateAsync(() => t.transform(records, id));
-+      // A non-object answer carries no values.stream, so it would move to its type's stream: the shared transform checks
-+      // identity only for object answers, so the stream is compared here for every answer (founder ruling 99212372, S2).
-+      records.forEach((g, i) => {
-+        if (String(streamOf(g)) !== String(streamOf(sent[i]!)))
-+          throw new KurrentAdapterError("SEED_TRANSFORM_FAILED", `record ${i} (${id.describe(sent[i]!)}) came back with another identity: {"stream":${JSON.stringify(streamOf(g))}}`);
-+      });
      }
 +    // SPEC-ADPKUR-006, founder ruling 99212372 (S2): values may be any JSON value; only an object can name a stream.
 +    const isObject = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
@@ -106,3 +188,17 @@ index 683256b..4b0b0a1 100644
          const why = unstorable(x);
          if (why !== undefined) throw new Neo4jAdapterError("SEED_VALUE_UNSTORABLE", `${id.describe(r)} › ${k}: ${why}, which Neo4j cannot store as a property`);
        }
+diff --git a/adapters/stdio-jsonrpc/src/seed-transform.ts b/adapters/stdio-jsonrpc/src/seed-transform.ts
+index 73fed83..6595270 100644
+--- a/adapters/stdio-jsonrpc/src/seed-transform.ts
++++ b/adapters/stdio-jsonrpc/src/seed-transform.ts
+@@ -122,7 +122,8 @@ export class SeedTransform {
+     sent.forEach((s, i) => {
+       const g = got[i]!;
+       if (g.type !== s.type) throw new SeedTransformError("SEED_TRANSFORM_FAILED", `record ${i} (${id.describe(s)}) came back as type '${g.type}'`);
+-      if (g.values !== null && typeof g.values === "object" && !Array.isArray(g.values) && canonicalJson(id.identity(g)) !== canonicalJson(id.identity(s)))
++      // Founder ruling 57cc575c (T2): identity is compared for every answer, whatever its values are.
++      if (canonicalJson(id.identity(g)) !== canonicalJson(id.identity(s)))
+         throw new SeedTransformError("SEED_TRANSFORM_FAILED", `record ${i} (${id.describe(s)}) came back with another identity: ${canonicalJson(id.identity(g))}`);
+     });
+   }

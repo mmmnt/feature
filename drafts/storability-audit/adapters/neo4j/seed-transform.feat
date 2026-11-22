@@ -6,7 +6,7 @@ feat 1.0
 # c141a704: Q1 "Spec host only (Recommended)", Q2 "Optional method, v2 (Recommended)", Q3 "All seeds" (the storability check
 # applies to plain seeds too), Q4 "Check by doing it twice" (each seed call is transformed twice and must agree), Q5 "All
 # store adapters" (the same option, protocol and refusals ship for Neo4j, Redis, Kurrent and DynamoDB in one release:
-# SPEC-ADPRDS-002, SPEC-ADPKUR-006 and SPEC-ADPDDB-003 state it for theirs). ADR-0035. Amended by founder ruling c786e54d (2026-11-21, "Amend all, stay agreed (Recommended)"): its literals follow the store and the adapter's existing spec. Amended by founder ruling 6a6aa65c (2026-11-21, "Fix Feature's rule (Recommended)"): an empty list is storable, as real Neo4j stores it and SPEC-ADPNEO-001's capture reports it. Amended by founder ruling 99212372 (2026-11-21, S1): null stays refused, for the reason the server gives it (it drops a null property).
+# SPEC-ADPRDS-002, SPEC-ADPKUR-006 and SPEC-ADPDDB-003 state it for theirs). ADR-0035. Amended by founder ruling c786e54d (2026-11-21, "Amend all, stay agreed (Recommended)"): its literals follow the store and the adapter's existing spec. Amended by founder ruling 6a6aa65c (2026-11-21, "Fix Feature's rule (Recommended)"): an empty list is storable, as real Neo4j stores it and SPEC-ADPNEO-001's capture reports it. Amended by founder ruling 99212372 (2026-11-21, S1): null stays refused, for the reason the server gives it (it drops a null property). Amended by founder ruling 57cc575c (2026-11-21, T2): identity is compared for every answer, whatever its values are, so an answer that is not a map (it has no key property) is SEED_TRANSFORM_FAILED.
 #
 # Why: a seed is written with `SET n = $values`, and Neo4j stores only scalars and homogeneous lists of scalars as a
 # property. A consumer whose spec states a value only it can compute (a text its own pinned model encodes to a vector) has no
@@ -75,7 +75,9 @@ construct:
   that cannot be started is refused before any case. seed(records), when it is set, sends every record of the call, in order,
   as transformSeed { service, records: [{ type, values }] } TWICE, awaiting each answer; each answer must hold the same number
   of records in the same order with the same types and the same identity (a node's key property, options.keys; a
-  relationship's `from` and `to`), and the two answers must be equal value for value (canonical JSON). The first answer's
+  relationship's `from` and `to`), compared for every answer whatever its values are, so an answer whose values are not a
+  map has no identity of its own and is refused (founder ruling 57cc575c, T2), and the two answers must be equal value for
+  value (canonical JSON). The first answer's
   values replace the records' values. Then every record, transformed or plain, is checked for storability
   (every node value and every relationship property other than SPEC-ADPNEO-004's `from` and `to`), and only then validated
   and written exactly as SPEC-ADPNEO-001 and SPEC-ADPNEO-004 say, in one transaction. The transform applies to seeds only:

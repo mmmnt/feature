@@ -4,7 +4,7 @@ feat 1.0
 # is checked against what an event can hold (an amendment to SPEC-ADPKUR-001, in a spec of its own). Agreed by founder ruling 094b5dcc (2026-11-21, the set agreed), with the follow-ups ruled in 12081c37 (Redis's value code split, an identity change refused as SEED_TRANSFORM_FAILED, an oversized Kurrent event left to the server, canonical-JSON equality). Founder rulings
 # 944b1d17 ("Feature seed hook") and c141a704 (Q1 spec host only, Q2 optional method v2, Q3 all seeds, Q4 check by doing it
 # twice, Q5 all store adapters). The option, the protocol, the twice-asked transform and the refusals are SPEC-ADPNEO-005's,
-# stated here for Kurrent. ADR-0035. Amended by founder ruling c786e54d (2026-11-21, "Amend all, stay agreed (Recommended)"): its literals follow the store and the adapter's existing spec. Amended by founder ruling 99212372 (2026-11-21, S2 "Allow any JSON"): a seed's values may be any JSON value, as KurrentDB appends any JSON as event data.
+# stated here for Kurrent. ADR-0035. Amended by founder ruling c786e54d (2026-11-21, "Amend all, stay agreed (Recommended)"): its literals follow the store and the adapter's existing spec. Amended by founder ruling 99212372 (2026-11-21, S2 "Allow any JSON"): a seed's values may be any JSON value, as KurrentDB appends any JSON as event data. Its follow-ups ruled in 57cc575c (2026-11-21): T1 a non-object seed goes to the stream named by its type, T2 the shared transform compares identity for every answer, T3 a null seed reads back as null.
 #
 #   options.seedTransform: { host: { command: [<argv>], cwd?, env? } }
 #
@@ -26,7 +26,7 @@ feat 1.0
 #   seedenc:<ns>:<stream>:<Type>:<text>  seed() of one record whose data v is { encode: "<text>" }
 #   seedmix:<ns>                         ONE seed() call: Placed into orders with v { encode: "a" }, then with v { encode: "b" }
 #   seedraw:<ns>:<case>                  a plain Placed seed: streamnum (values.stream = 1), streamempty (values.stream = ""),
-#                                        scalar (values 5), string (values "x"), list (values [1])
+#                                        scalar (values 5), string (values "x"), list (values [1]), null (values null)
 #   read:<ns>:<stream>                   adapter.read() of that stream, traced `read:<ns>:<stream>=<n>` as SPEC-ADPKUR-001 traces it;
 #                                        `readPayloads` is the JSON of its events' data, values.stream included
 #   calls:<ns>                           the number of transformSeed requests the fake host received
@@ -148,6 +148,7 @@ scenario outline "a plain seed whose values is not an object is appended, as eve
     | "setup:a seedraw:a:scalar read:a:Placed"    | "setup:a seedraw:a read:a:Placed=1"         | "[5]"       |
     | "setup:a seedraw:a:string read:a:Placed"    | "setup:a seedraw:a read:a:Placed=1"         | "[\"x\"]" |
     | "setup:a seedraw:a:list read:a:Placed"      | "setup:a seedraw:a read:a:Placed=1"         | "[[1]]"     |
+    | "setup:a seedraw:a:null read:a:Placed"      | "setup:a seedraw:a read:a:Placed=1"         | "[null]"    |
 
 scenario outline "a plain seed whose stream is not a non-empty string is refused":
   when: ObserveKurrentSeedTransform { host: "none", script: <script> }

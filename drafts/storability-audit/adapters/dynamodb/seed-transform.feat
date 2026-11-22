@@ -4,7 +4,7 @@ feat 1.0
 # checked against what DynamoDB can store (an amendment to SPEC-ADPDDB-001, in a spec of its own). Agreed by founder ruling 094b5dcc (2026-11-21, the set agreed), with the follow-ups ruled in 12081c37 (Redis's value code split, an identity change refused as SEED_TRANSFORM_FAILED, an oversized Kurrent event left to the server, canonical-JSON equality). Founder rulings
 # 944b1d17 ("Feature seed hook") and c141a704 (Q1 spec host only, Q2 optional method v2, Q3 all seeds, Q4 check by doing it
 # twice, Q5 all store adapters). The option, the protocol, the twice-asked transform and the refusals are SPEC-ADPNEO-005's,
-# stated here for DynamoDB. ADR-0035. Amended by founder ruling c786e54d (2026-11-21, "Amend all, stay agreed (Recommended)"): its literals follow the store and the adapter's existing spec. Amended by founder ruling 99212372 (2026-11-21, S3): a key attribute must have the type the table's key schema declares.
+# stated here for DynamoDB. ADR-0035. Amended by founder ruling c786e54d (2026-11-21, "Amend all, stay agreed (Recommended)"): its literals follow the store and the adapter's existing spec. Amended by founder ruling 99212372 (2026-11-21, S3): a key attribute must have the type the table's key schema declares. Its follow-ups ruled in 57cc575c (2026-11-21): T2 the shared transform compares identity for every answer (a non-map answer is SEED_TRANSFORM_FAILED), T4 the N-key path is proven on an ephemeral table whose sort key is N (SPEC-ADPDDB-001's new sortKeyType).
 #
 #   options.seedTransform: { host: { command: [<argv>], cwd?, env? } }
 #
@@ -30,6 +30,8 @@ feat 1.0
 #   seedraw:<ns>:<case>             a plain ITEM seed of PK o1 / SK "1": nokey (no PK), keynull (PK null), keyempty (PK ""),
 #                                   keymap (PK { x: 1 }), keynum (PK 1, on the S-typed PK), sknum (SK 1, on the S-typed SK),
 #                                   bignum (v 1e200), huge (v a string of 401 KB)
+#   setupeph:<ns>:<S|N>             setup() of an adapter on its own ephemeral instrument (SPEC-ADPDDB-001) whose sort key SK is of
+#                                   that type; seedraw cases on it: sknum (SK 1), skstr (SK "1")
 #   calls:<ns>                      the number of transformSeed requests the fake host received
 # `readItems` is the JSON of the items read, without the namespace prefix, each item's attributes in name order. A read
 # with no key is a Scan, as SPEC-ADPDDB-001's read with no key part is.
@@ -133,12 +135,24 @@ scenario outline "after a refused seed call the table holds nothing of it":
     | host     | trace                                                        |
     | "short"  | "setup:a seedmix:a!SEED_TRANSFORM_FAILED read:a=0"           |
     | "random" | "setup:a seedmix:a!SEED_TRANSFORM_NONDETERMINISTIC read:a=0" |
-    | "scalar" | "setup:a seedmix:a!SEED_VALUE_UNSTORABLE read:a=0"           |
+    | "scalar" | "setup:a seedmix:a!SEED_TRANSFORM_FAILED read:a=0"           |
 
 scenario "a key attribute whose type is not the table's is refused naming the attribute and the type the table expects":
   when: ObserveDynamoSeedTransform { host: "none", script: "setup:a seedraw:a:keynum" }
   predict rejection SEED_VALUE_UNSTORABLE:
     response ERR SeedTransformError { code: "SEED_VALUE_UNSTORABLE", detail: matching "the key attribute PK is an S key in the table" }
+    filesystem has []
+
+scenario "a number is put on a table whose sort key is N":
+  when: ObserveDynamoSeedTransform { host: "none", script: "setupeph:a:N seedraw:a:sknum read:a" }
+  predict success:
+    response OK SeedTransformResult { trace: "setupeph:a seedraw:a read:a=1", readVia: "Scan", readItems: "[{\"PK\":\"o1\",\"SK\":1,\"v\":\"x\"}]" }
+    filesystem has []
+
+scenario "a string on a table whose sort key is N is refused naming the attribute and the type the table expects":
+  when: ObserveDynamoSeedTransform { host: "none", script: "setupeph:a:N seedraw:a:skstr" }
+  predict rejection SEED_VALUE_UNSTORABLE:
+    response ERR SeedTransformError { code: "SEED_VALUE_UNSTORABLE", detail: matching "the key attribute SK is an N key in the table" }
     filesystem has []
 
 scenario outline "a plain seed DynamoDB cannot store is refused before anything is put":
