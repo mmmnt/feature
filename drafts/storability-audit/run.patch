@@ -1,0 +1,108 @@
+diff --git a/adapters/dynamodb/fixtures/query-probe.mjs b/adapters/dynamodb/fixtures/query-probe.mjs
+index 35e21db..531db0f 100644
+--- a/adapters/dynamodb/fixtures/query-probe.mjs
++++ b/adapters/dynamodb/fixtures/query-probe.mjs
+@@ -451,6 +451,8 @@ async function run(input, { transport, seedTransform = false }) {
+             keynull: { PK: null, SK: "1", v: "x" },
+             keyempty: { PK: "", SK: "1", v: "x" },
+             keymap: { PK: { x: 1 }, SK: "1", v: "x" },
++            keynum: { PK: 1, SK: "1", v: "x" },
++            sknum: { PK: "o1", SK: 1, v: "x" },
+             bignum: { PK: "o1", SK: "1", v: 1e200 },
+             huge: { PK: "o1", SK: "1", v: "x".repeat(401 * 1024) },
+           }[rest[0]];
+diff --git a/adapters/dynamodb/src/index.ts b/adapters/dynamodb/src/index.ts
+index d4095a0..44cb618 100644
+--- a/adapters/dynamodb/src/index.ts
++++ b/adapters/dynamodb/src/index.ts
+@@ -837,10 +837,15 @@ class DynamoAdapter implements FeatServiceAdapter {
+       const v = r.values as unknown;
+       if (v === null || typeof v !== "object" || Array.isArray(v))
+         throw new DynamoAdapterError("SEED_VALUE_UNSTORABLE", `the ${r.type} seed's values are not an item (a map of attributes): ${JSON.stringify(v)}`);
++      // SPEC-ADPDDB-003, founder ruling 99212372 (S3): each key attribute has the type the table's key schema declares.
+       for (const k of this.keyNames()) {
+         const x = (v as Record<string, unknown>)[k];
+-        if (!((typeof x === "string" && x !== "") || (typeof x === "number" && Number.isFinite(x))))
+-          throw new DynamoAdapterError("SEED_VALUE_UNSTORABLE", `${describe(r)}: the key attribute ${k} must be a non-empty string or a finite number; got ${x === undefined ? "nothing" : JSON.stringify(x)}`);
++        const type = this.keySchema.find((e) => e.name === k)?.type ?? "";
++        const fits = type === "S" ? typeof x === "string" && x !== "" : type === "N" ? typeof x === "number" && Number.isFinite(x) : false;
++        if (!fits) {
++          const want = type === "S" ? "a non-empty string" : type === "N" ? "a finite number" : "binary, which a JSON seed cannot state";
++          throw new DynamoAdapterError("SEED_VALUE_UNSTORABLE", `${describe(r)}: the key attribute ${k} is an ${type || "untyped"} key in the table, so it must be ${want}; got ${x === undefined ? "nothing" : JSON.stringify(x)}`);
++        }
+       }
+       const bad = badNumber(v, "");
+       if (bad !== undefined)
+diff --git a/adapters/kurrent/fixtures/probe.mjs b/adapters/kurrent/fixtures/probe.mjs
+index 6911ecb..d4c6202 100644
+--- a/adapters/kurrent/fixtures/probe.mjs
++++ b/adapters/kurrent/fixtures/probe.mjs
+@@ -544,9 +544,9 @@ async function run(input, mode) {
+           trace.push(`seedmix:${l}`);
+           break;
+         case "seedraw": {
+-          const stream = { streamnum: 1, streamempty: "" }[a];
++          const values = { streamnum: { stream: 1 }, streamempty: { stream: "" }, scalar: 5, string: "x", list: [1] }[a];
+           dirty.add(adapter(l));
+-          await adapter(l).seed([{ type: "Placed", values: { stream } }]);
++          await adapter(l).seed([{ type: "Placed", values }]);
+           trace.push(`seedraw:${l}`);
+           break;
+         }
+diff --git a/adapters/kurrent/src/index.ts b/adapters/kurrent/src/index.ts
+index 5393e52..ef63aa0 100644
+--- a/adapters/kurrent/src/index.ts
++++ b/adapters/kurrent/src/index.ts
+@@ -678,26 +678,33 @@ class KurrentAdapter implements FeatServiceAdapter {
+   async seed(records: SeedRecord[]): Promise<void> {
+     // SPEC-ADPKUR-006: the transform (asked twice), then every record checked, before the first append; a record's
+     // identity is its type and its stream.
+-    const streamOf = (r: SeedRecord): unknown => (r.values !== null && typeof r.values === "object" && "stream" in r.values ? r.values.stream : r.type);
++    const streamOf = (r: SeedRecord): unknown => (r.values !== null && typeof r.values === "object" && !Array.isArray(r.values) && "stream" in r.values ? r.values.stream : r.type);
+     if (this.transformer !== undefined) {
+       const t = this.transformer;
+       const id: SeedIdentity = {
+         describe: (r) => `${r.type} in ${String(streamOf(r))}`,
+         identity: (r) => ({ stream: streamOf(r) ?? null }),
+       };
++      const sent = records;
+       records = await translateAsync(() => t.transform(records, id));
++      // A non-object answer carries no values.stream, so it would move to its type's stream: the shared transform checks
++      // identity only for object answers, so the stream is compared here for every answer (founder ruling 99212372, S2).
++      records.forEach((g, i) => {
++        if (String(streamOf(g)) !== String(streamOf(sent[i]!)))
++          throw new KurrentAdapterError("SEED_TRANSFORM_FAILED", `record ${i} (${id.describe(sent[i]!)}) came back with another identity: {"stream":${JSON.stringify(streamOf(g))}}`);
++      });
+     }
++    // SPEC-ADPKUR-006, founder ruling 99212372 (S2): values may be any JSON value; only an object can name a stream.
++    const isObject = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
+     for (const r of records) {
+       const v = r.values as unknown;
+-      if (v === null || typeof v !== "object" || Array.isArray(v)) {
+-        throw new KurrentAdapterError("SEED_VALUE_UNSTORABLE", `the ${r.type} seed's values are not a JSON object: ${JSON.stringify(v)}`);
+-      }
+-      if ("stream" in (v as object) && (typeof (v as { stream: unknown }).stream !== "string" || (v as { stream: string }).stream === "")) {
+-        throw new KurrentAdapterError("SEED_VALUE_UNSTORABLE", `the ${r.type} seed's values.stream must be a non-empty string; got ${JSON.stringify((v as { stream: unknown }).stream)}`);
++      if (isObject(v) && "stream" in v && (typeof v.stream !== "string" || v.stream === "")) {
++        throw new KurrentAdapterError("SEED_VALUE_UNSTORABLE", `the ${r.type} seed's values.stream must be a non-empty string; got ${JSON.stringify(v.stream)}`);
+       }
+     }
+     for (const r of records) {
+-      const stream = typeof r.values.stream === "string" ? r.values.stream : r.type;
++      const v = r.values as unknown;
++      const stream = isObject(v) && typeof v.stream === "string" ? v.stream : r.type;
+       await this.db().appendToStream(this.full(stream), jsonEvent({ type: r.type, data: r.values as never }), { streamState: ANY });
+     }
+   }
+diff --git a/adapters/neo4j/src/index.ts b/adapters/neo4j/src/index.ts
+index 683256b..4b0b0a1 100644
+--- a/adapters/neo4j/src/index.ts
++++ b/adapters/neo4j/src/index.ts
+@@ -640,6 +640,7 @@ class Neo4jAdapter implements FeatServiceAdapter {
+       const isRel = keys[r.type] === undefined && typeof (v as Props).from === "string" && typeof (v as Props).to === "string";
+       for (const [k, x] of Object.entries(v as Props)) {
+         if (isRel && (k === "from" || k === "to")) continue;
++        if (x === null) throw new Neo4jAdapterError("SEED_VALUE_UNSTORABLE", `${id.describe(r)} › ${k}: it is null, which Neo4j drops rather than stores; leave the property out to state it absent`);
+         const why = unstorable(x);
+         if (why !== undefined) throw new Neo4jAdapterError("SEED_VALUE_UNSTORABLE", `${id.describe(r)} › ${k}: ${why}, which Neo4j cannot store as a property`);
+       }

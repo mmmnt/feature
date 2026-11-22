@@ -1,0 +1,157 @@
+feat 1.0
+
+# SPEC-ADPDDB-003 — DynamoDB adapter: a consumer's spec host may transform seed values before they are put, and every seed is
+# checked against what DynamoDB can store (an amendment to SPEC-ADPDDB-001, in a spec of its own). Agreed by founder ruling 094b5dcc (2026-11-21, the set agreed), with the follow-ups ruled in 12081c37 (Redis's value code split, an identity change refused as SEED_TRANSFORM_FAILED, an oversized Kurrent event left to the server, canonical-JSON equality). Founder rulings
+# 944b1d17 ("Feature seed hook") and c141a704 (Q1 spec host only, Q2 optional method v2, Q3 all seeds, Q4 check by doing it
+# twice, Q5 all store adapters). The option, the protocol, the twice-asked transform and the refusals are SPEC-ADPNEO-005's,
+# stated here for DynamoDB. ADR-0035. Amended by founder ruling c786e54d (2026-11-21, "Amend all, stay agreed (Recommended)"): its literals follow the store and the adapter's existing spec. Amended by founder ruling 99212372 (2026-11-21, S3): a key attribute must have the type the table's key schema declares.
+#
+#   options.seedTransform: { host: { command: [<argv>], cwd?, env? } }
+#
+# Storable in DynamoDB (SPEC-ADPDDB-001's seed: values put as one item):
+#   - the table's key attributes (its hash key and, if it has one, its range key) are present, and each has the type the
+#     table's key schema declares for it (read by DescribeTable at setup): a non-empty string for an S key, a finite number
+#     for an N key; a B (binary) key cannot be stated in JSON, so a seed for it is refused. DynamoDB refuses a key whose type
+#     differs from its schema ("Type mismatch for key"), so the check names the attribute and the type the table expects
+#     (amended by founder ruling 99212372, 2026-11-21, S3);
+#   - every number, at any depth, is 0 or has a magnitude from 1e-130 to 9.9999999999999999999999999999999999999e125;
+#   - the item, marshalled, is at most 400 KB.
+# Maps, lists, null, strings and booleans are otherwise storable at any depth. A record's identity is its type and its key
+# attributes; a transform changes neither. Today a put DynamoDB refuses surfaces as a raw configuration error after earlier
+# records were put; this amendment checks every record of a call first and names the refusal.
+#
+# Spec tier, the integration config leaves this file out so it runs once. Driven through the probe of SPEC-ADPDDB-001
+# (adapters/dynamodb/fixtures/probe.mjs) and the shared fake transform host (adapters/stdio-jsonrpc/fixtures/seed-host.mjs, its
+# modes as SPEC-ADPNEO-005 lists them), both inside touches. `ObserveDynamoSeedTransform { host, script }` runs the steps of
+# SPEC-ADPDDB-001 plus:
+#   seedenc:<ns>:<pk>:<sk>:<text>   seed() of one ITEM { PK: <pk>, SK: <sk> (a string, as SPEC-ADPDDB-001's probe seeds it) } whose
+#                                   attribute v is { encode: "<text>" }
+#   seedmix:<ns>                    ONE seed() call: ITEM PK o1 / SK "1" with v { encode: "a" } and PK o2 / SK "1" with v { encode: "b" }
+#   seedraw:<ns>:<case>             a plain ITEM seed of PK o1 / SK "1": nokey (no PK), keynull (PK null), keyempty (PK ""),
+#                                   keymap (PK { x: 1 }), keynum (PK 1, on the S-typed PK), sknum (SK 1, on the S-typed SK),
+#                                   bignum (v 1e200), huge (v a string of 401 KB)
+#   calls:<ns>                      the number of transformSeed requests the fake host received
+# `readItems` is the JSON of the items read, without the namespace prefix, each item's attributes in name order. A read
+# with no key is a Scan, as SPEC-ADPDDB-001's read with no key part is.
+
+spec SPEC-ADPDDB-003 "DynamoDB adapter: a consumer's spec host may transform seed values, and every seed must be an item DynamoDB can store"
+context Toolchain
+aggregate Adapters
+type infrastructure
+status agreed
+
+construct:
+  handler at adapters/dynamodb/src/index.ts
+  touches adapters/dynamodb/**
+  touches adapters/stdio-jsonrpc/fixtures/seed-host.mjs
+  touches feat.config.json
+  touches feat.integration.config.json
+  needs SPEC-ADPDDB-001
+  needs SPEC-ADPNEO-005
+  needs SPEC-RPC-001
+  options.seedTransform, setup(), the twice-asked transformSeed and teardown() exactly as SPEC-ADPNEO-005 states them, with a
+  record's identity being its type and its key attributes. Then every record, transformed or plain, is checked, and only then
+  is each put as SPEC-ADPDDB-001 says, prefixed, in order. The transform applies to seeds only: capture, read and state never
+  pass through it.
+
+enforce:
+  rejects OPTIONS_INVALID when options.seedTransform is not { host } with a host whose command is a non-empty list of strings
+  rejects SEED_TRANSFORM_UNAVAILABLE when the seed-transform host cannot be started at setup()
+  rejects SEED_TRANSFORM_FAILED when the host answers transformSeed with an error, does not implement it, ends, or answers with records that differ in number, order, type or key attributes
+  rejects SEED_TRANSFORM_NONDETERMINISTIC when the two answers to one seed call's transformSeed differ
+  rejects SEED_VALUE_UNSTORABLE when a seed record, transformed or plain, lacks a key attribute, has one whose type is not the one the table's key schema declares (a non-empty string for S, a finite number for N), holds a number DynamoDB cannot store, or is larger than 400 KB
+  nothing of a seed call is put unless every record of it was transformed and checked
+  a transform applies to seeds only, never to what the adapter observes or reads
+
+contract:
+  input SeedTransformInput
+  response SeedTransformResult
+  error SeedTransformError
+
+scenario "a seed item is put as the host transformed it":
+  when: ObserveDynamoSeedTransform { host: "encode", script: "setup:a seedenc:a:o1:1:ab read:a:o1:1" }
+  predict success:
+    response OK SeedTransformResult { trace: "setup:a seedenc:a read:a:o1:1=1", readVia: "GetItem", readItems: "[{\"PK\":\"o1\",\"SK\":\"1\",\"v\":[2,97,1]}]" }
+    filesystem has []
+
+scenario "one seed call is transformed in one request, asked twice":
+  when: ObserveDynamoSeedTransform { host: "encode", script: "setup:a seedmix:a calls:a read:a:o1:1" }
+  predict success:
+    response OK SeedTransformResult { trace: "setup:a seedmix:a calls:a=2 read:a:o1:1=1", readVia: "GetItem", readItems: "[{\"PK\":\"o1\",\"SK\":\"1\",\"v\":[1,97,1]}]" }
+    filesystem has []
+
+scenario "a transformed seed is state: the window that follows reports nothing":
+  when: ObserveDynamoSeedTransform { host: "encode", script: "setup:a seedenc:a:o1:1:ab start:a stop:a" }
+  predict success:
+    response OK SeedTransformResult { trace: "setup:a seedenc:a start:a stop:a=0" }
+    filesystem has []
+
+scenario "without seedTransform no host is asked and a plain seed is put as before":
+  when: ObserveDynamoSeedTransform { host: "none", script: "setup:a seed:a:o1:1:x read:a:o1:1" }
+  predict success:
+    response OK SeedTransformResult { trace: "setup:a seed:a read:a:o1:1=1", readVia: "GetItem" }
+    filesystem has []
+
+scenario "a host that cannot be started is refused at setup":
+  when: ObserveDynamoSeedTransform { host: "absent", script: "setup:a" }
+  predict rejection SEED_TRANSFORM_UNAVAILABLE:
+    response ERR SeedTransformError { code: "SEED_TRANSFORM_UNAVAILABLE", detail: matching "seedTransform" }
+    filesystem has []
+
+scenario "a seedTransform without a command is refused at setup":
+  when: ObserveDynamoSeedTransform { host: "nocommand", script: "setup:a" }
+  predict rejection OPTIONS_INVALID:
+    response ERR SeedTransformError { code: "OPTIONS_INVALID", detail: matching "seedTransform.host.command" }
+    filesystem has []
+
+scenario outline "a transform that fails puts nothing":
+  when: ObserveDynamoSeedTransform { host: <host>, script: "setup:a seedmix:a" }
+  predict rejection SEED_TRANSFORM_FAILED:
+    response ERR SeedTransformError { code: "SEED_TRANSFORM_FAILED", detail: matching <detail> }
+    filesystem has []
+  examples:
+    | host       | detail               |
+    | "fail"     | "encoder not loaded" |
+    | "nomethod" | "transformSeed"      |
+    | "crash"    | "ended"              |
+    | "short"    | "2 records"          |
+    | "retype"   | "ITEM"               |
+    | "rekey"    | "PK"                 |
+
+scenario "two answers that differ are refused as nondeterministic":
+  when: ObserveDynamoSeedTransform { host: "random", script: "setup:a seedenc:a:o1:1:ab" }
+  predict rejection SEED_TRANSFORM_NONDETERMINISTIC:
+    response ERR SeedTransformError { code: "SEED_TRANSFORM_NONDETERMINISTIC", detail: matching "o1" }
+    filesystem has []
+
+scenario outline "after a refused seed call the table holds nothing of it":
+  when: ObserveDynamoSeedTransform { host: <host>, script: "setup:a seedmix:a! read:a" }
+  predict success:
+    response OK SeedTransformResult { trace: <trace>, readVia: "Scan", readItems: "[]" }
+    filesystem has []
+  examples:
+    | host     | trace                                                        |
+    | "short"  | "setup:a seedmix:a!SEED_TRANSFORM_FAILED read:a=0"           |
+    | "random" | "setup:a seedmix:a!SEED_TRANSFORM_NONDETERMINISTIC read:a=0" |
+    | "scalar" | "setup:a seedmix:a!SEED_VALUE_UNSTORABLE read:a=0"           |
+
+scenario "a key attribute whose type is not the table's is refused naming the attribute and the type the table expects":
+  when: ObserveDynamoSeedTransform { host: "none", script: "setup:a seedraw:a:keynum" }
+  predict rejection SEED_VALUE_UNSTORABLE:
+    response ERR SeedTransformError { code: "SEED_VALUE_UNSTORABLE", detail: matching "the key attribute PK is an S key in the table" }
+    filesystem has []
+
+scenario outline "a plain seed DynamoDB cannot store is refused before anything is put":
+  when: ObserveDynamoSeedTransform { host: "none", script: <script> }
+  predict rejection SEED_VALUE_UNSTORABLE:
+    response ERR SeedTransformError { code: "SEED_VALUE_UNSTORABLE", detail: matching <detail> }
+    filesystem has []
+  examples:
+    | script                       | detail   |
+    | "setup:a seedraw:a:nokey"    | "PK"     |
+    | "setup:a seedraw:a:keynull"  | "PK"     |
+    | "setup:a seedraw:a:keyempty" | "PK"     |
+    | "setup:a seedraw:a:keymap"   | "PK"     |
+    | "setup:a seedraw:a:sknum"    | "SK"     |
+    | "setup:a seedraw:a:bignum"   | "v"      |
+    | "setup:a seedraw:a:huge"     | "400 KB" |
