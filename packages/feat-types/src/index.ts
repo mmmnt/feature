@@ -284,6 +284,11 @@ export interface FeatResponseAdapter extends ReportsNamespace {
   setup(config: Record<string, unknown>, context?: ResponseSetupContext): Promise<void>;
   teardown(): Promise<void>;
   invoke(command: string, input: Record<string, unknown>, actor?: string): Promise<CapturedResponse>;
+  /**
+   * Optional (ADR-0036): receive an event a scenario delivers `to response`. A response adapter without
+   * it cannot run such a scenario (DELIVER_UNSUPPORTED, service "response").
+   */
+  deliver?(event: string, payload: Record<string, unknown>): Promise<void>;
 }
 
 /** What the harness hands a response adapter's setup() besides its invoke options (SPEC-RT-008). */

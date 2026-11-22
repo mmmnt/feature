@@ -987,7 +987,10 @@ function parseFeat(source: string, ctx: ConfigContext): Record<string, unknown> 
     const services = prediction.services as Record<string, Record<string, unknown>> | undefined;
     for (const key of Object.keys(services ?? {})) serviceRefs.push(key);
     for (const seed of (given?.seeds as Record<string, unknown>[] | undefined) ?? []) serviceRefs.push(seed.service as string);
-    for (const del of (sc.delivers as Record<string, unknown>[] | undefined) ?? []) serviceRefs.push(del.service as string);
+    // ADR-0036: `to response` names the response role, not a configured service, so it is neither
+    // UNKNOWN_SERVICE_KEY nor UNOBSERVED_SERVICE.
+    for (const del of (sc.delivers as Record<string, unknown>[] | undefined) ?? [])
+      if (del.service !== "response") serviceRefs.push(del.service as string);
     for (const f of (given?.faults as Record<string, unknown>[] | undefined) ?? []) serviceRefs.push(f.service as string);
     /**
      * A cross-surface capture reference names a service too, so it joins the same closed space —
