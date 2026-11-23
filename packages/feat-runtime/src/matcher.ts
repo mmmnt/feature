@@ -439,6 +439,14 @@ function applyNegation(actual: unknown, present: boolean, operand: Matcher, ctx:
   out.push(`${anchor}: expected not ${shown}${resolved}, got ${JSON.stringify(actual)}`);
 }
 
+// SCRATCH (ADR-0038 MG6, founder ruling d2cd2f0d): when FEAT_OPTSWEEP_LOG names a file, every compared block's
+// actual value is appended there, so the hand migration's `absent` proposals can be checked on CI's Linux runners.
+// This branch is never merged.
+import { appendFileSync as __optAppend } from "node:fs";
+function __optLog(entry: Record<string, unknown>): void {
+  const f = process.env.FEAT_OPTSWEEP_LOG;
+  if (f) __optAppend(f, JSON.stringify(entry) + "\n");
+}
 export function applyValueBlock(actual: Record<string, unknown>, block: ValueBlock, ctx: MatchContext, anchor: string, out: string[]) {
   for (const [field, m] of Object.entries(block)) {
     const present = Object.prototype.hasOwnProperty.call(actual, field);
@@ -457,6 +465,8 @@ function recordMatches(captured: CapturedRecord, predicted: PredictedRecord, ctx
   }
   if (predicted.valueBlock) {
     applyValueBlock(captured.payload, predicted.valueBlock, ctx, "", probe);
+    if (probe.length === 0)
+      __optLog({ kind: "record", anchor: (ctx as { __anchor?: string }).__anchor, type: predicted.type, schema: predicted.schemaName, listed: Object.keys(predicted.valueBlock), actual: captured.payload });
     return probe.length === 0;
   }
   return true;
@@ -482,6 +492,7 @@ export function diffResponse(
     else if (!deepEqual(actual.body, golden)) out.push(`${anchor} › response: body does not equal golden fixture '${predicted.golden}'`);
   } else if (predicted.valueBlock && actual.body) {
     applyValueBlock(actual.body, predicted.valueBlock, ctx, `${anchor} › response`, out);
+    __optLog({ kind: "response", anchor, schema: predicted.schemaName, listed: Object.keys(predicted.valueBlock), actual: actual.body });
   }
 }
 
@@ -493,6 +504,7 @@ export function diffRecords(
   anchor: string,
   out: string[],
 ) {
+  (ctx as { __anchor?: string }).__anchor = anchor;
   if (ordering === "ordered") {
     const max = Math.max(captured.length, predicted.length);
     for (let i = 0; i < max; i++) {
@@ -506,6 +518,7 @@ export function diffRecords(
     return;
   }
   // unordered: multiset matching, greedy pairing for diagnostics
+  (ctx as { __anchor?: string }).__anchor = anchor;
   const remaining = [...captured];
   for (const p of predicted) {
     const idx = remaining.findIndex((c) => recordMatches(c, p, ctx));
@@ -527,6 +540,7 @@ export function diffContains(
   anchor: string,
   out: string[],
 ) {
+  (ctx as { __anchor?: string }).__anchor = anchor;
   const remaining = [...state];
   for (const p of predicted) {
     const idx = remaining.findIndex((c) => recordMatches(c, p, ctx));

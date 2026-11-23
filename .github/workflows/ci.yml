@@ -121,7 +121,16 @@ jobs:
       - name: feat lint
         run: node packages/feature/bin/run.js lint
       - name: feat run (generated suites, coverage reported)
+        env:
+          FEAT_OPTSWEEP_LOG: optsweep-node${{ matrix.node }}.jsonl
         run: node packages/feature/bin/run.js run --coverage
+      - name: Upload the observed-fields report (scratch, ADR-0038 MG6)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: optsweep-node${{ matrix.node }}
+          path: optsweep-node${{ matrix.node }}.jsonl
+          if-no-files-found: error
       - name: Upload reports
         if: always() && matrix.node == 24
         uses: actions/upload-artifact@v4
