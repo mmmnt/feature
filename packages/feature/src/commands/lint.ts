@@ -8,8 +8,8 @@ import path from "node:path";
 import { Command, Flags } from "@oclif/core";
 import type { BuiltSpec, FeatConfig } from "@mmmnt/feat-types";
 import { parse } from "@mmmnt/feat-core";
-import { lintSpec } from "@mmmnt/feat-analyze";
-import { discoverSpecs } from "../pipeline.js";
+import { lintOptionalFields, lintSpec } from "@mmmnt/feat-analyze";
+import { discoverSpecs, loadSchemaAdapter, resolveContract } from "../pipeline.js";
 
 export default class Lint extends Command {
   static override description = "Lint all specs: unused declarations, style, lifecycle surfacing";
@@ -25,6 +25,7 @@ export default class Lint extends Command {
     const specs = discoverSpecs(root, config.specs.dir, config.specs.exclude);
     let errors = 0;
     let warnings = 0;
+    const schemaAdapter = await loadSchemaAdapter(config, root);
 
     for (const specAbs of specs) {
       const rel = path.relative(root, specAbs);
@@ -35,7 +36,9 @@ export default class Lint extends Command {
         errors++;
         continue;
       }
-      const findings = lintSpec(parsed.body as unknown as BuiltSpec);
+      const contractPath = specAbs.replace(/\.feat$/, ".contract.json");
+      const { registry } = await resolveContract(contractPath, schemaAdapter);
+      const findings = [...lintSpec(parsed.body as unknown as BuiltSpec), ...lintOptionalFields(parsed.body as unknown as BuiltSpec, registry)];
 
       if (findings.length === 0) this.log(`✓ ${rel}`);
       else {
@@ -43,6 +46,7 @@ export default class Lint extends Command {
         for (const f of findings) {
           this.log(`    ${f.message}`);
           if (f.level === "warn") warnings++;
+          if (f.level === "error") errors++;
         }
       }
     }

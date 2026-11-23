@@ -72,7 +72,7 @@ export function discoverSpecs(root: string, specsDir: string, exclude: readonly 
 // generates. It is loaded the same way every other adapter is (@mmmnt/feat-runtime).
 const DEFAULT_SCHEMA_ADAPTER = "@mmmnt/feat-schema-json";
 
-async function loadSchemaAdapter(config: FeatConfig, projectRoot: string): Promise<FeatSchemaAdapter> {
+export async function loadSchemaAdapter(config: FeatConfig, projectRoot: string): Promise<FeatSchemaAdapter> {
   const specifier = config.schemas?.adapter ?? DEFAULT_SCHEMA_ADAPTER;
   let mod;
   try {
@@ -125,7 +125,7 @@ function needsBundling(schema: unknown): boolean {
 // Resolution belongs to the adapter: what it returns as `normalized` is what gets inlined,
 // so it must already be self-contained (the generated test lands in a different directory
 // and nothing resolves at run time). Entries authored inline are already where they belong.
-async function resolveContract(
+export async function resolveContract(
   contractPath: string,
   adapter: FeatSchemaAdapter,
 ): Promise<{ registry: Record<string, object>; text: string }> {
