@@ -1,38 +1,38 @@
-# SPEC-CORE-001 amendment (DRAFT): the partial marker `...` (ADR-0038)
+# SPEC-CORE-001 amendment (DRAFT): the `partial` keyword (ADR-0038)
 
-Status: draft. Founder ruling 7d3026eb-73ec-5a92-b3fe-e2fcb7b42a31; syntax per ADR-0038-DRAFT decision 2.
+Status: draft. Founder rulings 7d3026eb-73ec-5a92-b3fe-e2fcb7b42a31 and 55fb39c4-d774-5f92-a62b-4bce3f352f28 (L1, L4).
 
 ## Grammar (docs/grammar-reference.md §5.4)
 
 ```
-valueBlock  := "{" { IDENT:field ":" matcher } [ "..." ] "}"   # ADR-0038: trailing "..." marks the block partial on purpose
+record      := DOTTED-IDENT:type "with" IDENT:schemaName [ "partial" valueBlock | "equals" "fixture" STRING | valueBlock ]
+response    := "response" STATUS IDENT:schemaName [ "partial" valueBlock | "equals" "fixture" STRING | valueBlock ]
 ```
 
-`...` is a token only inside a compiler-zone value block; agent zones stay freeform.
+`partial` is reserved inside compiler-zone blocks (with `any`, `matching`, `absent`, `not`, `f32`, `sha256`, `ordered`,
+`unordered`).
 
-## Construct / enforce lines
+## Construct / enforce
 
-- construct: a predicted response or record whose value block ends in `...` carries `"partial": true` in the IR; a
-  block without it carries no `partial` key (existing IR unchanged).
-- enforce: `...` that is not the block's last part, inside an object in a list, in a `when:`/`execute`/`deliver`
-  payload or a seed, or beside `equals fixture` is refused `MALFORMED_SYNTAX`, naming the position.
+- construct: a predicted record or response whose head carries `partial` records `"partial": true` beside its
+  `valueBlock`; one without it records no `partial` key, so every existing exemplar's IR is unchanged.
+- enforce, each refused `MALFORMED_SYNTAX` with a hint naming where `partial` goes:
+  `partial` in a payload or a seed (data); as a field's value or a list item; beside `equals fixture`, before or after;
+  with no value block after it.
 
-## Scenarios (to add to packages/feat-core/parse.feat)
+## Scenarios (drafted in packages/feat-core/parse.feat; ran green with the prototype, 105 of 105)
 
-1. A response block ending in `...` parses with `partial: true` and its listed fields.
-2. A record in a `has` list ending in `...` parses with `partial: true`.
-3. A block with no `...` parses exactly as before (no `partial` key) — every existing corpus IR unchanged.
-4. `...` before the last field is refused `MALFORMED_SYNTAX` (hint: "`...` closes a block").
-5. `...` inside an object in a list matcher is refused (hint: "an object in a list is exact, ADR-0034").
-6. `...` in a `when:` payload is refused (hint: "a payload is data").
-7. `...` in a seed record is refused.
-8. `...` beside `equals fixture` is refused.
+1. "a record and a response block marked partial record partial: true, and an unmarked block records nothing new" —
+   `fixtures/ok/partial-blocks.feat` → `partial-blocks.ir.json` (SPEC-OK-202).
+2. Outline "refuses 'partial' anywhere but a predicted record's or response's head, naming where it goes", 8 rows:
+   SPEC-BAD-136 payload, -137 seed, -138 list item, -139 field value, -140 record golden, -141 response golden,
+   -142 after a golden, -143 no block.
 
-## Lint (packages/feat-analyze, ADR-0007 discipline, hand-tested in lint.test.ts)
+## Lint hand tests (packages/feat-analyze/lint.test.ts; ran green, 8 of 8 with the two existing)
 
-1. A response block omitting an optional property warns, naming scenario, schema and properties.
-2. A record block omitting one warns, naming service and record type.
-3. A block stating the property (`absent`, `any`, a value) does not warn.
-4. A block marked `...` does not warn.
-5. A property required through an `allOf` part reached by a local `$ref` is not treated as optional.
-6. A schema with no optional property never warns.
+1. A response block leaving out an optional property is an error naming scenario, schema and property.
+2. A record block leaving one out names the service and record type.
+3. A block that states the property (absent or otherwise) passes.
+4. A block marked `partial` passes.
+5. A property required through an `allOf` part reached by a local `$ref` is not optional.
+6. A schema with no optional property, and a golden, never fail.

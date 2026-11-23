@@ -1,56 +1,60 @@
-# ADR-0038 (DRAFT): an omitted optional property is named, unless the block says it is partial
+# ADR-0038 (DRAFT): an omitted optional property is an error, unless the block says `partial`
 
-- **Status:** Draft. Founder ruling 7d3026eb-73ec-5a92-b3fe-e2fcb7b42a31 ("Fix specs + Feature lint (Recommended)"),
-  2026-11-22, chose the lint; the syntax, the level and the migration below are this draft's recommendations, open
-  for ruling.
-- **Amends:** ADR-0002 (value blocks are partial) — semantics unchanged; ADR-0007 (lint rules) — one rule added;
-  SPEC-CORE-001 — one token added to the value-block grammar.
+- **Status:** Draft. Founder rulings 7d3026eb-73ec-5a92-b3fe-e2fcb7b42a31 (2026-11-22, "Fix specs + Feature lint
+  (Recommended)") and 55fb39c4-d774-5f92-a62b-4bce3f352f28 (2026-11-23, L1–L5).
+- **Amends:** ADR-0002 (value blocks are partial: semantics unchanged); ADR-0007 (lint rules: one rule added, at error
+  level); SPEC-CORE-001 (one keyword in the record and response heads).
 
 ## Context
 
 A value block is partial (ADR-0002, grammar reference §5.4): it asserts the fields it lists, and shape completeness is
-the schema's job. The schema rejects a key it does not declare, but an **optional** property the schema declares can
-appear, unpredicted, and nothing reports it. Prediction inversion says anything unpredicted is a violation; for
-optional properties, today, it is not.
-
-Found in flmnt: FLMNT-SPEC-MEM-019's "an empty one has no last write" stayed green with a handler that added
-`lastWriteAt`, because the block never named it. An object inside a list is already exact (ADR-0034, cc58ae94); a
-top-level or nested block is not.
+the schema's job. The schema rejects a key it does not declare, but an **optional** property it declares can appear,
+unpredicted, and nothing reports it. Prediction inversion says anything unpredicted is a violation; for optional
+properties it was not. Found in flmnt: FLMNT-SPEC-MEM-019's "an empty one has no last write" stayed green with a
+handler that added `lastWriteAt`. An object inside a list is already exact (ADR-0034, cc58ae94).
 
 ## Decision
 
-1. **The rule (feat lint, warn):** for every predicted response and record value block, each optional property of the
-   block's resolved schema (properties minus required, following `allOf` and local `$ref`s in the adapter's bundled
-   schema) that the block does not list is named:
-   `warn: scenario "<name>" › <service> <type>: <Schema> leaves out optional 'a', 'b' — state each (absent, any, or a
-   value), or mark the block partial with '...'`.
-2. **The marker:** a block ending in `...` asserts its listed fields and says, in the spec, that the rest is unchecked
-   on purpose: `graph has [ REMOVE with NodeRecord { id: "e1", streamId: "ws::domain", ... } ]`. IR:
-   `"partial": true` on the record or response prediction. The runtime's comparison is unchanged (still partial); the
-   marker only silences the lint.
-3. **Refused as `MALFORMED_SYNTAX`:** `...` anywhere but last in a block; `...` in an object inside a list (lists are
-   exact, ADR-0034); `...` in a `when:`/`execute`/`deliver` payload or a seed (they are data, not predictions); `...`
-   in a block with `equals fixture` (a golden is whole).
-4. **Level: warning in this release.** Measured against the drafts' prototype (`run.patch`): Feature's 48 package
-   specs carry 367 flagged blocks (mostly adapter probe results that are partial on purpose: `last`, `peekEqualsStop`,
-   `readVia`, `detail`), the corpus 15, flmnt 3 after its sweep (20 before). An error now would fail every Feature
-   gate. Promote to an error by a later ruling, once Feature's own specs carry `...` or the fields.
-5. **Migration:** a codemod (`feat fmt --mark-partial`, draft) appends `...` to every flagged block, so a corpus
-   starts silent and each `...` is a visible, reviewable claim that the rest is unchecked. Reviewers remove a marker by
-   stating the fields.
+1. **The rule — `feat lint`, error `OPTIONAL_UNSTATED` (L2, "Error now"):** for every predicted response and record
+   value block, each optional property of the block's resolved schema (its properties minus its required ones,
+   following `allOf` and the local `$ref`s of the schema adapter's bundle) that the block does not list is an error:
+   `error [OPTIONAL_UNSTATED]: scenario "<name>" › <service> <type>: <Schema> leaves out optional 'a', 'b' — state each
+   (absent, any, or a value), or mark the block '<Schema> partial { … }' (ADR-0038)`. `feat lint` exits 1.
+2. **The marker (L1, "`partial` keyword"):** the keyword `partial` sits where `equals fixture` sits, between the
+   schema name and the block — `graph has [ REMOVE with NodeRecord partial { id: "e1", streamId: "ws::domain" } ]`,
+   `response 200 Probe partial { ok: true }`. It records `"partial": true` on the record or response prediction in the
+   IR (`schemas/builtspec.schema.json`). The runtime's comparison is unchanged; the keyword says, in the spec, that
+   the rest is unchecked on purpose, and the lint then names nothing for that block.
+3. **Refused as `MALFORMED_SYNTAX` (L4):**
+   - in data: a `when:`/`execute`/`deliver` payload or a seed record (`'partial' is refused in data` /
+     `'partial' is refused on a seed`);
+   - inside a value: a field's value or a list item (`'partial' is refused inside a value`; an object in a list is
+     exact, ADR-0034);
+   - beside `equals fixture`, before or after it (`'partial' is refused beside 'equals fixture'`: a golden is whole);
+   - with no value block after it (`'partial' must be followed by a value block`).
+   `partial` joins the reserved words of compiler-zone blocks; agent zones stay freeform.
+4. **Migration by hand (L3, "Migrate by hand"):** no codemod. Every flagged block in Feature (packages, adapters,
+   actions and corpus) gets a deliberate choice — `partial`, `absent`, or the value — recorded in
+   `drafts/optional-field-lint/migration.md` for review before it is applied. flmnt's three blocks (FLMNT-SPEC-PRJ-007
+   Erase's two REMOVE records and FLMNT-SPEC-PRJ-004 Rebuild's INSERT record) are marked `partial` (L5).
+5. **Order of landing:** the grammar and the IR first, then the migration, then the lint at error level, in one
+   release, so Feature's own gate is never red on its own rule.
 
 ## Rejected alternatives
 
-- **Exact top-level blocks** (report every unpredicted field, as lists do): the strongest inversion, but it reverses
-  ADR-0002 and breaks every spec that lists a few fields of a large record — 367 blocks in Feature alone.
-- **A `partial` keyword** (`NodeRecord partial { … }`): reads well, but it sits between the schema name and the block,
-  where `equals fixture` already sits, and adds a reserved word; `...` reads as "and the rest" where the rest would be.
-- **Error from day one:** fails Feature's own gate and every consumer's until migrated.
+- **A trailing `...` in the block** (the draft's first recommendation): rejected by L1; the keyword reads beside the
+  schema it qualifies, where `equals fixture` already reads.
+- **Warning first, error later:** rejected by L2.
+- **A codemod that marks every flagged block partial:** rejected by L3 — it would silence the rule without a decision
+  per block, which is the gap the rule closes.
+- **Exact top-level blocks** (report every unpredicted field, as lists do): reverses ADR-0002 and breaks every spec
+  that lists a few fields of a large record.
 - **Spec-only fixes, no lint:** the gap returns in the next spec written.
 
 ## Consequences
 
-- A spec's partial blocks become explicit; an unmarked block is a claim that every optional field is stated.
-- The lint needs each spec's contract registry (the schema adapter), so `feat lint` loads contracts as `generate` does.
-- Lint rules are hand-tested today (`packages/feat-analyze/lint.test.ts`, ADR-0007); this rule is too, plus the
-  parser's `...` scenarios in SPEC-CORE-001.
+- An unmarked block is a claim that every optional field it can carry is stated; `partial` is a visible exception.
+- `feat lint` loads each spec's contract through the schema adapter, as `generate` does.
+- Lint rules stay hand-tested (`packages/feat-analyze/lint.test.ts`, ADR-0007); the keyword and its refusals are
+  SPEC-CORE-001 scenarios with one new exemplar (`fixtures/ok/partial-blocks`) and eight refusal fixtures
+  (SPEC-BAD-136 to -143).

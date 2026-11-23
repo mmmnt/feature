@@ -1,5 +1,5 @@
 diff --git a/packages/feat-analyze/src/index.ts b/packages/feat-analyze/src/index.ts
-index 0a2353c..91f5ae2 100644
+index 0a2353c..99adf22 100644
 --- a/packages/feat-analyze/src/index.ts
 +++ b/packages/feat-analyze/src/index.ts
 @@ -151,3 +151,63 @@ export function formatSource(source: string): FormatResult {
@@ -7,10 +7,10 @@ index 0a2353c..91f5ae2 100644
    return { formatted, changed: formatted !== source, hasLeadingTab };
  }
 +
-+// ── DRAFT (ADR-0038, founder ruling 7d3026eb): an omitted optional property ─────────────────────
++// ── DRAFT (ADR-0038; founder rulings 7d3026eb and 55fb39c4): an omitted optional property ─────────────────────
 +// A value block is partial (ADR-0002): a property it leaves out is never checked, so an optional
 +// property of the block's schema can appear unpredicted and pass. The rule names every optional
-+// property a top-level response or record block omits, unless the block is marked partial.
++// property a top-level response or record block omits, unless the block is marked `partial`. An error (L2).
 +type JsonSchema = {
 +  properties?: Record<string, unknown>;
 +  required?: string[];
@@ -52,22 +52,584 @@ index 0a2353c..91f5ae2 100644
 +    const omitted = optionalProperties(registry[schemaName] as JsonSchema).filter((p) => !(p in block));
 +    if (omitted.length > 0)
 +      findings.push({
-+        level: "warn",
-+        message: `warn: ${where}: ${schemaName} leaves out optional ${omitted.map((p) => `'${p}'`).join(", ")} — state each (absent, any, or a value), or mark the block partial with '...'`,
++        level: "error",
++        message: `error [OPTIONAL_UNSTATED]: ${where}: ${schemaName} leaves out optional ${omitted.map((p) => `'${p}'`).join(", ")} — state each (absent, any, or a value), or mark the block '${schemaName} partial { … }' (ADR-0038)`,
 +      });
 +  };
 +  for (const sc of spec.scenarios) {
 +    const r = sc.prediction.response;
-+    if (r?.valueBlock) check(`scenario "${sc.name}" › response`, r.schemaName, r.valueBlock, (r as { partial?: boolean }).partial === true);
++    if (r?.valueBlock) check(`scenario "${sc.name}" › response`, r.schemaName, r.valueBlock, r.partial === true);
 +    for (const [svc, p] of Object.entries(sc.prediction.services ?? {}))
 +      for (const rec of [...(p.records ?? []), ...(p.contains ?? [])])
 +        if (rec.valueBlock)
-+          check(`scenario "${sc.name}" › ${svc} ${rec.type}`, rec.schemaName, rec.valueBlock, (rec as { partial?: boolean }).partial === true);
++          check(`scenario "${sc.name}" › ${svc} ${rec.type}`, rec.schemaName, rec.valueBlock, rec.partial === true);
 +  }
 +  return findings;
 +}
+diff --git a/packages/feat-core/fixtures/bad/partial-field.feat b/packages/feat-core/fixtures/bad/partial-field.feat
+new file mode 100644
+index 0000000..22143d5
+--- /dev/null
++++ b/packages/feat-core/fixtures/bad/partial-field.feat
+@@ -0,0 +1,26 @@
++feat 1.0
++
++# ADR-0038 (founder rulings 7d3026eb and 55fb39c4): 'partial' marks a whole block, never a field's value.
++
++spec SPEC-BAD-139 "partial as a field value"
++context Bad
++aggregate Thing
++type command
++status draft
++
++construct:
++  handler at src/do-thing.ts
++  touches src/**
++
++enforce:
++  do the thing
++
++contract:
++  input ThingInput
++  response ThingResult
++  record ThingRow
++
++scenario "does the thing":
++  when: DoThing { value: 1 }
++  predict success:
++    response OK ThingResult { nested: partial { a: 1 } }
+diff --git a/packages/feat-core/fixtures/bad/partial-golden-after.feat b/packages/feat-core/fixtures/bad/partial-golden-after.feat
+new file mode 100644
+index 0000000..2262bb8
+--- /dev/null
++++ b/packages/feat-core/fixtures/bad/partial-golden-after.feat
+@@ -0,0 +1,27 @@
++feat 1.0
++
++# ADR-0038 (founder rulings 7d3026eb and 55fb39c4): 'partial' after a golden is refused as beside it.
++
++spec SPEC-BAD-142 "partial after a record golden"
++context Bad
++aggregate Thing
++type command
++status draft
++
++construct:
++  handler at src/do-thing.ts
++  touches src/**
++
++enforce:
++  do the thing
++
++contract:
++  input ThingInput
++  response ThingResult
++  record ThingRow
++
++scenario "does the thing":
++  when: DoThing { value: 1 }
++  predict success:
++    response OK ThingResult
++    eventStore has [ Wrote with ThingRow equals fixture "row.json" partial ]
+diff --git a/packages/feat-core/fixtures/bad/partial-in-payload.feat b/packages/feat-core/fixtures/bad/partial-in-payload.feat
+new file mode 100644
+index 0000000..9a4580b
+--- /dev/null
++++ b/packages/feat-core/fixtures/bad/partial-in-payload.feat
+@@ -0,0 +1,26 @@
++feat 1.0
++
++# ADR-0038 (founder rulings 7d3026eb and 55fb39c4): a payload is data, written whole; 'partial' is refused in it.
++
++spec SPEC-BAD-136 "partial in a when payload"
++context Bad
++aggregate Thing
++type command
++status draft
++
++construct:
++  handler at src/do-thing.ts
++  touches src/**
++
++enforce:
++  do the thing
++
++contract:
++  input ThingInput
++  response ThingResult
++  record ThingRow
++
++scenario "does the thing":
++  when: DoThing { value: partial }
++  predict success:
++    response OK ThingResult
+diff --git a/packages/feat-core/fixtures/bad/partial-list-item.feat b/packages/feat-core/fixtures/bad/partial-list-item.feat
+new file mode 100644
+index 0000000..8b7df5d
+--- /dev/null
++++ b/packages/feat-core/fixtures/bad/partial-list-item.feat
+@@ -0,0 +1,27 @@
++feat 1.0
++
++# ADR-0038 (founder rulings 7d3026eb and 55fb39c4): an object in a list is exact (ADR-0034); 'partial' is refused as a list item.
++
++spec SPEC-BAD-138 "partial as a list item"
++context Bad
++aggregate Thing
++type command
++status draft
++
++construct:
++  handler at src/do-thing.ts
++  touches src/**
++
++enforce:
++  do the thing
++
++contract:
++  input ThingInput
++  response ThingResult
++  record ThingRow
++
++scenario "does the thing":
++  when: DoThing { value: 1 }
++  predict success:
++    response OK ThingResult
++    eventStore has [ Wrote with ThingRow { members: [ partial { name: "a" } ] } ]
+diff --git a/packages/feat-core/fixtures/bad/partial-no-block.feat b/packages/feat-core/fixtures/bad/partial-no-block.feat
+new file mode 100644
+index 0000000..a2b7d91
+--- /dev/null
++++ b/packages/feat-core/fixtures/bad/partial-no-block.feat
+@@ -0,0 +1,26 @@
++feat 1.0
++
++# ADR-0038 (founder rulings 7d3026eb and 55fb39c4): 'partial' with no value block says nothing; refused.
++
++spec SPEC-BAD-143 "partial with no block"
++context Bad
++aggregate Thing
++type command
++status draft
++
++construct:
++  handler at src/do-thing.ts
++  touches src/**
++
++enforce:
++  do the thing
++
++contract:
++  input ThingInput
++  response ThingResult
++  record ThingRow
++
++scenario "does the thing":
++  when: DoThing { value: 1 }
++  predict success:
++    response OK ThingResult partial
+diff --git a/packages/feat-core/fixtures/bad/partial-on-seed.feat b/packages/feat-core/fixtures/bad/partial-on-seed.feat
+new file mode 100644
+index 0000000..3720231
+--- /dev/null
++++ b/packages/feat-core/fixtures/bad/partial-on-seed.feat
+@@ -0,0 +1,28 @@
++feat 1.0
++
++# ADR-0038 (founder rulings 7d3026eb and 55fb39c4): a seed is data; 'partial' is refused on a seed record.
++
++spec SPEC-BAD-137 "partial on a seed record"
++context Bad
++aggregate Thing
++type command
++status draft
++
++construct:
++  handler at src/do-thing.ts
++  touches src/**
++
++enforce:
++  do the thing
++
++contract:
++  input ThingInput
++  response ThingResult
++  record ThingRow
++
++scenario "does the thing":
++  given:
++    seed eventStore [ Wrote with ThingRow partial { id: "t-1" } ]
++  when: DoThing { value: 1 }
++  predict success:
++    response OK ThingResult
+diff --git a/packages/feat-core/fixtures/bad/partial-record-golden.feat b/packages/feat-core/fixtures/bad/partial-record-golden.feat
+new file mode 100644
+index 0000000..3e276c0
+--- /dev/null
++++ b/packages/feat-core/fixtures/bad/partial-record-golden.feat
+@@ -0,0 +1,27 @@
++feat 1.0
++
++# ADR-0038 (founder rulings 7d3026eb and 55fb39c4): a golden is compared whole; 'partial' beside 'equals fixture' is refused (record).
++
++spec SPEC-BAD-140 "partial beside a record golden"
++context Bad
++aggregate Thing
++type command
++status draft
++
++construct:
++  handler at src/do-thing.ts
++  touches src/**
++
++enforce:
++  do the thing
++
++contract:
++  input ThingInput
++  response ThingResult
++  record ThingRow
++
++scenario "does the thing":
++  when: DoThing { value: 1 }
++  predict success:
++    response OK ThingResult
++    eventStore has [ Wrote with ThingRow partial equals fixture "row.json" ]
+diff --git a/packages/feat-core/fixtures/bad/partial-response-golden.feat b/packages/feat-core/fixtures/bad/partial-response-golden.feat
+new file mode 100644
+index 0000000..8500c29
+--- /dev/null
++++ b/packages/feat-core/fixtures/bad/partial-response-golden.feat
+@@ -0,0 +1,26 @@
++feat 1.0
++
++# ADR-0038 (founder rulings 7d3026eb and 55fb39c4): a golden is compared whole; 'partial' beside 'equals fixture' is refused (response).
++
++spec SPEC-BAD-141 "partial beside a response golden"
++context Bad
++aggregate Thing
++type command
++status draft
++
++construct:
++  handler at src/do-thing.ts
++  touches src/**
++
++enforce:
++  do the thing
++
++contract:
++  input ThingInput
++  response ThingResult
++  record ThingRow
++
++scenario "does the thing":
++  when: DoThing { value: 1 }
++  predict success:
++    response OK ThingResult partial equals fixture "result.json"
+diff --git a/packages/feat-core/fixtures/ok/partial-blocks.feat b/packages/feat-core/fixtures/ok/partial-blocks.feat
+new file mode 100644
+index 0000000..bfba58e
+--- /dev/null
++++ b/packages/feat-core/fixtures/ok/partial-blocks.feat
+@@ -0,0 +1,29 @@
++feat 1.0
++
++# ADR-0038 (founder rulings 7d3026eb and 55fb39c4): a record and a response block marked partial record partial: true; an unmarked block records nothing new.
++
++spec SPEC-OK-202 "partial value blocks"
++context Bad
++aggregate Thing
++type command
++status draft
++
++construct:
++  handler at src/do-thing.ts
++  touches src/**
++
++enforce:
++  do the thing
++
++contract:
++  input ThingInput
++  response ThingResult
++  record ThingRow
++
++scenario "does the thing":
++  when: DoThing { value: 1 }
++  predict success:
++    response OK ThingResult partial { id: "t-1" }
++    eventStore has [ Wrote with ThingRow partial { id: "t-1" }, Wrote with ThingRow { id: "t-2" } ]
++    cache has []
++    log has []
+diff --git a/packages/feat-core/fixtures/ok/partial-blocks.ir.json b/packages/feat-core/fixtures/ok/partial-blocks.ir.json
+new file mode 100644
+index 0000000..6a98a21
+--- /dev/null
++++ b/packages/feat-core/fixtures/ok/partial-blocks.ir.json
+@@ -0,0 +1,99 @@
++{
++  "featVersion": "1.0",
++  "identity": {
++    "id": "SPEC-OK-202",
++    "name": "partial value blocks",
++    "context": "Bad",
++    "aggregate": "Thing",
++    "type": "command",
++    "status": "draft"
++  },
++  "construct": [
++    {
++      "kind": "handler",
++      "path": "src/do-thing.ts"
++    },
++    {
++      "kind": "touches",
++      "glob": "src/**"
++    }
++  ],
++  "enforce": [
++    {
++      "kind": "constraint",
++      "text": "do the thing"
++    }
++  ],
++  "contract": [
++    {
++      "kind": "input",
++      "schemaName": "ThingInput"
++    },
++    {
++      "kind": "response",
++      "schemaName": "ThingResult"
++    },
++    {
++      "kind": "record",
++      "schemaName": "ThingRow"
++    }
++  ],
++  "scenarios": [
++    {
++      "name": "does the thing",
++      "when": {
++        "command": "DoThing",
++        "payload": {
++          "value": 1
++        }
++      },
++      "prediction": {
++        "type": "success",
++        "response": {
++          "status": "OK",
++          "schemaName": "ThingResult",
++          "partial": true,
++          "valueBlock": {
++            "id": {
++              "matcher": "literal",
++              "value": "t-1"
++            }
++          }
++        },
++        "services": {
++          "eventStore": {
++            "records": [
++              {
++                "type": "Wrote",
++                "schemaName": "ThingRow",
++                "partial": true,
++                "valueBlock": {
++                  "id": {
++                    "matcher": "literal",
++                    "value": "t-1"
++                  }
++                }
++              },
++              {
++                "type": "Wrote",
++                "schemaName": "ThingRow",
++                "valueBlock": {
++                  "id": {
++                    "matcher": "literal",
++                    "value": "t-2"
++                  }
++                }
++              }
++            ]
++          },
++          "cache": {
++            "records": []
++          },
++          "log": {
++            "records": []
++          }
++        }
++      }
++    }
++  ]
++}
+diff --git a/packages/feat-core/parse.feat b/packages/feat-core/parse.feat
+index f09b15d..266c445 100644
+--- a/packages/feat-core/parse.feat
++++ b/packages/feat-core/parse.feat
+@@ -424,3 +424,25 @@ scenario outline "refuses a list item or a list object's field it does not take,
+     | "packages/feat-core/fixtures/bad/list-absent-item.feat"  | "^'absent' is not a list item"         | "^Write a shorter list"          |
+     | "packages/feat-core/fixtures/bad/list-absent-field.feat" | "^'absent' is refused inside a list"   | "^Leave the field out"           |
+     | "packages/feat-core/fixtures/bad/not-list.feat"          | "^'not \\[ … \\]' is refused"          | "^Negate a field inside an item" |
++
++scenario "a record and a response block marked partial record partial: true, and an unmarked block records nothing new":
++  when: Parse { spec: "packages/feat-core/fixtures/ok/partial-blocks.feat", config: "packages/feat-core/fixtures/parse-observes.config.json" }
++  predict success:
++    response OK BuiltSpec equals fixture "../../packages/feat-core/fixtures/ok/partial-blocks.ir.json"
++    filesystem has []
++
++scenario outline "refuses 'partial' anywhere but a predicted record's or response's head, naming where it goes":
++  when: Parse { spec: <spec>, config: "packages/feat-core/fixtures/parse-observes.config.json" }
++  predict rejection MALFORMED_SYNTAX:
++    response ERR ParseError { code: "MALFORMED_SYNTAX", message: matching <message>, hint: matching <hint> }
++    filesystem has []
++  examples:
++    | spec                                                            | message                                       | hint                                   |
++    | "packages/feat-core/fixtures/bad/partial-in-payload.feat"       | "^'partial' is refused in data"               | "^Remove 'partial'; it marks"          |
++    | "packages/feat-core/fixtures/bad/partial-on-seed.feat"          | "^'partial' is refused on a seed"             | "^Remove 'partial' from the seed"      |
++    | "packages/feat-core/fixtures/bad/partial-list-item.feat"        | "^'partial' is refused inside a value"        | "^Put 'partial' after the record"      |
++    | "packages/feat-core/fixtures/bad/partial-field.feat"            | "^'partial' is refused inside a value"        | "^Put 'partial' after the record"      |
++    | "packages/feat-core/fixtures/bad/partial-record-golden.feat"    | "^'partial' is refused beside 'equals fixture'" | "^Use either a golden or a partial"  |
++    | "packages/feat-core/fixtures/bad/partial-response-golden.feat"  | "^'partial' is refused beside 'equals fixture'" | "^Use either a golden or a partial"  |
++    | "packages/feat-core/fixtures/bad/partial-golden-after.feat"     | "^'partial' is refused beside 'equals fixture'" | "^Use either a golden or a partial"  |
++    | "packages/feat-core/fixtures/bad/partial-no-block.feat"         | "^'partial' must be followed by a value block" | "^Write '<Schema> partial"            |
+diff --git a/packages/feat-core/src/parse.ts b/packages/feat-core/src/parse.ts
+index 34abd89..9151bd6 100644
+--- a/packages/feat-core/src/parse.ts
++++ b/packages/feat-core/src/parse.ts
+@@ -170,6 +170,13 @@ function parseLiteralValue(c: ValueCursor): unknown {
+     c.pos += m[0].length;
+     return { $placeholder: m[1] };
+   }
++  if (/^partial\b/.test(c.src.slice(c.pos)))
++    throw new ParseFailure(
++      "MALFORMED_SYNTAX",
++      "'partial' is refused in data: a payload or a seed is written whole, and only a prediction is checked.",
++      undefined,
++      "Remove 'partial'; it marks a predicted record or response block (ADR-0038).",
++    );
+   const m = /^(-?\d+(?:\.\d+)?|true|false|null)/.exec(c.src.slice(c.pos));
+   if (!m) c.fail("value");
+   c.pos += m[0].length;
+@@ -369,6 +376,13 @@ function parseMatcher(c: ValueCursor): Matcher {
+   const rest = () => c.src.slice(c.pos);
+   if (c.peek() === "{") return { matcher: "nested", fields: parseValueBlock(c) };
+   if (c.peek() === "[") return parseListMatcher(c);
++  if (/^partial\b/.test(rest()))
++    throw new ParseFailure(
++      "MALFORMED_SYNTAX",
++      "'partial' is refused inside a value: it marks a whole record or response block, and an object in a list is exact.",
++      undefined,
++      "Put 'partial' after the record's schema name or the response's, before its block (ADR-0038).",
++    );
+   if (/^not(?:[\s,}]|$)/.test(rest())) return parseNegation(c);
+   if (/^f32(?:[\s,}]|$)/.test(rest())) return parseF32Digest(c);
+   let m: RegExpExecArray | null;
+@@ -532,7 +546,28 @@ interface PredictedRecord {
+   schemaName: string;
+   valueBlock?: Record<string, Matcher>;
+   golden?: string;
++  /** ADR-0038: the block asserts its listed fields only, on purpose; the lint then names no omitted optional property. */
++  partial?: true;
+ }
++
++const withLine = (f: ParseFailure, line: number): ParseFailure => {
++  f.line ??= line;
++  return f;
++};
++const partialBesideGolden = (): ParseFailure =>
++  new ParseFailure(
++    "MALFORMED_SYNTAX",
++    "'partial' is refused beside 'equals fixture': a golden is compared whole.",
++    undefined,
++    "Use either a golden or a partial value block, not both (ADR-0038).",
++  );
++const partialWithoutBlock = (): ParseFailure =>
++  new ParseFailure(
++    "MALFORMED_SYNTAX",
++    "'partial' must be followed by a value block: it says which listed fields are checked.",
++    undefined,
++    "Write '<Schema> partial { field: matcher, … }' (ADR-0038).",
++  );
+ interface SeedRecord {
+   type: string;
+   schemaName?: string;
+@@ -567,14 +602,30 @@ function parseRecordList(src: string, mode: "predict" | "seed"): (PredictedRecor
+     c.pos += head[0].length;
+     c.skipWs();
+     if (mode === "seed") {
++      if (/^partial\b/.test(c.src.slice(c.pos)))
++        throw new ParseFailure(
++          "MALFORMED_SYNTAX",
++          "'partial' is refused on a seed: a seed is data, written whole, not a prediction.",
++          undefined,
++          "Remove 'partial' from the seed record (ADR-0038).",
++        );
+       const values = parseLiteralObject(c);
+       out.push({ type: head[1]!, schemaName: head[3]!, values });
+     } else {
+       const rec: PredictedRecord = { type: head[1]!, schemaName: head[3]! };
++      const pm = /^partial\b[ \t\n]*/.exec(c.src.slice(c.pos));
++      if (pm) {
++        c.pos += pm[0].length;
++        if (/^equals[ \t]+fixture\b/.test(c.src.slice(c.pos))) throw partialBesideGolden();
++        if (c.peek() !== "{") throw partialWithoutBlock();
++        rec.partial = true;
++      }
+       const g = /^equals[ \t]+fixture[ \t]+/.exec(c.src.slice(c.pos));
+       if (g) {
+         c.pos += g[0].length;
+         rec.golden = parseString(c);
++        c.skipWs();
++        if (/^partial\b/.test(c.src.slice(c.pos))) throw partialBesideGolden();
+       } else if (c.peek() === "{") {
+         rec.valueBlock = parseValueBlock(c);
+       }
+@@ -890,7 +941,15 @@ function parseFeat(source: string, ctx: ConfigContext): Record<string, unknown>
+           const status: string | number = /^\d+$/.test(m[1]!) ? Number(m[1]) : m[1]!;
+           const response: Record<string, unknown> = { status, schemaName: m[2] };
+           if (m[3]) {
+-            const rest = m[3].trim();
++            let rest = m[3].trim();
++            const pm = /^partial\b[ \t\n]*/.exec(rest);
++            if (pm) {
++              rest = rest.slice(pm[0].length);
++              if (/^equals[ \t]+fixture\b/.test(rest)) throw withLine(partialBesideGolden(), s.line);
++              if (!rest.startsWith("{")) throw withLine(partialWithoutBlock(), s.line);
++              response.partial = true;
++            }
++            if (/^equals[ \t]+fixture[ \t]+"(?:[^"\\]|\\.)*"[ \t]+partial\b/.test(rest)) throw withLine(partialBesideGolden(), s.line);
+             const g = /^equals[ \t]+fixture[ \t]+"((?:[^"\\]|\\.)*)"$/.exec(rest);
+             if (g) response.golden = g[1];
+             else if (rest.startsWith("{")) response.valueBlock = parseValueBlock(new ValueCursor(rest));
+diff --git a/packages/feat-types/src/index.ts b/packages/feat-types/src/index.ts
+index 91276a6..bdd1ddc 100644
+--- a/packages/feat-types/src/index.ts
++++ b/packages/feat-types/src/index.ts
+@@ -144,6 +144,8 @@ export interface PredictedRecord {
+   schemaName: string;
+   valueBlock?: ValueBlock;
+   golden?: string;
++  /** ADR-0038: the value block asserts its listed fields only, on purpose. */
++  partial?: true;
+ }
+ 
+ export interface ResponsePrediction {
+@@ -151,6 +153,8 @@ export interface ResponsePrediction {
+   schemaName: string;
+   valueBlock?: ValueBlock;
+   golden?: string;
++  /** ADR-0038: the value block asserts its listed fields only, on purpose. */
++  partial?: true;
+ }
+ 
+ export interface ServicePrediction {
 diff --git a/packages/feature/src/commands/lint.ts b/packages/feature/src/commands/lint.ts
-index 958ba3c..5e8d300 100644
+index 958ba3c..3d900a5 100644
 --- a/packages/feature/src/commands/lint.ts
 +++ b/packages/feature/src/commands/lint.ts
 @@ -8,8 +8,8 @@ import path from "node:path";
@@ -100,6 +662,14 @@ index 958ba3c..5e8d300 100644
  
        if (findings.length === 0) this.log(`✓ ${rel}`);
        else {
+@@ -43,6 +46,7 @@ export default class Lint extends Command {
+         for (const f of findings) {
+           this.log(`    ${f.message}`);
+           if (f.level === "warn") warnings++;
++          if (f.level === "error") errors++;
+         }
+       }
+     }
 diff --git a/packages/feature/src/pipeline.ts b/packages/feature/src/pipeline.ts
 index 7b97f9b..8d26eb2 100644
 --- a/packages/feature/src/pipeline.ts
@@ -122,3 +692,103 @@ index 7b97f9b..8d26eb2 100644
    contractPath: string,
    adapter: FeatSchemaAdapter,
  ): Promise<{ registry: Record<string, object>; text: string }> {
+diff --git a/schemas/builtspec.schema.json b/schemas/builtspec.schema.json
+index 8d82863..db33770 100644
+--- a/schemas/builtspec.schema.json
++++ b/schemas/builtspec.schema.json
+@@ -682,6 +682,10 @@
+             "golden": {
+               "type": "string",
+               "description": "Golden-fixture path (ADR-0013); deep structural equality; exclusive with valueBlock."
++            },
++            "partial": {
++              "const": true,
++              "description": "ADR-0038: the value block asserts its listed fields only, on purpose; requires valueBlock, never with golden."
+             }
+           }
+         },
+@@ -757,6 +761,10 @@
+         "golden": {
+           "type": "string",
+           "description": "Golden-fixture path (ADR-0013); deep structural equality; exclusive with valueBlock."
++        },
++        "partial": {
++          "const": true,
++          "description": "ADR-0038: the value block asserts its listed fields only, on purpose; requires valueBlock, never with golden."
+         }
+       }
+     },
+diff --git a/packages/feat-analyze/lint.test.ts b/packages/feat-analyze/lint.test.ts
+index 580f77d..6191e68 100644
+--- a/packages/feat-analyze/lint.test.ts
++++ b/packages/feat-analyze/lint.test.ts
+@@ -42,3 +42,69 @@ describe("ADR-0017 variable lint", () => {
+     expect(lintSpec(spec as never).some((f) => f.message.includes("stamp"))).toBe(false);
+   });
+ });
++
++// ADR-0038 (founder rulings 7d3026eb and 55fb39c4): an omitted optional property is an error unless the block is partial.
++import { lintOptionalFields } from "./src/index.js";
++
++describe("ADR-0038 optional-field lint", () => {
++  const registry = {
++    Row: { type: "object", required: ["id"], properties: { id: { type: "string" }, note: { type: "string" } } },
++    Env: { type: "object", required: ["entryType", "id"], properties: { entryType: {}, id: {} } },
++    // entryType is declared at the top and made required only by the allOf part the local $ref names
++    Entry: {
++      properties: { entryType: {}, extra: {} },
++      required: ["extra"],
++      allOf: [{ $ref: "#/$defs/env" }],
++      $defs: { env: { required: ["entryType"], properties: { entryType: {} } } },
++    },
++    Closed: { type: "object", required: ["id"], properties: { id: {} } },
++  };
++  const spec = (prediction: unknown) => ({ ...base, scenarios: [{ name: "s", prediction }] }) as never;
++  const lit = (value: unknown) => ({ matcher: "literal", value });
++
++  it("refuses a response block that leaves out an optional property, naming it", () => {
++    const f = lintOptionalFields(spec({ type: "success", response: { status: 200, schemaName: "Row", valueBlock: { id: lit("a") } } }), registry);
++    expect(f).toHaveLength(1);
++    expect(f[0]!.level).toBe("error");
++    expect(f[0]!.message).toMatch(/OPTIONAL_UNSTATED.*Row leaves out optional 'note'/);
++  });
++  it("refuses a record block that leaves one out, naming the service and record type", () => {
++    const f = lintOptionalFields(
++      spec({ type: "success", services: { log: { records: [{ type: "row.written", schemaName: "Row", valueBlock: { id: lit("a") } }] } } }),
++      registry,
++    );
++    expect(f[0]!.message).toMatch(/› log row\.written: Row/);
++  });
++  it("accepts a block that states the property, absent or otherwise", () => {
++    const f = lintOptionalFields(
++      spec({ type: "success", response: { status: 200, schemaName: "Row", valueBlock: { id: lit("a"), note: { matcher: "absent" } } } }),
++      registry,
++    );
++    expect(f).toEqual([]);
++  });
++  it("accepts a block marked partial", () => {
++    const f = lintOptionalFields(
++      spec({ type: "success", response: { status: 200, schemaName: "Row", partial: true, valueBlock: { id: lit("a") } } }),
++      registry,
++    );
++    expect(f).toEqual([]);
++  });
++  it("does not treat a property required through an allOf part reached by a local $ref as optional", () => {
++    const f = lintOptionalFields(
++      spec({ type: "success", response: { status: 200, schemaName: "Entry", valueBlock: { extra: lit(1) } } }),
++      registry,
++    );
++    expect(f).toEqual([]);
++  });
++  it("never flags a schema with no optional property, nor a golden", () => {
++    const f = lintOptionalFields(
++      spec({
++        type: "success",
++        response: { status: 200, schemaName: "Closed", valueBlock: { id: lit("a") } },
++        services: { log: { records: [{ type: "x", schemaName: "Row", golden: "row.json" }] } },
++      }),
++      registry,
++    );
++    expect(f).toEqual([]);
++  });
++});
