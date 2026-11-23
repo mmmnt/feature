@@ -329,6 +329,14 @@
         {
           "match": "\\b(equals fixture)\\b",
           "name": "support.function.matcher.feat"
+        },
+        {
+          "match": "(?<=[A-Za-z0-9_][ \\t])(partial)\\b(?=[ \\t]*\\{)",
+          "captures": {
+            "1": {
+              "name": "support.function.matcher.feat"
+            }
+          }
         }
       ]
     },

@@ -1,0 +1,27 @@
+feat 1.0
+
+# ADR-0038 (founder rulings 7d3026eb and 55fb39c4): an object in a list is exact (ADR-0034); 'partial' is refused as a list item.
+
+spec SPEC-BAD-138 "partial as a list item"
+context Bad
+aggregate Thing
+type command
+status draft
+
+construct:
+  handler at src/do-thing.ts
+  touches src/**
+
+enforce:
+  do the thing
+
+contract:
+  input ThingInput
+  response ThingResult
+  record ThingRow
+
+scenario "does the thing":
+  when: DoThing { value: 1 }
+  predict success:
+    response OK ThingResult
+    eventStore has [ Wrote with ThingRow { members: [ partial { name: "a" } ] } ]

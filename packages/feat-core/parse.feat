@@ -57,6 +57,14 @@ feat 1.0
 # response role, never a service, so it is neither UNKNOWN_SERVICE_KEY nor UNOBSERVED_SERVICE; the IR keeps
 # `service: "response"`.
 
+# AMENDMENT (ADR-0038, the `partial` keyword; founder rulings 7d3026eb "Fix specs + Feature lint (Recommended)" and
+# 55fb39c4 L1 "`partial` keyword" and L4 "Refuse it in data, values and beside a golden (Recommended)"; the set agreed
+# 580f3d10, 2026-11-23). A predicted record or response may write `partial` between its schema name and its value
+# block; the IR records "partial": true beside the block, and a block without it records nothing new, so every
+# existing exemplar's IR is unchanged. `partial` in a payload or a seed, as a field's value or a list item, beside
+# `equals fixture` (before or after), or with no block after it is refused MALFORMED_SYNTAX naming where it goes. One
+# new exemplar (fixtures/ok/partial-blocks, SPEC-OK-202) and eight refusal fixtures (SPEC-BAD-136 to -143).
+
 spec SPEC-CORE-001 "Parse a .feat file to BuiltSpec IR"
 context Toolchain
 aggregate Language
@@ -424,3 +432,25 @@ scenario outline "refuses a list item or a list object's field it does not take,
     | "packages/feat-core/fixtures/bad/list-absent-item.feat"  | "^'absent' is not a list item"         | "^Write a shorter list"          |
     | "packages/feat-core/fixtures/bad/list-absent-field.feat" | "^'absent' is refused inside a list"   | "^Leave the field out"           |
     | "packages/feat-core/fixtures/bad/not-list.feat"          | "^'not \\[ … \\]' is refused"          | "^Negate a field inside an item" |
+
+scenario "a record and a response block marked partial record partial: true, and an unmarked block records nothing new":
+  when: Parse { spec: "packages/feat-core/fixtures/ok/partial-blocks.feat", config: "packages/feat-core/fixtures/parse-observes.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "../../packages/feat-core/fixtures/ok/partial-blocks.ir.json"
+    filesystem has []
+
+scenario outline "refuses 'partial' anywhere but a predicted record's or response's head, naming where it goes":
+  when: Parse { spec: <spec>, config: "packages/feat-core/fixtures/parse-observes.config.json" }
+  predict rejection MALFORMED_SYNTAX:
+    response ERR ParseError { code: "MALFORMED_SYNTAX", message: matching <message>, hint: matching <hint> }
+    filesystem has []
+  examples:
+    | spec                                                            | message                                       | hint                                   |
+    | "packages/feat-core/fixtures/bad/partial-in-payload.feat"       | "^'partial' is refused in data"               | "^Remove 'partial'; it marks"          |
+    | "packages/feat-core/fixtures/bad/partial-on-seed.feat"          | "^'partial' is refused on a seed"             | "^Remove 'partial' from the seed"      |
+    | "packages/feat-core/fixtures/bad/partial-list-item.feat"        | "^'partial' is refused inside a value"        | "^Put 'partial' after the record"      |
+    | "packages/feat-core/fixtures/bad/partial-field.feat"            | "^'partial' is refused inside a value"        | "^Put 'partial' after the record"      |
+    | "packages/feat-core/fixtures/bad/partial-record-golden.feat"    | "^'partial' is refused beside 'equals fixture'" | "^Use either a golden or a partial"  |
+    | "packages/feat-core/fixtures/bad/partial-response-golden.feat"  | "^'partial' is refused beside 'equals fixture'" | "^Use either a golden or a partial"  |
+    | "packages/feat-core/fixtures/bad/partial-golden-after.feat"     | "^'partial' is refused beside 'equals fixture'" | "^Use either a golden or a partial"  |
+    | "packages/feat-core/fixtures/bad/partial-no-block.feat"         | "^'partial' must be followed by a value block" | "^Write '<Schema> partial"            |

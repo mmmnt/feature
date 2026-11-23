@@ -95,6 +95,13 @@ describe("feat grammar tokenization", () => {
     expect(scopesAt("  deliver OrderPublished { orderId: \"x\" } to eventBroker", "deliver")).toContain("keyword.control.trigger.feat");
   });
 
+  it("scopes partial where equals fixture sits, and leaves the word prose elsewhere (ADR-0038)", () => {
+    const record = '    graph has [ REMOVE with NodeRecord partial { id: "e1" } ]';
+    expect(scopesAt(record, "partial")).toContain("support.function.matcher.feat");
+    expect(scopesAt('    response 200 Probe partial { ok: true }', "partial")).toContain("support.function.matcher.feat");
+    expect(scopesAt("  The test is partial to green builds.", "partial")).not.toContain("support.function.matcher.feat");
+  });
+
   it("treats comments and scenario names distinctly", () => {
     expect(scopesAt("# a comment line", "comment")).toContain("comment.line.number-sign.feat");
     expect(scopesAt('scenario "successful user creation":', "scenario")).toContain("keyword.control.scenario.feat");

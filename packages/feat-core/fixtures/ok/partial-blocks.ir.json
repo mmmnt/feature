@@ -1,0 +1,99 @@
+{
+  "featVersion": "1.0",
+  "identity": {
+    "id": "SPEC-OK-202",
+    "name": "partial value blocks",
+    "context": "Bad",
+    "aggregate": "Thing",
+    "type": "command",
+    "status": "draft"
+  },
+  "construct": [
+    {
+      "kind": "handler",
+      "path": "src/do-thing.ts"
+    },
+    {
+      "kind": "touches",
+      "glob": "src/**"
+    }
+  ],
+  "enforce": [
+    {
+      "kind": "constraint",
+      "text": "do the thing"
+    }
+  ],
+  "contract": [
+    {
+      "kind": "input",
+      "schemaName": "ThingInput"
+    },
+    {
+      "kind": "response",
+      "schemaName": "ThingResult"
+    },
+    {
+      "kind": "record",
+      "schemaName": "ThingRow"
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "does the thing",
+      "when": {
+        "command": "DoThing",
+        "payload": {
+          "value": 1
+        }
+      },
+      "prediction": {
+        "type": "success",
+        "response": {
+          "status": "OK",
+          "schemaName": "ThingResult",
+          "partial": true,
+          "valueBlock": {
+            "id": {
+              "matcher": "literal",
+              "value": "t-1"
+            }
+          }
+        },
+        "services": {
+          "eventStore": {
+            "records": [
+              {
+                "type": "Wrote",
+                "schemaName": "ThingRow",
+                "partial": true,
+                "valueBlock": {
+                  "id": {
+                    "matcher": "literal",
+                    "value": "t-1"
+                  }
+                }
+              },
+              {
+                "type": "Wrote",
+                "schemaName": "ThingRow",
+                "valueBlock": {
+                  "id": {
+                    "matcher": "literal",
+                    "value": "t-2"
+                  }
+                }
+              }
+            ]
+          },
+          "cache": {
+            "records": []
+          },
+          "log": {
+            "records": []
+          }
+        }
+      }
+    }
+  ]
+}

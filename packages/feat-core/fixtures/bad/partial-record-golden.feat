@@ -1,0 +1,27 @@
+feat 1.0
+
+# ADR-0038 (founder rulings 7d3026eb and 55fb39c4): a golden is compared whole; 'partial' beside 'equals fixture' is refused (record).
+
+spec SPEC-BAD-140 "partial beside a record golden"
+context Bad
+aggregate Thing
+type command
+status draft
+
+construct:
+  handler at src/do-thing.ts
+  touches src/**
+
+enforce:
+  do the thing
+
+contract:
+  input ThingInput
+  response ThingResult
+  record ThingRow
+
+scenario "does the thing":
+  when: DoThing { value: 1 }
+  predict success:
+    response OK ThingResult
+    eventStore has [ Wrote with ThingRow partial equals fixture "row.json" ]

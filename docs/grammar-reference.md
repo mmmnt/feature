@@ -370,6 +370,14 @@ A record is `<Type> with <Schema>` plus an optional **value block**. Three asser
 type match → schema validation → value-block matchers. Value blocks are **partial**: they
 assert listed fields only; shape completeness is the schema's job.
 
+**Every optional property is stated, or the block says `partial`** (ADR-0038). `feat lint` refuses, as the error
+`OPTIONAL_UNSTATED`, a predicted record or response block that leaves out an optional property of its schema
+(following `allOf` and local `$ref`s): state it — `absent`, `any …`, or its value — or mark the block partial on
+purpose by writing `partial` where `equals fixture` would sit: `REMOVE with NodeRecord partial { id: "e1" }`,
+`response 200 Probe partial { ok: true }`. The IR records `"partial": true`; the runtime's comparison is unchanged.
+Refused as `MALFORMED_SYNTAX`: `partial` in a payload or a seed (data is written whole), as a field's value or a list
+item (an object in a list is exact), beside `equals fixture` (a golden is whole), and with no value block after it.
+
 The record **type** accepts dotted identifiers (ADR-0015): adapters own the type vocabulary
 of what they capture, and event instruments name types with dots — `charge.succeeded with
 Charge`, `checkout.session.completed with CheckoutSession`. Applies wherever a record head
@@ -379,7 +387,7 @@ IDENT validated against the `contract:` block.
 Micro-grammar (every bare word below is KEYWORD or validated IDENT — never prose):
 
 ```
-record      := DOTTED-IDENT:type "with" IDENT:schemaName [ valueBlock ]  # schemaName ∈ contract: block
+record      := DOTTED-IDENT:type "with" IDENT:schemaName [ [ "partial" ] valueBlock ]  # schemaName ∈ contract: block; ADR-0038
 DOTTED-IDENT := IDENT { "." IDENT }                                  # ADR-0015: adapters own the type vocabulary
 valueBlock  := "{" { IDENT:field ":" matcher } "}"
 matcher     := LITERAL | "@when." PATH | "@deliver" [ "[" INT "]" ] "." PATH
@@ -416,7 +424,7 @@ operand     := LITERAL | "@when." PATH | "@deliver" [ "[" INT "]" ] "." PATH
 | `{ ... }` | Nested value block |
 | `[ ... ]` holding a matcher | **List with matchers** (ADR-0034): a list's items, and the fields of an object inside it, may be matchers — `members: [ { name: "manifest.json", json: { formatVersion: 1 } }, { name: "manifest.sha256", text: any string } ]`. The list is exact: an array of the same length, each item passing its matcher in order; a wrong length or a value that is not a list is one violation (`expected a list of 2 item(s), got 3`) and no item is checked. An object inside the list is exact too: its keys are exactly the declared ones, an extra key is a violation (`a[1]: UNPREDICTED field 'size' = 120`); only a matcher's own field is loosened. Violations name the index and field (`members[1] › text: expected any string, got 42`). A list with no matcher in it is a literal, unchanged (placeholders in it stay literal data). Refused as `MALFORMED_SYNTAX`: `absent` as an item (write a shorter list), `absent` on a field of an object inside a list (leave the field out), and `not [ … ]` over a list that holds a matcher (negate a field inside an item). IR: `{ "matcher": "list", "items": [<matcher>] }`, an object holding a matcher `{ "matcher": "object", "fields": { … } }`, every matcher-free item or field a literal. Corpus exemplar: `corpus/list-matcher/`. |
 
-Reserved words (`any`, `matching`, `absent`, `not`, `f32`, `sha256`, `ordered`, `unordered`) are reserved **inside
+Reserved words (`any`, `matching`, `absent`, `not`, `f32`, `sha256`, `ordered`, `unordered`, `partial`) are reserved **inside
 compiler-zone blocks only** — agent zones remain fully freeform.
 
 ### 5.5 Ordering (ADR-0004)

@@ -1,0 +1,29 @@
+feat 1.0
+
+# ADR-0038 (founder rulings 7d3026eb and 55fb39c4): a record and a response block marked partial record partial: true; an unmarked block records nothing new.
+
+spec SPEC-OK-202 "partial value blocks"
+context Bad
+aggregate Thing
+type command
+status draft
+
+construct:
+  handler at src/do-thing.ts
+  touches src/**
+
+enforce:
+  do the thing
+
+contract:
+  input ThingInput
+  response ThingResult
+  record ThingRow
+
+scenario "does the thing":
+  when: DoThing { value: 1 }
+  predict success:
+    response OK ThingResult partial { id: "t-1" }
+    eventStore has [ Wrote with ThingRow partial { id: "t-1" }, Wrote with ThingRow { id: "t-2" } ]
+    cache has []
+    log has []

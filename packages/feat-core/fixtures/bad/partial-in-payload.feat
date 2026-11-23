@@ -1,0 +1,26 @@
+feat 1.0
+
+# ADR-0038 (founder rulings 7d3026eb and 55fb39c4): a payload is data, written whole; 'partial' is refused in it.
+
+spec SPEC-BAD-136 "partial in a when payload"
+context Bad
+aggregate Thing
+type command
+status draft
+
+construct:
+  handler at src/do-thing.ts
+  touches src/**
+
+enforce:
+  do the thing
+
+contract:
+  input ThingInput
+  response ThingResult
+  record ThingRow
+
+scenario "does the thing":
+  when: DoThing { value: partial }
+  predict success:
+    response OK ThingResult

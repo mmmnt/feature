@@ -1,0 +1,28 @@
+feat 1.0
+
+# ADR-0038 (founder rulings 7d3026eb and 55fb39c4): a seed is data; 'partial' is refused on a seed record.
+
+spec SPEC-BAD-137 "partial on a seed record"
+context Bad
+aggregate Thing
+type command
+status draft
+
+construct:
+  handler at src/do-thing.ts
+  touches src/**
+
+enforce:
+  do the thing
+
+contract:
+  input ThingInput
+  response ThingResult
+  record ThingRow
+
+scenario "does the thing":
+  given:
+    seed eventStore [ Wrote with ThingRow partial { id: "t-1" } ]
+  when: DoThing { value: 1 }
+  predict success:
+    response OK ThingResult
