@@ -1,16 +1,16 @@
 # ADR-0038 hand migration plan (DRAFT, for review; nothing applied)
 
-Founder rulings 7d3026eb-73ec-5a92-b3fe-e2fcb7b42a31 and 55fb39c4-d774-5f92-a62b-4bce3f352f28 (L3: by hand, every block a deliberate choice).
+Founder rulings 7d3026eb-73ec-5a92-b3fe-e2fcb7b42a31, 55fb39c4-d774-5f92-a62b-4bce3f352f28 (L3: by hand, every block a deliberate choice) and d2cd2f0d-8284-5d0c-a310-ad6741b0747e (MG1–MG6: SPEC-CORE-001 refusal outlines gain line/hint columns; load-config-extends states its merged fields; harness-faults RunResult and SPEC-PRR-001 bodies partial; corpus `message: any string`; every `absent` re-checked on CI Linux before applying).
 
 Each row is one value block the lint flags. *Proposed* is the choice; *Statement* is what the block gains (`partial` goes after the schema name). The proposal comes from what the spec run actually returned for each omitted field (an instrumented run of the full spec chain, 970 tests, 2026-11-23): never returned → `absent`; always the same short value → that value; minted, row-dependent, sometimes-present or long → `partial`. Corpus exemplars are not executed, so their 15 rows were decided by reading the exemplar.
 
 | Choice | Blocks |
 |---|---|
 | absent | 225 |
-| value | 59 |
-| absent + value | 42 |
-| partial | 57 |
-| unclear | 0 |
+| value | 66 |
+| value (columns) | 4 |
+| absent + value | 43 |
+| partial | 45 |
 | **total** | **383** |
 
 flmnt's three blocks (FLMNT-SPEC-PRJ-007 Erase, two REMOVE `NodeRecord`s; FLMNT-SPEC-PRJ-004 Rebuild, one INSERT `NodeRecord`) are `partial` by ruling L5 and are not repeated below.
@@ -422,15 +422,15 @@ flmnt's three blocks (FLMNT-SPEC-PRJ-007 Erase, two REMOVE `NodeRecord`s; FLMNT-
 
 | # | Scenario | Block | Omitted | Proposed | Statement | Reason |
 |---|---|---|---|---|---|---|
-| 1 | refuses an observes declaration that is not well formed or names an unconfigured service | response: ParseError | line | partial | `partial` | line differs per row — the scenario's claim is the listed fields |
+| 1 | refuses an observes declaration that is not well formed or names an unconfigured service | response: ParseError | line | value (columns) | `add a line column to the outline: each row's exact value, absent where the row has none` | MG1 (d2cd2f0d): the values are deterministic per fixture, so each row states its own |
 | 2 | a delivery to a target that is neither response nor a configured service is refused | response: ParseError | line | absent | `line: absent` | never returned in this scenario; stating it absent makes the prediction whole |
 | 3 | refuses a service the spec uses but does not observe, naming it and the observed ones | response: ParseError | line | absent | `line: absent` | never returned in this scenario; stating it absent makes the prediction whole |
-| 4 | a prediction that omits an observed service is incomplete | response: ParseError | hint, line | partial | `partial` | hint is long diagnostic text — the scenario's claim is the listed fields |
-| 5 | rejects invalid specs with the precise code | response: ParseError | hint, line | partial | `partial` | hint present in 39 of 43 rows; line present in 15 of 43 rows — the scenario's claim is the listed fields |
+| 4 | a prediction that omits an observed service is incomplete | response: ParseError | hint, line | value (columns) | `add a hint column and a line column to the outline: each row's exact value, absent where the row has none` | MG1 (d2cd2f0d): the values are deterministic per fixture, so each row states its own |
+| 5 | rejects invalid specs with the precise code | response: ParseError | hint, line | value (columns) | `add a hint column and a line column to the outline: each row's exact value, absent where the row has none` | MG1 (d2cd2f0d): the values are deterministic per fixture, so each row states its own |
 | 6 | refuses a negation of a matcher it does not take, naming the spelling to use | response: ParseError | line | absent | `line: absent` | never returned in this scenario; stating it absent makes the prediction whole |
 | 7 | refuses an f32 digest of any other shape, giving the form | response: ParseError | line | absent | `line: absent` | never returned in this scenario; stating it absent makes the prediction whole |
 | 8 | refuses a list item or a list object's field it does not take, naming the spelling to use | response: ParseError | line | absent | `line: absent` | never returned in this scenario; stating it absent makes the prediction whole |
-| 9 | refuses 'partial' anywhere but a predicted record's or response's head, naming where it goes | response: ParseError | line | partial | `partial` | line present in 2 of 8 rows — the scenario's claim is the listed fields |
+| 9 | refuses 'partial' anywhere but a predicted record's or response's head, naming where it goes | response: ParseError | line | value (columns) | `add a line column to the outline: each row's exact value, absent where the row has none` | MG1 (d2cd2f0d): the values are deterministic per fixture, so each row states its own |
 
 ## SPEC-RT-005 — `packages/feat-runner/serial-faults.feat` (7)
 
@@ -519,13 +519,13 @@ flmnt's three blocks (FLMNT-SPEC-PRJ-007 Erase, two REMOVE `NodeRecord`s; FLMNT-
 
 | # | Scenario | Block | Omitted | Proposed | Statement | Reason |
 |---|---|---|---|---|---|---|
-| 1 | an overlay replaces a service whole and keeps nothing of the base's options | response: FeatConfigResult | featVersion, report, response | partial | `partial` | report is long diagnostic text; response is long diagnostic text — the scenario's claim is the listed fields |
-| 2 | a service the overlay does not mention is the base's | response: FeatConfigResult | environment, extends, featVersion, report, response | partial | `partial` | report is long diagnostic text; response is long diagnostic text — the scenario's claim is the listed fields |
-| 3 | featVersion and schemas are inherited | response: FeatConfigResult | environment, extends, report, response | partial | `partial` | report is long diagnostic text; response is long diagnostic text — the scenario's claim is the listed fields |
-| 4 | the response block is replaced whole | response: FeatConfigResult | environment, extends, featVersion, report | partial | `partial` | report is long diagnostic text — the scenario's claim is the listed fields |
-| 5 | specs and report are replaced whole | response: FeatConfigResult | environment, extends, featVersion, response | partial | `partial` | response is long diagnostic text — the scenario's claim is the listed fields |
-| 6 | an overlay without an environment has none, not the base's | response: FeatConfigResult | featVersion, report, response | partial | `partial` | response is long diagnostic text — the scenario's claim is the listed fields |
-| 7 | an overlay file alone need not carry schemas, services or specs | response: FeatConfigResult | extends, featVersion, report, response | partial | `partial` | response is long diagnostic text — the scenario's claim is the listed fields |
+| 1 | an overlay replaces a service whole and keeps nothing of the base's options | response: FeatConfigResult | featVersion, report, response | value | `see Appendix A1` | MG2 (d2cd2f0d): the merged fields are what these scenarios exist to check; a stray inherited key is the defect class |
+| 2 | a service the overlay does not mention is the base's | response: FeatConfigResult | environment, extends, featVersion, report, response | value | `see Appendix A2` | MG2 (d2cd2f0d): the merged fields are what these scenarios exist to check; a stray inherited key is the defect class |
+| 3 | featVersion and schemas are inherited | response: FeatConfigResult | environment, extends, report, response | value | `see Appendix A3` | MG2 (d2cd2f0d): the merged fields are what these scenarios exist to check; a stray inherited key is the defect class |
+| 4 | the response block is replaced whole | response: FeatConfigResult | environment, extends, featVersion, report | value | `see Appendix A4` | MG2 (d2cd2f0d): the merged fields are what these scenarios exist to check; a stray inherited key is the defect class |
+| 5 | specs and report are replaced whole | response: FeatConfigResult | environment, extends, featVersion, response | value | `see Appendix A5` | MG2 (d2cd2f0d): the merged fields are what these scenarios exist to check; a stray inherited key is the defect class |
+| 6 | an overlay without an environment has none, not the base's | response: FeatConfigResult | featVersion, report, response | value | `see Appendix A6` | MG2 (d2cd2f0d): the merged fields are what these scenarios exist to check; a stray inherited key is the defect class |
+| 7 | an overlay file alone need not carry schemas, services or specs | response: FeatConfigResult | extends, featVersion, report, response | value | `see Appendix A7` | MG2 (d2cd2f0d): the merged fields are what these scenarios exist to check; a stray inherited key is the defect class |
 | 8 | a missing base is named | response: ConfigError | change, path, space | absent | `change: absent, path: absent, space: absent` | never returned in this scenario; stating it absent makes the prediction whole |
 | 9 | a chain is named and refused | response: ConfigError | change, path, space | absent | `change: absent, path: absent, space: absent` | never returned in this scenario; stating it absent makes the prediction whole |
 | 10 | a file that extends itself is a chain | response: ConfigError | change, path, space | absent | `change: absent, path: absent, space: absent` | never returned in this scenario; stating it absent makes the prediction whole |
@@ -538,7 +538,7 @@ flmnt's three blocks (FLMNT-SPEC-PRJ-007 Erase, two REMOVE `NodeRecord`s; FLMNT-
 
 | # | Scenario | Block | Omitted | Proposed | Statement | Reason |
 |---|---|---|---|---|---|---|
-| 1 | loads a valid config | response: FeatConfigResult | extends, report, response | partial | `partial` | response is long diagnostic text — the scenario's claim is the listed fields |
+| 1 | loads a valid config | response: FeatConfigResult | extends, report, response | absent + value | `see Appendix A8` | MG2 (d2cd2f0d): the merged fields are what these scenarios exist to check; a stray inherited key is the defect class |
 | 2 | missing file | response: ConfigError | detail | absent | `detail: absent` | never returned in this scenario; stating it absent makes the prediction whole |
 | 3 | eventual service without convergence timeout | response: ConfigError | path | absent | `path: absent` | never returned in this scenario; stating it absent makes the prediction whole |
 | 4 | schema-invalid configs are rejected | response: ConfigError | path | absent | `path: absent` | never returned in this scenario; stating it absent makes the prediction whole |
@@ -593,3 +593,87 @@ flmnt's three blocks (FLMNT-SPEC-PRJ-007 Erase, two REMOVE `NodeRecord`s; FLMNT-
 |---|---|---|---|---|---|---|
 | 1 | an implausible email is rejected | response: ErrorResponse | message | value | `message: any string` | exemplar not executed; a refusal always carries a human message, and its wording is not the exemplar's point |
 
+
+## Appendix: MG2 — the merged values SPEC-RT-004 / SPEC-RT-001 blocks state (observed in the run)
+
+### A1. SPEC-RT-004 — an overlay replaces a service whole and keeps nothing of the base's options
+
+```
+featVersion: "1.0"
+report: {"format":["console","junit"],"junitOutput":".feature/reports/integration-junit.xml"}
+response: {"adapter":"@mmmnt/feat-adapter-http","invoke":{"baseUrl":"https://orders.integration.example"},"commands":{"Ping":{"method":"GET","path":"/ping"},"Pong":{"method":"GET","path":"/pong"}},"actors":{"default":"operator","operator":{"headers":{"authorization":"Bearer o"}},"auditor":{"headers":{"authorization":"Bearer a"}}}}
+```
+
+### A2. SPEC-RT-004 — a service the overlay does not mention is the base's
+
+```
+environment: "integration"
+extends: "base.config.json"
+featVersion: "1.0"
+report: {"format":["console","junit"],"junitOutput":".feature/reports/integration-junit.xml"}
+response: {"adapter":"@mmmnt/feat-adapter-http","invoke":{"baseUrl":"https://orders.integration.example"},"commands":{"Ping":{"method":"GET","path":"/ping"},"Pong":{"method":"GET","path":"/pong"}},"actors":{"default":"operator","operator":{"headers":{"authorization":"Bearer o"}},"auditor":{"headers":{"authorization":"Bearer a"}}}}
+```
+
+### A3. SPEC-RT-004 — featVersion and schemas are inherited
+
+```
+environment: "integration"
+extends: "base.config.json"
+report: {"format":["console","junit"],"junitOutput":".feature/reports/integration-junit.xml"}
+response: {"adapter":"@mmmnt/feat-adapter-http","invoke":{"baseUrl":"https://orders.integration.example"},"commands":{"Ping":{"method":"GET","path":"/ping"},"Pong":{"method":"GET","path":"/pong"}},"actors":{"default":"operator","operator":{"headers":{"authorization":"Bearer o"}},"auditor":{"headers":{"authorization":"Bearer a"}}}}
+```
+
+### A4. SPEC-RT-004 — the response block is replaced whole
+
+```
+environment: "integration"
+extends: "base.config.json"
+featVersion: "1.0"
+report: {"format":["console","junit"],"junitOutput":".feature/reports/integration-junit.xml"}
+```
+
+### A5. SPEC-RT-004 — specs and report are replaced whole
+
+```
+environment: "integration"
+extends: "base.config.json"
+featVersion: "1.0"
+response: {"adapter":"@mmmnt/feat-adapter-http","invoke":{"baseUrl":"https://orders.integration.example"},"commands":{"Ping":{"method":"GET","path":"/ping"},"Pong":{"method":"GET","path":"/pong"}},"actors":{"default":"operator","operator":{"headers":{"authorization":"Bearer o"}},"auditor":{"headers":{"authorization":"Bearer a"}}}}
+```
+
+### A6. SPEC-RT-004 — an overlay without an environment has none, not the base's
+
+```
+featVersion: "1.0"
+report: {"format":["console"]}
+response: {"adapter":"@mmmnt/feat-adapter-handler","commands":{"Ping":{"module":"src/ping.ts","export":"ping"},"Pong":{"module":"src/pong.ts","export":"pong"}},"actors":{"default":"operator","operator":{"context":{"role":"operator"}},"auditor":{"context":{"role":"auditor"}}}}
+```
+
+### A7. SPEC-RT-004 — an overlay file alone need not carry schemas, services or specs
+
+```
+extends: "base.config.json"
+featVersion: "1.0"
+report: {"format":["console"]}
+response: {"adapter":"@mmmnt/feat-adapter-handler","commands":{"Ping":{"module":"src/ping.ts","export":"ping"},"Pong":{"module":"src/pong.ts","export":"pong"}},"actors":{"default":"operator","operator":{"context":{"role":"operator"}},"auditor":{"context":{"role":"auditor"}}}}
+```
+
+### A8. SPEC-RT-001 — loads a valid config
+
+```
+extends: absent
+report: {"format":["console"]}
+response: {"adapter":"@mmmnt/feat-adapter-handler","commands":{"Ping":{"module":"src/ping.ts","export":"ping"}}}
+```
+
+
+## MG6 — re-check every `absent` on CI's Linux runners (plan, founder ruling d2cd2f0d)
+
+1. A throwaway Feature branch, `scratch/adr-0038-mg6-observed-fields`, from origin/main: the matcher logs each compared
+   block's actual value when `FEAT_OPTSWEEP_LOG` names a file, and CI's spec-chain job (Node 22, 24, 26, ubuntu-latest)
+   sets it and uploads `optsweep-node<n>` as an artifact. A draft PR, marked do-not-merge, triggers it; it is closed
+   and the branch deleted once the artifacts are downloaded.
+2. The artifacts are joined with this table's blocks, recomputed against the same main commit. A field proposed
+   `absent` that Linux returned in any row is corrected (to its value if constant and short, else `partial`); a
+   proposed value that differs on Linux is corrected the same way; blocks new since this table was written are added.
+3. The corrections are listed here before the founder is asked to agree the set.
