@@ -18,7 +18,7 @@ feat 1.0
 #
 # Amended (ADR-0037; flmnt founder ruling 814db4fb-8c72-577a-9f9e-132ec6916422, 2026-11-22, "Feature change (Recommended)", the mechanism for ruling
 # 10d35eb4-a501-5547-b264-84224be37944 — a spec host reports what a delivered policy issued; DA1 and DA2 ruled
-# 78c4b277-1afa-5363-bc0c-b7bbe9286caa): what the response role
+# 78c4b277-1afa-5363-bc0c-b7bbe9286caa; issued-body readability ruled b9ebf9cb-9286-5490-8ad2-683ff34f86b9): what the response role
 # answers to a delivery is the case's captured response, so a delivery-only case can predict `response` like a
 # `when:` case does. A case has no `when:` beside its deliveries (TRIGGER_MISMATCH, ADR-0011), so there is one
 # response per case: the answer of the last delivery to response that answered one, and a later delivery that answers

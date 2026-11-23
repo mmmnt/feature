@@ -1,8 +1,8 @@
 diff --git a/crates/flmnt-feat-host/src/host.rs b/crates/flmnt-feat-host/src/host.rs
-index eca5be9..df00e34 100644
+index d4f0288..5bdd90b 100644
 --- a/crates/flmnt-feat-host/src/host.rs
 +++ b/crates/flmnt-feat-host/src/host.rs
-@@ -1313,10 +1313,15 @@ impl Host {
+@@ -1342,10 +1342,15 @@ impl Host {
          // carries (FLMNT-HELD-58, flmnt decision 23eac814); an entry with no actor is delivered with no connection
          let payload = params["payload"].clone();
          let connection = self.delivered_connection(&payload);
@@ -20,10 +20,10 @@ index eca5be9..df00e34 100644
  
      /// The connection a delivered entry's actor names: a declared connection with that actor, or, when none is
 diff --git a/crates/flmnt-kernel/src/registration.rs b/crates/flmnt-kernel/src/registration.rs
-index dabb56d..31e056e 100644
+index dfd4377..51c10d4 100644
 --- a/crates/flmnt-kernel/src/registration.rs
 +++ b/crates/flmnt-kernel/src/registration.rs
-@@ -291,5 +291,35 @@ pub async fn issue(
+@@ -309,5 +309,35 @@ pub async fn issue(
      let command = COMMANDS
          .iter()
          .find(|c| c.context == context && c.name == name)?;
