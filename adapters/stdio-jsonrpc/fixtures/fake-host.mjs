@@ -84,6 +84,9 @@ async function canned(req) {
       // ADR-0036: a host that serves no response-role delivery answers it method-not-found.
       if (mode === "no-response-deliver" && p.service === "response") return { error: { code: -32601, message: "Method not found: deliver to response" } };
       log(`deliver ${p.service} ${p.event}`);
+      // ADR-0037: a host may answer any delivery in the invoke result's shape (flmnt 78c4b277 DA4); a shape without body breaks it.
+      if (mode === "deliver-answers") return { result: { status: 200, body: { issued: [] } } };
+      if (mode === "deliver-answers-bad" && p.service === "response") return { result: { status: 200 } };
       return { result: {} };
     default:
       return { result: {} };

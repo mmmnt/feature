@@ -47,6 +47,11 @@ feat 1.0
 # AMENDED by founder rulings aee7d787 and 28f7d2d6, agreed b680b51c (ADR-0036): the response role delivers an event a
 # scenario sends `to response` with the existing `deliver` method, `service: "response"`; a host that serves no such
 # delivery answers an error, relayed as HOST_ERROR. No schema change; the version stays 2.
+# AMENDED and agreed (founder f541c13a-c7c3-52ba-868f-2bcdb143042a, 2026-11-23; ADR-0037; flmnt founder ruling 814db4fb-8c72-577a-9f9e-132ec6916422, 2026-11-22, "Feature change (Recommended)", the mechanism for ruling
+# 10d35eb4-a501-5547-b264-84224be37944; answers ruled 78c4b277-1afa-5363-bc0c-b7bbe9286caa): deliver's result is either
+# empty, as before, or the invoke result's shape { status, body, headers?, metadata? }, for a delivery to any role (DA4).
+# The harness keeps only the response role's as the case's response. Any other shape violates the closed result.
+# Widening only: every existing host's {} still conforms; the version stays 2.
 
 spec SPEC-RPC-001 "Exchange one request with a spec host"
 context Toolchain
@@ -430,4 +435,22 @@ scenario "a host that serves no seed transform answers method not found":
   when: Exchange { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/seed-host.mjs", "--mode", "nomethod"] }, method: "transformSeed", params: { service: "graph", records: [] } }
   predict rejection HOST_ERROR:
     response ERR ExchangeError { code: "HOST_ERROR", rpcCode: -32601, hostSpawned: true, hostAlive: false }
+    filesystem has []
+
+scenario "a host may answer a response-role delivery in the invoke result's shape":
+  when: Exchange { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "deliver-answers"] }, method: "deliver", params: { service: "response", event: "deletion.started", payload: { n: 1 } } }
+  predict success:
+    response OK ExchangeResult { method: "deliver", sent: { method: "deliver", params: { service: "response", event: "deletion.started", payload: { n: 1 } } }, hostSpawned: true, hostAlive: false, result: { status: 200, body: { issued: [] } } }
+    filesystem has []
+
+scenario "a delivery answered with a status but no body is a protocol violation":
+  when: Exchange { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "deliver-answers-bad"] }, method: "deliver", params: { service: "response", event: "deletion.started", payload: { n: 1 } } }
+  predict rejection PROTOCOL_VIOLATION:
+    response ERR ExchangeError { code: "PROTOCOL_VIOLATION", hostSpawned: true, hostAlive: false }
+    filesystem has []
+
+scenario "a host may answer a delivery to a service in the invoke result's shape too":
+  when: Exchange { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "deliver-answers"] }, method: "deliver", params: { service: "log", event: "log.requested", payload: { n: 1 } } }
+  predict success:
+    response OK ExchangeResult { method: "deliver", sent: { method: "deliver", params: { service: "log", event: "log.requested", payload: { n: 1 } } }, hostSpawned: true, hostAlive: false, result: { status: 200, body: { issued: [] } } }
     filesystem has []
