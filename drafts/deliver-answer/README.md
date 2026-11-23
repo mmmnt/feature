@@ -6,6 +6,8 @@ Rulings: flmnt `814db4fb-8c72-577a-9f9e-132ec6916422` ("Feature change (Recommen
 - **DA2:** the existing "no response captured" failure.
 - **DA3:** "Whole reply body" (not the recommendation).
 - **DA4:** "Answer issued too" (not the recommendation).
+- **C3:** "Add `ran` (Recommended)", `9ae15423-3818-5030-a01b-3c3e02bdef05` (the batch 8 workshop). flmnt's answer names
+  the policies that ran, `ran: [ { context, policy } ]`, in order, beside `issued`.
 - **Readability:** "Matchers for prose (Recommended)", `b9ebf9cb-9286-5490-8ad2-683ff34f86b9`. Issued bodies state code, status,
   context and details as literals, with `sentence: any string, remedy: any string`. ADR: `ADR-0037-DRAFT.md`. Nothing here is applied to the branch's specs or
 code. The drafts were run with `run.patch` applied, and then the tree was restored.
@@ -24,7 +26,12 @@ code. The drafts were run with `run.patch` applied, and then the tree was restor
 - `flmnt-host.patch`: flmnt's side, **for flmnt to land, not here**.
   - The kernel's `registration::issue` records `{ context, command, status, body }` for every command issued in
     process, where `body` is the whole reply body, or null when there is none (DA3).
-  - The spec host's `deliver` answers `{ status: 200, body: { issued: [...] } }` to every delivery, on any role (DA4).
+  - The spec host's `deliver` answers `{ status: 200, body: { ran: [...], issued: [...] } }` to every delivery, on any
+    role (DA4, C3).
+  - The kernel's `Policy` gains `name`, the model's policy name. Every registration states it: the nine lifecycle and
+    workspaces policies, the causal-graph fold as `CausalGraph`, and the host's two test policies.
+  - The vendored `contracts/vendor/feature/feat-host-protocol.schema.json` takes the same `results.deliver` widening; it
+    is identical to Feature's.
 - `flmnt-wsp-009-scratch.patch`: the scratch FinishErasure predictions this was proven with, against flmnt's real host.
 
 ## Results
@@ -62,35 +69,31 @@ Each issued body states code, status, context and details as literals, with `sen
 string`. An object inside a list item must have exactly its declared keys (ADR-0034), so the prose fields are named
 with a matcher rather than left out.
 
-## Open question C3: should the answer name the policies that ran?
+## C3 (ruled 9ae15423): the answer names the policies that ran
 
-Once several policies listen on one event, the harness can't tell a spec's own policy is missing. flmnt's batch 8, for
-example, has CloseExport, CloseImport and CloseRebuild on WritesResumed. Another policy for the same event still runs, the
-delivery still succeeds, and a scenario that predicts "issued nothing" passes with the policy under test not registered
-at all. That's a gate passing with zero work.
-
-- **Recommend: yes.** Add `ran: [ { context, policy } ]` beside `issued` in the host's answer, listing every policy the
-  delivery ran, in order.
-  - A spec predicts `ran` to show its own policy ran, and a missing policy turns red. This matters most for "issued
-    nothing" scenarios.
-  - The cost is flmnt-side only. The kernel's `Policy` gains a `name`, which every `#[distributed_slice(POLICIES)]`
-    registration must then state, and each policy spec's answer prediction names the policies.
-  - Feature is unaffected, since the body is the host's own.
-- **Alternative: no.** A policy spec relies on a `log has` or `issued` prediction that only its policy could produce. But
-  every "issued nothing" or `log has []` scenario stays blind to a missing policy.
+- **Check on flmnt main `8881254`:**
+  - Workspaces passes 81 of 81, and WSP-009 6 of 6, each predicting its `ran`.
+  - With FinishErasureOnEmptyPurge unregistered, 2 of 6 go red. One is "a purge that lists streams issues nothing", which
+    was blind to a missing policy before.
+  - With the empty-purge check dropped, 1 of 6 is red.
+  - The host's protocol tests pass 34 of 34, with the vendored schema updated.
+- **Other crates:** `cargo check --workspace --all-targets` is clean.
+  - Lifecycle is 122 of 131 and projections 12 of 27, with the same failures with and without the patch. These are
+    host-environment cases on macOS, such as stores and encoder.
 
 ## The syntax flmnt's WSP-009 scenarios use
 
 Contract: `response DeliveryAnswer`, with `DeliveryAnswer` declared in the `.contract.json`:
-`{ issued: [ { context, command, status: integer, body: object | null } ] }`, closed.
+`{ ran: [ { context, policy } ], issued: [ { context, command, status: integer, body: object | null } ] }`, closed.
 
 ```
   deliver GraphErased { … } to response
   predict success:
-    response 200 DeliveryAnswer { issued: [ { context: "flmnt-workspaces", command: "CompleteDeletion", status: 409, body: { code: "ERASURE_INCOMPLETE", status: 409, sentence: any string, remedy: any string, context: "Workspaces", details: { workspace: "6f9619ff-8b86-4d11-b42d-00c04fc964ff", streams: ["6f9619ff-8b86-4d11-b42d-00c04fc964ff::operational"] } } } ] }
+    response 200 DeliveryAnswer { ran: [ { context: "flmnt-workspaces", policy: "FinishErasureOnGraphErased" } ], issued: [ { context: "flmnt-workspaces", command: "CompleteDeletion", status: 409, body: { code: "ERASURE_INCOMPLETE", status: 409, sentence: any string, remedy: any string, context: "Workspaces", details: { workspace: "6f9619ff-8b86-4d11-b42d-00c04fc964ff", streams: ["6f9619ff-8b86-4d11-b42d-00c04fc964ff::operational"] } } } ] }
     log has []
 ```
 
-A completed deletion is `{ context: "flmnt-workspaces", command: "CompleteDeletion", status: 200, body: { id: "…", by:
-"person-1", at: "2026-11-20T10:00:00.000Z" } }`. A delivery whose policies issue nothing is `response 200 DeliveryAnswer
-{ issued: [] }`.
+- **A completed deletion:** the issued item is `{ context: "flmnt-workspaces", command: "CompleteDeletion", status: 200,
+  body: { id: "…", by: "person-1", at: "2026-11-20T10:00:00.000Z" } }`.
+- **A purge that lists streams:** `response 200 DeliveryAnswer { ran: [ { context: "flmnt-workspaces", policy:
+  "FinishErasureOnEmptyPurge" } ], issued: [] }`.

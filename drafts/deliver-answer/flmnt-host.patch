@@ -1,29 +1,93 @@
+diff --git a/contracts/vendor/feature/feat-host-protocol.schema.json b/contracts/vendor/feature/feat-host-protocol.schema.json
+index 80e5ddc..27fbf6b 100644
+--- a/contracts/vendor/feature/feat-host-protocol.schema.json
++++ b/contracts/vendor/feature/feat-host-protocol.schema.json
+@@ -402,7 +402,10 @@
+         }
+       },
+       "startCapture": { "$ref": "#/definitions/empty" },
+-      "deliver": { "$ref": "#/definitions/empty" },
++      "deliver": {
++        "description": "ADR-0037: a delivery answers nothing ({}), or, for the response role, what it answers in the invoke result's shape, which becomes the case's captured response.",
++        "anyOf": [{ "$ref": "#/definitions/empty" }, { "$ref": "#/definitions/results/invoke" }]
++      },
+       "fault": { "$ref": "#/definitions/empty" },
+       "invoke": {
+         "type": "object",
 diff --git a/crates/flmnt-feat-host/src/host.rs b/crates/flmnt-feat-host/src/host.rs
-index d4f0288..5bdd90b 100644
+index d4f0288..7894b4e 100644
 --- a/crates/flmnt-feat-host/src/host.rs
 +++ b/crates/flmnt-feat-host/src/host.rs
-@@ -1342,10 +1342,15 @@ impl Host {
+@@ -1330,22 +1330,28 @@ impl Host {
+         let event = params["event"].as_str().unwrap_or_default();
+         // every policy registered for the event runs, as every subscriber of the event does at run time; each acts
+         // only on what its own run caused, so the ones the event is not for issue nothing
+-        let handles: Vec<_> = POLICIES
++        let policies: Vec<_> = POLICIES
+             .iter()
+             .filter(|p| p.event == event && self.serves(p.context))
+-            .map(|p| p.handle)
+             .collect();
+-        if handles.is_empty() {
++        if policies.is_empty() {
+             return Err((BAD_PARAMS, format!("no policy is registered for {event}")));
+         }
+         // a policy runs under the connection of the request that started the run, the actor the delivered entry
          // carries (FLMNT-HELD-58, flmnt decision 23eac814); an entry with no actor is delivered with no connection
          let payload = params["payload"].clone();
          let connection = self.delivered_connection(&payload);
+-        for handle in handles {
+-            self.run_with(handle, payload.clone(), None, connection.clone())?;
 +        flmnt_kernel::registration::take_issued();
-         for handle in handles {
-             self.run_with(handle, payload.clone(), None, connection.clone())?;
++        let mut ran = Vec::new();
++        for policy in policies {
++            self.run_with(policy.handle, payload.clone(), None, connection.clone())?;
++            ran.push(json!({ "context": policy.context, "policy": policy.name }));
          }
 -        Ok(json!({}))
-+        // Feature ADR-0037 (flmnt founder rulings 10d35eb4, 78c4b277): a delivery answers what the policies issued, in
-+        // order, each command with its status and whole reply body (DA3), whichever role delivered it (DA4); the harness
-+        // keeps only the response role's answer as the case's response.
++        // Feature ADR-0037 (flmnt founder rulings 10d35eb4, 78c4b277, C3): a delivery answers the policies that ran, in
++        // order, and what they issued, each command with its status and whole reply body (DA3), whichever role delivered
++        // it (DA4); the harness keeps only the response role's answer as the case's response.
 +        let issued = flmnt_kernel::registration::take_issued();
-+        Ok(json!({ "status": 200, "body": { "issued": issued } }))
++        Ok(json!({ "status": 200, "body": { "ran": ran, "issued": issued } }))
      }
  
      /// The connection a delivered entry's actor names: a declared connection with that actor, or, when none is
+diff --git a/crates/flmnt-feat-host/tests/protocol.rs b/crates/flmnt-feat-host/tests/protocol.rs
+index b055c40..a4b889b 100644
+--- a/crates/flmnt-feat-host/tests/protocol.rs
++++ b/crates/flmnt-feat-host/tests/protocol.rs
+@@ -178,6 +178,7 @@ static OTHER: Command = Command {
+ #[distributed_slice(POLICIES)]
+ static REACT: Policy = Policy {
+     context: "flmnt-test",
++    name: "React",
+     event: "thing.happened",
+     handle: on_thing,
+ };
+@@ -185,6 +186,7 @@ static REACT: Policy = Policy {
+ #[distributed_slice(POLICIES)]
+ static WATCH: Policy = Policy {
+     context: "flmnt-test",
++    name: "Watch",
+     event: "thing.happened",
+     handle: watch,
+ };
 diff --git a/crates/flmnt-kernel/src/registration.rs b/crates/flmnt-kernel/src/registration.rs
-index dfd4377..51c10d4 100644
+index dfd4377..14efdac 100644
 --- a/crates/flmnt-kernel/src/registration.rs
 +++ b/crates/flmnt-kernel/src/registration.rs
-@@ -309,5 +309,35 @@ pub async fn issue(
+@@ -285,6 +285,9 @@ pub struct Command {
+ /// A policy a bounded context runs when an event is delivered, registered in [`POLICIES`].
+ pub struct Policy {
+     pub context: &'static str,
++    /// The policy's name in the model, as the spec host reports it in a delivery's `ran` (Feature ADR-0037; flmnt
++    /// founder ruling C3, "Add `ran` (Recommended)").
++    pub name: &'static str,
+     pub event: &'static str,
+     pub handle: Handler,
+ }
+@@ -309,5 +312,35 @@ pub async fn issue(
      let command = COMMANDS
          .iter()
          .find(|c| c.context == context && c.name == name)?;
@@ -60,3 +124,119 @@ index dfd4377..51c10d4 100644
 +pub fn take_issued() -> Vec<Issued> {
 +    std::mem::take(&mut *ISSUED.lock().unwrap_or_else(std::sync::PoisonError::into_inner))
  }
+diff --git a/crates/flmnt-lifecycle/src/features/export_after_pause_on_writes_paused/mod.rs b/crates/flmnt-lifecycle/src/features/export_after_pause_on_writes_paused/mod.rs
+index dfa8b5d..fa8633c 100644
+--- a/crates/flmnt-lifecycle/src/features/export_after_pause_on_writes_paused/mod.rs
++++ b/crates/flmnt-lifecycle/src/features/export_after_pause_on_writes_paused/mod.rs
+@@ -14,6 +14,7 @@ use super::node;
+ #[distributed_slice(POLICIES)]
+ static EXPORT_AFTER_PAUSE: Policy = Policy {
+     context: "flmnt-lifecycle",
++    name: "ExportAfterPauseOnWritesPaused",
+     event: "WritesPaused",
+     handle,
+ };
+diff --git a/crates/flmnt-lifecycle/src/features/import_after_pause_on_writes_paused/mod.rs b/crates/flmnt-lifecycle/src/features/import_after_pause_on_writes_paused/mod.rs
+index f59487a..e972dc3 100644
+--- a/crates/flmnt-lifecycle/src/features/import_after_pause_on_writes_paused/mod.rs
++++ b/crates/flmnt-lifecycle/src/features/import_after_pause_on_writes_paused/mod.rs
+@@ -21,6 +21,7 @@ const REGISTRY: &str = "workspaces::registry";
+ #[distributed_slice(POLICIES)]
+ static IMPORT_AFTER_PAUSE: Policy = Policy {
+     context: "flmnt-lifecycle",
++    name: "ImportAfterPauseOnWritesPaused",
+     event: "WritesPaused",
+     handle,
+ };
+diff --git a/crates/flmnt-lifecycle/src/features/rebuild_after_pause_on_writes_paused/mod.rs b/crates/flmnt-lifecycle/src/features/rebuild_after_pause_on_writes_paused/mod.rs
+index 49e4900..6105737 100644
+--- a/crates/flmnt-lifecycle/src/features/rebuild_after_pause_on_writes_paused/mod.rs
++++ b/crates/flmnt-lifecycle/src/features/rebuild_after_pause_on_writes_paused/mod.rs
+@@ -14,6 +14,7 @@ use super::node;
+ #[distributed_slice(POLICIES)]
+ static REBUILD_AFTER_PAUSE: Policy = Policy {
+     context: "flmnt-lifecycle",
++    name: "RebuildAfterPauseOnWritesPaused",
+     event: "WritesPaused",
+     handle,
+ };
+diff --git a/crates/flmnt-lifecycle/src/features/rebuild_on_snapshot_imported/mod.rs b/crates/flmnt-lifecycle/src/features/rebuild_on_snapshot_imported/mod.rs
+index e09f67b..33d00a3 100644
+--- a/crates/flmnt-lifecycle/src/features/rebuild_on_snapshot_imported/mod.rs
++++ b/crates/flmnt-lifecycle/src/features/rebuild_on_snapshot_imported/mod.rs
+@@ -15,6 +15,7 @@ use super::node::{self, LOG, NODE};
+ #[distributed_slice(POLICIES)]
+ static REBUILD_ON_SNAPSHOT_IMPORTED: Policy = Policy {
+     context: "flmnt-lifecycle",
++    name: "RebuildOnSnapshotImported",
+     event: "SnapshotImported",
+     handle,
+ };
+diff --git a/crates/flmnt-lifecycle/src/features/resume_after_rebuild_flow_on_projections_rebuilt/mod.rs b/crates/flmnt-lifecycle/src/features/resume_after_rebuild_flow_on_projections_rebuilt/mod.rs
+index 6857c4c..cf5c08d 100644
+--- a/crates/flmnt-lifecycle/src/features/resume_after_rebuild_flow_on_projections_rebuilt/mod.rs
++++ b/crates/flmnt-lifecycle/src/features/resume_after_rebuild_flow_on_projections_rebuilt/mod.rs
+@@ -18,6 +18,7 @@ const KIND: &str = "rebuild";
+ #[distributed_slice(POLICIES)]
+ static RESUME_AFTER_REBUILD_FLOW: Policy = Policy {
+     context: "flmnt-lifecycle",
++    name: "ResumeAfterRebuildFlowOnProjectionsRebuilt",
+     event: "ProjectionsRebuilt",
+     handle,
+ };
+diff --git a/crates/flmnt-lifecycle/src/features/resume_after_rebuild_on_projections_rebuilt/mod.rs b/crates/flmnt-lifecycle/src/features/resume_after_rebuild_on_projections_rebuilt/mod.rs
+index 0d3f8a5..cecfe3a 100644
+--- a/crates/flmnt-lifecycle/src/features/resume_after_rebuild_on_projections_rebuilt/mod.rs
++++ b/crates/flmnt-lifecycle/src/features/resume_after_rebuild_on_projections_rebuilt/mod.rs
+@@ -17,6 +17,7 @@ const KIND: &str = "import";
+ #[distributed_slice(POLICIES)]
+ static RESUME_AFTER_REBUILD: Policy = Policy {
+     context: "flmnt-lifecycle",
++    name: "ResumeAfterRebuildOnProjectionsRebuilt",
+     event: "ProjectionsRebuilt",
+     handle,
+ };
+diff --git a/crates/flmnt-projections/src/features/causal_graph/mod.rs b/crates/flmnt-projections/src/features/causal_graph/mod.rs
+index 8612e7f..9254c0a 100644
+--- a/crates/flmnt-projections/src/features/causal_graph/mod.rs
++++ b/crates/flmnt-projections/src/features/causal_graph/mod.rs
+@@ -22,6 +22,7 @@ macro_rules! fold_on {
+             #[distributed_slice(POLICIES)]
+             static $name: Policy = Policy {
+                 context: "flmnt-projections",
++                name: "CausalGraph",
+                 event: $event,
+                 handle,
+             };
+diff --git a/crates/flmnt-workspaces/src/features/finish_erasure_on_graph_erased/mod.rs b/crates/flmnt-workspaces/src/features/finish_erasure_on_graph_erased/mod.rs
+index 5ceed2b..f3de676 100644
+--- a/crates/flmnt-workspaces/src/features/finish_erasure_on_graph_erased/mod.rs
++++ b/crates/flmnt-workspaces/src/features/finish_erasure_on_graph_erased/mod.rs
+@@ -14,6 +14,7 @@ use serde_json::{Value, json};
+ #[distributed_slice(POLICIES)]
+ static FINISH_ERASURE_ON_GRAPH_ERASED: Policy = Policy {
+     context: "flmnt-workspaces",
++    name: "FinishErasureOnGraphErased",
+     event: "GraphErased",
+     handle: on_graph_erased,
+ };
+@@ -21,6 +22,7 @@ static FINISH_ERASURE_ON_GRAPH_ERASED: Policy = Policy {
+ #[distributed_slice(POLICIES)]
+ static FINISH_ERASURE_ON_EMPTY_PURGE: Policy = Policy {
+     context: "flmnt-workspaces",
++    name: "FinishErasureOnEmptyPurge",
+     event: "StreamsPurged",
+     handle: on_empty_purge,
+ };
+diff --git a/crates/flmnt-workspaces/src/features/start_erasure_on_deletion_started/mod.rs b/crates/flmnt-workspaces/src/features/start_erasure_on_deletion_started/mod.rs
+index 0431b85..53c3caf 100644
+--- a/crates/flmnt-workspaces/src/features/start_erasure_on_deletion_started/mod.rs
++++ b/crates/flmnt-workspaces/src/features/start_erasure_on_deletion_started/mod.rs
+@@ -19,6 +19,7 @@ const NODE: &str = "node::lifecycle";
+ #[distributed_slice(POLICIES)]
+ static START_ERASURE: Policy = Policy {
+     context: "flmnt-workspaces",
++    name: "StartErasureOnDeletionStarted",
+     event: "WorkspaceDeletionStarted",
+     handle,
+ };
