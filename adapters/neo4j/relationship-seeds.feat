@@ -56,7 +56,7 @@ contract:
 scenario "a seeded relationship is state: the window that follows reports nothing":
   when: ObserveNeo4jSeeds { script: "setup:a seed:a:Order:o1 seed:a:Customer:c1 seedrel:a:Order:o1:PLACED_BY:Customer:c1 start:a stop:a" }
   predict success:
-    response OK SeedsResult { trace: "setup:a seed:a seed:a seedrel:a start:a stop:a=0" }
+    response OK SeedsResult { trace: "setup:a seed:a seed:a seedrel:a start:a stop:a=0", last: absent, readKeys: absent, readVia: absent }
     filesystem has []
 
 scenario "a read reports a seeded relationship as the diff names it":
@@ -65,7 +65,8 @@ scenario "a read reports a seeded relationship as the diff names it":
     response OK SeedsResult {
       trace: "setup:a seed:a seed:a seedrel:a read:a=3",
       readVia: "NamespaceScan",
-      readKeys: "Customer:c1,Order:o1,Order:o1-[PLACED_BY]->Customer:c1"
+      readKeys: "Customer:c1,Order:o1,Order:o1-[PLACED_BY]->Customer:c1",
+      last: absent
     }
     filesystem has []
 
@@ -75,7 +76,8 @@ scenario "a fork: two relationships of the same type into one node":
     response OK SeedsResult {
       trace: "setup:a seed:a seed:a seed:a seedrel:a seedrel:a read:a=5",
       readVia: "NamespaceScan",
-      readKeys: "Order:o1,Order:o2,Order:o3,Order:o2-[SUPERSEDED_BY]->Order:o1,Order:o3-[SUPERSEDED_BY]->Order:o1"
+      readKeys: "Order:o1,Order:o2,Order:o3,Order:o2-[SUPERSEDED_BY]->Order:o1,Order:o3-[SUPERSEDED_BY]->Order:o1",
+      last: absent
     }
     filesystem has []
 
@@ -85,7 +87,8 @@ scenario "a cycle: two nodes that point at each other":
     response OK SeedsResult {
       trace: "setup:a seed:a seed:a seedrel:a seedrel:a read:a=4",
       readVia: "NamespaceScan",
-      readKeys: "Order:o1,Order:o2,Order:o1-[SUPERSEDED_BY]->Order:o2,Order:o2-[SUPERSEDED_BY]->Order:o1"
+      readKeys: "Order:o1,Order:o2,Order:o1-[SUPERSEDED_BY]->Order:o2,Order:o2-[SUPERSEDED_BY]->Order:o1",
+      last: absent
     }
     filesystem has []
 
@@ -95,7 +98,8 @@ scenario "a relationship's own properties are seeded with it":
     response OK SeedsResult {
       trace: "setup:a seed:a seed:a seedrel:a read:a=3",
       readVia: "NamespaceScan",
-      readKeys: "Customer:c1,Order:o1,Order:o1-[PLACED_BY]->Customer:c1{w=7}"
+      readKeys: "Customer:c1,Order:o1,Order:o1-[PLACED_BY]->Customer:c1{w=7}",
+      last: absent
     }
     filesystem has []
 
@@ -105,7 +109,8 @@ scenario "the same relationship seeded twice is two relationships, reported with
     response OK SeedsResult {
       trace: "setup:a seed:a seed:a seedrel:a seedrel:a read:a=3",
       readVia: "NamespaceScan",
-      readKeys: "Customer:c1,Order:o1,Order:o1-[PLACED_BY]->Customer:c1x2"
+      readKeys: "Customer:c1,Order:o1,Order:o1-[PLACED_BY]->Customer:c1x2",
+      last: absent
     }
     filesystem has []
 
@@ -115,7 +120,8 @@ scenario "one seed call writes its nodes before its relationships, wherever the 
     response OK SeedsResult {
       trace: "setup:a seedboth:a read:a=3",
       readVia: "NamespaceScan",
-      readKeys: "Customer:c1,Order:o1,Order:o1-[PLACED_BY]->Customer:c1"
+      readKeys: "Customer:c1,Order:o1,Order:o1-[PLACED_BY]->Customer:c1",
+      last: absent
     }
     filesystem has []
 

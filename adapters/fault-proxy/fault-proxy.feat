@@ -90,13 +90,13 @@ contract:
 scenario "each namespace gets its own proxy with its own address":
   when: ProbeFaultProxy { script: "open:a open:b" }
   predict success:
-    response OK ProbeResult { trace: "open:a open:b listen=distinct" }
+    response OK ProbeResult { trace: "open:a open:b listen=distinct", upstreamSaw: 0 }
     filesystem has []
 
 scenario "opening the same namespace again returns the same proxy":
   when: ProbeFaultProxy { script: "open:a open:a" }
   predict success:
-    response OK ProbeResult { trace: "open:a open:a listen=same" }
+    response OK ProbeResult { trace: "open:a open:a listen=same", upstreamSaw: 0 }
     filesystem has []
 
 scenario "an unarmed proxy passes the system's traffic untouched":
@@ -144,7 +144,7 @@ scenario "disarm heals the path: no toxic, proxy enabled, traffic flows":
 scenario "faults stack until disarm and are listed":
   when: ProbeFaultProxy { script: "open:a arm:a:Timeout arm:a:Partition armed:a" }
   predict success:
-    response OK ProbeResult { trace: "open:a arm:a arm:a armed:a=Timeout,Partition" }
+    response OK ProbeResult { trace: "open:a arm:a arm:a armed:a=Timeout,Partition", upstreamSaw: 0 }
     filesystem has []
 
 scenario "a fault on one namespace does not reach another":
@@ -174,13 +174,13 @@ scenario "traffic is unobserved without the metrics endpoint, so no activation i
 scenario "broker loss pauses the container and disarm restores it":
   when: ProbeFaultProxy { script: "open:a container:running arm:a:BrokerLoss container:paused disarm:a container:running" }
   predict success:
-    response OK ProbeResult { trace: "open:a container=running arm:a container=paused disarm:a container=running" }
+    response OK ProbeResult { trace: "open:a container=running arm:a container=paused disarm:a container=running", upstreamSaw: 0 }
     filesystem has []
 
 scenario "broker loss in stop mode stops the container and disarm starts it again":
   when: ProbeFaultProxy { script: "open:a arm:a:BrokerLoss:stop container:stopped disarm:a container:running" }
   predict success:
-    response OK ProbeResult { trace: "open:a arm:a container=stopped disarm:a container=running" }
+    response OK ProbeResult { trace: "open:a arm:a container=stopped disarm:a container=running", upstreamSaw: 0 }
     filesystem has []
 
 scenario "broker loss is not in the catalog when no container is named":

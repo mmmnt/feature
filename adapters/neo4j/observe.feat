@@ -122,7 +122,7 @@ scenario "a server that does not answer is a configuration error at setup":
 scenario "the adapter declares snapshot diff and state":
   when: ObserveNeo4j { script: "setup:a observes:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a observes:a=snapshot/true" }
+    response OK ObserveResult { trace: "setup:a observes:a=snapshot/true", last: absent, peekEqualsStop: absent, readVia: absent }
     filesystem has []
 
 scenario "a window reports nodes and relationships created, changed and removed, seeds excluded":
@@ -130,7 +130,9 @@ scenario "a window reports nodes and relationships created, changed and removed,
   predict success:
     response OK ObserveResult {
       trace: "setup:a seed:a seed:a start:a create:a create:a link:a setprop:a remove:a stop:a=5",
-      last: "INSERT:Customer:c1,INSERT:Order:o1,MODIFY:Order:o2,REMOVE:Order:o9,INSERT:Order:o1-[PLACED_BY]->Customer:c1"
+      last: "INSERT:Customer:c1,INSERT:Order:o1,MODIFY:Order:o2,REMOVE:Order:o9,INSERT:Order:o1-[PLACED_BY]->Customer:c1",
+      peekEqualsStop: absent,
+      readVia: absent
     }
     filesystem has []
 
@@ -139,14 +141,16 @@ scenario "two namespaces never see each other's graph":
   predict success:
     response OK ObserveResult {
       trace: "setup:a setup:b start:a start:b create:a create:b create:b stop:a=1 stop:b=2",
-      last: "INSERT:Order:o1,INSERT:Order:o2"
+      last: "INSERT:Order:o1,INSERT:Order:o2",
+      peekEqualsStop: absent,
+      readVia: absent
     }
     filesystem has []
 
 scenario "a node with no namespace label is nobody's effect":
   when: ObserveNeo4j { script: "setup:a start:a createraw:Order:o1 stop:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a start:a createraw stop:a=0" }
+    response OK ObserveResult { trace: "setup:a start:a createraw stop:a=0", last: absent, peekEqualsStop: absent, readVia: absent }
     filesystem has []
 
 scenario "a namespaced node whose label has no declared key cannot be identified, so the diff refuses":
@@ -164,7 +168,7 @@ scenario "a relationship that leaves the namespace is a breach, not a silent eff
 scenario "snapshot diff cannot see a node created and removed inside the window":
   when: ObserveNeo4j { script: "setup:a start:a create:a:Order:o1 remove:a:Order:o1 stop:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a start:a create:a remove:a stop:a=0" }
+    response OK ObserveResult { trace: "setup:a start:a create:a remove:a stop:a=0", last: absent, peekEqualsStop: absent, readVia: absent }
     filesystem has []
 
 scenario "a peek reports the window's records and consumes nothing":
@@ -173,32 +177,33 @@ scenario "a peek reports the window's records and consumes nothing":
     response OK ObserveResult {
       trace: "setup:a start:a create:a peek:a=1 peek:a=1 stop:a=1",
       last: "INSERT:Order:o1",
-      peekEqualsStop: true
+      peekEqualsStop: true,
+      readVia: absent
     }
     filesystem has []
 
 scenario "a peek with no window open is empty":
   when: ObserveNeo4j { script: "setup:a create:a:Order:o1 peek:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a create:a peek:a=0" }
+    response OK ObserveResult { trace: "setup:a create:a peek:a=0", last: absent, peekEqualsStop: absent, readVia: absent }
     filesystem has []
 
 scenario "settle vouches on a direct connection once no other transaction runs":
   when: ObserveNeo4j { script: "setup:a start:a create:a:Order:o1 settle:a stop:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a start:a create:a settle:a=true stop:a=1", last: "INSERT:Order:o1" }
+    response OK ObserveResult { trace: "setup:a start:a create:a settle:a=true stop:a=1", last: "INSERT:Order:o1", peekEqualsStop: absent, readVia: absent }
     filesystem has []
 
 scenario "settle vouches on an empty window, which is how an absence is proven":
   when: ObserveNeo4j { script: "setup:a start:a settle:a stop:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a start:a settle:a=true stop:a=0" }
+    response OK ObserveResult { trace: "setup:a start:a settle:a=true stop:a=0", last: absent, peekEqualsStop: absent, readVia: absent }
     filesystem has []
 
 scenario "settle declines when no window is open":
   when: ObserveNeo4j { script: "setup:a settle:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a settle:a=false" }
+    response OK ObserveResult { trace: "setup:a settle:a=false", last: absent, peekEqualsStop: absent, readVia: absent }
     filesystem has []
 
 scenario "settle declines while the system's transaction is open and vouches after it commits":
@@ -206,20 +211,22 @@ scenario "settle declines while the system's transaction is open and vouches aft
   predict success:
     response OK ObserveResult {
       trace: "setup:a start:a txopen:a settle:a=false txclose:a settle:a=true stop:a=1",
-      last: "INSERT:Order:o1"
+      last: "INSERT:Order:o1",
+      peekEqualsStop: absent,
+      readVia: absent
     }
     filesystem has []
 
 scenario "settle declines on a routing connection, where another member may serve the read":
   when: ObserveNeo4j { script: "setup:a start:a create:a:Order:o1 settle:a stop:a", uri: "routing" }
   predict success:
-    response OK ObserveResult { trace: "setup:a start:a create:a settle:a=false stop:a=1", last: "INSERT:Order:o1" }
+    response OK ObserveResult { trace: "setup:a start:a create:a settle:a=false stop:a=1", last: "INSERT:Order:o1", peekEqualsStop: absent, readVia: absent }
     filesystem has []
 
 scenario "a read given a label and key matches that node":
   when: ObserveNeo4j { script: "setup:a seed:a:Order:o1 seed:a:Order:o2 read:a:Order:o1" }
   predict success:
-    response OK ObserveResult { trace: "setup:a seed:a seed:a read:a:Order:o1=1", readVia: "KeyedMatch" }
+    response OK ObserveResult { trace: "setup:a seed:a seed:a read:a:Order:o1=1", readVia: "KeyedMatch", last: absent, peekEqualsStop: absent }
     filesystem has []
 
 scenario "a read given no hint reports the namespace only and not the fault placeholder":
@@ -227,14 +234,16 @@ scenario "a read given no hint reports the namespace only and not the fault plac
   predict success:
     response OK ObserveResult {
       trace: "setup:a setup:b seed:a seed:b fault:a:Write.UNIQUE_CONSTRAINT_VIOLATION read:a=1",
-      readVia: "NamespaceScan"
+      readVia: "NamespaceScan",
+      last: absent,
+      peekEqualsStop: absent
     }
     filesystem has []
 
 scenario "reset deletes the namespace's graph and leaves the other one alone":
   when: ObserveNeo4j { script: "setup:a setup:b seed:a:Order:o1 seed:b:Order:o1 reset:a read:a read:b" }
   predict success:
-    response OK ObserveResult { trace: "setup:a setup:b seed:a seed:b reset:a read:a=0 read:b=1" }
+    response OK ObserveResult { trace: "setup:a setup:b seed:a seed:b reset:a read:a=0 read:b=1", last: absent, peekEqualsStop: absent, readVia: "NamespaceScan" }
     filesystem has []
 
 scenario "a node that repeats a unique property is refused when UNIQUE_CONSTRAINT_VIOLATION is armed":
@@ -242,6 +251,9 @@ scenario "a node that repeats a unique property is refused when UNIQUE_CONSTRAIN
   predict success:
     response OK ObserveResult {
       trace: "setup:a fault:a:Write.UNIQUE_CONSTRAINT_VIOLATION start:a create:a!CONSTRAINT_VIOLATION stop:a=0"
+      last: absent
+      peekEqualsStop: absent
+      readVia: absent
     }
     filesystem has []
 
@@ -250,14 +262,16 @@ scenario "reset drops the constraint and the placeholder, so the same create the
   predict success:
     response OK ObserveResult {
       trace: "setup:a fault:a:Write.UNIQUE_CONSTRAINT_VIOLATION reset:a start:a create:a stop:a=1",
-      last: "INSERT:Order:o1"
+      last: "INSERT:Order:o1",
+      peekEqualsStop: absent,
+      readVia: absent
     }
     filesystem has []
 
 scenario "the server reports no write it refused, so firedFaults is not offered":
   when: ObserveNeo4j { script: "setup:a fault:a:Write.UNIQUE_CONSTRAINT_VIOLATION:orderId=zz fired:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a fault:a:Write.UNIQUE_CONSTRAINT_VIOLATION fired:a=unobserved" }
+    response OK ObserveResult { trace: "setup:a fault:a:Write.UNIQUE_CONSTRAINT_VIOLATION fired:a=unobserved", last: absent, peekEqualsStop: absent, readVia: absent }
     filesystem has []
 
 scenario outline "a fault the binding cannot produce faithfully is refused before it does anything":

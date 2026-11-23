@@ -94,7 +94,7 @@ scenario "faults are armed after the seeds and the given executes and before the
     ]
   }
   predict success:
-    response OK RunResult { outcome: "passed", calls: "reset:store seed:store execute:Ping consume:store=AppendToStream:ok arm:store=AppendToStream/NotLeader/1 start:store invoke:Ping consume:store=AppendToStream:NotLeader stop:store fired:store" }
+    response OK RunResult { outcome: "passed", calls: "reset:store seed:store execute:Ping consume:store=AppendToStream:ok arm:store=AppendToStream/NotLeader/1 start:store invoke:Ping consume:store=AppendToStream:NotLeader stop:store fired:store", armedDetail: absent, readHint: absent, violationCodes: absent, violations: absent }
     filesystem has []
 
 scenario "once is the next call only":
@@ -105,7 +105,7 @@ scenario "once is the next call only":
     ]
   }
   predict success:
-    response OK RunResult { outcome: "passed", calls: "reset:store arm:store=AppendToStream/NotLeader/1 start:store invoke:Ping consume:store=AppendToStream:NotLeader consume:store=AppendToStream:ok stop:store fired:store" }
+    response OK RunResult { outcome: "passed", calls: "reset:store arm:store=AppendToStream/NotLeader/1 start:store invoke:Ping consume:store=AppendToStream:NotLeader consume:store=AppendToStream:ok stop:store fired:store", armedDetail: absent, readHint: absent, violationCodes: absent, violations: absent }
     filesystem has []
 
 scenario "times n is the next n calls":
@@ -116,7 +116,7 @@ scenario "times n is the next n calls":
     ]
   }
   predict success:
-    response OK RunResult { outcome: "passed", calls: "reset:store arm:store=AppendToStream/NotLeader/2 start:store invoke:Ping consume:store=AppendToStream:NotLeader consume:store=AppendToStream:NotLeader consume:store=AppendToStream:ok stop:store fired:store" }
+    response OK RunResult { outcome: "passed", calls: "reset:store arm:store=AppendToStream/NotLeader/2 start:store invoke:Ping consume:store=AppendToStream:NotLeader consume:store=AppendToStream:NotLeader consume:store=AppendToStream:ok stop:store fired:store", armedDetail: absent, readHint: absent, violationCodes: absent, violations: absent }
     filesystem has []
 
 scenario "until reset is every call of the case":
@@ -127,7 +127,7 @@ scenario "until reset is every call of the case":
     ]
   }
   predict success:
-    response OK RunResult { outcome: "passed", calls: "reset:store arm:store=AppendToStream/NotLeader/reset start:store invoke:Ping consume:store=AppendToStream:NotLeader consume:store=AppendToStream:NotLeader consume:store=AppendToStream:NotLeader stop:store fired:store" }
+    response OK RunResult { outcome: "passed", calls: "reset:store arm:store=AppendToStream/NotLeader/reset start:store invoke:Ping consume:store=AppendToStream:NotLeader consume:store=AppendToStream:NotLeader consume:store=AppendToStream:NotLeader stop:store fired:store", armedDetail: absent, readHint: absent, violationCodes: absent, violations: absent }
     filesystem has []
 
 scenario "several faults are armed in written order and the detail reaches the adapter":
@@ -138,7 +138,7 @@ scenario "several faults are armed in written order and the detail reaches the a
     ]
   }
   predict success:
-    response OK RunResult { outcome: "passed", calls: "reset:store arm:store=AppendToStream/WrongExpectedVersion/1 arm:store=AppendToStream/NotLeader/1 start:store invoke:Ping consume:store=AppendToStream:WrongExpectedVersion consume:store=AppendToStream:NotLeader stop:store fired:store", armedDetail: "stream=orders" }
+    response OK RunResult { outcome: "passed", calls: "reset:store arm:store=AppendToStream/WrongExpectedVersion/1 arm:store=AppendToStream/NotLeader/1 start:store invoke:Ping consume:store=AppendToStream:WrongExpectedVersion consume:store=AppendToStream:NotLeader stop:store fired:store", armedDetail: "stream=orders", readHint: absent, violationCodes: absent, violations: absent }
     filesystem has []
 
 scenario "reset disarms, so a fault never leaks into the next case":
@@ -150,7 +150,7 @@ scenario "reset disarms, so a fault never leaks into the next case":
     ]
   }
   predict success:
-    response OK RunResult { outcome: "passed", calls: "reset:store arm:store=AppendToStream/NotLeader/reset start:store invoke:Ping consume:store=AppendToStream:NotLeader stop:store fired:store reset:store start:store invoke:Ping consume:store=AppendToStream:ok stop:store" }
+    response OK RunResult { outcome: "passed", calls: "reset:store arm:store=AppendToStream/NotLeader/reset start:store invoke:Ping consume:store=AppendToStream:NotLeader stop:store fired:store reset:store start:store invoke:Ping consume:store=AppendToStream:ok stop:store", armedDetail: absent, readHint: absent, violationCodes: absent, violations: absent }
     filesystem has []
 
 scenario "an armed fault the system never consumed fails the case":
@@ -161,7 +161,7 @@ scenario "an armed fault the system never consumed fails the case":
     ]
   }
   predict success:
-    response OK RunResult { outcome: "failed", violationCodes: "FAULT_NOT_CONSUMED", calls: "reset:store arm:store=AppendToStream/NotLeader/1 start:store invoke:Ping stop:store fired:store" }
+    response OK RunResult partial { outcome: "failed", violationCodes: "FAULT_NOT_CONSUMED", calls: "reset:store arm:store=AppendToStream/NotLeader/1 start:store invoke:Ping stop:store fired:store" }
     filesystem has []
 
 scenario "times n consumed fewer than n times fails the case":
@@ -172,7 +172,7 @@ scenario "times n consumed fewer than n times fails the case":
     ]
   }
   predict success:
-    response OK RunResult { outcome: "failed", violationCodes: "FAULT_NOT_CONSUMED", calls: "reset:store arm:store=AppendToStream/NotLeader/3 start:store invoke:Ping consume:store=AppendToStream:NotLeader consume:store=AppendToStream:NotLeader stop:store fired:store" }
+    response OK RunResult partial { outcome: "failed", violationCodes: "FAULT_NOT_CONSUMED", calls: "reset:store arm:store=AppendToStream/NotLeader/3 start:store invoke:Ping consume:store=AppendToStream:NotLeader consume:store=AppendToStream:NotLeader stop:store fired:store" }
     filesystem has []
 
 scenario "until reset never consumed fails the case":
@@ -183,7 +183,7 @@ scenario "until reset never consumed fails the case":
     ]
   }
   predict success:
-    response OK RunResult { outcome: "failed", violationCodes: "FAULT_NOT_CONSUMED", calls: "reset:store arm:store=AppendToStream/NotLeader/reset start:store invoke:Ping stop:store fired:store" }
+    response OK RunResult partial { outcome: "failed", violationCodes: "FAULT_NOT_CONSUMED", calls: "reset:store arm:store=AppendToStream/NotLeader/reset start:store invoke:Ping stop:store fired:store" }
     filesystem has []
 
 scenario "an adapter that cannot see consumption is exempt":
@@ -194,7 +194,7 @@ scenario "an adapter that cannot see consumption is exempt":
     ]
   }
   predict success:
-    response OK RunResult { outcome: "passed", calls: "reset:store arm:store=AppendToStream/NotLeader/1 start:store invoke:Ping stop:store" }
+    response OK RunResult { outcome: "passed", calls: "reset:store arm:store=AppendToStream/NotLeader/1 start:store invoke:Ping stop:store", armedDetail: absent, readHint: absent, violationCodes: absent, violations: absent }
     filesystem has []
 
 scenario "an operation the adapter does not offer is refused before any effect":
@@ -260,7 +260,7 @@ scenario "a fault that declares only until reset is armed when the case writes u
     ]
   }
   predict success:
-    response OK RunResult { outcome: "passed", calls: "reset:store arm:store=AppendToStream/AccessDenied/reset start:store invoke:Ping consume:store=AppendToStream:AccessDenied consume:store=AppendToStream:AccessDenied stop:store fired:store" }
+    response OK RunResult { outcome: "passed", calls: "reset:store arm:store=AppendToStream/AccessDenied/reset start:store invoke:Ping consume:store=AppendToStream:AccessDenied consume:store=AppendToStream:AccessDenied stop:store fired:store", armedDetail: absent, readHint: absent, violationCodes: absent, violations: absent }
     filesystem has []
 
 scenario "a catalog in the earlier array shape declares every count":
@@ -271,7 +271,7 @@ scenario "a catalog in the earlier array shape declares every count":
     ]
   }
   predict success:
-    response OK RunResult { outcome: "passed", calls: "reset:store arm:store=AppendToStream/NotLeader/1 start:store invoke:Ping consume:store=AppendToStream:NotLeader stop:store fired:store" }
+    response OK RunResult { outcome: "passed", calls: "reset:store arm:store=AppendToStream/NotLeader/1 start:store invoke:Ping consume:store=AppendToStream:NotLeader stop:store fired:store", armedDetail: absent, readHint: absent, violationCodes: absent, violations: absent }
     filesystem has []
 
 scenario "a transport fault until reset is armed and checked like any other":
@@ -282,5 +282,5 @@ scenario "a transport fault until reset is armed and checked like any other":
     ]
   }
   predict success:
-    response OK RunResult { outcome: "failed", violationCodes: "FAULT_NOT_CONSUMED", calls: "reset:store arm:store=Connection/Timeout/reset start:store invoke:Ping stop:store fired:store" }
+    response OK RunResult partial { outcome: "failed", violationCodes: "FAULT_NOT_CONSUMED", calls: "reset:store arm:store=Connection/Timeout/reset start:store invoke:Ping stop:store fired:store" }
     filesystem has []

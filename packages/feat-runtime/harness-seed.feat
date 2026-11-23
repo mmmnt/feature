@@ -50,6 +50,8 @@ scenario "random seed reaches the response adapter after the clock and before an
     response OK RunResult {
       outcome: "passed"
       calls: "reset:store clock:response=null clock:store=null seed:response=42 start:store invoke:Ping stop:store"
+      readHint: absent
+      violations: absent
     }
     filesystem has []
 
@@ -66,6 +68,8 @@ scenario "the case after a seeded one is unseeded with null, and a later unseede
     response OK RunResult {
       outcome: "passed"
       calls: "reset:store clock:response=null clock:store=null seed:response=7 start:store invoke:Ping stop:store reset:store clock:response=null clock:store=null seed:response=null start:store invoke:Ping stop:store reset:store clock:response=null clock:store=null start:store invoke:Ping stop:store"
+      readHint: absent
+      violations: absent
     }
     filesystem has []
 
@@ -78,6 +82,8 @@ scenario "a case without random seed needs no seed hook":
     response OK RunResult {
       outcome: "passed"
       calls: "reset:store start:store invoke:Ping stop:store"
+      readHint: absent
+      violations: absent
     }
     filesystem has []
 
@@ -87,5 +93,5 @@ scenario "random seed against a response adapter that cannot honour it is refuse
     cases: [ { anchor: "c1", name: "c1", given: { random: 42 }, when: { command: "Ping", payload: {} }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } } ]
   }
   predict rejection RANDOM_UNSUPPORTED:
-    response ERR HarnessError { code: "RANDOM_UNSUPPORTED", calls: "", detail: matching "response" }
+    response ERR HarnessError { code: "RANDOM_UNSUPPORTED", calls: "", detail: matching "response", mode: absent, service: absent }
     filesystem has []

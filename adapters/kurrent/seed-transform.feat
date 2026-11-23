@@ -80,13 +80,13 @@ scenario "one seed call is transformed in one request, asked twice, and appended
 scenario "a transformed seed is state: the window that follows reports nothing":
   when: ObserveKurrentSeedTransform { host: "encode", script: "setup:a seedenc:a:orders:Placed:ab start:a stop:a" }
   predict success:
-    response OK SeedTransformResult { trace: "setup:a seedenc:a start:a stop:a=0" }
+    response OK SeedTransformResult { trace: "setup:a seedenc:a start:a stop:a=0", readPayloads: absent }
     filesystem has []
 
 scenario "without seedTransform no host is asked and a plain seed is appended as before":
   when: ObserveKurrentSeedTransform { host: "none", script: "setup:a seed:a:orders:Placed read:a:orders" }
   predict success:
-    response OK SeedTransformResult { trace: "setup:a seed:a read:a:orders=1" }
+    response OK SeedTransformResult { trace: "setup:a seed:a read:a:orders=1", readPayloads: "[{\"stream\":\"orders\"}]" }
     filesystem has []
 
 scenario "a host that cannot be started is refused at setup":

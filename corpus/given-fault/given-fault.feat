@@ -35,7 +35,7 @@ scenario "a concurrent writer wins the append":
     fault eventStore AppendToStream WrongExpectedVersion
   when: PlaceOrder { orderId: "o-1", sku: "sku-9" }
   predict rejection CONCURRENCY_CONFLICT:
-    response 409 Refusal { code: "CONCURRENCY_CONFLICT" }
+    response 409 Refusal { code: "CONCURRENCY_CONFLICT", message: any string }
     eventStore has []
 
 scenario "a not-leader answer is retried once and the order is placed":
@@ -51,5 +51,5 @@ scenario "access denied holds for the whole case":
     fault eventStore AppendToStream AccessDenied { stream: "orders" } until reset
   when: PlaceOrder { orderId: "o-3" }
   predict rejection STORE_UNAVAILABLE:
-    response 503 Refusal { code: "STORE_UNAVAILABLE" }
+    response 503 Refusal { code: "STORE_UNAVAILABLE", message: any string }
     eventStore has []

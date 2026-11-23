@@ -49,5 +49,5 @@ scenario "the same identity repeats idempotently":
 scenario "an implausible email is rejected":
   when: JoinWaitlist { email: "not-an-email" }
   predict rejection INVALID_EMAIL:
-    response 422 ErrorResponse { code: "INVALID_EMAIL" }
+    response 422 ErrorResponse { code: "INVALID_EMAIL", message: any string }
     database has []

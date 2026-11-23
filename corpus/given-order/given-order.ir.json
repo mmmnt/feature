@@ -101,6 +101,10 @@
             "code": {
               "matcher": "literal",
               "value": "WORKSPACE_DISABLED"
+            },
+            "message": {
+              "matcher": "any",
+              "ofType": "string"
             }
           }
         },

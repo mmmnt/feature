@@ -112,7 +112,7 @@ scenario "an endpoint that does not answer is a configuration error at setup":
 scenario "the adapter declares snapshot diff and state":
   when: ObserveKms { script: "setup:a observes:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a observes:a=snapshot/true" }
+    response OK ObserveResult { trace: "setup:a observes:a=snapshot/true", last: absent, peekEqualsStop: absent, readVia: absent }
     filesystem has []
 
 scenario "a window reports keys created and changed, seeds excluded":
@@ -120,7 +120,9 @@ scenario "a window reports keys created and changed, seeds excluded":
   predict success:
     response OK ObserveResult {
       trace: "setup:a seed:a start:a createkey:a disable:a stop:a=2",
-      last: "INSERT:orders,MODIFY:signing"
+      last: "INSERT:orders,MODIFY:signing",
+      peekEqualsStop: absent,
+      readVia: absent
     }
     filesystem has []
 
@@ -129,20 +131,22 @@ scenario "rotation and tags are changes of state":
   predict success:
     response OK ObserveResult {
       trace: "setup:a seed:a seed:a start:a rotate:a tag:a stop:a=2",
-      last: "MODIFY:one,MODIFY:two"
+      last: "MODIFY:one,MODIFY:two",
+      peekEqualsStop: absent,
+      readVia: absent
     }
     filesystem has []
 
 scenario "deleting a key's only alias changes its identity, so it reads as one removal and one insertion":
   when: ObserveKms { script: "setup:a seed:a:three start:a deletealias:a:three stop:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a seed:a start:a deletealias:a stop:a=2" }
+    response OK ObserveResult partial { trace: "setup:a seed:a start:a deletealias:a stop:a=2" }
     filesystem has []
 
 scenario "a key scheduled for deletion is a change, not a removal":
   when: ObserveKms { script: "setup:a seed:a:one start:a schedule:a:one stop:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a seed:a start:a schedule:a stop:a=1", last: "MODIFY:one" }
+    response OK ObserveResult { trace: "setup:a seed:a start:a schedule:a stop:a=1", last: "MODIFY:one", peekEqualsStop: absent, readVia: absent }
     filesystem has []
 
 scenario "two namespaces never see each other's keys":
@@ -150,20 +154,22 @@ scenario "two namespaces never see each other's keys":
   predict success:
     response OK ObserveResult {
       trace: "setup:a setup:b start:a start:b createkey:a createkey:b createkey:b stop:a=1 stop:b=2",
-      last: "INSERT:billing,INSERT:orders"
+      last: "INSERT:billing,INSERT:orders",
+      peekEqualsStop: absent,
+      readVia: absent
     }
     filesystem has []
 
 scenario "a key with no namespace tag and no namespaced alias is nobody's effect":
   when: ObserveKms { script: "setup:a start:a createkeyraw:stray stop:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a start:a createkeyraw stop:a=0" }
+    response OK ObserveResult { trace: "setup:a start:a createkeyraw stop:a=0", last: absent, peekEqualsStop: absent, readVia: absent }
     filesystem has []
 
 scenario "a cryptographic use of a key leaves nothing for a snapshot to see":
   when: ObserveKms { script: "setup:a seed:a:signing start:a encrypt:a:signing stop:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a seed:a start:a encrypt:a stop:a=0" }
+    response OK ObserveResult { trace: "setup:a seed:a start:a encrypt:a stop:a=0", last: absent, peekEqualsStop: absent, readVia: absent }
     filesystem has []
 
 scenario "a peek reports the window's records and consumes nothing":
@@ -172,80 +178,81 @@ scenario "a peek reports the window's records and consumes nothing":
     response OK ObserveResult {
       trace: "setup:a start:a createkey:a peek:a=1 peek:a=1 stop:a=1",
       last: "INSERT:orders",
-      peekEqualsStop: true
+      peekEqualsStop: true,
+      readVia: absent
     }
     filesystem has []
 
 scenario "a peek with no window open is empty":
   when: ObserveKms { script: "setup:a createkey:a:orders peek:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a createkey:a peek:a=0" }
+    response OK ObserveResult { trace: "setup:a createkey:a peek:a=0", last: absent, peekEqualsStop: absent, readVia: absent }
     filesystem has []
 
 scenario "settle vouches for the emulator, whose reads follow its writes":
   when: ObserveKms { script: "setup:a start:a createkey:a:orders settle:a stop:a", emulator: "local-kms" }
   predict success:
-    response OK ObserveResult { trace: "setup:a start:a createkey:a settle:a=true stop:a=1", last: "INSERT:orders" }
+    response OK ObserveResult { trace: "setup:a start:a createkey:a settle:a=true stop:a=1", last: "INSERT:orders", peekEqualsStop: absent, readVia: absent }
     filesystem has []
 
 scenario "settle vouches on an empty window, which is how an absence is proven":
   when: ObserveKms { script: "setup:a start:a settle:a stop:a", emulator: "local-kms" }
   predict success:
-    response OK ObserveResult { trace: "setup:a start:a settle:a=true stop:a=0" }
+    response OK ObserveResult { trace: "setup:a start:a settle:a=true stop:a=0", last: absent, peekEqualsStop: absent, readVia: absent }
     filesystem has []
 
 scenario "settle declines when the endpoint is not a declared emulator, because KMS is eventually consistent":
   when: ObserveKms { script: "setup:a start:a createkey:a:orders settle:a stop:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a start:a createkey:a settle:a=false stop:a=1", last: "INSERT:orders" }
+    response OK ObserveResult { trace: "setup:a start:a createkey:a settle:a=false stop:a=1", last: "INSERT:orders", peekEqualsStop: absent, readVia: absent }
     filesystem has []
 
 scenario "settle declines when no window is open":
   when: ObserveKms { script: "setup:a settle:a", emulator: "local-kms" }
   predict success:
-    response OK ObserveResult { trace: "setup:a settle:a=false" }
+    response OK ObserveResult { trace: "setup:a settle:a=false", last: absent, peekEqualsStop: absent, readVia: absent }
     filesystem has []
 
 scenario "a read given an alias describes that key":
   when: ObserveKms { script: "setup:a seed:a:orders seed:a:billing read:a:orders" }
   predict success:
-    response OK ObserveResult { trace: "setup:a seed:a seed:a read:a:orders=1", readVia: "DescribeKey" }
+    response OK ObserveResult { trace: "setup:a seed:a seed:a read:a:orders=1", readVia: "DescribeKey", last: absent, peekEqualsStop: absent }
     filesystem has []
 
 scenario "a read given no hint lists the namespace and no other":
   when: ObserveKms { script: "setup:a setup:b seed:a:orders seed:b:orders read:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a setup:b seed:a seed:b read:a=1", readVia: "ListKeys" }
+    response OK ObserveResult { trace: "setup:a setup:b seed:a seed:b read:a=1", readVia: "ListKeys", last: absent, peekEqualsStop: absent }
     filesystem has []
 
 scenario "reset takes the namespace's keys out of the namespace and leaves the other one alone":
   when: ObserveKms { script: "setup:a setup:b seed:a:orders seed:b:orders reset:a read:a read:b" }
   predict success:
-    response OK ObserveResult { trace: "setup:a setup:b seed:a seed:b reset:a read:a=0 read:b=1" }
+    response OK ObserveResult { trace: "setup:a setup:b seed:a seed:b reset:a read:a=0 read:b=1", last: absent, peekEqualsStop: absent, readVia: "ListKeys" }
     filesystem has []
 
 scenario "a use of a disabled key is refused when DISABLED is armed":
   when: ObserveKms { script: "setup:a seed:a:signing fault:a:UseKey.DISABLED:signing start:a encrypt:a:signing stop:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a seed:a fault:a:UseKey.DISABLED start:a encrypt:a!DISABLED stop:a=0" }
+    response OK ObserveResult { trace: "setup:a seed:a fault:a:UseKey.DISABLED start:a encrypt:a!DISABLED stop:a=0", last: absent, peekEqualsStop: absent, readVia: absent }
     filesystem has []
 
 scenario "a use of a key pending deletion is refused when PENDING_DELETION is armed":
   when: ObserveKms { script: "setup:a seed:a:signing fault:a:UseKey.PENDING_DELETION:signing start:a encrypt:a:signing stop:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a seed:a fault:a:UseKey.PENDING_DELETION start:a encrypt:a!KMS_INVALID_STATE stop:a=0" }
+    response OK ObserveResult { trace: "setup:a seed:a fault:a:UseKey.PENDING_DELETION start:a encrypt:a!KMS_INVALID_STATE stop:a=0", last: absent, peekEqualsStop: absent, readVia: absent }
     filesystem has []
 
 scenario "a use through a missing alias is refused when ALIAS_NOT_FOUND is armed":
   when: ObserveKms { script: "setup:a seed:a:signing fault:a:UseKey.ALIAS_NOT_FOUND:signing start:a encrypt:a:signing stop:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a seed:a fault:a:UseKey.ALIAS_NOT_FOUND start:a encrypt:a!NOT_FOUND stop:a=0" }
+    response OK ObserveResult { trace: "setup:a seed:a fault:a:UseKey.ALIAS_NOT_FOUND start:a encrypt:a!NOT_FOUND stop:a=0", last: absent, peekEqualsStop: absent, readVia: absent }
     filesystem has []
 
 scenario "reset leaves no fault behind, so a fresh key under the same alias is usable":
   when: ObserveKms { script: "setup:a seed:a:signing fault:a:UseKey.PENDING_DELETION:signing reset:a seed:a:signing start:a encrypt:a:signing stop:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a seed:a fault:a:UseKey.PENDING_DELETION reset:a seed:a start:a encrypt:a stop:a=0" }
+    response OK ObserveResult { trace: "setup:a seed:a fault:a:UseKey.PENDING_DELETION reset:a seed:a start:a encrypt:a stop:a=0", last: absent, peekEqualsStop: absent, readVia: absent }
     filesystem has []
 
 scenario "a fault cannot be armed on an alias that does not exist":
@@ -257,7 +264,7 @@ scenario "a fault cannot be armed on an alias that does not exist":
 scenario "KMS reports no request it refused, so firedFaults is not offered":
   when: ObserveKms { script: "setup:a seed:a:signing fault:a:UseKey.DISABLED:signing fired:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a seed:a fault:a:UseKey.DISABLED fired:a=unobserved" }
+    response OK ObserveResult { trace: "setup:a seed:a fault:a:UseKey.DISABLED fired:a=unobserved", last: absent, peekEqualsStop: absent, readVia: absent }
     filesystem has []
 
 scenario outline "a fault the binding cannot produce faithfully is refused before it does anything":

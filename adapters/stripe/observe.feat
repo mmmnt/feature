@@ -64,7 +64,7 @@ scenario "a peek reports the window's events and the cursor stays put":
 scenario "events from before the window are not in a peek":
   when: ObserveStripe { script: "emit:charge.succeeded start peek stop" }
   predict success:
-    response OK ObserveResult { trace: "emit:charge.succeeded start peek=0 stop=0" }
+    response OK ObserveResult { trace: "emit:charge.succeeded start peek=0 stop=0", lastTypes: absent, peekEqualsStop: true }
     filesystem has []
 
 scenario "a peek sees an event that arrives between two peeks":
@@ -76,29 +76,29 @@ scenario "a peek sees an event that arrives between two peeks":
 scenario "the types filter applies to a peek":
   when: ObserveStripe { script: "start emit:refund.created emit:charge.succeeded peek stop", types: ["charge.succeeded"] }
   predict success:
-    response OK ObserveResult { trace: "start emit:refund.created emit:charge.succeeded peek=1 stop=1", lastTypes: "charge.succeeded" }
+    response OK ObserveResult { trace: "start emit:refund.created emit:charge.succeeded peek=1 stop=1", lastTypes: "charge.succeeded", peekEqualsStop: true }
     filesystem has []
 
 scenario "a peek after stop finds the window closed":
   when: ObserveStripe { script: "start emit:charge.succeeded stop peek" }
   predict success:
-    response OK ObserveResult { trace: "start emit:charge.succeeded stop=1 peek=0" }
+    response OK ObserveResult { trace: "start emit:charge.succeeded stop=1 peek=0", lastTypes: absent, peekEqualsStop: absent }
     filesystem has []
 
 scenario "a peek with no window open is empty even though the feed is not":
   when: ObserveStripe { script: "emit:charge.succeeded peek" }
   predict success:
-    response OK ObserveResult { trace: "emit:charge.succeeded peek=0" }
+    response OK ObserveResult { trace: "emit:charge.succeeded peek=0", lastTypes: absent, peekEqualsStop: absent }
     filesystem has []
 
 scenario "settle declines after the event it could have waited for has arrived":
   when: ObserveStripe { script: "start emit:charge.succeeded settle peek stop" }
   predict success:
-    response OK ObserveResult { trace: "start emit:charge.succeeded settle=false peek=1 stop=1" }
+    response OK ObserveResult { trace: "start emit:charge.succeeded settle=false peek=1 stop=1", lastTypes: "charge.succeeded", peekEqualsStop: true }
     filesystem has []
 
 scenario "settle declines outside a window":
   when: ObserveStripe { script: "settle" }
   predict success:
-    response OK ObserveResult { trace: "settle=false" }
+    response OK ObserveResult { trace: "settle=false", lastTypes: absent, peekEqualsStop: absent }
     filesystem has []

@@ -177,6 +177,10 @@
             "code": {
               "matcher": "literal",
               "value": "INVALID_EMAIL"
+            },
+            "message": {
+              "matcher": "any",
+              "ofType": "string"
             }
           }
         },

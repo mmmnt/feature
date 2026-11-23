@@ -217,7 +217,7 @@ contract:
 scenario "a green build with an unbroken chain posts a new report comment and a passing check":
   when: ProbePrReport { script: "pr:7 merge:good evidence:unit:pass evidence:integration:pass jobs:green attest:verified comment:none token:full go" }
   predict success:
-    response OK ProbeResult {
+    response OK ProbeResult partial {
       trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=pass chain=ok sections=header,tests,attestations,chain,verify"
       check: "success"
     }
@@ -226,7 +226,7 @@ scenario "a green build with an unbroken chain posts a new report comment and a 
 scenario "a second run updates the same comment instead of adding one":
   when: ProbePrReport { script: "pr:7 merge:good evidence:unit:pass jobs:green attest:verified comment:901 token:full go" }
   predict success:
-    response OK ProbeResult {
+    response OK ProbeResult partial {
       trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/issues/7/comments PATCH /repos/o/r/issues/comments/901 POST /repos/o/r/check-runs verdict=pass chain=ok sections=header,tests,attestations,chain,verify"
       check: "success"
     }
@@ -245,7 +245,7 @@ scenario "the report prints every digest and commit in full":
 scenario "a failing scenario shows its violation and fails the check":
   when: ProbePrReport { script: "pr:7 merge:good evidence:unit:pass evidence:integration:fail jobs:red attest:verified comment:none token:full go" }
   predict success:
-    response OK ProbeResult {
+    response OK ProbeResult partial {
       trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=fail chain=ok sections=header,tests,attestations,chain,verify"
       check: "failure"
     }
@@ -254,7 +254,7 @@ scenario "a failing scenario shows its violation and fails the check":
 scenario "an attestation whose signature fails verification breaks the chain":
   when: ProbePrReport { script: "pr:7 merge:good evidence:unit:pass jobs:green attest:unverified comment:none token:full go" }
   predict success:
-    response OK ProbeResult {
+    response OK ProbeResult partial {
       trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=fail chain=broken:signature sections=header,tests,attestations,chain,verify"
       check: "failure"
     }
@@ -263,7 +263,7 @@ scenario "an attestation whose signature fails verification breaks the chain":
 scenario "a provenance source commit other than the built commit breaks the chain":
   when: ProbePrReport { script: "pr:7 merge:good evidence:unit:pass jobs:green attest:wrongsource comment:none token:full go" }
   predict success:
-    response OK ProbeResult {
+    response OK ProbeResult partial {
       trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=fail chain=broken:provenance sections=header,tests,attestations,chain,verify"
       check: "failure"
     }
@@ -272,7 +272,7 @@ scenario "a provenance source commit other than the built commit breaks the chai
 scenario "a signer that is not this repository's workflow breaks the chain":
   when: ProbePrReport { script: "pr:7 merge:good evidence:unit:pass jobs:green attest:foreignsigner comment:none token:full go" }
   predict success:
-    response OK ProbeResult {
+    response OK ProbeResult partial {
       trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=fail chain=broken:signer sections=header,tests,attestations,chain,verify"
       check: "failure"
     }
@@ -281,7 +281,7 @@ scenario "a signer that is not this repository's workflow breaks the chain":
 scenario "an attestation signed by another key breaks the chain":
   when: ProbePrReport { script: "pr:7 merge:good evidence:unit:pass jobs:green attest:otherkey comment:none token:full go" }
   predict success:
-    response OK ProbeResult {
+    response OK ProbeResult partial {
       trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=fail chain=broken:key sections=header,tests,attestations,chain,verify"
       check: "failure"
     }
@@ -290,7 +290,7 @@ scenario "an attestation signed by another key breaks the chain":
 scenario "a built commit whose parents are not the PR's base and head breaks the chain":
   when: ProbePrReport { script: "pr:7 merge:badparents evidence:unit:pass jobs:green attest:verified comment:none token:full go" }
   predict success:
-    response OK ProbeResult {
+    response OK ProbeResult partial {
       trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET /repos/o/r/compare/main...0badc0de1a2b3c4d5e6f708192a3b4c5d6e7f809 GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=fail chain=broken:built-commit sections=header,tests,attestations,chain,verify"
       check: "failure"
     }
@@ -299,7 +299,7 @@ scenario "a built commit whose parents are not the PR's base and head breaks the
 scenario "a bundle with no run is incomplete, not passing":
   when: ProbePrReport { script: "pr:7 merge:good evidence:unit:noruns jobs:green attest:none comment:none token:full go" }
   predict success:
-    response OK ProbeResult {
+    response OK ProbeResult partial {
       trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=incomplete chain=ok sections=header,tests,chain"
       check: "neutral"
     }
@@ -328,7 +328,7 @@ scenario "a merge finds the commit the pull request run tested from that run's c
 scenario "main's build attested for another commit breaks the chain at main's provenance":
   when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:found prattest:present ghcr:ok mainattest:wrongsource evidence:unit:pass jobs:green comment:901 token:full go" }
   predict success:
-    response OK ProbeResult {
+    response OK ProbeResult partial {
       trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b/pulls GET /repos/o/r/compare/4e1a9c3b7d2f6e0a8c5b1d9f3e7a2c6b0d4f8e1a...5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b GET /repos/o/r/commits/9f2c41d8a07e5b3c6d1f0e2a4b8c7d9e1f3a5b6c/check-runs?check_name=feat%20report GET /repos/o/r/actions/runs/44153523061/artifacts GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET ghcr.io/o/r/referrers/sha256:9b74c9897bac770ffc029102a200c5de2a4c2a6c2d1e3f4a5b6c7d8e9f0a1b2c POST /repos/o/r/check-runs GET /repos/o/r/issues/7/comments PATCH /repos/o/r/issues/comments/901 verdict=fail chain=broken:main-provenance sections=header,tests,attestations,chain,verify"
       check: "failure"
     }
@@ -338,31 +338,31 @@ scenario "main's build attested for another commit breaks the chain at main's pr
 scenario "a pull request run whose attestations are gone is refused and nothing is signed":
   when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:found prattest:missing mainattest:good evidence:unit:pass jobs:green comment:901 token:full go" }
   predict rejection PR_EVIDENCE_MISSING:
-    response ERR ReportError { code: "PR_EVIDENCE_MISSING" }
+    response ERR ReportError { code: "PR_EVIDENCE_MISSING", detail: "run 44153523061 has no attested artifacts" }
     filesystem has []
 
 scenario "a push to a branch other than main is refused and nothing is posted":
   when: ProbePrReport { script: "push:topic evidence:unit:pass jobs:green attest:verified token:full go" }
   predict rejection NO_PR_CONTEXT:
-    response ERR ReportError { code: "NO_PR_CONTEXT" }
+    response ERR ReportError { code: "NO_PR_CONTEXT", detail: "this run is neither a pull request nor a push to main" }
     filesystem has []
 
 scenario "no uploaded evidence is refused and nothing is posted":
   when: ProbePrReport { script: "pr:7 merge:good jobs:green attest:verified comment:none token:full go" }
   predict rejection NO_EVIDENCE:
-    response ERR ReportError { code: "NO_EVIDENCE" }
+    response ERR ReportError { code: "NO_EVIDENCE", detail: "no feat evidence bundle was uploaded" }
     filesystem has []
 
 scenario "a read-only token is refused before anything is posted":
   when: ProbePrReport { script: "pr:7 merge:good evidence:unit:pass jobs:green attest:verified comment:none token:readonly go" }
   predict rejection INSUFFICIENT_PERMISSIONS:
-    response ERR ReportError { code: "INSUFFICIENT_PERMISSIONS" }
+    response ERR ReportError { code: "INSUFFICIENT_PERMISSIONS", detail: "the token cannot write pull request comments or check runs" }
     filesystem has []
 
 scenario "main's evidence that cannot be stored in GHCR is refused and nothing is signed":
   when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:found prattest:present ghcr:fail mainattest:good evidence:unit:pass jobs:green comment:901 token:full go" }
   predict rejection EVIDENCE_STORE_FAILED:
-    response ERR ReportError { code: "EVIDENCE_STORE_FAILED" }
+    response ERR ReportError { code: "EVIDENCE_STORE_FAILED", detail: "evidence bundles could not be stored: push refused" }
     filesystem has []
 
 scenario "a fork pull request is reported by the trusted follow-up, its attestations marked as attested on merge":
@@ -398,7 +398,7 @@ scenario "a merge ref built on the base branch's newer tip keeps the chain":
 scenario "a merge ref whose first parent is not on the base branch breaks the chain":
   when: ProbePrReport { script: "pr:7 merge:offbranch evidence:unit:pass jobs:green attest:verified comment:none token:full go" }
   predict success:
-    response OK ProbeResult {
+    response OK ProbeResult partial {
       trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/c0ffee12a3b4c5d6e7f8091a2b3c4d5e6f708192 GET /repos/o/r/compare/main...1f2e3d4c5b6a79880a1b2c3d4e5f60718293a4b5 GET ghcr.io/o/r/referrers/sha256:3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b GET /repos/o/r/issues/7/comments POST /repos/o/r/issues/7/comments POST /repos/o/r/check-runs verdict=fail chain=broken:built-commit sections=header,tests,attestations,chain,verify"
       check: "failure"
     }
@@ -447,13 +447,13 @@ scenario "sign-merge signs the statement report-main wrote and points the check 
 scenario "a statement for another main commit is refused and nothing is signed":
   when: ProbePrReport { script: "sign:othermain comment:901 token:full go" }
   predict rejection STATEMENT_MISMATCH:
-    response ERR ReportError { code: "STATEMENT_MISMATCH" }
+    response ERR ReportError partial { code: "STATEMENT_MISMATCH" }
     filesystem has []
 
 scenario "a statement whose digest differs from the one main's check recorded is refused and nothing is signed":
   when: ProbePrReport { script: "sign:tampered comment:901 token:full go" }
   predict rejection STATEMENT_MISMATCH:
-    response ERR ReportError { code: "STATEMENT_MISMATCH" }
+    response ERR ReportError partial { code: "STATEMENT_MISMATCH" }
     filesystem has []
 
 scenario "a fork run that lists no pull request is matched to the open pull request of its head branch at its head commit":
@@ -469,13 +469,13 @@ scenario "a fork run that lists no pull request is matched to the open pull requ
 scenario "a fork run whose branch has moved past its head commit matches no pull request and nothing is posted":
   when: ProbePrReport { script: "fork:9 prs:stale evidence:unit:pass jobs:green comment:none token:full go" }
   predict rejection NO_PR_CONTEXT:
-    response ERR ReportError { code: "NO_PR_CONTEXT" }
+    response ERR ReportError partial { code: "NO_PR_CONTEXT" }
     filesystem has []
 
 scenario "the follow-up refuses a run a person started from this repository, which reports itself":
   when: ProbePrReport { script: "fork:9 from:samerepo evidence:unit:pass jobs:green comment:none token:full go" }
   predict rejection TRUSTED_RUN:
-    response ERR ReportError { code: "TRUSTED_RUN" }
+    response ERR ReportError partial { code: "TRUSTED_RUN" }
     filesystem has []
 
 scenario "a merged fork pull request whose run left no attestation is recorded as not attested and main is attested":
@@ -511,19 +511,19 @@ scenario "a push carrying several commits attests the head and lists every commi
 scenario "a force push, whose before is not an ancestor of the main commit, is refused and nothing is stored, signed or posted":
   when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:notfound pusher:mmmnt-flmnt-roadmap[bot] range:forced ghcr:ok mainattest:good evidence:unit:pass jobs:green token:full go" }
   predict rejection NOT_FAST_FORWARD:
-    response ERR ReportError { code: "NOT_FAST_FORWARD" }
+    response ERR ReportError partial { code: "NOT_FAST_FORWARD" }
     filesystem has []
 
 scenario "a merge pushed as a force push is refused like any other":
   when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:found range:forced prattest:present ghcr:ok mainattest:good evidence:unit:pass jobs:green comment:901 token:full go" }
   predict rejection NOT_FAST_FORWARD:
-    response ERR ReportError { code: "NOT_FAST_FORWARD" }
+    response ERR ReportError partial { code: "NOT_FAST_FORWARD" }
     filesystem has []
 
 scenario "a direct commit whose build attested another commit breaks the chain at main's provenance and writes no statement":
   when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:notfound pusher:mmmnt-flmnt-roadmap[bot] ghcr:ok mainattest:wrongsource evidence:unit:pass jobs:green token:full go" }
   predict success:
-    response OK ProbeResult {
+    response OK ProbeResult partial {
       trace: "GET /repos/o/r/actions/runs/1/attempts/1/jobs GET /repos/o/r/commits/5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b/pulls GET /repos/o/r/compare/4e1a9c3b7d2f6e0a8c5b1d9f3e7a2c6b0d4f8e1a...5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b GET ghcr.io/o/r/referrers/sha256:9b74c9897bac770ffc029102a200c5de2a4c2a6c2d1e3f4a5b6c7d8e9f0a1b2c POST /repos/o/r/check-runs verdict=fail chain=broken:main-provenance sections=header,tests,attestations,chain,verify"
       check: "failure"
     }
@@ -532,7 +532,7 @@ scenario "a direct commit whose build attested another commit breaks the chain a
 scenario "a direct commit whose evidence cannot be stored in GHCR is refused and nothing is written or posted":
   when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:notfound pusher:mmmnt-flmnt-roadmap[bot] ghcr:fail mainattest:good evidence:unit:pass jobs:green token:full go" }
   predict rejection EVIDENCE_STORE_FAILED:
-    response ERR ReportError { code: "EVIDENCE_STORE_FAILED" }
+    response ERR ReportError { code: "EVIDENCE_STORE_FAILED", detail: "evidence bundles could not be stored: push refused" }
     filesystem has []
 
 scenario "sign-merge signs a direct commit's statement under pr-merge/v2 and posts to no pull request":
@@ -558,7 +558,7 @@ scenario "main's verify block names the pr-merge/v2 predicate type":
 scenario "a push whose commits cannot all be listed is refused and nothing is stored, signed or posted":
   when: ProbePrReport { script: "main:5e8d1f2a3b4c5d6e7f8091a2b3c4d5e6f7081a2b prlookup:notfound pusher:mmmnt-flmnt-roadmap[bot] range:incomplete ghcr:ok mainattest:good evidence:unit:pass jobs:green token:full go" }
   predict rejection PUSH_RANGE_INCOMPLETE:
-    response ERR ReportError { code: "PUSH_RANGE_INCOMPLETE" }
+    response ERR ReportError partial { code: "PUSH_RANGE_INCOMPLETE" }
     filesystem has []
 
 scenario "a first push lists the main commit's history from its root commit":

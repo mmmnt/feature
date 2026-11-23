@@ -109,7 +109,8 @@ scenario "an archive written in the window is reported with its members in archi
     response OK ObserveResult {
       trace: "setup start put:members.tar.zst:export.flmnt stop=1",
       lastTypes: "FILE_WRITTEN",
-      lastPayloads: [{ path: "export.flmnt", members: [{ name: "a.json", json: { id: 1 } }, { name: "b.jsonl", lines: [{ n: 1 }, { n: 2 }] }, { name: "c.txt", text: "hello\n" }, { name: "d/e.json", json: { deep: true } }] }]
+      lastPayloads: [{ path: "export.flmnt", members: [{ name: "a.json", json: { id: 1 } }, { name: "b.jsonl", lines: [{ n: 1 }, { n: 2 }] }, { name: "c.txt", text: "hello\n" }, { name: "d/e.json", json: { deep: true } }] }],
+      peekEqualsStop: absent
     }
     filesystem has []
 
@@ -118,7 +119,9 @@ scenario "an empty .jsonl member is no lines":
   predict success:
     response OK ObserveResult {
       trace: "setup start put:empty-jsonl.tar.zst:e.flmnt stop=1",
-      lastPayloads: [{ path: "e.flmnt", members: [{ name: "e.jsonl", lines: [] }] }]
+      lastPayloads: [{ path: "e.flmnt", members: [{ name: "e.jsonl", lines: [] }] }],
+      peekEqualsStop: absent,
+      lastTypes: "FILE_WRITTEN"
     }
     filesystem has []
 
@@ -127,6 +130,8 @@ scenario outline "a member name longer than 100 bytes is read whole, from a GNU 
   predict success:
     response OK ObserveResult {
       lastPayloads: [{ path: "k.flmnt", members: [{ name: "workspaces/0b8d2f4e-6f1a-4c8e-9a51-2d3c4b5a6f70/5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b-claude-code/keyframe.jsonl", lines: [{ k: 1 }] }] }]
+      peekEqualsStop: absent
+      lastTypes: "FILE_WRITTEN"
     }
     filesystem has []
   examples:
@@ -141,7 +146,8 @@ scenario "a glob reaches into subdirectories when it says so":
     response OK ObserveResult {
       trace: "setup start put:members.tar.zst:out/w/export.flmnt write:out/w/notes.txt stop=2",
       lastTypes: "FILE_WRITTEN,FILE_WRITTEN",
-      lastPayloads: [{ path: "out/w/export.flmnt", members: [{ name: "a.json", json: { id: 1 } }, { name: "b.jsonl", lines: [{ n: 1 }, { n: 2 }] }, { name: "c.txt", text: "hello\n" }, { name: "d/e.json", json: { deep: true } }] }, { path: "out/w/notes.txt" }]
+      lastPayloads: [{ path: "out/w/export.flmnt", members: [{ name: "a.json", json: { id: 1 } }, { name: "b.jsonl", lines: [{ n: 1 }, { n: 2 }] }, { name: "c.txt", text: "hello\n" }, { name: "d/e.json", json: { deep: true } }] }, { path: "out/w/notes.txt" }],
+      peekEqualsStop: absent
     }
     filesystem has []
 
@@ -151,7 +157,8 @@ scenario "a written file that matches no archive glob is reported as before, wit
     response OK ObserveResult {
       trace: "setup start put:members.tar.zst:export.tar.zst stop=1",
       lastTypes: "FILE_WRITTEN",
-      lastPayloads: [{ path: "export.tar.zst" }]
+      lastPayloads: [{ path: "export.tar.zst" }],
+      peekEqualsStop: absent
     }
     filesystem has []
 
@@ -160,7 +167,9 @@ scenario "without the archives option an archive is a file like any other":
   predict success:
     response OK ObserveResult {
       trace: "setup start put:members.tar.zst:export.flmnt stop=1",
-      lastPayloads: [{ path: "export.flmnt" }]
+      lastPayloads: [{ path: "export.flmnt" }],
+      peekEqualsStop: absent,
+      lastTypes: "FILE_WRITTEN"
     }
     filesystem has []
 
@@ -170,14 +179,15 @@ scenario "a deleted archive is reported deleted, with no members":
     response OK ObserveResult {
       trace: "put:members.tar.zst:export.flmnt setup start delete:export.flmnt stop=1",
       lastTypes: "FILE_DELETED",
-      lastPayloads: [{ path: "export.flmnt" }]
+      lastPayloads: [{ path: "export.flmnt" }],
+      peekEqualsStop: absent
     }
     filesystem has []
 
 scenario "an archive that existed before the window and did not change is not reported":
   when: ObserveFs { script: "put:members.tar.zst:export.flmnt setup start stop", options: { scope: ".", archives: ["*.flmnt"] } }
   predict success:
-    response OK ObserveResult { trace: "put:members.tar.zst:export.flmnt setup start stop=0" }
+    response OK ObserveResult { trace: "put:members.tar.zst:export.flmnt setup start stop=0", lastPayloads: absent, lastTypes: absent, peekEqualsStop: absent }
     filesystem has []
 
 scenario "a peek reports the members and the stop reports the same":
@@ -186,14 +196,15 @@ scenario "a peek reports the members and the stop reports the same":
     response OK ObserveResult {
       trace: "setup start put:empty-jsonl.tar.zst:e.flmnt peek=1 stop=1",
       peekEqualsStop: true,
-      lastPayloads: [{ path: "e.flmnt", members: [{ name: "e.jsonl", lines: [] }] }]
+      lastPayloads: [{ path: "e.flmnt", members: [{ name: "e.jsonl", lines: [] }] }],
+      lastTypes: "FILE_WRITTEN"
     }
     filesystem has []
 
 scenario outline "an archive that cannot be read in full is captured as ARCHIVE_UNREADABLE, never skipped":
   when: ObserveFs { script: <script>, options: { scope: ".", archives: ["*.flmnt"] } }
   predict success:
-    response OK ObserveResult { lastTypes: "ARCHIVE_UNREADABLE", lastPayloads: <payloads> }
+    response OK ObserveResult { lastTypes: "ARCHIVE_UNREADABLE", lastPayloads: <payloads>, peekEqualsStop: absent }
     filesystem has []
   examples:
     | script                                               | payloads                                                          |
@@ -212,38 +223,39 @@ scenario "an empty file matching a glob is an unreadable archive, not an archive
     response OK ObserveResult {
       trace: "setup start write:x.flmnt stop=1",
       lastTypes: "ARCHIVE_UNREADABLE",
-      lastPayloads: [{ path: "x.flmnt", reason: "zstd" }]
+      lastPayloads: [{ path: "x.flmnt", reason: "zstd" }],
+      peekEqualsStop: absent
     }
     filesystem has []
 
 scenario "reset with clearOnReset empties the scope and keeps the scope directory":
   when: ObserveFs { script: "mkdir:out setup write:out/a.txt write:out/sub/b.txt reset ls", options: { scope: "out", clearOnReset: true } }
   predict success:
-    response OK ObserveResult { trace: "mkdir:out setup write:out/a.txt write:out/sub/b.txt reset ls=" }
+    response OK ObserveResult { trace: "mkdir:out setup write:out/a.txt write:out/sub/b.txt reset ls=", lastPayloads: absent, lastTypes: absent, peekEqualsStop: absent }
     filesystem has []
 
 scenario "reset with clearOnReset keeps the names the adapter never descends into":
   when: ObserveFs { script: "mkdir:out setup write:out/node_modules/m.js write:out/sub/.git/HEAD write:out/a.txt reset ls", options: { scope: "out", clearOnReset: true } }
   predict success:
-    response OK ObserveResult { trace: "mkdir:out setup write:out/node_modules/m.js write:out/sub/.git/HEAD write:out/a.txt reset ls=node_modules,node_modules/m.js,sub,sub/.git,sub/.git/HEAD" }
+    response OK ObserveResult { trace: "mkdir:out setup write:out/node_modules/m.js write:out/sub/.git/HEAD write:out/a.txt reset ls=node_modules,node_modules/m.js,sub,sub/.git,sub/.git/HEAD", lastPayloads: absent, lastTypes: absent, peekEqualsStop: absent }
     filesystem has []
 
 scenario "reset without clearOnReset writes nothing to the tree":
   when: ObserveFs { script: "mkdir:out setup write:out/a.txt reset ls", options: { scope: "out" } }
   predict success:
-    response OK ObserveResult { trace: "mkdir:out setup write:out/a.txt reset ls=a.txt" }
+    response OK ObserveResult { trace: "mkdir:out setup write:out/a.txt reset ls=a.txt", lastPayloads: absent, lastTypes: absent, peekEqualsStop: absent }
     filesystem has []
 
 scenario "reset with clearOnReset and no scope directory leaves it absent":
   when: ObserveFs { script: "setup reset ls", options: { scope: "out", clearOnReset: true } }
   predict success:
-    response OK ObserveResult { trace: "setup reset ls=absent" }
+    response OK ObserveResult { trace: "setup reset ls=absent", lastPayloads: absent, lastTypes: absent, peekEqualsStop: absent }
     filesystem has []
 
 scenario "what reset removes is never a record of the next window":
   when: ObserveFs { script: "mkdir:out setup start write:out/a.txt reset start stop", options: { scope: "out", clearOnReset: true } }
   predict success:
-    response OK ObserveResult { trace: "mkdir:out setup start write:out/a.txt reset start stop=0" }
+    response OK ObserveResult { trace: "mkdir:out setup start write:out/a.txt reset start stop=0", lastPayloads: absent, lastTypes: absent, peekEqualsStop: absent }
     filesystem has []
 
 scenario "a reset whose scope is a file is refused CLEAR_FAILED, and the file is left":
@@ -279,5 +291,5 @@ scenario outline "clearOnReset on a scope that is not strictly inside the projec
 scenario "a root scope is not refused when clearOnReset is off":
   when: ObserveFs { script: "setup", options: { scope: ".", clearOnReset: false } }
   predict success:
-    response OK ObserveResult { trace: "setup" }
+    response OK ObserveResult { trace: "setup", lastPayloads: absent, lastTypes: absent, peekEqualsStop: absent }
     filesystem has []

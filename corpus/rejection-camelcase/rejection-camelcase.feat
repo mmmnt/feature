@@ -42,7 +42,7 @@ scenario "an operator answers an open question":
 scenario "a non-operator is refused":
   when (as reader): AnswerQuestion { questionId: "q-1", option: "yes" }
   predict rejection NotOperator:
-    response 403 Refusal { code: "NotOperator" }
+    response 403 Refusal { code: "NotOperator", message: any string }
     answers has []
 
 scenario "a question that already holds an answer is refused":
@@ -50,11 +50,11 @@ scenario "a question that already holds an answer is refused":
     A question "q-2" is open and already answered.
   when (as operator): AnswerQuestion { questionId: "q-2", option: "no" }
   predict rejection AlreadyAnswered:
-    response 409 Refusal { code: "AlreadyAnswered" }
+    response 409 Refusal { code: "AlreadyAnswered", message: any string }
     answers has []
 
 scenario "an unknown question is refused with an UPPER_SNAKE id":
   when (as operator): AnswerQuestion { questionId: "q-404", option: "yes" }
   predict rejection UNKNOWN_QUESTION:
-    response 404 Refusal { code: "UNKNOWN_QUESTION" }
+    response 404 Refusal { code: "UNKNOWN_QUESTION", message: any string }
     answers has []

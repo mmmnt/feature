@@ -125,7 +125,7 @@ scenario "a server that does not answer is a configuration error at setup":
 scenario "the adapter declares snapshot diff and state":
   when: ObserveRedis { script: "setup:a observes:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a observes:a=snapshot/true" }
+    response OK ObserveResult { trace: "setup:a observes:a=snapshot/true", last: absent, payloads: absent, peekEqualsStop: absent, read: absent, readPayloads: absent, readVia: absent }
     filesystem has []
 
 scenario "a window reports keys added, changed and removed, seeds excluded":
@@ -134,7 +134,11 @@ scenario "a window reports keys added, changed and removed, seeds excluded":
     response OK ObserveResult {
       trace: "setup:a seed:a seed:a start:a set:a sadd:a del:a stop:a=3",
       last: "INSERT:k1,MODIFY:k2,REMOVE:k9",
-      payloads: "[{\"key\":\"k1\",\"kind\":\"string\",\"value\":\"v1\"},{\"key\":\"k2\",\"kind\":\"set\",\"value\":[\"m0\",\"m1\"]},{\"key\":\"k9\",\"kind\":\"string\",\"value\":\"v0\"}]"
+      payloads: "[{\"key\":\"k1\",\"kind\":\"string\",\"value\":\"v1\"},{\"key\":\"k2\",\"kind\":\"set\",\"value\":[\"m0\",\"m1\"]},{\"key\":\"k9\",\"kind\":\"string\",\"value\":\"v0\"}]",
+      peekEqualsStop: absent,
+      read: absent,
+      readPayloads: absent,
+      readVia: absent
     }
     filesystem has []
 
@@ -144,14 +148,18 @@ scenario "every kind the adapter reads is reported in its canonical order":
     response OK ObserveResult {
       trace: "setup:a start:a hset:a hset:a rpush:a rpush:a zadd:a zadd:a stop:a=3",
       last: "INSERT:h,INSERT:l,INSERT:z",
-      payloads: "[{\"key\":\"h\",\"kind\":\"hash\",\"value\":{\"a\":\"2\",\"z\":\"1\"}},{\"key\":\"l\",\"kind\":\"list\",\"value\":[\"x\",\"b\"]},{\"key\":\"z\",\"kind\":\"zset\",\"value\":[{\"member\":\"m1\",\"score\":1},{\"member\":\"m2\",\"score\":2}]}]"
+      payloads: "[{\"key\":\"h\",\"kind\":\"hash\",\"value\":{\"a\":\"2\",\"z\":\"1\"}},{\"key\":\"l\",\"kind\":\"list\",\"value\":[\"x\",\"b\"]},{\"key\":\"z\",\"kind\":\"zset\",\"value\":[{\"member\":\"m1\",\"score\":1},{\"member\":\"m2\",\"score\":2}]}]",
+      peekEqualsStop: absent,
+      read: absent,
+      readPayloads: absent,
+      readVia: absent
     }
     filesystem has []
 
 scenario "two namespaces never see each other's keys":
   when: ObserveRedis { script: "setup:a setup:b start:a start:b set:a:k1:v set:b:k1:v set:b:k2:v stop:a stop:b" }
   predict success:
-    response OK ObserveResult {
+    response OK ObserveResult partial {
       trace: "setup:a setup:b start:a start:b set:a set:b set:b stop:a=1 stop:b=2",
       last: "INSERT:k1,INSERT:k2"
     }
@@ -160,7 +168,7 @@ scenario "two namespaces never see each other's keys":
 scenario "a key with no namespace prefix is nobody's effect":
   when: ObserveRedis { script: "setup:a start:a setraw:loose:v stop:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a start:a setraw stop:a=0" }
+    response OK ObserveResult { trace: "setup:a start:a setraw stop:a=0", last: absent, peekEqualsStop: absent, read: absent, readPayloads: absent, readVia: absent, payloads: "[]" }
     filesystem has []
 
 scenario "a namespaced key of a type the adapter does not read is refused, not silently skipped":
@@ -172,7 +180,7 @@ scenario "a namespaced key of a type the adapter does not read is refused, not s
 scenario "snapshot diff cannot see a key created and removed inside the window":
   when: ObserveRedis { script: "setup:a start:a set:a:k1:v del:a:k1 stop:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a start:a set:a del:a stop:a=0" }
+    response OK ObserveResult { trace: "setup:a start:a set:a del:a stop:a=0", last: absent, peekEqualsStop: absent, read: absent, readPayloads: absent, readVia: absent, payloads: "[]" }
     filesystem has []
 
 scenario "a peek reports the window's records and consumes nothing":
@@ -181,32 +189,36 @@ scenario "a peek reports the window's records and consumes nothing":
     response OK ObserveResult {
       trace: "setup:a start:a set:a peek:a=1 peek:a=1 stop:a=1",
       last: "INSERT:k1",
-      peekEqualsStop: true
+      peekEqualsStop: true,
+      read: absent,
+      readPayloads: absent,
+      readVia: absent,
+      payloads: "[{\"key\":\"k1\",\"kind\":\"string\",\"value\":\"v\"}]"
     }
     filesystem has []
 
 scenario "settle vouches with a window open and declines with none":
   when: ObserveRedis { script: "setup:a settle:a start:a set:a:k1:v settle:a stop:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a settle:a=false start:a set:a settle:a=true stop:a=1", last: "INSERT:k1" }
+    response OK ObserveResult { trace: "setup:a settle:a=false start:a set:a settle:a=true stop:a=1", last: "INSERT:k1", peekEqualsStop: absent, read: absent, readPayloads: absent, readVia: absent, payloads: "[{\"key\":\"k1\",\"kind\":\"string\",\"value\":\"v\"}]" }
     filesystem has []
 
 scenario "a read with a key hint looks the key up; without one it scans the namespace":
   when: ObserveRedis { script: "setup:a seed:a:string:k1 seed:a:set:k2 read:a:k2 read:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a seed:a seed:a read:a:k2=1 read:a=2", read: "string:k1,set:k2", readVia: "NamespaceScan" }
+    response OK ObserveResult partial { trace: "setup:a seed:a seed:a read:a:k2=1 read:a=2", read: "string:k1,set:k2", readVia: "NamespaceScan" }
     filesystem has []
 
 scenario "a read's records carry their key in the payload":
   when: ObserveRedis { script: "setup:a seed:a:set:k2 read:a:k2" }
   predict success:
-    response OK ObserveResult { trace: "setup:a seed:a read:a:k2=1", read: "set:k2", readPayloads: "[{\"key\":\"k2\",\"kind\":\"set\",\"value\":[\"m0\"]}]" }
+    response OK ObserveResult { trace: "setup:a seed:a read:a:k2=1", read: "set:k2", readPayloads: "[{\"key\":\"k2\",\"kind\":\"set\",\"value\":[\"m0\"]}]", last: absent, payloads: absent, peekEqualsStop: absent, readVia: "KeyedLookup" }
     filesystem has []
 
 scenario "a keyed read names how it found the key":
   when: ObserveRedis { script: "setup:a seed:a:list:k3 read:a:k3" }
   predict success:
-    response OK ObserveResult { trace: "setup:a seed:a read:a:k3=1", read: "list:k3", readVia: "KeyedLookup" }
+    response OK ObserveResult { trace: "setup:a seed:a read:a:k3=1", read: "list:k3", readVia: "KeyedLookup", last: absent, payloads: absent, peekEqualsStop: absent, readPayloads: "[{\"key\":\"k3\",\"kind\":\"list\",\"value\":[\"i0\"]}]" }
     filesystem has []
 
 scenario outline "a seed that does not fit a kind is refused":
@@ -228,7 +240,7 @@ scenario "a seed whose value does not fit its kind is refused, and nothing is wr
 scenario "reset removes every key of the namespace and nothing else":
   when: ObserveRedis { script: "setup:a setup:b seed:a:string:k1 seed:a:hash:k2 seed:b:string:k1 reset:a count:a count:b" }
   predict success:
-    response OK ObserveResult { trace: "setup:a setup:b seed:a seed:a seed:b reset:a count:a=0 count:b=1" }
+    response OK ObserveResult { trace: "setup:a setup:b seed:a seed:a seed:b reset:a count:a=0 count:b=1", last: absent, payloads: absent, peekEqualsStop: absent, read: absent, readPayloads: absent, readVia: absent }
     filesystem has []
 
 scenario "any fault is refused, because the catalog is empty":
@@ -240,13 +252,13 @@ scenario "any fault is refused, because the catalog is empty":
 scenario "a password read from a file connects the instrument, and the system's writes are observed":
   when: ObserveRedis { script: "setup:a start:a set:a:k1:v stop:a", source: "passwordFile" }
   predict success:
-    response OK ObserveResult { trace: "setup:a start:a set:a stop:a=1", last: "INSERT:k1" }
+    response OK ObserveResult { trace: "setup:a start:a set:a stop:a=1", last: "INSERT:k1", peekEqualsStop: absent, read: absent, readPayloads: absent, readVia: absent, payloads: "[{\"key\":\"k1\",\"kind\":\"string\",\"value\":\"v\"}]" }
     filesystem has []
 
 scenario outline "one trailing line ending is removed, so a secret written by echo or an editor still connects":
   when: ObserveRedis { script: "setup:a", source: "passwordFile", content: <content> }
   predict success:
-    response OK ObserveResult { trace: "setup:a" }
+    response OK ObserveResult { trace: "setup:a", last: absent, payloads: absent, peekEqualsStop: absent, read: absent, readPayloads: absent, readVia: absent }
     filesystem has []
   examples:
     | content |
@@ -256,19 +268,19 @@ scenario outline "one trailing line ending is removed, so a secret written by ec
 scenario "nothing but the line ending is trimmed, so a password with a space in it is kept":
   when: ObserveRedis { script: "setup:a start:a set:a:k1:v stop:a", source: "passwordFile", content: "innerSpace" }
   predict success:
-    response OK ObserveResult { trace: "setup:a start:a set:a stop:a=1", last: "INSERT:k1" }
+    response OK ObserveResult { trace: "setup:a start:a set:a stop:a=1", last: "INSERT:k1", peekEqualsStop: absent, read: absent, readPayloads: absent, readVia: absent, payloads: "[{\"key\":\"k1\",\"kind\":\"string\",\"value\":\"v\"}]" }
     filesystem has []
 
 scenario "a relative path is read from the run's working directory":
   when: ObserveRedis { script: "setup:a", source: "passwordFile", path: "relative" }
   predict success:
-    response OK ObserveResult { trace: "setup:a" }
+    response OK ObserveResult { trace: "setup:a", last: absent, payloads: absent, peekEqualsStop: absent, read: absent, readPayloads: absent, readVia: absent }
     filesystem has []
 
 scenario "a URL read from a file connects, with its line ending removed":
   when: ObserveRedis { script: "setup:a", source: "urlFile", content: "lf" }
   predict success:
-    response OK ObserveResult { trace: "setup:a" }
+    response OK ObserveResult { trace: "setup:a", last: absent, payloads: absent, peekEqualsStop: absent, read: absent, readPayloads: absent, readVia: absent }
     filesystem has []
 
 scenario outline "a password file that cannot be used is refused before the adapter connects to anything":
@@ -306,7 +318,7 @@ scenario "a CA file is read before any connection, and a missing one is refused 
 scenario "a TLS server is verified against the CA read from tlsCAFile, and the instrument reads through it":
   when: ObserveRedis { script: "setup:a read:a", source: "tlsCAFile" }
   predict success:
-    response OK ObserveResult { trace: "setup:a read:a=0", read: "", readVia: "NamespaceScan" }
+    response OK ObserveResult { trace: "setup:a read:a=0", read: "", readVia: "NamespaceScan", last: absent, payloads: absent, peekEqualsStop: absent, readPayloads: "[]" }
     filesystem has []
 
 scenario "a server certificate signed by another CA is refused at setup":

@@ -140,6 +140,10 @@
                     "service": "log",
                     "path": "inviteId",
                     "index": 0
+                  },
+                  "codeHash": {
+                    "matcher": "any",
+                    "ofType": "string"
                   }
                 }
               }
@@ -168,6 +172,10 @@
             "code": {
               "matcher": "literal",
               "value": "ABCD-EFGH-JKLM"
+            },
+            "inviteId": {
+              "matcher": "any",
+              "ofType": "string"
             }
           }
         },
@@ -179,6 +187,10 @@
                 "schemaName": "InviteEvent",
                 "valueBlock": {
                   "codeHash": {
+                    "matcher": "any",
+                    "ofType": "string"
+                  },
+                  "inviteId": {
                     "matcher": "any",
                     "ofType": "string"
                   }

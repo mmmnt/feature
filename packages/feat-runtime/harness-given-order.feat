@@ -68,7 +68,7 @@ scenario "an execute written before a seed runs before it":
     ]
   }
   predict success:
-    response OK RunResult { outcome: "passed", calls: "reset:store execute:Ping seed:store start:store invoke:Ping stop:store" }
+    response OK RunResult { outcome: "passed", calls: "reset:store execute:Ping seed:store start:store invoke:Ping stop:store", violationCodes: absent, violations: absent }
     filesystem has []
 
 scenario "seeds and executes interleave in the written order":
@@ -79,7 +79,7 @@ scenario "seeds and executes interleave in the written order":
     ]
   }
   predict success:
-    response OK RunResult { outcome: "passed", calls: "reset:store seed:store execute:Ping seed:store execute:Ping start:store invoke:Ping stop:store" }
+    response OK RunResult { outcome: "passed", calls: "reset:store seed:store execute:Ping seed:store execute:Ping start:store invoke:Ping stop:store", violationCodes: absent, violations: absent }
     filesystem has []
 
 scenario "a given with no written order runs its seeds, then its executes, as before":
@@ -90,7 +90,7 @@ scenario "a given with no written order runs its seeds, then its executes, as be
     ]
   }
   predict success:
-    response OK RunResult { outcome: "passed", calls: "reset:store seed:store execute:Ping start:store invoke:Ping stop:store" }
+    response OK RunResult { outcome: "passed", calls: "reset:store seed:store execute:Ping start:store invoke:Ping stop:store", violationCodes: absent, violations: absent }
     filesystem has []
 
 scenario "a written order that does not name each seed and each execute once is refused before any adapter call":

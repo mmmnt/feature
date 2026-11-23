@@ -69,31 +69,31 @@ contract:
 scenario "specs with no exclusive fault all run in the parallel pass":
   when: PlanRun { specs: [ { path: "a.feat", faults: [] }, { path: "b.feat", faults: ["Connection.Timeout", "AppendToStream.AccessDenied"] } ] }
   predict success:
-    response OK PlanResult { parallel: "a.feat,b.feat", serial: "", order: "parallel", serialWorkers: 0 }
+    response OK PlanResult { parallel: "a.feat,b.feat", serial: "", order: "parallel", serialWorkers: 0, exit: absent, reported: absent }
     filesystem has []
 
 scenario "a spec that arms BrokerLoss moves to the serial pass and the rest do not":
   when: PlanRun { specs: [ { path: "a.feat", faults: [] }, { path: "loss.feat", faults: ["Connection.BrokerLoss"] }, { path: "c.feat", faults: ["Connection.Partition"] } ] }
   predict success:
-    response OK PlanResult { parallel: "a.feat,c.feat", serial: "loss.feat", order: "parallel then serial", serialWorkers: 1 }
+    response OK PlanResult { parallel: "a.feat,c.feat", serial: "loss.feat", order: "parallel then serial", serialWorkers: 1, exit: absent, reported: absent }
     filesystem has []
 
 scenario "one scenario among many is enough to move its whole file":
   when: PlanRun { specs: [ { path: "mixed.feat", faults: ["Connection.Timeout", "Connection.Timeout", "Connection.BrokerLoss"] } ] }
   predict success:
-    response OK PlanResult { parallel: "", serial: "mixed.feat", order: "serial", serialWorkers: 1 }
+    response OK PlanResult { parallel: "", serial: "mixed.feat", order: "serial", serialWorkers: 1, exit: absent, reported: absent }
     filesystem has []
 
 scenario "the file's name decides nothing":
   when: PlanRun { specs: [ { path: "adapters/kafka/transport.feat", faults: ["Connection.Timeout"] }, { path: "innocent-name.feat", faults: ["Connection.BrokerLoss"] } ] }
   predict success:
-    response OK PlanResult { parallel: "adapters/kafka/transport.feat", serial: "innocent-name.feat", order: "parallel then serial", serialWorkers: 1 }
+    response OK PlanResult { parallel: "adapters/kafka/transport.feat", serial: "innocent-name.feat", order: "parallel then serial", serialWorkers: 1, exit: absent, reported: absent }
     filesystem has []
 
 scenario "a fault a probe arms in its when input is swept like a given one":
   when: PlanRun { specs: [ { path: "probe.feat", cases: [ { when: { command: "Observe", payload: { script: "setup:a fault:a:Connection.BrokerLoss reset:a" } } } ] }, { path: "given.feat", cases: [ { given: { faults: [ { operation: "Connection", fault: "BrokerLoss" } ] }, when: { command: "Ping", payload: {} } } ] }, { path: "plain.feat", cases: [ { when: { command: "Observe", payload: { script: "fault:a:Connection.Partition" } } } ] } ] }
   predict success:
-    response OK PlanResult { parallel: "plain.feat", serial: "probe.feat,given.feat", order: "parallel then serial", serialWorkers: 1 }
+    response OK PlanResult { parallel: "plain.feat", serial: "probe.feat,given.feat", order: "parallel then serial", serialWorkers: 1, exit: absent, reported: absent }
     filesystem has []
 
 scenario "an exclusive fault in a worker that is not the serial one is refused before any effect":
@@ -105,13 +105,13 @@ scenario "an exclusive fault in a worker that is not the serial one is refused b
 scenario "the same fault in the serial worker is armed":
   when: PreflightSerial { fault: "Connection.BrokerLoss", worker: "serial" }
   predict success:
-    response OK PlanResult { order: "armed" }
+    response OK PlanResult { order: "armed", exit: absent, parallel: absent, reported: absent, serial: absent, serialWorkers: absent }
     filesystem has []
 
 scenario "a fault that is not exclusive is armed in any worker":
   when: PreflightSerial { fault: "Connection.Partition", worker: "parallel" }
   predict success:
-    response OK PlanResult { order: "armed" }
+    response OK PlanResult { order: "armed", exit: absent, parallel: absent, reported: absent, serial: absent, serialWorkers: absent }
     filesystem has []
 
 scenario "a failure in the parallel pass does not skip the serial pass, and the run still fails":

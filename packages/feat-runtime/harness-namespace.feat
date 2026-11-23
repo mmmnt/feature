@@ -117,7 +117,7 @@ contract:
 scenario "the namespace matches the protocol's pattern and is derived from the spec path":
   when: RunHarnessNamespace { specs: ["adapters/kurrent/observe.feat", "adapters/kafka/observe.feat", "packages/feat-core/parse.feat"] }
   predict success:
-    response OK RunResult {
+    response OK RunResult partial {
       namespaces: "adapters/kurrent/observe.feat=s0599e33863c1,adapters/kafka/observe.feat=s3b04e21257fd,packages/feat-core/parse.feat=s828460f74230",
       valid: true
     }
@@ -126,7 +126,7 @@ scenario "the namespace matches the protocol's pattern and is derived from the s
 scenario "equivalent spellings of one path give one namespace":
   when: RunHarnessNamespace { specs: ["./adapters/kurrent/observe.feat", "adapters\\kurrent\\observe.feat"] }
   predict success:
-    response OK RunResult {
+    response OK RunResult partial {
       namespaces: "adapters/kurrent/observe.feat=s0599e33863c1,adapters/kurrent/observe.feat=s0599e33863c1",
       valid: true
     }
@@ -137,7 +137,8 @@ scenario "every adapter of a file and every case of it see the same namespace":
   predict success:
     response OK RunResult {
       namespaces: "adapters/kurrent/observe.feat=s0599e33863c1",
-      trace: "create:response ns=s0599e33863c1 create:store ns=s0599e33863c1 case:c1 case:c2"
+      trace: "create:response ns=s0599e33863c1 create:store ns=s0599e33863c1 case:c1 case:c2",
+      valid: true
     }
     filesystem has []
 
@@ -146,7 +147,8 @@ scenario "two files in parallel each get their own namespace":
   predict success:
     response OK RunResult {
       namespaces: "adapters/kurrent/observe.feat=s0599e33863c1,adapters/kafka/observe.feat=s3b04e21257fd",
-      trace: "create:response ns=s0599e33863c1 create:store ns=s0599e33863c1 create:response ns=s3b04e21257fd create:store ns=s3b04e21257fd case:c1 case:c1"
+      trace: "create:response ns=s0599e33863c1 create:store ns=s0599e33863c1 create:response ns=s3b04e21257fd create:store ns=s3b04e21257fd case:c1 case:c1",
+      valid: true
     }
     filesystem has []
 
@@ -155,14 +157,15 @@ scenario "the namespace is in the environment while the file runs and restored a
   predict success:
     response OK RunResult {
       namespaces: "adapters/kurrent/observe.feat=s0599e33863c1",
-      trace: "create:response ns=s0599e33863c1 create:store ns=s0599e33863c1 case:c1 env=s0599e33863c1 teardown env=restored"
+      trace: "create:response ns=s0599e33863c1 create:store ns=s0599e33863c1 case:c1 env=s0599e33863c1 teardown env=restored",
+      valid: true
     }
     filesystem has []
 
 scenario "a host that echoes the delivered namespace is accepted":
   when: RunHarnessNamespace { specs: ["adapters/kurrent/observe.feat"], hostKind: "protocol", hostEcho: "ok" }
   predict success:
-    response OK RunResult { namespaces: "adapters/kurrent/observe.feat=s0599e33863c1" }
+    response OK RunResult partial { namespaces: "adapters/kurrent/observe.feat=s0599e33863c1" }
     filesystem has []
 
 scenario "an in-process host that reports no namespace is refused after the invoke":
@@ -180,7 +183,7 @@ scenario "a protocol host that reports another well-formed namespace is refused 
 scenario "the response check comes before the predictions: a refused namespace is reported, not the violation behind it":
   when: RunHarnessNamespace { specs: ["adapters/kurrent/observe.feat"], hostKind: "in-process", hostEcho: "none", cases: 1, wrongPrediction: true }
   predict rejection NAMESPACE_NOT_HONOURED:
-    response ERR NamespaceError { code: "NAMESPACE_NOT_HONOURED", trace: "create:response ns=s0599e33863c1 create:store ns=s0599e33863c1 case:c1" }
+    response ERR NamespaceError partial { code: "NAMESPACE_NOT_HONOURED", trace: "create:response ns=s0599e33863c1 create:store ns=s0599e33863c1 case:c1" }
     filesystem has []
 
 scenario "a service adapter that reports another namespace is still refused at its setup, before any case runs":

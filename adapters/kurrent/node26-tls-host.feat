@@ -99,7 +99,7 @@ scenario "the loopback rewrite holds on Node 26, where the IP name would be refu
 scenario "the rewrite changes the host and nothing else":
   when: ObserveKurrentTlsHost { host: "127.0.0.1", script: "params:a" }
   predict success:
-    response OK ObserveResult { trace: "params:a=admin?tls=true&tlsVerifyCert=false" }
+    response OK ObserveResult { trace: "params:a=admin?tls=true&tlsVerifyCert=false", last: absent }
     filesystem has []
 
 scenario "a hostname is connected to as written, on Node 26 too":
@@ -144,7 +144,7 @@ scenario "a later Node major is refused the same way":
 scenario outline "an IP host is left as written where the name is allowed, so no refusal and no rewrite":
   when: ObserveKurrentTlsHost { host: <host>, tls: <tls>, nodeMajor: <nodeMajor>, script: "target:a" }
   predict success:
-    response OK ObserveResult { trace: <trace> }
+    response OK ObserveResult { trace: <trace>, last: absent }
     filesystem has []
   examples:
     | host           | tls   | nodeMajor | trace                          |
@@ -155,7 +155,7 @@ scenario outline "an IP host is left as written where the name is allowed, so no
 scenario outline "the TLS host rule judges an IP host by the Node major, so below Node 26 nothing is refused":
   when: ObserveKurrentTlsHost { host: <host>, nodeMajor: <nodeMajor>, script: "rule:a" }
   predict success:
-    response OK ObserveResult { trace: <trace> }
+    response OK ObserveResult { trace: <trace>, last: absent }
     filesystem has []
   examples:
     | host         | nodeMajor | trace                         |
@@ -174,5 +174,5 @@ scenario "an IPv4-mapped loopback is not a loopback host, so it is refused on No
 scenario "tls absent is tls on, so a loopback host is still rewritten":
   when: ObserveKurrentTlsHost { host: "127.0.0.1", tls: "omit", script: "target:a params:a" }
   predict success:
-    response OK ObserveResult { trace: "target:a=localhost params:a=admin?tlsVerifyCert=false" }
+    response OK ObserveResult { trace: "target:a=localhost params:a=admin?tlsVerifyCert=false", last: absent }
     filesystem has []

@@ -72,35 +72,35 @@ scenario "a peek reports a deleted file":
 scenario "a file that existed before the window and did not change is not reported":
   when: ObserveFs { script: "write:c.txt start peek stop" }
   predict success:
-    response OK ObserveResult { trace: "write:c.txt start peek=0 stop=0" }
+    response OK ObserveResult { trace: "write:c.txt start peek=0 stop=0", lastTypes: absent, peekEqualsStop: true }
     filesystem has []
 
 scenario "a peek after stop finds the window closed":
   when: ObserveFs { script: "start write:d.txt stop peek" }
   predict success:
-    response OK ObserveResult { trace: "start write:d.txt stop=1 peek=0" }
+    response OK ObserveResult { trace: "start write:d.txt stop=1 peek=0", lastTypes: absent, peekEqualsStop: absent }
     filesystem has []
 
 scenario "a stop with no window open reports nothing, not every file in scope":
   when: ObserveFs { script: "write:e.txt stop" }
   predict success:
-    response OK ObserveResult { trace: "write:e.txt stop=0" }
+    response OK ObserveResult { trace: "write:e.txt stop=0", lastTypes: absent, peekEqualsStop: absent }
     filesystem has []
 
 scenario "settle declines inside a window with a write in it":
   when: ObserveFs { script: "start write:e.txt settle stop" }
   predict success:
-    response OK ObserveResult { trace: "start write:e.txt settle=false stop=1" }
+    response OK ObserveResult { trace: "start write:e.txt settle=false stop=1", peekEqualsStop: absent, lastTypes: "FILE_WRITTEN" }
     filesystem has []
 
 scenario "settle declines inside an empty window, so an absence is never proven by a fence":
   when: ObserveFs { script: "start settle stop" }
   predict success:
-    response OK ObserveResult { trace: "start settle=false stop=0" }
+    response OK ObserveResult { trace: "start settle=false stop=0", lastTypes: absent, peekEqualsStop: absent }
     filesystem has []
 
 scenario "settle declines outside a window":
   when: ObserveFs { script: "settle" }
   predict success:
-    response OK ObserveResult { trace: "settle=false" }
+    response OK ObserveResult { trace: "settle=false", lastTypes: absent, peekEqualsStop: absent }
     filesystem has []

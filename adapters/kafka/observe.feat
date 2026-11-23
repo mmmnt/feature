@@ -135,7 +135,7 @@ scenario "a broker that does not answer is a configuration error at setup":
 scenario "with the right SASL credentials the instrument connects and captures":
   when: ObserveKafka { script: "setup:a start:a produce:a:orders:Placed settle:a stop:a", auth: "correct" }
   predict success:
-    response OK ObserveResult { trace: "setup:a start:a produce:a settle:a=true stop:a=1", last: "orders/Placed" }
+    response OK ObserveResult { trace: "setup:a start:a produce:a settle:a=true stop:a=1", last: "orders/Placed", peekEqualsStop: absent }
     filesystem has []
 
 scenario "with a wrong SASL password the adapter is refused at setup":
@@ -149,7 +149,8 @@ scenario "records produced in the window are captured in offset order, seeds are
   predict success:
     response OK ObserveResult {
       trace: "setup:a seed:a start:a produce:a produce:a produce:a stop:a=3",
-      last: "billing/Charged,orders/Placed,orders/Paid"
+      last: "billing/Charged,orders/Placed,orders/Paid",
+      peekEqualsStop: absent
     }
     filesystem has []
 
@@ -158,14 +159,15 @@ scenario "two namespaces never see each other's records":
   predict success:
     response OK ObserveResult {
       trace: "setup:a setup:b start:a start:b produce:a produce:b produce:b stop:a=1 stop:b=2",
-      last: "orders/PlacedB,orders/PaidB"
+      last: "orders/PlacedB,orders/PaidB",
+      peekEqualsStop: absent
     }
     filesystem has []
 
 scenario "a topic outside every namespace is nobody's effect":
   when: ObserveKafka { script: "setup:a start:a produceraw:elsewhere:Stray stop:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a start:a produceraw stop:a=0" }
+    response OK ObserveResult { trace: "setup:a start:a produceraw stop:a=0", last: absent, peekEqualsStop: absent }
     filesystem has []
 
 scenario "across partitions only each partition's order is reported":
@@ -173,14 +175,15 @@ scenario "across partitions only each partition's order is reported":
   predict success:
     response OK ObserveResult {
       trace: "setup:a topic:a start:a producep:a producep:a producep:a stop:a=3",
-      last: "0=orders/A,orders/C;1=orders/B"
+      last: "0=orders/A,orders/C;1=orders/B",
+      peekEqualsStop: absent
     }
     filesystem has []
 
 scenario "records of an aborted transaction are not captured, committed ones are":
   when: ObserveKafka { script: "setup:a start:a txabort:a:orders:Lost txcommit:a:orders:Kept settle:a stop:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a start:a txabort:a txcommit:a settle:a=true stop:a=1", last: "orders/Kept" }
+    response OK ObserveResult { trace: "setup:a start:a txabort:a txcommit:a settle:a=true stop:a=1", last: "orders/Kept", peekEqualsStop: absent }
     filesystem has []
 
 scenario "a peek reports the window's records and consumes nothing":
@@ -206,25 +209,25 @@ scenario "a peek sees records produced between peeks exactly once":
 scenario "a peek with no window open is empty":
   when: ObserveKafka { script: "setup:a produce:a:orders:Placed peek:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a produce:a peek:a=0" }
+    response OK ObserveResult { trace: "setup:a produce:a peek:a=0", last: absent, peekEqualsStop: absent }
     filesystem has []
 
 scenario "settle vouches once the system's records are consumable":
   when: ObserveKafka { script: "setup:a start:a produce:a:orders:Placed settle:a stop:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a start:a produce:a settle:a=true stop:a=1", last: "orders/Placed" }
+    response OK ObserveResult { trace: "setup:a start:a produce:a settle:a=true stop:a=1", last: "orders/Placed", peekEqualsStop: absent }
     filesystem has []
 
 scenario "settle vouches on an empty window, which is how an absence is proven":
   when: ObserveKafka { script: "setup:a start:a settle:a stop:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a start:a settle:a=true stop:a=0" }
+    response OK ObserveResult { trace: "setup:a start:a settle:a=true stop:a=0", last: absent, peekEqualsStop: absent }
     filesystem has []
 
 scenario "settle declines when no window is open":
   when: ObserveKafka { script: "setup:a settle:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a settle:a=false" }
+    response OK ObserveResult { trace: "setup:a settle:a=false", last: absent, peekEqualsStop: absent }
     filesystem has []
 
 scenario "settle declines while a transaction is open, because that effect is not yet decided":
@@ -232,50 +235,51 @@ scenario "settle declines while a transaction is open, because that effect is no
   predict success:
     response OK ObserveResult {
       trace: "setup:a start:a txopen:a settle:a=false txclose:a settle:a=true stop:a=1",
-      last: "orders/Pending"
+      last: "orders/Pending",
+      peekEqualsStop: absent
     }
     filesystem has []
 
 scenario "settle declines when it cannot consume to the fence in time":
   when: ObserveKafka { script: "setup:a start:a produce:a:orders:Placed settle:a stop:a", settleTimeoutMs: 0 }
   predict success:
-    response OK ObserveResult { trace: "setup:a start:a produce:a settle:a=false stop:a=1" }
+    response OK ObserveResult { trace: "setup:a start:a produce:a settle:a=false stop:a=1", peekEqualsStop: absent, last: "orders/Placed" }
     filesystem has []
 
 scenario "read reports the namespace's committed records and no other namespace's":
   when: ObserveKafka { script: "setup:a setup:b seed:a:orders:Seeded produce:a:orders:Placed txabort:a:orders:Lost read:a read:b" }
   predict success:
-    response OK ObserveResult { trace: "setup:a setup:b seed:a produce:a txabort:a read:a=2 read:b=0" }
+    response OK ObserveResult { trace: "setup:a setup:b seed:a produce:a txabort:a read:a=2 read:b=0", last: absent, peekEqualsStop: absent }
     filesystem has []
 
 scenario "read with a topic hint returns that topic and may return no other":
   when: ObserveKafka { script: "setup:a seed:a:orders:One seed:a:billing:Two read:a:orders" }
   predict success:
-    response OK ObserveResult { trace: "setup:a seed:a seed:a read:a:orders=1" }
+    response OK ObserveResult { trace: "setup:a seed:a seed:a read:a:orders=1", last: absent, peekEqualsStop: absent }
     filesystem has []
 
 scenario "reset empties the namespace and leaves the other one alone":
   when: ObserveKafka { script: "setup:a setup:b seed:a:orders:One seed:b:orders:Two reset:a read:a read:b" }
   predict success:
-    response OK ObserveResult { trace: "setup:a setup:b seed:a seed:b reset:a read:a=0 read:b=1" }
+    response OK ObserveResult { trace: "setup:a setup:b seed:a seed:b reset:a read:a=0 read:b=1", last: absent, peekEqualsStop: absent }
     filesystem has []
 
 scenario "a window left open by the previous case is closed by reset":
   when: ObserveKafka { script: "setup:a start:a produce:a:orders:Placed reset:a peek:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a start:a produce:a reset:a peek:a=0" }
+    response OK ObserveResult { trace: "setup:a start:a produce:a reset:a peek:a=0", last: absent, peekEqualsStop: absent }
     filesystem has []
 
 scenario "a record bigger than the topic allows is refused when MESSAGE_TOO_LARGE is armed":
   when: ObserveKafka { script: "setup:a fault:a:Produce.MESSAGE_TOO_LARGE:orders start:a producebig:a:orders settle:a stop:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a fault:a:Produce.MESSAGE_TOO_LARGE start:a producebig:a!MESSAGE_TOO_LARGE settle:a=true stop:a=0" }
+    response OK ObserveResult { trace: "setup:a fault:a:Produce.MESSAGE_TOO_LARGE start:a producebig:a!MESSAGE_TOO_LARGE settle:a=true stop:a=0", last: absent, peekEqualsStop: absent }
     filesystem has []
 
 scenario "a produce that needs more in-sync replicas than exist is refused when NOT_ENOUGH_REPLICAS is armed":
   when: ObserveKafka { script: "setup:a fault:a:Produce.NOT_ENOUGH_REPLICAS:orders start:a produce:a:orders:Placed settle:a stop:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a fault:a:Produce.NOT_ENOUGH_REPLICAS start:a produce:a!NOT_ENOUGH_REPLICAS settle:a=true stop:a=0" }
+    response OK ObserveResult { trace: "setup:a fault:a:Produce.NOT_ENOUGH_REPLICAS start:a produce:a!NOT_ENOUGH_REPLICAS settle:a=true stop:a=0", last: absent, peekEqualsStop: absent }
     filesystem has []
 
 scenario "reset removes the topic the fault created, so the same produce then succeeds":
@@ -283,7 +287,8 @@ scenario "reset removes the topic the fault created, so the same produce then su
   predict success:
     response OK ObserveResult {
       trace: "setup:a fault:a:Produce.NOT_ENOUGH_REPLICAS reset:a start:a produce:a settle:a=true stop:a=1",
-      last: "orders/Placed"
+      last: "orders/Placed",
+      peekEqualsStop: absent
     }
     filesystem has []
 
@@ -296,7 +301,7 @@ scenario "a fault cannot be armed on a topic that already holds the system's dat
 scenario "the broker reports no produce it refused, so firedFaults is not offered":
   when: ObserveKafka { script: "setup:a fault:a:Produce.MESSAGE_TOO_LARGE:orders fired:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a fault:a:Produce.MESSAGE_TOO_LARGE fired:a=unobserved" }
+    response OK ObserveResult { trace: "setup:a fault:a:Produce.MESSAGE_TOO_LARGE fired:a=unobserved", last: absent, peekEqualsStop: absent }
     filesystem has []
 
 scenario outline "a fault the binding cannot produce faithfully is refused before it does anything":

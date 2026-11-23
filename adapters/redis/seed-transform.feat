@@ -70,7 +70,7 @@ contract:
 scenario outline "a seed value is written as the host transformed it":
   when: ObserveRedisSeedTransform { host: "encodestr", script: <script> }
   predict success:
-    response OK SeedTransformResult { trace: <trace>, readPayloads: <payloads> }
+    response OK SeedTransformResult partial { trace: <trace>, readPayloads: <payloads> }
     filesystem has []
   examples:
     | script                                   | trace                          | payloads                                                       |
@@ -81,19 +81,19 @@ scenario outline "a seed value is written as the host transformed it":
 scenario "one seed call is transformed in one request, asked twice":
   when: ObserveRedisSeedTransform { host: "encodestr", script: "setup:a seedmix:a calls:a read:a" }
   predict success:
-    response OK SeedTransformResult { trace: "setup:a seedmix:a calls:a=2 read:a=2", read: "string:k1,string:k2", readVia: "NamespaceScan" }
+    response OK SeedTransformResult partial { trace: "setup:a seedmix:a calls:a=2 read:a=2", read: "string:k1,string:k2", readVia: "NamespaceScan" }
     filesystem has []
 
 scenario "a transformed seed is state: the window that follows reports nothing":
   when: ObserveRedisSeedTransform { host: "encodestr", script: "setup:a seedenc:a:string:k1:ab start:a stop:a" }
   predict success:
-    response OK SeedTransformResult { trace: "setup:a seedenc:a start:a stop:a=0" }
+    response OK SeedTransformResult { trace: "setup:a seedenc:a start:a stop:a=0", read: absent, readPayloads: absent, readVia: absent }
     filesystem has []
 
 scenario "without seedTransform no host is asked and a plain seed is written as before":
   when: ObserveRedisSeedTransform { host: "none", script: "setup:a seed:a:string:k1 read:a" }
   predict success:
-    response OK SeedTransformResult { trace: "setup:a seed:a read:a=1", read: "string:k1", readVia: "NamespaceScan" }
+    response OK SeedTransformResult { trace: "setup:a seed:a read:a=1", read: "string:k1", readVia: "NamespaceScan", readPayloads: "[{\"key\":\"k1\",\"kind\":\"string\",\"value\":\"v0\"}]" }
     filesystem has []
 
 scenario "a host that cannot be started is refused at setup":
@@ -131,7 +131,7 @@ scenario "two answers that differ are refused as nondeterministic":
 scenario outline "after a refused seed call the namespace holds nothing of it":
   when: ObserveRedisSeedTransform { host: <host>, script: "setup:a seedmix:a! read:a" }
   predict success:
-    response OK SeedTransformResult { trace: <trace>, read: "", readVia: "NamespaceScan" }
+    response OK SeedTransformResult { trace: <trace>, read: "", readVia: "NamespaceScan", readPayloads: "[]" }
     filesystem has []
   examples:
     | host     | trace                                                        |

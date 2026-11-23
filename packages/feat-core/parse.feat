@@ -294,15 +294,15 @@ scenario "a query that observes one service may read it with contains":
 scenario outline "refuses an observes declaration that is not well formed or names an unconfigured service":
   when: Parse { spec: <spec>, config: "packages/feat-core/fixtures/parse-observes.config.json" }
   predict rejection <code>:
-    response ERR ParseError { code: <code>, hint: matching <hint> }
+    response ERR ParseError { code: <code>, hint: matching <hint>, line: <line> }
     filesystem has []
   examples:
-    | spec                                                         | code                  | hint                     |
-    | "packages/feat-core/fixtures/bad/observes-unknown-service.feat" | "UNKNOWN_SERVICE_KEY" | "^Configured services: eventStore, cache, log" |
-    | "packages/feat-core/fixtures/bad/observes-duplicate.feat"    | "MALFORMED_SYNTAX"    | "^Write 'observes <service>, <service>'" |
-    | "packages/feat-core/fixtures/bad/observes-bare.feat"         | "MALFORMED_SYNTAX"    | "^Write 'observes <service>, <service>'" |
-    | "packages/feat-core/fixtures/bad/observes-trailing-comma.feat" | "MALFORMED_SYNTAX"  | "^Write 'observes <service>, <service>'" |
-    | "packages/feat-core/fixtures/bad/observes-twice.feat"        | "MALFORMED_SYNTAX"    | "^Write 'observes <service>, <service>'" |
+    | spec                                                         | code                  | hint                     | line |
+    | "packages/feat-core/fixtures/bad/observes-unknown-service.feat" | "UNKNOWN_SERVICE_KEY" | "^Configured services: eventStore, cache, log" | 8 |
+    | "packages/feat-core/fixtures/bad/observes-duplicate.feat"    | "MALFORMED_SYNTAX"    | "^Write 'observes <service>, <service>'" | 8 |
+    | "packages/feat-core/fixtures/bad/observes-bare.feat"         | "MALFORMED_SYNTAX"    | "^Write 'observes <service>, <service>'" | 8 |
+    | "packages/feat-core/fixtures/bad/observes-trailing-comma.feat" | "MALFORMED_SYNTAX"  | "^Write 'observes <service>, <service>'" | 8 |
+    | "packages/feat-core/fixtures/bad/observes-twice.feat"        | "MALFORMED_SYNTAX"    | "^Write 'observes <service>, <service>'" | 9 |
 
 scenario "a delivery to response names the response role, so it is neither an unknown nor an unobserved service":
   when: Parse { spec: "packages/feat-core/fixtures/ok/deliver-response.feat", config: "packages/feat-core/fixtures/parse-observes.config.json" }
@@ -313,13 +313,13 @@ scenario "a delivery to response names the response role, so it is neither an un
 scenario "a delivery to a target that is neither response nor a configured service is refused":
   when: Parse { spec: "packages/feat-core/fixtures/bad/deliver-unknown-target.feat", config: "packages/feat-core/fixtures/parse-observes.config.json" }
   predict rejection UNKNOWN_SERVICE_KEY:
-    response ERR ParseError { code: "UNKNOWN_SERVICE_KEY", message: matching "'cash'", hint: matching "^Configured services: eventStore, cache, log" }
+    response ERR ParseError { code: "UNKNOWN_SERVICE_KEY", message: matching "'cash'", hint: matching "^Configured services: eventStore, cache, log", line: absent }
     filesystem has []
 
 scenario outline "refuses a service the spec uses but does not observe, naming it and the observed ones":
   when: Parse { spec: <spec>, config: "packages/feat-core/fixtures/parse-observes.config.json" }
   predict rejection UNOBSERVED_SERVICE:
-    response ERR ParseError { code: "UNOBSERVED_SERVICE", message: matching "'cache'", hint: matching "^Observed services: eventStore" }
+    response ERR ParseError { code: "UNOBSERVED_SERVICE", message: matching "'cache'", hint: matching "^Observed services: eventStore", line: absent }
     filesystem has []
   examples:
     | spec                                                              |
@@ -334,7 +334,7 @@ scenario outline "refuses a service the spec uses but does not observe, naming i
 scenario "a prediction that omits an observed service is incomplete":
   when: Parse { spec: "packages/feat-core/fixtures/bad/observes-incomplete.feat", config: "packages/feat-core/fixtures/parse-observes.config.json" }
   predict rejection INCOMPLETE_PREDICTION:
-    response ERR ParseError { code: "INCOMPLETE_PREDICTION", message: matching "observed service 'cache'" }
+    response ERR ParseError { code: "INCOMPLETE_PREDICTION", message: matching "observed service 'cache'", hint: "Every observed service must appear; 'has []' is the explicit zero-assertion.", line: absent }
     filesystem has []
 
 scenario "a word that merely begins with fault stays freeform context":
@@ -397,7 +397,7 @@ scenario outline "rejects invalid specs with the precise code":
 scenario outline "refuses a negation of a matcher it does not take, naming the spelling to use":
   when: Parse { spec: <spec>, config: "packages/feat-core/fixtures/parse.config.json" }
   predict rejection MALFORMED_SYNTAX:
-    response ERR ParseError { code: "MALFORMED_SYNTAX", message: matching <message>, hint: matching <hint> }
+    response ERR ParseError { code: "MALFORMED_SYNTAX", message: matching <message>, hint: matching <hint>, line: absent }
     filesystem has []
   examples:
     | spec                                                  | message                 | hint                                |
@@ -410,7 +410,7 @@ scenario outline "refuses a negation of a matcher it does not take, naming the s
 scenario outline "refuses an f32 digest of any other shape, giving the form":
   when: Parse { spec: <spec>, config: "packages/feat-core/fixtures/parse.config.json" }
   predict rejection MALFORMED_SYNTAX:
-    response ERR ParseError { code: "MALFORMED_SYNTAX", message: matching <message>, hint: matching "^Write 'f32 <dims> sha256" }
+    response ERR ParseError { code: "MALFORMED_SYNTAX", message: matching <message>, hint: matching "^Write 'f32 <dims> sha256", line: absent }
     filesystem has []
   examples:
     | spec                                                     | message                                         |
@@ -425,7 +425,7 @@ scenario outline "refuses an f32 digest of any other shape, giving the form":
 scenario outline "refuses a list item or a list object's field it does not take, naming the spelling to use":
   when: Parse { spec: <spec>, config: "packages/feat-core/fixtures/parse.config.json" }
   predict rejection MALFORMED_SYNTAX:
-    response ERR ParseError { code: "MALFORMED_SYNTAX", message: matching <message>, hint: matching <hint> }
+    response ERR ParseError { code: "MALFORMED_SYNTAX", message: matching <message>, hint: matching <hint>, line: absent }
     filesystem has []
   examples:
     | spec                                                     | message                                | hint                             |

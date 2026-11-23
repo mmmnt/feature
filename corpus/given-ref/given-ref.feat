@@ -39,12 +39,12 @@ scenario "a second invite draws a different code":
   when: CreateInvite { workspace: "w-1" }
   predict success:
     response 201 InviteReceipt { code: not @given.response.code, inviteId: not @given[0].response.inviteId }
-    log has [ InviteCreated with InviteEvent { inviteId: @log[0].inviteId } ]
+    log has [ InviteCreated with InviteEvent { inviteId: @log[0].inviteId, codeHash: any string } ]
 
 scenario "a seeded invite draws a known code":
   given:
     random seed 42
   when: CreateInvite { workspace: "w-1" }
   predict success:
-    response 201 InviteReceipt { code: "ABCD-EFGH-JKLM" }
-    log has [ InviteCreated with InviteEvent { codeHash: any string } ]
+    response 201 InviteReceipt { code: "ABCD-EFGH-JKLM", inviteId: any string }
+    log has [ InviteCreated with InviteEvent { codeHash: any string, inviteId: any string } ]
