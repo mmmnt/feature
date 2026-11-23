@@ -129,6 +129,18 @@ an inline seed record. `input` entries are used by definition (they are the
 is referenced when a `${name}` appears anywhere in a scenario, or in the template
 of another variable.
 
+### `lintOptionalFields(spec: BuiltSpec, registry: Record<string, object>): Finding[]`
+
+ADR-0038: a predicted response or record value block that leaves out an optional property of its schema is an
+error, unless the block is marked `partial`. `registry` is the spec's contract, resolved by the schema adapter;
+optional means declared and not required, following `allOf` and the bundle's local `$ref`s.
+
+| Rule | Level | Message |
+| --- | --- | --- |
+| A block leaves out an optional property | `error` | `error [OPTIONAL_UNSTATED]: scenario "<name>" › <where>: <Schema> leaves out optional '<p>' — state each (absent, any, or a value), or mark the block '<Schema> partial { … }' (ADR-0038)` |
+
+`feat lint` runs both and exits 1 on any error-level finding.
+
 Findings come in rule order: schemas, variables, duplicates, status. No rule in
 this release returns `level: "error"`; the type allows it so a future rule can.
 A parse failure is the caller's to report, since there is no spec to lint.

@@ -104,14 +104,15 @@ scenario "a node seed's value is written as the host transformed it":
     response OK SeedTransformResult {
       trace: "setup:a seedenc:a read:a=1",
       readVia: "NamespaceScan",
-      readValues: "Order:o1{v=[2,97,1]}"
+      readValues: "Order:o1{v=[2,97,1]}",
+      last: absent
     }
     filesystem has []
 
 scenario "a transformed seed is state: the window that follows reports nothing":
   when: ObserveNeo4jSeedTransform { host: "encode", script: "setup:a seedenc:a:Order:o1:ab start:a stop:a" }
   predict success:
-    response OK SeedTransformResult { trace: "setup:a seedenc:a start:a stop:a=0" }
+    response OK SeedTransformResult { trace: "setup:a seedenc:a start:a stop:a=0", last: absent, readValues: absent, readVia: absent }
     filesystem has []
 
 scenario "a relationship seed's own property is transformed too":
@@ -120,7 +121,8 @@ scenario "a relationship seed's own property is transformed too":
     response OK SeedTransformResult {
       trace: "setup:a seed:a seed:a seedrelenc:a read:a=3",
       readVia: "NamespaceScan",
-      readValues: "Customer:c1,Order:o1,Order:o1-[PLACED_BY]->Customer:c1{w=[3,120,1]}"
+      readValues: "Customer:c1,Order:o1,Order:o1-[PLACED_BY]->Customer:c1{w=[3,120,1]}",
+      last: absent
     }
     filesystem has []
 
@@ -130,7 +132,8 @@ scenario "one seed call is transformed in one request, asked twice, and written 
     response OK SeedTransformResult {
       trace: "setup:a seedmix:a calls:a=2 read:a=2",
       readVia: "NamespaceScan",
-      readValues: "Order:o1{v=[1,97,1]},Order:o2{v=[1,98,1]}"
+      readValues: "Order:o1{v=[1,97,1]},Order:o2{v=[1,98,1]}",
+      last: absent
     }
     filesystem has []
 
@@ -140,7 +143,8 @@ scenario "a host that answers late is awaited before the seed is written":
     response OK SeedTransformResult {
       trace: "setup:a seedenc:a read:a=1",
       readVia: "NamespaceScan",
-      readValues: "Order:o1{v=[2,97,1]}"
+      readValues: "Order:o1{v=[2,97,1]}",
+      last: absent
     }
     filesystem has []
 
@@ -161,7 +165,8 @@ scenario "without seedTransform no host is asked and a plain seed is written as 
     response OK SeedTransformResult {
       trace: "setup:a seed:a read:a=1",
       readVia: "NamespaceScan",
-      readValues: "Order:o1"
+      readValues: "Order:o1",
+      last: absent
     }
     filesystem has []
 
@@ -203,7 +208,8 @@ scenario outline "after a refused seed call the namespace holds nothing of it":
     response OK SeedTransformResult {
       trace: <trace>,
       readVia: "NamespaceScan",
-      readValues: ""
+      readValues: "",
+      last: absent
     }
     filesystem has []
   examples:
@@ -228,7 +234,8 @@ scenario "a plain seed whose value is an empty list is written and read back as 
     response OK SeedTransformResult {
       trace: "setup:a seedraw:a read:a=1",
       readVia: "NamespaceScan",
-      readValues: "Order:o1{v=[]}"
+      readValues: "Order:o1{v=[]}",
+      last: absent
     }
     filesystem has []
 

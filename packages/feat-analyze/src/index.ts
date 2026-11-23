@@ -151,3 +151,63 @@ export function formatSource(source: string): FormatResult {
   const formatted = out.join("\n") + "\n";
   return { formatted, changed: formatted !== source, hasLeadingTab };
 }
+
+// ── DRAFT (ADR-0038; founder rulings 7d3026eb and 55fb39c4): an omitted optional property ─────────────────────
+// A value block is partial (ADR-0002): a property it leaves out is never checked, so an optional
+// property of the block's schema can appear unpredicted and pass. The rule names every optional
+// property a top-level response or record block omits, unless the block is marked `partial`. An error (L2).
+type JsonSchema = {
+  properties?: Record<string, unknown>;
+  required?: string[];
+  allOf?: JsonSchema[];
+  $ref?: string;
+  $defs?: Record<string, JsonSchema>;
+};
+
+/** Follow a local ref ("#/$defs/x") inside the bundled schema the schema adapter returned. */
+function local(root: JsonSchema, node: JsonSchema | undefined): JsonSchema | undefined {
+  let cur = node;
+  for (let i = 0; cur?.$ref && cur.$ref.startsWith("#/") && i < 10; i++) {
+    let target: unknown = root;
+    for (const t of cur.$ref.slice(2).split("/")) target = (target as Record<string, unknown> | undefined)?.[t];
+    cur = target as JsonSchema | undefined;
+  }
+  return cur;
+}
+
+function optionalProperties(schema: JsonSchema | undefined): string[] {
+  if (!schema || typeof schema !== "object") return [];
+  const props: Record<string, unknown> = {};
+  const required = new Set<string>();
+  const add = (node: JsonSchema | undefined) => {
+    const n = local(schema, node);
+    if (!n) return;
+    Object.assign(props, n.properties ?? {});
+    for (const r of n.required ?? []) required.add(r);
+    for (const part of n.allOf ?? []) add(part);
+  };
+  add(schema);
+  return Object.keys(props).filter((p) => !required.has(p)).sort();
+}
+
+export function lintOptionalFields(spec: BuiltSpec, registry: Record<string, object>): Finding[] {
+  const findings: Finding[] = [];
+  const check = (where: string, schemaName: string, block: Record<string, unknown> | undefined, partial: boolean) => {
+    if (!block || partial) return;
+    const omitted = optionalProperties(registry[schemaName] as JsonSchema).filter((p) => !(p in block));
+    if (omitted.length > 0)
+      findings.push({
+        level: "error",
+        message: `error [OPTIONAL_UNSTATED]: ${where}: ${schemaName} leaves out optional ${omitted.map((p) => `'${p}'`).join(", ")} — state each (absent, any, or a value), or mark the block '${schemaName} partial { … }' (ADR-0038)`,
+      });
+  };
+  for (const sc of spec.scenarios) {
+    const r = sc.prediction.response;
+    if (r?.valueBlock) check(`scenario "${sc.name}" › response`, r.schemaName, r.valueBlock, r.partial === true);
+    for (const [svc, p] of Object.entries(sc.prediction.services ?? {}))
+      for (const rec of [...(p.records ?? []), ...(p.contains ?? [])])
+        if (rec.valueBlock)
+          check(`scenario "${sc.name}" › ${svc} ${rec.type}`, rec.schemaName, rec.valueBlock, rec.partial === true);
+  }
+  return findings;
+}

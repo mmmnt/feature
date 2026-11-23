@@ -74,6 +74,9 @@ scenario "an overlay replaces a service whole and keeps nothing of the base's op
           options: { connection: "kurrentdb://k:2113", inMemory: absent, seed: absent }
         }
       }
+      featVersion: "1.0"
+      report: {"format":["console","junit"],"junitOutput":".feature/reports/integration-junit.xml"}
+      response: {"adapter":"@mmmnt/feat-adapter-http","invoke":{"baseUrl":"https://orders.integration.example"},"commands":{"Ping":{"method":"GET","path":"/ping"},"Pong":{"method":"GET","path":"/pong"}},"actors":{"default":"operator","operator":{"headers":{"authorization":"Bearer o"}},"auditor":{"headers":{"authorization":"Bearer a"}}}}
     }
     filesystem has []
 
@@ -82,13 +85,18 @@ scenario "a service the overlay does not mention is the base's":
   predict success:
     response OK FeatConfigResult {
       services: { filesystem: { adapter: "@mmmnt/feat-adapter-fs", consistency: "acid" } }
+      environment: "integration"
+      extends: "base.config.json"
+      featVersion: "1.0"
+      report: {"format":["console","junit"],"junitOutput":".feature/reports/integration-junit.xml"}
+      response: {"adapter":"@mmmnt/feat-adapter-http","invoke":{"baseUrl":"https://orders.integration.example"},"commands":{"Ping":{"method":"GET","path":"/ping"},"Pong":{"method":"GET","path":"/pong"}},"actors":{"default":"operator","operator":{"headers":{"authorization":"Bearer o"}},"auditor":{"headers":{"authorization":"Bearer a"}}}}
     }
     filesystem has []
 
 scenario "featVersion and schemas are inherited":
   when: LoadConfig { path: "packages/feat-runtime/fixtures/tiers/overlay-ok.config.json" }
   predict success:
-    response OK FeatConfigResult { featVersion: "1.0", schemas: { adapter: "@mmmnt/feat-schema-json" } }
+    response OK FeatConfigResult { featVersion: "1.0", schemas: { adapter: "@mmmnt/feat-schema-json" }, environment: "integration", extends: "base.config.json", report: {"format":["console","junit"],"junitOutput":".feature/reports/integration-junit.xml"}, response: {"adapter":"@mmmnt/feat-adapter-http","invoke":{"baseUrl":"https://orders.integration.example"},"commands":{"Ping":{"method":"GET","path":"/ping"},"Pong":{"method":"GET","path":"/pong"}},"actors":{"default":"operator","operator":{"headers":{"authorization":"Bearer o"}},"auditor":{"headers":{"authorization":"Bearer a"}}}} }
     filesystem has []
 
 scenario "the response block is replaced whole":
@@ -100,6 +108,10 @@ scenario "the response block is replaced whole":
         invoke: { baseUrl: "https://orders.integration.example" }
         commands: { Ping: { method: "GET", path: "/ping", module: absent } }
       }
+      environment: "integration"
+      extends: "base.config.json"
+      featVersion: "1.0"
+      report: {"format":["console","junit"],"junitOutput":".feature/reports/integration-junit.xml"}
     }
     filesystem has []
 
@@ -109,49 +121,53 @@ scenario "specs and report are replaced whole":
     response OK FeatConfigResult {
       specs: { exclude: ["**/*.transport.feat"], dir: "packages" }
       report: { junitOutput: ".feature/reports/integration-junit.xml" }
+      environment: "integration"
+      extends: "base.config.json"
+      featVersion: "1.0"
+      response: {"adapter":"@mmmnt/feat-adapter-http","invoke":{"baseUrl":"https://orders.integration.example"},"commands":{"Ping":{"method":"GET","path":"/ping"},"Pong":{"method":"GET","path":"/pong"}},"actors":{"default":"operator","operator":{"headers":{"authorization":"Bearer o"}},"auditor":{"headers":{"authorization":"Bearer a"}}}}
     }
     filesystem has []
 
 scenario "an overlay without an environment has none, not the base's":
   when: LoadConfig { path: "packages/feat-runtime/fixtures/tiers/overlay-no-environment.config.json" }
   predict success:
-    response OK FeatConfigResult { extends: "base.config.json", environment: absent }
+    response OK FeatConfigResult { extends: "base.config.json", environment: absent, featVersion: "1.0", report: {"format":["console"]}, response: {"adapter":"@mmmnt/feat-adapter-handler","commands":{"Ping":{"module":"src/ping.ts","export":"ping"},"Pong":{"module":"src/pong.ts","export":"pong"}},"actors":{"default":"operator","operator":{"context":{"role":"operator"}},"auditor":{"context":{"role":"auditor"}}}} }
     filesystem has []
 
 scenario "an overlay file alone need not carry schemas, services or specs":
   when: LoadConfig { path: "packages/feat-runtime/fixtures/tiers/overlay-minimal.config.json" }
   predict success:
-    response OK FeatConfigResult { environment: "integration", schemas: { adapter: "@mmmnt/feat-schema-json" }, specs: { dir: "packages" } }
+    response OK FeatConfigResult { environment: "integration", schemas: { adapter: "@mmmnt/feat-schema-json" }, specs: { dir: "packages" }, extends: "base.config.json", featVersion: "1.0", report: {"format":["console"]}, response: {"adapter":"@mmmnt/feat-adapter-handler","commands":{"Ping":{"module":"src/ping.ts","export":"ping"},"Pong":{"module":"src/pong.ts","export":"pong"}},"actors":{"default":"operator","operator":{"context":{"role":"operator"}},"auditor":{"context":{"role":"auditor"}}}} }
     filesystem has []
 
 scenario "a missing base is named":
   when: LoadConfig { path: "packages/feat-runtime/fixtures/tiers/overlay-missing-base.config.json" }
   predict rejection EXTENDS_NOT_FOUND:
-    response ERR ConfigError { code: "EXTENDS_NOT_FOUND", detail: matching "no-such-base.config.json" }
+    response ERR ConfigError { code: "EXTENDS_NOT_FOUND", detail: matching "no-such-base.config.json", change: absent, path: absent, space: absent }
     filesystem has []
 
 scenario "a chain is named and refused":
   when: LoadConfig { path: "packages/feat-runtime/fixtures/tiers/overlay-chain.config.json" }
   predict rejection EXTENDS_CHAIN:
-    response ERR ConfigError { code: "EXTENDS_CHAIN", detail: matching "overlay-ok.config.json" }
+    response ERR ConfigError { code: "EXTENDS_CHAIN", detail: matching "overlay-ok.config.json", change: absent, path: absent, space: absent }
     filesystem has []
 
 scenario "a file that extends itself is a chain":
   when: LoadConfig { path: "packages/feat-runtime/fixtures/tiers/overlay-self.config.json" }
   predict rejection EXTENDS_CHAIN:
-    response ERR ConfigError { code: "EXTENDS_CHAIN", detail: matching "overlay-self.config.json" }
+    response ERR ConfigError { code: "EXTENDS_CHAIN", detail: matching "overlay-self.config.json", change: absent, path: absent, space: absent }
     filesystem has []
 
 scenario "a base that is itself invalid is named":
   when: LoadConfig { path: "packages/feat-runtime/fixtures/tiers/overlay-invalid-base.config.json" }
   predict rejection INVALID_CONFIG:
-    response ERR ConfigError { code: "INVALID_CONFIG", detail: matching "invalid-base.config.json" }
+    response ERR ConfigError { code: "INVALID_CONFIG", detail: matching "invalid-base.config.json", change: absent, path: absent, space: absent }
     filesystem has []
 
 scenario outline "an overlay may not redeclare what it inherits":
   when: LoadConfig { path: <path> }
   predict rejection INVALID_CONFIG:
-    response ERR ConfigError { code: "INVALID_CONFIG", detail: matching <detail> }
+    response ERR ConfigError { code: "INVALID_CONFIG", detail: matching <detail>, change: absent, path: absent, space: absent }
     filesystem has []
   examples:
     | path                                                                | detail          |
@@ -161,13 +177,13 @@ scenario outline "an overlay may not redeclare what it inherits":
 scenario "a merged service that is eventual without a timeout is refused":
   when: LoadConfig { path: "packages/feat-runtime/fixtures/tiers/overlay-eventual-no-timeout.config.json" }
   predict rejection MISSING_CONVERGENCE_TIMEOUT:
-    response ERR ConfigError { code: "MISSING_CONVERGENCE_TIMEOUT", detail: matching "eventStore" }
+    response ERR ConfigError { code: "MISSING_CONVERGENCE_TIMEOUT", detail: matching "eventStore", change: absent, path: absent, space: absent }
     filesystem has []
 
 scenario outline "an overlay may not add a service or add or remove a command or an actor":
   when: LoadConfig { path: <path> }
   predict rejection TIER_SPACE_MISMATCH:
-    response ERR ConfigError { code: "TIER_SPACE_MISMATCH", space: <space>, change: <change>, detail: matching <name> }
+    response ERR ConfigError { code: "TIER_SPACE_MISMATCH", space: <space>, change: <change>, detail: matching <name>, path: absent }
     filesystem has []
   examples:
     | path                                                                  | space     | change    | name           |

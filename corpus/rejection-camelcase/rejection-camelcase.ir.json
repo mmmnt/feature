@@ -131,6 +131,10 @@
             "code": {
               "matcher": "literal",
               "value": "NotOperator"
+            },
+            "message": {
+              "matcher": "any",
+              "ofType": "string"
             }
           }
         },
@@ -166,6 +170,10 @@
             "code": {
               "matcher": "literal",
               "value": "AlreadyAnswered"
+            },
+            "message": {
+              "matcher": "any",
+              "ofType": "string"
             }
           }
         },
@@ -196,6 +204,10 @@
             "code": {
               "matcher": "literal",
               "value": "UNKNOWN_QUESTION"
+            },
+            "message": {
+              "matcher": "any",
+              "ofType": "string"
             }
           }
         },

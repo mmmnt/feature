@@ -86,6 +86,8 @@ scenario "clock at reaches every adapter after the resets and before anything is
     response OK RunResult {
       outcome: "passed"
       calls: "reset:store clock:response=2026-07-16T00:00:00Z clock:store=2026-07-16T00:00:00Z start:store invoke:Ping stop:store"
+      readHint: absent
+      violations: absent
     }
     filesystem has []
 
@@ -101,6 +103,8 @@ scenario "a case without clock at hands the clock back, so one case's freeze nev
     response OK RunResult {
       outcome: "passed"
       calls: "reset:store clock:response=2026-07-16T00:00:00Z clock:store=2026-07-16T00:00:00Z start:store invoke:Ping stop:store reset:store clock:response=null clock:store=null start:store invoke:Ping stop:store"
+      readHint: absent
+      violations: absent
     }
     filesystem has []
 
@@ -113,6 +117,8 @@ scenario "a service adapter that cannot take a clock is simply not called with o
     response OK RunResult {
       outcome: "passed"
       calls: "reset:store clock:response=2026-07-16T00:00:00Z start:store invoke:Ping stop:store"
+      readHint: absent
+      violations: absent
     }
     filesystem has []
 
@@ -125,6 +131,8 @@ scenario "a case without clock at needs no clock hook":
     response OK RunResult {
       outcome: "passed"
       calls: "reset:store start:store invoke:Ping stop:store"
+      readHint: absent
+      violations: absent
     }
     filesystem has []
 
@@ -134,7 +142,7 @@ scenario "clock at against a response adapter that cannot honour it is refused b
     cases: [ { anchor: "c1", name: "c1", given: { clock: "2026-07-16T00:00:00Z" }, when: { command: "Ping", payload: {} }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } } ]
   }
   predict rejection CLOCK_UNSUPPORTED:
-    response ERR HarnessError { code: "CLOCK_UNSUPPORTED", calls: "", detail: matching "response" }
+    response ERR HarnessError { code: "CLOCK_UNSUPPORTED", calls: "", detail: matching "response", mode: absent, service: absent }
     filesystem has []
 
 scenario "contains against a service that cannot report state is refused before any effect":
@@ -143,7 +151,7 @@ scenario "contains against a service that cannot report state is refused before 
     cases: [ { anchor: "c1", name: "c1", when: { command: "Ping", payload: {} }, prediction: { type: "success", services: { store: { ordering: "ordered", contains: [ { type: "OrderPlaced", schemaName: "Placed" } ] } } } } ]
   }
   predict rejection MODE_UNSUPPORTED:
-    response ERR HarnessError { code: "MODE_UNSUPPORTED", service: "store", mode: "state", calls: "" }
+    response ERR HarnessError partial { code: "MODE_UNSUPPORTED", service: "store", mode: "state", calls: "" }
     filesystem has []
 
 scenario "a snapshot diff serves has, and a state-less adapter is fine without contains":
@@ -152,7 +160,7 @@ scenario "a snapshot diff serves has, and a state-less adapter is fine without c
     cases: [ { anchor: "c1", name: "c1", when: { command: "Ping", payload: {} }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } } ]
   }
   predict success:
-    response OK RunResult { outcome: "passed", calls: "reset:store start:store invoke:Ping stop:store" }
+    response OK RunResult { outcome: "passed", calls: "reset:store start:store invoke:Ping stop:store", readHint: absent, violations: absent }
     filesystem has []
 
 scenario "an adapter that declares nothing keeps both modes":
@@ -161,7 +169,7 @@ scenario "an adapter that declares nothing keeps both modes":
     cases: [ { anchor: "c1", name: "c1", when: { command: "Ping", payload: {} }, prediction: { type: "success", services: { store: { ordering: "ordered", records: [], contains: [] } } } } ]
   }
   predict success:
-    response OK RunResult { outcome: "passed", calls: "reset:store start:store invoke:Ping stop:store read:store" }
+    response OK RunResult { outcome: "passed", calls: "reset:store start:store invoke:Ping stop:store read:store", violations: absent, readHint: "" }
     filesystem has []
 
 scenario "a contains assertion hands its predicted records to read as the query hint":
@@ -173,5 +181,7 @@ scenario "a contains assertion hands its predicted records to read as the query 
     response OK RunResult {
       outcome: "passed"
       readHint: "OrderPlaced:orderId=o-1"
+      violations: absent
+      calls: "reset:store start:store invoke:Ping stop:store read:store"
     }
     filesystem has []

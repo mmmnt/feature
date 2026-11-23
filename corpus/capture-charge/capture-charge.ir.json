@@ -153,6 +153,10 @@
                   "chargeRef": {
                     "matcher": "any",
                     "ofType": "string"
+                  },
+                  "id": {
+                    "matcher": "any",
+                    "ofType": "string"
                   }
                 }
               }
@@ -180,6 +184,10 @@
             "code": {
               "matcher": "literal",
               "value": "AMOUNT_INVALID"
+            },
+            "message": {
+              "matcher": "any",
+              "ofType": "string"
             }
           }
         },
@@ -239,6 +247,10 @@
                   "id": {
                     "matcher": "any",
                     "ofType": "string"
+                  },
+                  "livemode": {
+                    "matcher": "literal",
+                    "value": false
                   }
                 }
               }
@@ -263,6 +275,10 @@
                     "service": "payments",
                     "path": "id",
                     "index": 0
+                  },
+                  "id": {
+                    "matcher": "any",
+                    "ofType": "string"
                   }
                 }
               }

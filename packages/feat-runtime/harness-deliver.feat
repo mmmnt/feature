@@ -73,6 +73,9 @@ scenario "an event delivered to a service reaches that service's deliver() insid
     response OK RunResult {
       outcome: "passed"
       calls: "reset:store start:store deliver:store=Placed/1 stop:store"
+      readHint: absent
+      violations: absent
+      violationCodes: absent
     }
     filesystem has []
 
@@ -85,6 +88,9 @@ scenario "an event delivered to response reaches the response adapter, and no se
     response OK RunResult {
       outcome: "passed"
       calls: "reset:store start:store deliver:response=Placed/1 stop:store"
+      readHint: absent
+      violations: absent
+      violationCodes: absent
     }
     filesystem has []
 
@@ -97,6 +103,9 @@ scenario "a sequence that delivers to a service and to response goes out in the 
     response OK RunResult {
       outcome: "passed"
       calls: "reset:store start:store deliver:store=Placed/1 deliver:response=Placed/2 deliver:store=Shipped/3 stop:store"
+      readHint: absent
+      violations: absent
+      violationCodes: absent
     }
     filesystem has []
 
@@ -109,6 +118,9 @@ scenario "a response delivery reaches a response adapter even when no service ca
     response OK RunResult {
       outcome: "passed"
       calls: "reset:store start:store deliver:response=Placed/1 stop:store"
+      readHint: absent
+      violations: absent
+      violationCodes: absent
     }
     filesystem has []
 
@@ -146,7 +158,7 @@ scenario "a refused delivery stops the sequence: no later delivery is made":
     cases: [ { anchor: "c1", name: "c1", delivers: [ { event: "Placed", payload: { n: 1 }, service: "store" }, { event: "Placed", payload: { n: 2 }, service: "response" }, { event: "Shipped", payload: { n: 3 }, service: "store" } ], prediction: { type: "success", services: { store: { ordering: "ordered", records: [] } } } } ]
   }
   predict rejection DELIVER_UNSUPPORTED:
-    response ERR HarnessError {
+    response ERR HarnessError partial {
       code: "DELIVER_UNSUPPORTED"
       service: "response"
       calls: "reset:store start:store deliver:store=Placed/1"
@@ -176,6 +188,9 @@ scenario "a delivery to response that answers is the case's response, and its pr
     response OK RunResult {
       outcome: "passed"
       calls: "reset:store start:store deliver:response=Placed/1 stop:store"
+      readHint: absent
+      violationCodes: absent
+      violations: absent
     }
     filesystem has []
 
@@ -189,6 +204,8 @@ scenario "a delivery to response whose answer differs from the predicted respons
       outcome: "failed"
       calls: "reset:store start:store deliver:response=Placed/1 stop:store"
       violations: [ matching "c1 › response" ]
+      readHint: absent
+      violationCodes: ""
     }
     filesystem has []
 
@@ -202,6 +219,8 @@ scenario "a response predicted when nothing was delivered to response fails as n
       outcome: "failed"
       calls: "reset:store start:store deliver:store=Placed/1 stop:store"
       violations: [ "c1 › response: no response captured" ]
+      readHint: absent
+      violationCodes: ""
     }
     filesystem has []
 
@@ -215,6 +234,8 @@ scenario "a delivery to response that answers nothing leaves the case with no re
       outcome: "failed"
       calls: "reset:store start:store deliver:response=Placed/1 stop:store"
       violations: [ "c1 › response: no response captured" ]
+      readHint: absent
+      violationCodes: ""
     }
     filesystem has []
 
@@ -227,6 +248,9 @@ scenario "when several deliveries to response answer, the last answer is the cas
     response OK RunResult {
       outcome: "passed"
       calls: "reset:store start:store deliver:response=Placed/1 deliver:response=Placed/2 stop:store"
+      readHint: absent
+      violationCodes: absent
+      violations: absent
     }
     filesystem has []
 
@@ -239,6 +263,9 @@ scenario "a later delivery to response that answers nothing keeps the earlier an
     response OK RunResult {
       outcome: "passed"
       calls: "reset:store start:store deliver:response=Placed/1 deliver:response=Placed/2 stop:store"
+      readHint: absent
+      violationCodes: absent
+      violations: absent
     }
     filesystem has []
 
@@ -251,6 +278,9 @@ scenario "a service's answer to a delivery is never the case's response":
     response OK RunResult {
       outcome: "passed"
       calls: "reset:store start:store deliver:response=Placed/1 deliver:store=Placed/2 stop:store"
+      readHint: absent
+      violationCodes: absent
+      violations: absent
     }
     filesystem has []
 
@@ -263,5 +293,8 @@ scenario "a delivery that answers, with no response predicted, is judged on its 
     response OK RunResult {
       outcome: "passed"
       calls: "reset:store start:store deliver:response=Placed/1 stop:store"
+      readHint: absent
+      violationCodes: absent
+      violations: absent
     }
     filesystem has []

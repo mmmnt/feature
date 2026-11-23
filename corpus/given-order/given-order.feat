@@ -35,7 +35,7 @@ scenario "a workspace enabled and then disabled is refused":
     seed eventStore [ WorkspaceDisabled with EnablementEvent { workspaceId: "w-1" } ]
   when: ReviewWorkspace { workspaceId: "w-1" }
   predict rejection WORKSPACE_DISABLED:
-    response 409 Refusal { code: "WORKSPACE_DISABLED" }
+    response 409 Refusal { code: "WORKSPACE_DISABLED", message: any string }
     eventStore has []
 
 scenario "a workspace disabled and then enabled starts a review":

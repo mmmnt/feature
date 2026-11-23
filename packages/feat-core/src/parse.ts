@@ -170,6 +170,13 @@ function parseLiteralValue(c: ValueCursor): unknown {
     c.pos += m[0].length;
     return { $placeholder: m[1] };
   }
+  if (/^partial\b/.test(c.src.slice(c.pos)))
+    throw new ParseFailure(
+      "MALFORMED_SYNTAX",
+      "'partial' is refused in data: a payload or a seed is written whole, and only a prediction is checked.",
+      undefined,
+      "Remove 'partial'; it marks a predicted record or response block (ADR-0038).",
+    );
   const m = /^(-?\d+(?:\.\d+)?|true|false|null)/.exec(c.src.slice(c.pos));
   if (!m) c.fail("value");
   c.pos += m[0].length;
@@ -369,6 +376,13 @@ function parseMatcher(c: ValueCursor): Matcher {
   const rest = () => c.src.slice(c.pos);
   if (c.peek() === "{") return { matcher: "nested", fields: parseValueBlock(c) };
   if (c.peek() === "[") return parseListMatcher(c);
+  if (/^partial\b/.test(rest()))
+    throw new ParseFailure(
+      "MALFORMED_SYNTAX",
+      "'partial' is refused inside a value: it marks a whole record or response block, and an object in a list is exact.",
+      undefined,
+      "Put 'partial' after the record's schema name or the response's, before its block (ADR-0038).",
+    );
   if (/^not(?:[\s,}]|$)/.test(rest())) return parseNegation(c);
   if (/^f32(?:[\s,}]|$)/.test(rest())) return parseF32Digest(c);
   let m: RegExpExecArray | null;
@@ -532,7 +546,28 @@ interface PredictedRecord {
   schemaName: string;
   valueBlock?: Record<string, Matcher>;
   golden?: string;
+  /** ADR-0038: the block asserts its listed fields only, on purpose; the lint then names no omitted optional property. */
+  partial?: true;
 }
+
+const withLine = (f: ParseFailure, line: number): ParseFailure => {
+  f.line ??= line;
+  return f;
+};
+const partialBesideGolden = (): ParseFailure =>
+  new ParseFailure(
+    "MALFORMED_SYNTAX",
+    "'partial' is refused beside 'equals fixture': a golden is compared whole.",
+    undefined,
+    "Use either a golden or a partial value block, not both (ADR-0038).",
+  );
+const partialWithoutBlock = (): ParseFailure =>
+  new ParseFailure(
+    "MALFORMED_SYNTAX",
+    "'partial' must be followed by a value block: it says which listed fields are checked.",
+    undefined,
+    "Write '<Schema> partial { field: matcher, … }' (ADR-0038).",
+  );
 interface SeedRecord {
   type: string;
   schemaName?: string;
@@ -567,14 +602,30 @@ function parseRecordList(src: string, mode: "predict" | "seed"): (PredictedRecor
     c.pos += head[0].length;
     c.skipWs();
     if (mode === "seed") {
+      if (/^partial\b/.test(c.src.slice(c.pos)))
+        throw new ParseFailure(
+          "MALFORMED_SYNTAX",
+          "'partial' is refused on a seed: a seed is data, written whole, not a prediction.",
+          undefined,
+          "Remove 'partial' from the seed record (ADR-0038).",
+        );
       const values = parseLiteralObject(c);
       out.push({ type: head[1]!, schemaName: head[3]!, values });
     } else {
       const rec: PredictedRecord = { type: head[1]!, schemaName: head[3]! };
+      const pm = /^partial\b[ \t\n]*/.exec(c.src.slice(c.pos));
+      if (pm) {
+        c.pos += pm[0].length;
+        if (/^equals[ \t]+fixture\b/.test(c.src.slice(c.pos))) throw partialBesideGolden();
+        if (c.peek() !== "{") throw partialWithoutBlock();
+        rec.partial = true;
+      }
       const g = /^equals[ \t]+fixture[ \t]+/.exec(c.src.slice(c.pos));
       if (g) {
         c.pos += g[0].length;
         rec.golden = parseString(c);
+        c.skipWs();
+        if (/^partial\b/.test(c.src.slice(c.pos))) throw partialBesideGolden();
       } else if (c.peek() === "{") {
         rec.valueBlock = parseValueBlock(c);
       }
@@ -890,7 +941,15 @@ function parseFeat(source: string, ctx: ConfigContext): Record<string, unknown> 
           const status: string | number = /^\d+$/.test(m[1]!) ? Number(m[1]) : m[1]!;
           const response: Record<string, unknown> = { status, schemaName: m[2] };
           if (m[3]) {
-            const rest = m[3].trim();
+            let rest = m[3].trim();
+            const pm = /^partial\b[ \t\n]*/.exec(rest);
+            if (pm) {
+              rest = rest.slice(pm[0].length);
+              if (/^equals[ \t]+fixture\b/.test(rest)) throw withLine(partialBesideGolden(), s.line);
+              if (!rest.startsWith("{")) throw withLine(partialWithoutBlock(), s.line);
+              response.partial = true;
+            }
+            if (/^equals[ \t]+fixture[ \t]+"(?:[^"\\]|\\.)*"[ \t]+partial\b/.test(rest)) throw withLine(partialBesideGolden(), s.line);
             const g = /^equals[ \t]+fixture[ \t]+"((?:[^"\\]|\\.)*)"$/.exec(rest);
             if (g) response.golden = g[1];
             else if (rest.startsWith("{")) response.valueBlock = parseValueBlock(new ValueCursor(rest));

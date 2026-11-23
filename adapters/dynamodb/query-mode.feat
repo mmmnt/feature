@@ -113,13 +113,13 @@ scenario "a table without a stream cannot serve native diff":
 scenario "the adapter declares which diff it serves":
   when: ObserveDynamoQuery { script: "setup:a observes:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a observes:a=native/true" }
+    response OK ObserveResult { trace: "setup:a observes:a=native/true", last: absent, peekEqualsStop: absent, readVia: absent }
     filesystem has []
 
 scenario "with no stream the adapter declares snapshot":
   when: ObserveDynamoQuery { script: "setup:a observes:a", stream: "off" }
   predict success:
-    response OK ObserveResult { trace: "setup:a observes:a=snapshot/true" }
+    response OK ObserveResult { trace: "setup:a observes:a=snapshot/true", last: absent, peekEqualsStop: absent, readVia: absent }
     filesystem has []
 
 scenario "native capture reports insert, modify and remove in stream order without the namespace prefix, seeds excluded":
@@ -127,7 +127,9 @@ scenario "native capture reports insert, modify and remove in stream order witho
   predict success:
     response OK ObserveResult {
       trace: "setup:a seed:a start:a put:a update:a delete:a stop:a=3",
-      last: "INSERT:o1/1,MODIFY:o1/1,REMOVE:o1/1"
+      last: "INSERT:o1/1,MODIFY:o1/1,REMOVE:o1/1",
+      peekEqualsStop: absent,
+      readVia: absent
     }
     filesystem has []
 
@@ -136,14 +138,16 @@ scenario "two namespaces never see each other's items":
   predict success:
     response OK ObserveResult {
       trace: "setup:a setup:b start:a start:b put:a put:b put:b stop:a=1 stop:b=2",
-      last: "INSERT:o1/1,INSERT:o2/1"
+      last: "INSERT:o1/1,INSERT:o2/1",
+      peekEqualsStop: absent,
+      readVia: absent
     }
     filesystem has []
 
 scenario "an item whose key carries no namespace prefix is nobody's effect":
   when: ObserveDynamoQuery { script: "setup:a start:a putraw:o1:1:x stop:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a start:a putraw stop:a=0" }
+    response OK ObserveResult { trace: "setup:a start:a putraw stop:a=0", last: absent, peekEqualsStop: absent, readVia: absent }
     filesystem has []
 
 scenario "a peek reports the window's records and consumes nothing":
@@ -152,32 +156,33 @@ scenario "a peek reports the window's records and consumes nothing":
     response OK ObserveResult {
       trace: "setup:a start:a put:a peek:a=1 peek:a=1 stop:a=1",
       last: "INSERT:o1/1",
-      peekEqualsStop: true
+      peekEqualsStop: true,
+      readVia: absent
     }
     filesystem has []
 
 scenario "a peek with no window open is empty":
   when: ObserveDynamoQuery { script: "setup:a put:a:o1:1:x peek:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a put:a peek:a=0" }
+    response OK ObserveResult { trace: "setup:a put:a peek:a=0", last: absent, peekEqualsStop: absent, readVia: absent }
     filesystem has []
 
 scenario "with the fence on, settle vouches once the stream has caught up, and the sentinel is not a record":
   when: ObserveDynamoQuery { script: "setup:a start:a put:a:o1:1:x settle:a stop:a", fence: true }
   predict success:
-    response OK ObserveResult { trace: "setup:a start:a put:a settle:a=true stop:a=1", last: "INSERT:o1/1" }
+    response OK ObserveResult { trace: "setup:a start:a put:a settle:a=true stop:a=1", last: "INSERT:o1/1", peekEqualsStop: absent, readVia: absent }
     filesystem has []
 
 scenario "with the fence off, native settle declines, so the harness keeps its ceiling":
   when: ObserveDynamoQuery { script: "setup:a start:a put:a:o1:1:x settle:a stop:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a start:a put:a settle:a=false stop:a=1", last: "INSERT:o1/1" }
+    response OK ObserveResult { trace: "setup:a start:a put:a settle:a=false stop:a=1", last: "INSERT:o1/1", peekEqualsStop: absent, readVia: absent }
     filesystem has []
 
 scenario "settle declines when no window is open":
   when: ObserveDynamoQuery { script: "setup:a settle:a", fence: true }
   predict success:
-    response OK ObserveResult { trace: "setup:a settle:a=false" }
+    response OK ObserveResult { trace: "setup:a settle:a=false", last: absent, peekEqualsStop: absent, readVia: absent }
     filesystem has []
 
 scenario "snapshot capture reports insert, modify and remove by key":
@@ -185,32 +190,34 @@ scenario "snapshot capture reports insert, modify and remove by key":
   predict success:
     response OK ObserveResult {
       trace: "setup:a seed:a seed:a start:a put:a update:a delete:a stop:a=3",
-      last: "MODIFY:o1/1,REMOVE:o2/1,INSERT:o3/1"
+      last: "MODIFY:o1/1,REMOVE:o2/1,INSERT:o3/1",
+      peekEqualsStop: absent,
+      readVia: absent
     }
     filesystem has []
 
 scenario "snapshot diff cannot see an item written and deleted inside the window":
   when: ObserveDynamoQuery { script: "setup:a start:a put:a:o1:1:x delete:a:o1:1 stop:a", stream: "off" }
   predict success:
-    response OK ObserveResult { trace: "setup:a start:a put:a delete:a stop:a=0" }
+    response OK ObserveResult { trace: "setup:a start:a put:a delete:a stop:a=0", last: absent, peekEqualsStop: absent, readVia: absent }
     filesystem has []
 
 scenario "snapshot settle vouches because a consistent read sees every acknowledged write":
   when: ObserveDynamoQuery { script: "setup:a start:a put:a:o1:1:x settle:a stop:a", stream: "off" }
   predict success:
-    response OK ObserveResult { trace: "setup:a start:a put:a settle:a=true stop:a=1", last: "INSERT:o1/1" }
+    response OK ObserveResult { trace: "setup:a start:a put:a settle:a=true stop:a=1", last: "INSERT:o1/1", peekEqualsStop: absent, readVia: absent }
     filesystem has []
 
 scenario "a read given a full key uses GetItem":
   when: ObserveDynamoQuery { script: "setup:a seed:a:o1:1:x seed:a:o1:2:y read:a:o1:1" }
   predict success:
-    response OK ObserveResult { trace: "setup:a seed:a seed:a read:a:o1:1=1", readVia: "GetItem" }
+    response OK ObserveResult { trace: "setup:a seed:a seed:a read:a:o1:1=1", readVia: "GetItem", last: absent, peekEqualsStop: absent }
     filesystem has []
 
 scenario "a read given a partition key uses Query":
   when: ObserveDynamoQuery { script: "setup:a seed:a:o1:1:x seed:a:o1:2:y seed:a:o2:1:z read:a:o1" }
   predict success:
-    response OK ObserveResult { trace: "setup:a seed:a seed:a seed:a read:a:o1=2", readVia: "Query" }
+    response OK ObserveResult { trace: "setup:a seed:a seed:a seed:a read:a:o1=2", readVia: "Query", last: absent, peekEqualsStop: absent }
     filesystem has []
 
 scenario "a read given no key scans the namespace only and hides the instrument's rows":
@@ -218,14 +225,16 @@ scenario "a read given no key scans the namespace only and hides the instrument'
   predict success:
     response OK ObserveResult {
       trace: "setup:a setup:b seed:a seed:b fault:a:PutItem.CONDITIONAL_CHECK_FAILED read:a=1",
-      readVia: "Scan"
+      readVia: "Scan",
+      last: absent,
+      peekEqualsStop: absent
     }
     filesystem has []
 
 scenario "reset deletes the namespace's items and leaves the other namespace alone":
   when: ObserveDynamoQuery { script: "setup:a setup:b seed:a:o1:1:x seed:b:o1:1:y reset:a read:a read:b" }
   predict success:
-    response OK ObserveResult { trace: "setup:a setup:b seed:a seed:b reset:a read:a=0 read:b=1" }
+    response OK ObserveResult { trace: "setup:a setup:b seed:a seed:b reset:a read:a=0 read:b=1", last: absent, peekEqualsStop: absent, readVia: "Scan" }
     filesystem has []
 
 scenario "a conditional put on a key that already exists is refused when CONDITIONAL_CHECK_FAILED is armed":
@@ -233,6 +242,9 @@ scenario "a conditional put on a key that already exists is refused when CONDITI
   predict success:
     response OK ObserveResult {
       trace: "setup:a fault:a:PutItem.CONDITIONAL_CHECK_FAILED start:a putcond:a!CONDITIONAL_CHECK_FAILED stop:a=0 read:a=0"
+      last: absent
+      peekEqualsStop: absent
+      readVia: "Scan"
     }
     filesystem has []
 
@@ -241,14 +253,16 @@ scenario "reset disarms the fault, so the same conditional put then succeeds":
   predict success:
     response OK ObserveResult {
       trace: "setup:a fault:a:PutItem.CONDITIONAL_CHECK_FAILED reset:a start:a putcond:a stop:a=1",
-      last: "INSERT:o1/1"
+      last: "INSERT:o1/1",
+      peekEqualsStop: absent,
+      readVia: absent
     }
     filesystem has []
 
 scenario "DynamoDB reports no request it refused, so firedFaults is not offered":
   when: ObserveDynamoQuery { script: "setup:a fault:a:PutItem.CONDITIONAL_CHECK_FAILED:o1:1 fired:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a fault:a:PutItem.CONDITIONAL_CHECK_FAILED fired:a=unobserved" }
+    response OK ObserveResult { trace: "setup:a fault:a:PutItem.CONDITIONAL_CHECK_FAILED fired:a=unobserved", last: absent, peekEqualsStop: absent, readVia: absent }
     filesystem has []
 
 scenario outline "a fault the binding cannot produce faithfully is refused before it does anything":

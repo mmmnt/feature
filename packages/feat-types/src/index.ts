@@ -144,6 +144,8 @@ export interface PredictedRecord {
   schemaName: string;
   valueBlock?: ValueBlock;
   golden?: string;
+  /** ADR-0038: the value block asserts its listed fields only, on purpose. */
+  partial?: true;
 }
 
 export interface ResponsePrediction {
@@ -151,6 +153,8 @@ export interface ResponsePrediction {
   schemaName: string;
   valueBlock?: ValueBlock;
   golden?: string;
+  /** ADR-0038: the value block asserts its listed fields only, on purpose. */
+  partial?: true;
 }
 
 export interface ServicePrediction {

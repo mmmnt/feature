@@ -102,7 +102,7 @@ scenario "an ask the system writes in the window is captured with its payload un
 scenario outline "every ask type of the consumer's port is captured":
   when: ObserveModel { script: <script> }
   predict success:
-    response OK ObserveResult { trace: <trace>, lastTypes: <type> }
+    response OK ObserveResult partial { trace: <trace>, lastTypes: <type> }
     filesystem has []
   examples:
     | script                                      | trace                                             | type                   |
@@ -113,7 +113,7 @@ scenario outline "every ask type of the consumer's port is captured":
 scenario outline "a seeded answer is a line the system reads, and is never in the window":
   when: ObserveModel { script: <script> }
   predict success:
-    response OK ObserveResult { trace: <trace> }
+    response OK ObserveResult { trace: <trace>, lastPayload: absent, lastTypes: absent }
     filesystem has []
   examples:
     | script                                                  | trace                                                                    |
@@ -138,55 +138,55 @@ scenario "a seeded answer keeps the consumer's payload as written":
 scenario "an ask written before the window opened is not in it":
   when: ObserveModel { script: "setup ask:judgment.ask start ask:judgment.requested stop" }
   predict success:
-    response OK ObserveResult { trace: "setup ask:judgment.ask start ask:judgment.requested stop=1", lastTypes: "judgment.requested" }
+    response OK ObserveResult partial { trace: "setup ask:judgment.ask start ask:judgment.requested stop=1", lastTypes: "judgment.requested" }
     filesystem has []
 
 scenario "a line still being written is not a record until its line ending lands":
   when: ObserveModel { script: "setup start partial peek complete stop" }
   predict success:
-    response OK ObserveResult { trace: "setup start partial peek=0 complete stop=1", lastTypes: "judgment.ask" }
+    response OK ObserveResult partial { trace: "setup start partial peek=0 complete stop=1", lastTypes: "judgment.ask" }
     filesystem has []
 
 scenario "a peek consumes nothing":
   when: ObserveModel { script: "setup start ask:judgment.ask peek peek stop" }
   predict success:
-    response OK ObserveResult { trace: "setup start ask:judgment.ask peek=1 peek=1 stop=1", lastTypes: "judgment.ask" }
+    response OK ObserveResult partial { trace: "setup start ask:judgment.ask peek=1 peek=1 stop=1", lastTypes: "judgment.ask" }
     filesystem has []
 
 scenario "with no window open, peek and stop return nothing":
   when: ObserveModel { script: "setup ask:judgment.ask peek stop" }
   predict success:
-    response OK ObserveResult { trace: "setup ask:judgment.ask peek=0 stop=0" }
+    response OK ObserveResult { trace: "setup ask:judgment.ask peek=0 stop=0", lastPayload: absent, lastTypes: absent }
     filesystem has []
 
 scenario "settle vouches with a window open, which is how an absence is proven":
   when: ObserveModel { script: "setup start settle stop" }
   predict success:
-    response OK ObserveResult { trace: "setup start settle=true stop=0" }
+    response OK ObserveResult { trace: "setup start settle=true stop=0", lastPayload: absent, lastTypes: absent }
     filesystem has []
 
 scenario "settle declines when no window is open":
   when: ObserveModel { script: "setup settle" }
   predict success:
-    response OK ObserveResult { trace: "setup settle=false" }
+    response OK ObserveResult { trace: "setup settle=false", lastPayload: absent, lastTypes: absent }
     filesystem has []
 
 scenario "reset empties the record file and closes the window":
   when: ObserveModel { script: "setup seed:CoherenceVerdict start ask:judgment.ask reset systemReads peek read" }
   predict success:
-    response OK ObserveResult { trace: "setup seed:CoherenceVerdict start ask:judgment.ask reset systemReads= peek=0 read=0" }
+    response OK ObserveResult { trace: "setup seed:CoherenceVerdict start ask:judgment.ask reset systemReads= peek=0 read=0", lastPayload: absent, lastTypes: absent }
     filesystem has []
 
 scenario "setup creates the record file under the namespace's name and teardown removes it":
   when: ObserveModel { script: "setup where exists teardown exists" }
   predict success:
-    response OK ObserveResult { trace: "setup where=s0123456789ab.jsonl exists=true teardown exists=false" }
+    response OK ObserveResult { trace: "setup where=s0123456789ab.jsonl exists=true teardown exists=false", lastPayload: absent, lastTypes: absent }
     filesystem has []
 
 scenario "a relative dir is read from the project root":
   when: ObserveModel { options: "relative", script: "setup where exists start ask:judgment.ask stop" }
   predict success:
-    response OK ObserveResult { trace: "setup where=s0123456789ab.jsonl exists=true start ask:judgment.ask stop=1", lastTypes: "judgment.ask" }
+    response OK ObserveResult partial { trace: "setup where=s0123456789ab.jsonl exists=true start ask:judgment.ask stop=1", lastTypes: "judgment.ask" }
     filesystem has []
 
 scenario "a line that is not a record is refused, naming the file and the line":

@@ -174,7 +174,9 @@ scenario "writes made in the window are captured in commit order, seeds are not"
   predict success:
     response OK ObserveResult {
       trace: "setup:a seed:a start:a write:a write:a write:a stop:a=3",
-      last: "orders/Placed,billing/Charged,orders/Shipped"
+      last: "orders/Placed,billing/Charged,orders/Shipped",
+      peekEqualsStop: absent,
+      lastPayloads: [{},{},{}]
     }
     filesystem has []
 
@@ -183,7 +185,9 @@ scenario "the order is the log's even across streams":
   predict success:
     response OK ObserveResult {
       trace: "setup:a start:a write:a write:a write:a write:a stop:a=4",
-      last: "s1/One,s2/Two,s1/Three,s2/Four"
+      last: "s1/One,s2/Two,s1/Three,s2/Four",
+      peekEqualsStop: absent,
+      lastPayloads: [{},{},{},{}]
     }
     filesystem has []
 
@@ -192,14 +196,16 @@ scenario "two namespaces never see each other's records":
   predict success:
     response OK ObserveResult {
       trace: "setup:a setup:b start:a start:b write:a write:b write:b stop:a=1 stop:b=2",
-      last: "orders/PlacedB,orders/ShippedB"
+      last: "orders/PlacedB,orders/ShippedB",
+      peekEqualsStop: absent,
+      lastPayloads: [{},{}]
     }
     filesystem has []
 
 scenario "a write outside every namespace is nobody's effect":
   when: ObserveKurrent { script: "setup:a start:a writeraw:elsewhere:Stray stop:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a start:a writeraw stop:a=0" }
+    response OK ObserveResult { trace: "setup:a start:a writeraw stop:a=0", last: absent, lastPayloads: absent, peekEqualsStop: absent }
     filesystem has []
 
 scenario "rewriting a stream that held events before a reset captures only the system's write, not the server's $tb record":
@@ -207,7 +213,9 @@ scenario "rewriting a stream that held events before a reset captures only the s
   predict success:
     response OK ObserveResult {
       trace: "setup:a seed:a reset:a start:a write:a stop:a=1 read:a=1",
-      last: "orders/Placed"
+      last: "orders/Placed",
+      peekEqualsStop: absent,
+      lastPayloads: [{}]
     }
     filesystem has []
 
@@ -217,7 +225,8 @@ scenario "a soft delete by the system is reported as stream.deleted naming the s
     response OK ObserveResult {
       trace: "setup:a seed:a start:a delete:a stop:a=1",
       last: "orders/stream.deleted",
-      lastPayloads: [{ streamId: "orders" }]
+      lastPayloads: [{ streamId: "orders" }],
+      peekEqualsStop: absent
     }
     filesystem has []
 
@@ -227,7 +236,8 @@ scenario "a stream name with separators is named whole in stream.deleted":
     response OK ObserveResult {
       trace: "setup:a seed:a start:a delete:a stop:a=1",
       last: "ws-1::domain/stream.deleted",
-      lastPayloads: [{ streamId: "ws-1::domain" }]
+      lastPayloads: [{ streamId: "ws-1::domain" }],
+      peekEqualsStop: absent
     }
     filesystem has []
 
@@ -237,7 +247,8 @@ scenario "a soft delete of a stream that has other metadata is still a stream.de
     response OK ObserveResult {
       trace: "setup:a seed:a meta:a start:a delete:a stop:a=1",
       last: "orders/stream.deleted",
-      lastPayloads: [{ streamId: "orders" }]
+      lastPayloads: [{ streamId: "orders" }],
+      peekEqualsStop: absent
     }
     filesystem has []
 
@@ -247,7 +258,8 @@ scenario "a metadata write that is not a delete is still captured as $metadata":
     response OK ObserveResult {
       trace: "setup:a seed:a start:a meta:a stop:a=1",
       last: "$$orders/$metadata",
-      lastPayloads: [{ "$maxAge": 60 }]
+      lastPayloads: [{ "$maxAge": 60 }],
+      peekEqualsStop: absent
     }
     filesystem has []
 
@@ -256,7 +268,9 @@ scenario "a delete then a rewrite in one window is a stream.deleted then the wri
   predict success:
     response OK ObserveResult {
       trace: "setup:a seed:a start:a delete:a write:a stop:a=2",
-      last: "orders/stream.deleted,orders/Placed"
+      last: "orders/stream.deleted,orders/Placed",
+      peekEqualsStop: absent,
+      lastPayloads: [{"streamId":"orders"},{}]
     }
     filesystem has []
 
@@ -266,7 +280,8 @@ scenario "a peek reports the stream.deleted and the stop reports the same":
     response OK ObserveResult {
       trace: "setup:a seed:a start:a delete:a peek:a=1 stop:a=1",
       last: "orders/stream.deleted",
-      peekEqualsStop: true
+      peekEqualsStop: true,
+      lastPayloads: [{"streamId":"orders"}]
     }
     filesystem has []
 
@@ -276,7 +291,8 @@ scenario "a hard delete by the system is reported as stream.deleted with hard tr
     response OK ObserveResult {
       trace: "setup:a seed:a start:a tombstone:a stop:a=1",
       last: "grave1/stream.deleted",
-      lastPayloads: [{ streamId: "grave1", hard: true }]
+      lastPayloads: [{ streamId: "grave1", hard: true }],
+      peekEqualsStop: absent
     }
     filesystem has []
 
@@ -286,14 +302,15 @@ scenario "a soft delete then a hard delete of one stream are two stream.deleted 
     response OK ObserveResult {
       trace: "setup:a seed:a start:a delete:a tombstone:a stop:a=2",
       last: "grave2/stream.deleted,grave2/stream.deleted",
-      lastPayloads: [{ streamId: "grave2" }, { streamId: "grave2", hard: true }]
+      lastPayloads: [{ streamId: "grave2" }, { streamId: "grave2", hard: true }],
+      peekEqualsStop: absent
     }
     filesystem has []
 
 scenario "a tombstoned stream reads as empty and reset passes over it":
   when: ObserveKurrent { script: "setup:a seed:a:grave3:One seed:a:orders:Two tombstone:a:grave3 reset:a read:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a seed:a seed:a tombstone:a reset:a read:a=0" }
+    response OK ObserveResult { trace: "setup:a seed:a seed:a tombstone:a reset:a read:a=0", last: absent, lastPayloads: absent, peekEqualsStop: absent }
     filesystem has []
 
 scenario "a soft delete in another namespace is not this namespace's stream.deleted":
@@ -301,7 +318,9 @@ scenario "a soft delete in another namespace is not this namespace's stream.dele
   predict success:
     response OK ObserveResult {
       trace: "setup:a setup:b seed:b start:a start:b delete:b stop:a=0 stop:b=1",
-      last: "orders/stream.deleted"
+      last: "orders/stream.deleted",
+      peekEqualsStop: absent,
+      lastPayloads: [{"streamId":"orders"}]
     }
     filesystem has []
 
@@ -311,7 +330,8 @@ scenario "a peek reports the window's records and consumes nothing":
     response OK ObserveResult {
       trace: "setup:a start:a write:a peek:a=1 peek:a=1 stop:a=1",
       last: "orders/Placed",
-      peekEqualsStop: true
+      peekEqualsStop: true,
+      lastPayloads: [{}]
     }
     filesystem has []
 
@@ -321,80 +341,81 @@ scenario "a peek sees records written between peeks exactly once":
     response OK ObserveResult {
       trace: "setup:a start:a write:a peek:a=1 write:a peek:a=2 stop:a=2",
       last: "s/One,s/Two",
-      peekEqualsStop: true
+      peekEqualsStop: true,
+      lastPayloads: [{},{}]
     }
     filesystem has []
 
 scenario "a peek with no window open is empty":
   when: ObserveKurrent { script: "setup:a write:a:orders:Placed peek:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a write:a peek:a=0" }
+    response OK ObserveResult { trace: "setup:a write:a peek:a=0", last: absent, lastPayloads: absent, peekEqualsStop: absent }
     filesystem has []
 
 scenario "settle vouches once the system's writes are readable, and the fence is not a record":
   when: ObserveKurrent { script: "setup:a start:a write:a:orders:Placed settle:a stop:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a start:a write:a settle:a=true stop:a=1", last: "orders/Placed" }
+    response OK ObserveResult { trace: "setup:a start:a write:a settle:a=true stop:a=1", last: "orders/Placed", peekEqualsStop: absent, lastPayloads: [{}] }
     filesystem has []
 
 scenario "settle vouches on an empty window, which is how an absence is proven":
   when: ObserveKurrent { script: "setup:a start:a settle:a stop:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a start:a settle:a=true stop:a=0" }
+    response OK ObserveResult { trace: "setup:a start:a settle:a=true stop:a=0", last: absent, lastPayloads: absent, peekEqualsStop: absent }
     filesystem has []
 
 scenario "settle declines when no window is open":
   when: ObserveKurrent { script: "setup:a settle:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a settle:a=false" }
+    response OK ObserveResult { trace: "setup:a settle:a=false", last: absent, lastPayloads: absent, peekEqualsStop: absent }
     filesystem has []
 
 scenario "settle declines when the marker cannot be read back in time, and says so by being false":
   when: ObserveKurrent { script: "setup:a start:a write:a:orders:Placed settle:a stop:a", settleTimeoutMs: 0 }
   predict success:
-    response OK ObserveResult { trace: "setup:a start:a write:a settle:a=false stop:a=1" }
+    response OK ObserveResult { trace: "setup:a start:a write:a settle:a=false stop:a=1", peekEqualsStop: absent, last: "orders/Placed", lastPayloads: [{}] }
     filesystem has []
 
 scenario "read reports the namespace's streams and not the instrument's markers":
   when: ObserveKurrent { script: "setup:a setup:b seed:a:orders:Seeded write:a:orders:Placed start:a stop:a read:a read:b" }
   predict success:
-    response OK ObserveResult { trace: "setup:a setup:b seed:a write:a start:a stop:a=0 read:a=2 read:b=0" }
+    response OK ObserveResult { trace: "setup:a setup:b seed:a write:a start:a stop:a=0 read:a=2 read:b=0", last: absent, lastPayloads: absent, peekEqualsStop: absent }
     filesystem has []
 
 scenario "read with a stream hint returns that stream and may return no other":
   when: ObserveKurrent { script: "setup:a seed:a:orders:One seed:a:billing:Two read:a:orders" }
   predict success:
-    response OK ObserveResult { trace: "setup:a seed:a seed:a read:a:orders=1" }
+    response OK ObserveResult { trace: "setup:a seed:a seed:a read:a:orders=1", last: absent, lastPayloads: absent, peekEqualsStop: absent }
     filesystem has []
 
 scenario "reset clears the namespace and leaves the other one alone":
   when: ObserveKurrent { script: "setup:a setup:b seed:a:orders:One seed:b:orders:Two reset:a read:a read:b" }
   predict success:
-    response OK ObserveResult { trace: "setup:a setup:b seed:a seed:b reset:a read:a=0 read:b=1" }
+    response OK ObserveResult { trace: "setup:a setup:b seed:a seed:b reset:a read:a=0 read:b=1", last: absent, lastPayloads: absent, peekEqualsStop: absent }
     filesystem has []
 
 scenario "a window left open by the previous case is closed by reset":
   when: ObserveKurrent { script: "setup:a start:a write:a:orders:Placed reset:a peek:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a start:a write:a reset:a peek:a=0" }
+    response OK ObserveResult { trace: "setup:a start:a write:a reset:a peek:a=0", last: absent, lastPayloads: absent, peekEqualsStop: absent }
     filesystem has []
 
 scenario "an append that expects a new stream is refused when WRONG_EXPECTED_VERSION is armed":
   when: ObserveKurrent { script: "setup:a fault:a:AppendToStream.WRONG_EXPECTED_VERSION:orders start:a writenew:a:orders:Placed stop:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a fault:a:AppendToStream.WRONG_EXPECTED_VERSION start:a writenew:a!WRONG_EXPECTED_VERSION stop:a=0" }
+    response OK ObserveResult { trace: "setup:a fault:a:AppendToStream.WRONG_EXPECTED_VERSION start:a writenew:a!WRONG_EXPECTED_VERSION stop:a=0", last: absent, lastPayloads: absent, peekEqualsStop: absent }
     filesystem has []
 
 scenario "the fault's placeholder is not a record of the system":
   when: ObserveKurrent { script: "setup:a fault:a:AppendToStream.WRONG_EXPECTED_VERSION:orders start:a stop:a read:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a fault:a:AppendToStream.WRONG_EXPECTED_VERSION start:a stop:a=0 read:a=0" }
+    response OK ObserveResult { trace: "setup:a fault:a:AppendToStream.WRONG_EXPECTED_VERSION start:a stop:a=0 read:a=0", last: absent, lastPayloads: absent, peekEqualsStop: absent }
     filesystem has []
 
 scenario "a write to a stream whose ACL denies writers is refused when ACCESS_DENIED is armed":
   when: ObserveKurrent { script: "setup:a fault:a:AppendToStream.ACCESS_DENIED:orders start:a writeuser:a:orders:Placed stop:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a fault:a:AppendToStream.ACCESS_DENIED start:a writeuser:a!ACCESS_DENIED stop:a=0" }
+    response OK ObserveResult { trace: "setup:a fault:a:AppendToStream.ACCESS_DENIED start:a writeuser:a!ACCESS_DENIED stop:a=0", last: absent, lastPayloads: absent, peekEqualsStop: absent }
     filesystem has []
 
 scenario "reset disarms the fault, so the same write then succeeds":
@@ -402,14 +423,16 @@ scenario "reset disarms the fault, so the same write then succeeds":
   predict success:
     response OK ObserveResult {
       trace: "setup:a fault:a:AppendToStream.ACCESS_DENIED reset:a start:a writeuser:a stop:a=1",
-      last: "orders/Placed"
+      last: "orders/Placed",
+      peekEqualsStop: absent,
+      lastPayloads: [{}]
     }
     filesystem has []
 
 scenario "the product reports no refusal it issued, so firedFaults is not offered":
   when: ObserveKurrent { script: "setup:a fault:a:AppendToStream.WRONG_EXPECTED_VERSION:orders fired:a" }
   predict success:
-    response OK ObserveResult { trace: "setup:a fault:a:AppendToStream.WRONG_EXPECTED_VERSION fired:a=unobserved" }
+    response OK ObserveResult { trace: "setup:a fault:a:AppendToStream.WRONG_EXPECTED_VERSION fired:a=unobserved", last: absent, lastPayloads: absent, peekEqualsStop: absent }
     filesystem has []
 
 scenario outline "a fault the binding cannot produce faithfully is refused before it does anything":
@@ -430,6 +453,7 @@ scenario "an event whose JSON data is null is captured with a null payload, as s
     response OK ObserveResult {
       trace: "setup:a start:a writenull:a stop:a=1",
       last: "orders/Placed",
-      lastPayloads: [null]
+      lastPayloads: [null],
+      peekEqualsStop: absent
     }
     filesystem has []

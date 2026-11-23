@@ -60,47 +60,47 @@ scenario "a peek reports the window's effects and consumes nothing":
 scenario "a peek before any effect is empty":
   when: ObserveMemory { script: "start peek stop" }
   predict success:
-    response OK ObserveResult { trace: "start peek=0 stop=0" }
+    response OK ObserveResult { trace: "start peek=0 stop=0", lastTypes: absent, peekEqualsStop: true }
     filesystem has []
 
 scenario "the delivered stimulus is not in a peek, only what the consumer published":
   when: ObserveMemory { script: "start deliver:Ping peek" }
   predict success:
-    response OK ObserveResult { trace: "start deliver:Ping peek=1", lastTypes: "Pong" }
+    response OK ObserveResult { trace: "start deliver:Ping peek=1", lastTypes: "Pong", peekEqualsStop: absent }
     filesystem has []
 
 scenario "seeded records are not in a peek":
   when: ObserveMemory { script: "seed start peek stop" }
   predict success:
-    response OK ObserveResult { trace: "seed start peek=0 stop=0" }
+    response OK ObserveResult { trace: "seed start peek=0 stop=0", lastTypes: absent, peekEqualsStop: true }
     filesystem has []
 
 scenario "a peek after stop finds the window closed":
   when: ObserveMemory { script: "start deliver:Ping stop peek" }
   predict success:
-    response OK ObserveResult { trace: "start deliver:Ping stop=1 peek=0" }
+    response OK ObserveResult { trace: "start deliver:Ping stop=1 peek=0", lastTypes: absent, peekEqualsStop: absent }
     filesystem has []
 
 scenario "reset closes the window":
   when: ObserveMemory { script: "start deliver:Ping reset peek" }
   predict success:
-    response OK ObserveResult { trace: "start deliver:Ping reset peek=0" }
+    response OK ObserveResult { trace: "start deliver:Ping reset peek=0", lastTypes: absent, peekEqualsStop: absent }
     filesystem has []
 
 scenario "settle vouches once the consumer's publishes are in the log":
   when: ObserveMemory { script: "start deliver:Ping settle peek stop" }
   predict success:
-    response OK ObserveResult { trace: "start deliver:Ping settle=true peek=1 stop=1" }
+    response OK ObserveResult { trace: "start deliver:Ping settle=true peek=1 stop=1", lastTypes: "Pong", peekEqualsStop: true }
     filesystem has []
 
 scenario "settle declines when no window is open":
   when: ObserveMemory { script: "settle" }
   predict success:
-    response OK ObserveResult { trace: "settle=false" }
+    response OK ObserveResult { trace: "settle=false", lastTypes: absent, peekEqualsStop: absent }
     filesystem has []
 
 scenario "settle vouches on an empty window, which is how an absence is proven":
   when: ObserveMemory { script: "start settle stop" }
   predict success:
-    response OK ObserveResult { trace: "start settle=true stop=0" }
+    response OK ObserveResult { trace: "start settle=true stop=0", lastTypes: absent, peekEqualsStop: absent }
     filesystem has []

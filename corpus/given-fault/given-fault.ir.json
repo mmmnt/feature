@@ -89,6 +89,10 @@
             "code": {
               "matcher": "literal",
               "value": "CONCURRENCY_CONFLICT"
+            },
+            "message": {
+              "matcher": "any",
+              "ofType": "string"
             }
           }
         },
@@ -182,6 +186,10 @@
             "code": {
               "matcher": "literal",
               "value": "STORE_UNAVAILABLE"
+            },
+            "message": {
+              "matcher": "any",
+              "ofType": "string"
             }
           }
         },

@@ -85,13 +85,13 @@ scenario "one seed call is transformed in one request, asked twice":
 scenario "a transformed seed is state: the window that follows reports nothing":
   when: ObserveDynamoSeedTransform { host: "encode", script: "setup:a seedenc:a:o1:1:ab start:a stop:a" }
   predict success:
-    response OK SeedTransformResult { trace: "setup:a seedenc:a start:a stop:a=0" }
+    response OK SeedTransformResult { trace: "setup:a seedenc:a start:a stop:a=0", readItems: absent, readVia: absent }
     filesystem has []
 
 scenario "without seedTransform no host is asked and a plain seed is put as before":
   when: ObserveDynamoSeedTransform { host: "none", script: "setup:a seed:a:o1:1:x read:a:o1:1" }
   predict success:
-    response OK SeedTransformResult { trace: "setup:a seed:a read:a:o1:1=1", readVia: "GetItem" }
+    response OK SeedTransformResult { trace: "setup:a seed:a read:a:o1:1=1", readVia: "GetItem", readItems: "[{\"PK\":\"o1\",\"SK\":\"1\",\"v\":\"x\"}]" }
     filesystem has []
 
 scenario "a host that cannot be started is refused at setup":

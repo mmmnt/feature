@@ -46,13 +46,16 @@ scenario "loads a valid config":
       featVersion: "1.0"
       environment: "local"
       services: { filesystem: { consistency: "acid" } }
+      extends: absent
+      report: {"format":["console"]}
+      response: {"adapter":"@mmmnt/feat-adapter-handler","commands":{"Ping":{"module":"src/ping.ts","export":"ping"}}}
     }
     filesystem has []
 
 scenario "missing file":
   when: LoadConfig { path: "packages/feat-runtime/fixtures/does-not-exist.config.json" }
   predict rejection CONFIG_NOT_FOUND:
-    response ERR ConfigError { code: "CONFIG_NOT_FOUND", path: @when.path }
+    response ERR ConfigError { code: "CONFIG_NOT_FOUND", path: @when.path, detail: absent }
     filesystem has []
 
 scenario "eventual service without convergence timeout":
@@ -61,13 +64,14 @@ scenario "eventual service without convergence timeout":
     response ERR ConfigError {
       code: "MISSING_CONVERGENCE_TIMEOUT"
       detail: matching "eventStore"
+      path: absent
     }
     filesystem has []
 
 scenario outline "schema-invalid configs are rejected":
   when: LoadConfig { path: <path> }
   predict rejection INVALID_CONFIG:
-    response ERR ConfigError { code: "INVALID_CONFIG", detail: matching <detail> }
+    response ERR ConfigError { code: "INVALID_CONFIG", detail: matching <detail>, path: absent }
     filesystem has []
   examples:
     | path                                  | detail          |

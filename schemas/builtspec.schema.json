@@ -682,6 +682,10 @@
             "golden": {
               "type": "string",
               "description": "Golden-fixture path (ADR-0013); deep structural equality; exclusive with valueBlock."
+            },
+            "partial": {
+              "const": true,
+              "description": "ADR-0038: the value block asserts its listed fields only, on purpose; requires valueBlock, never with golden."
             }
           }
         },
@@ -757,6 +761,10 @@
         "golden": {
           "type": "string",
           "description": "Golden-fixture path (ADR-0013); deep structural equality; exclusive with valueBlock."
+        },
+        "partial": {
+          "const": true,
+          "description": "ADR-0038: the value block asserts its listed fields only, on purpose; requires valueBlock, never with golden."
         }
       }
     },

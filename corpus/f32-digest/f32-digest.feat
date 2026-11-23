@@ -38,5 +38,5 @@ scenario "an entry with no text gets no vector":
   predict success:
     response 200 EncodeReceipt { id: @when.id, vector: absent }
     graph has [
-      INSERT with NodeRecord { id: @when.id, embedding: absent }
+      INSERT with NodeRecord { id: @when.id, embedding: absent, meta: absent }
     ]

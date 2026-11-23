@@ -122,49 +122,49 @@ scenario "a setup answer naming another protocol version is a valid exchange, th
 scenario "a setup answer without the namespace echo violates the closed schema":
   when: Exchange { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "bad-setup-none"] }, method: "setup", params: { protocol: 2, services: ["log"], namespace: "s0599e33863c1" } }
   predict rejection PROTOCOL_VIOLATION:
-    response ERR ExchangeError { code: "PROTOCOL_VIOLATION", detail: matching "namespace", hostSpawned: true, hostAlive: false }
+    response ERR ExchangeError { code: "PROTOCOL_VIOLATION", detail: matching "namespace", hostSpawned: true, hostAlive: false, message: absent, rpcCode: absent }
     filesystem has []
 
 scenario "a setup answer without the protocol version violates the closed schema":
   when: Exchange { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "bad-setup-no-protocol"] }, method: "setup", params: { protocol: 2, services: ["log"], namespace: "s0599e33863c1" } }
   predict rejection PROTOCOL_VIOLATION:
-    response ERR ExchangeError { code: "PROTOCOL_VIOLATION", detail: matching "protocol", hostSpawned: true, hostAlive: false }
+    response ERR ExchangeError { code: "PROTOCOL_VIOLATION", detail: matching "protocol", hostSpawned: true, hostAlive: false, message: absent, rpcCode: absent }
     filesystem has []
 
 scenario "a setup answer whose namespace is not s plus twelve hex characters violates the closed schema":
   when: Exchange { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "bad-setup-pattern"] }, method: "setup", params: { protocol: 2, services: ["log"], namespace: "s0599e33863c1" } }
   predict rejection PROTOCOL_VIOLATION:
-    response ERR ExchangeError { code: "PROTOCOL_VIOLATION", detail: matching "namespace", hostSpawned: true, hostAlive: false }
+    response ERR ExchangeError { code: "PROTOCOL_VIOLATION", detail: matching "namespace", hostSpawned: true, hostAlive: false, message: absent, rpcCode: absent }
     filesystem has []
 
 scenario "a setup without a namespace never reaches a host":
   when: Exchange { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, method: "setup", params: { protocol: 2, services: ["log"] } }
   predict rejection INVALID_REQUEST:
-    response ERR ExchangeError { code: "INVALID_REQUEST", detail: matching "namespace", hostSpawned: false, hostAlive: false }
+    response ERR ExchangeError { code: "INVALID_REQUEST", detail: matching "namespace", hostSpawned: false, hostAlive: false, message: absent, rpcCode: absent }
     filesystem has []
 
 scenario "a setup without a protocol version never reaches a host":
   when: Exchange { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, method: "setup", params: { services: ["log"], namespace: "s0599e33863c1" } }
   predict rejection INVALID_REQUEST:
-    response ERR ExchangeError { code: "INVALID_REQUEST", detail: matching "protocol", hostSpawned: false, hostAlive: false }
+    response ERR ExchangeError { code: "INVALID_REQUEST", detail: matching "protocol", hostSpawned: false, hostAlive: false, message: absent, rpcCode: absent }
     filesystem has []
 
 scenario "a setup naming another protocol version never reaches a host":
   when: Exchange { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, method: "setup", params: { protocol: 1, services: ["log"], namespace: "s0599e33863c1" } }
   predict rejection INVALID_REQUEST:
-    response ERR ExchangeError { code: "INVALID_REQUEST", detail: matching "protocol", hostSpawned: false, hostAlive: false }
+    response ERR ExchangeError { code: "INVALID_REQUEST", detail: matching "protocol", hostSpawned: false, hostAlive: false, message: absent, rpcCode: absent }
     filesystem has []
 
 scenario "a setup whose namespace is not s plus twelve hex characters never reaches a host":
   when: Exchange { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, method: "setup", params: { protocol: 2, services: ["log"], namespace: "sABCDEF012345" } }
   predict rejection INVALID_REQUEST:
-    response ERR ExchangeError { code: "INVALID_REQUEST", detail: matching "namespace", hostSpawned: false, hostAlive: false }
+    response ERR ExchangeError { code: "INVALID_REQUEST", detail: matching "namespace", hostSpawned: false, hostAlive: false, message: absent, rpcCode: absent }
     filesystem has []
 
 scenario "a setup whose namespace has the wrong length never reaches a host":
   when: Exchange { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, method: "setup", params: { protocol: 2, services: ["log"], namespace: "s0599e33863c" } }
   predict rejection INVALID_REQUEST:
-    response ERR ExchangeError { code: "INVALID_REQUEST", detail: matching "namespace", hostSpawned: false, hostAlive: false }
+    response ERR ExchangeError { code: "INVALID_REQUEST", detail: matching "namespace", hostSpawned: false, hostAlive: false, message: absent, rpcCode: absent }
     filesystem has []
 
 scenario "teardown names the services the host may close":
@@ -248,91 +248,91 @@ scenario "fault relays until reset and a detail":
 scenario "a fault with both a count and until reset never reaches a host":
   when: Exchange { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, method: "fault", params: { service: "kv", kind: "unavailable", times: 2, untilReset: true } }
   predict rejection INVALID_REQUEST:
-    response ERR ExchangeError { code: "INVALID_REQUEST", hostSpawned: false, hostAlive: false }
+    response ERR ExchangeError { code: "INVALID_REQUEST", hostSpawned: false, hostAlive: false, message: absent, rpcCode: absent, detail: "request/params must NOT be valid" }
     filesystem has []
 
 scenario "a setClock with a clock lacking a zone designator never reaches a host":
   when: Exchange { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, method: "setClock", params: { clock: "2026-07-16T00:00:00" } }
   predict rejection INVALID_REQUEST:
-    response ERR ExchangeError { code: "INVALID_REQUEST", hostSpawned: false, hostAlive: false }
+    response ERR ExchangeError partial { code: "INVALID_REQUEST", hostSpawned: false, hostAlive: false }
     filesystem has []
 
 scenario "a reset that still carries a clock never reaches a host":
   when: Exchange { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, method: "reset", params: { clock: "2026-07-16T00:00:00Z" } }
   predict rejection INVALID_REQUEST:
-    response ERR ExchangeError { code: "INVALID_REQUEST", hostSpawned: false, hostAlive: false }
+    response ERR ExchangeError { code: "INVALID_REQUEST", hostSpawned: false, hostAlive: false, message: absent, rpcCode: absent, detail: "request/params must NOT have additional properties 'clock'" }
     filesystem has []
 
 scenario "a settle with a stray parameter never reaches a host":
   when: Exchange { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, method: "settle", params: { service: "log", wait: 5 } }
   predict rejection INVALID_REQUEST:
-    response ERR ExchangeError { code: "INVALID_REQUEST", hostSpawned: false, hostAlive: false }
+    response ERR ExchangeError { code: "INVALID_REQUEST", hostSpawned: false, hostAlive: false, message: absent, rpcCode: absent, detail: "request/params must NOT have additional properties 'wait'" }
     filesystem has []
 
 scenario "a fault without a kind never reaches a host":
   when: Exchange { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, method: "fault", params: { service: "kv" } }
   predict rejection INVALID_REQUEST:
-    response ERR ExchangeError { code: "INVALID_REQUEST", hostSpawned: false, hostAlive: false }
+    response ERR ExchangeError { code: "INVALID_REQUEST", hostSpawned: false, hostAlive: false, message: absent, rpcCode: absent, detail: "request/params must have required property 'kind' 'kind'" }
     filesystem has []
 
 scenario "a method outside the protocol never reaches a host":
   when: Exchange { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, method: "explode", params: {} }
   predict rejection INVALID_REQUEST:
-    response ERR ExchangeError { code: "INVALID_REQUEST", detail: matching "explode", hostSpawned: false, hostAlive: false }
+    response ERR ExchangeError { code: "INVALID_REQUEST", detail: matching "explode", hostSpawned: false, hostAlive: false, message: absent, rpcCode: absent }
     filesystem has []
 
 scenario "a host that cannot be started is named":
   when: Exchange { host: { command: ["adapters/stdio-jsonrpc/fixtures/no-such-host"] }, method: "reset", params: {} }
   predict rejection HOST_SPAWN_FAILED:
-    response ERR ExchangeError { code: "HOST_SPAWN_FAILED", hostSpawned: false, hostAlive: false }
+    response ERR ExchangeError partial { code: "HOST_SPAWN_FAILED", hostSpawned: false, hostAlive: false }
     filesystem has []
 
 scenario "a host that exits before answering is named":
   when: Exchange { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "exit"] }, method: "reset", params: {} }
   predict rejection HOST_EXITED:
-    response ERR ExchangeError { code: "HOST_EXITED", hostSpawned: true, hostAlive: false }
+    response ERR ExchangeError { code: "HOST_EXITED", hostSpawned: true, hostAlive: false, message: absent, rpcCode: absent, detail: "the host exited before it answered" }
     filesystem has []
 
 scenario "a silent host times out and is killed":
   when: Exchange { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "silent"] }, method: "reset", params: {}, timeoutMs: 300 }
   predict rejection HOST_TIMEOUT:
-    response ERR ExchangeError { code: "HOST_TIMEOUT", hostSpawned: true, hostAlive: false }
+    response ERR ExchangeError { code: "HOST_TIMEOUT", hostSpawned: true, hostAlive: false, message: absent, rpcCode: absent, detail: "no answer within 300 ms" }
     filesystem has []
 
 scenario "a line that is not JSON is a protocol violation":
   when: Exchange { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "garbage"] }, method: "reset", params: {} }
   predict rejection PROTOCOL_VIOLATION:
-    response ERR ExchangeError { code: "PROTOCOL_VIOLATION", hostSpawned: true, hostAlive: false }
+    response ERR ExchangeError { code: "PROTOCOL_VIOLATION", hostSpawned: true, hostAlive: false, message: absent, rpcCode: absent, detail: "the host's line is not JSON: this is not json" }
     filesystem has []
 
 scenario "an answer carrying another id is a protocol violation":
   when: Exchange { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "wrong-id"] }, method: "reset", params: {} }
   predict rejection PROTOCOL_VIOLATION:
-    response ERR ExchangeError { code: "PROTOCOL_VIOLATION", detail: matching "id", hostSpawned: true, hostAlive: false }
+    response ERR ExchangeError { code: "PROTOCOL_VIOLATION", detail: matching "id", hostSpawned: true, hostAlive: false, message: absent, rpcCode: absent }
     filesystem has []
 
 scenario "an invoke answer without a status violates the closed schema":
   when: Exchange { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "bad-invoke"] }, method: "invoke", params: { command: "Ping", input: {} } }
   predict rejection PROTOCOL_VIOLATION:
-    response ERR ExchangeError { code: "PROTOCOL_VIOLATION", detail: matching "status", hostSpawned: true, hostAlive: false }
+    response ERR ExchangeError { code: "PROTOCOL_VIOLATION", detail: matching "status", hostSpawned: true, hostAlive: false, message: absent, rpcCode: absent }
     filesystem has []
 
 scenario "a captured record with a stray key violates the closed schema":
   when: Exchange { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "bad-record"] }, method: "stopCapture", params: { service: "log" } }
   predict rejection PROTOCOL_VIOLATION:
-    response ERR ExchangeError { code: "PROTOCOL_VIOLATION", detail: matching "extra", hostSpawned: true, hostAlive: false }
+    response ERR ExchangeError { code: "PROTOCOL_VIOLATION", detail: matching "extra", hostSpawned: true, hostAlive: false, message: absent, rpcCode: absent }
     filesystem has []
 
 scenario "a settle answer that is a bare boolean violates the closed schema":
   when: Exchange { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "bad-settle"] }, method: "settle", params: { service: "log" } }
   predict rejection PROTOCOL_VIOLATION:
-    response ERR ExchangeError { code: "PROTOCOL_VIOLATION", hostSpawned: true, hostAlive: false }
+    response ERR ExchangeError partial { code: "PROTOCOL_VIOLATION", hostSpawned: true, hostAlive: false }
     filesystem has []
 
 scenario "an answer that carries both result and error is a protocol violation":
   when: Exchange { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "both"] }, method: "reset", params: {} }
   predict rejection PROTOCOL_VIOLATION:
-    response ERR ExchangeError { code: "PROTOCOL_VIOLATION", hostSpawned: true, hostAlive: false }
+    response ERR ExchangeError partial { code: "PROTOCOL_VIOLATION", hostSpawned: true, hostAlive: false }
     filesystem has []
 
 scenario "a delivery to the response role is a deliver whose service is response":
@@ -344,49 +344,49 @@ scenario "a delivery to the response role is a deliver whose service is response
 scenario "a host that serves no response-role delivery answers an error, relayed as HOST_ERROR":
   when: Exchange { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "no-response-deliver"] }, method: "deliver", params: { service: "response", event: "deletion.started", payload: { n: 1 } } }
   predict rejection HOST_ERROR:
-    response ERR ExchangeError { code: "HOST_ERROR", rpcCode: -32601, message: "Method not found: deliver to response", hostSpawned: true, hostAlive: false }
+    response ERR ExchangeError { code: "HOST_ERROR", rpcCode: -32601, message: "Method not found: deliver to response", hostSpawned: true, hostAlive: false, detail: "Method not found: deliver to response" }
     filesystem has []
 
 scenario "a JSON-RPC error from the host is relayed verbatim":
   when: Exchange { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "rpc-error"] }, method: "reset", params: {} }
   predict rejection HOST_ERROR:
-    response ERR ExchangeError { code: "HOST_ERROR", rpcCode: -32000, message: "boom", hostSpawned: true, hostAlive: false }
+    response ERR ExchangeError { code: "HOST_ERROR", rpcCode: -32000, message: "boom", hostSpawned: true, hostAlive: false, detail: "boom" }
     filesystem has []
 
 scenario "a parse-error answer with a null id is relayed as the host error of the one outstanding request":
   when: Exchange { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "parse-error"] }, method: "reset", params: {} }
   predict rejection HOST_ERROR:
-    response ERR ExchangeError { code: "HOST_ERROR", rpcCode: -32700, hostSpawned: true, hostAlive: false }
+    response ERR ExchangeError { code: "HOST_ERROR", rpcCode: -32700, hostSpawned: true, hostAlive: false, detail: "Parse error", message: "Parse error" }
     filesystem has []
 
 scenario "a null id with any other code is a protocol violation":
   when: Exchange { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "null-id-other"] }, method: "reset", params: {} }
   predict rejection PROTOCOL_VIOLATION:
-    response ERR ExchangeError { code: "PROTOCOL_VIOLATION", hostSpawned: true, hostAlive: false }
+    response ERR ExchangeError partial { code: "PROTOCOL_VIOLATION", hostSpawned: true, hostAlive: false }
     filesystem has []
 
 scenario "a mapped arm reaches the host as kind operation.fault with its count":
   when: ArmFault { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, catalog: { AppendToStream: { NotLeader: ["once", "times", "reset"], AccessDenied: ["reset"] } }, arm: { operation: "AppendToStream", fault: "NotLeader", times: 2 } }
   predict success:
-    response OK ArmResult { armed: true, hostSawKind: "AppendToStream.NotLeader", hostSawTimes: 2 }
+    response OK ArmResult { armed: true, hostSawKind: "AppendToStream.NotLeader", hostSawTimes: 2, hostSawDetail: absent }
     filesystem has []
 
 scenario "once is a count of one":
   when: ArmFault { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, catalog: { AppendToStream: { NotLeader: ["once", "times", "reset"], AccessDenied: ["reset"] } }, arm: { operation: "AppendToStream", fault: "NotLeader", times: 1 } }
   predict success:
-    response OK ArmResult { armed: true, hostSawKind: "AppendToStream.NotLeader", hostSawTimes: 1 }
+    response OK ArmResult { armed: true, hostSawKind: "AppendToStream.NotLeader", hostSawTimes: 1, hostSawDetail: absent }
     filesystem has []
 
 scenario "an until-reset arm reaches the host as untilReset":
   when: ArmFault { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, catalog: { AppendToStream: { NotLeader: ["once", "times", "reset"], AccessDenied: ["reset"] } }, arm: { operation: "AppendToStream", fault: "NotLeader", times: "reset" } }
   predict success:
-    response OK ArmResult { armed: true, hostSawKind: "AppendToStream.NotLeader", hostSawTimes: "reset" }
+    response OK ArmResult { armed: true, hostSawKind: "AppendToStream.NotLeader", hostSawTimes: "reset", hostSawDetail: absent }
     filesystem has []
 
 scenario "a fault the catalog declares only until reset arms until reset":
   when: ArmFault { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, catalog: { AppendToStream: { NotLeader: ["once", "times", "reset"], AccessDenied: ["reset"] } }, arm: { operation: "AppendToStream", fault: "AccessDenied", times: "reset" } }
   predict success:
-    response OK ArmResult { armed: true, hostSawKind: "AppendToStream.AccessDenied", hostSawTimes: "reset" }
+    response OK ArmResult { armed: true, hostSawKind: "AppendToStream.AccessDenied", hostSawTimes: "reset", hostSawDetail: absent }
     filesystem has []
 
 scenario "a fault the catalog declares only until reset is refused for any count":
@@ -434,7 +434,7 @@ scenario "transformSeed's values travel opaque, in both directions":
 scenario "a host that serves no seed transform answers method not found":
   when: Exchange { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/seed-host.mjs", "--mode", "nomethod"] }, method: "transformSeed", params: { service: "graph", records: [] } }
   predict rejection HOST_ERROR:
-    response ERR ExchangeError { code: "HOST_ERROR", rpcCode: -32601, hostSpawned: true, hostAlive: false }
+    response ERR ExchangeError { code: "HOST_ERROR", rpcCode: -32601, hostSpawned: true, hostAlive: false, detail: "Method not found: transformSeed", message: "Method not found: transformSeed" }
     filesystem has []
 
 scenario "a host may answer a response-role delivery in the invoke result's shape":
@@ -446,7 +446,7 @@ scenario "a host may answer a response-role delivery in the invoke result's shap
 scenario "a delivery answered with a status but no body is a protocol violation":
   when: Exchange { host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "deliver-answers-bad"] }, method: "deliver", params: { service: "response", event: "deletion.started", payload: { n: 1 } } }
   predict rejection PROTOCOL_VIOLATION:
-    response ERR ExchangeError { code: "PROTOCOL_VIOLATION", hostSpawned: true, hostAlive: false }
+    response ERR ExchangeError partial { code: "PROTOCOL_VIOLATION", hostSpawned: true, hostAlive: false }
     filesystem has []
 
 scenario "a host may answer a delivery to a service in the invoke result's shape too":

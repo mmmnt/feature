@@ -51,12 +51,13 @@ scenario "successful charge capture":
       amountCents: @when.amountCents
       currency: @when.currency
       chargeRef: any string
+      id: any string
     } ]
 
 scenario "rejects a non-positive amount":
   when: CaptureCharge { amountCents: 0, currency: "usd" }
   predict rejection AMOUNT_INVALID:
-    response 422 ErrorResponse { code: "AMOUNT_INVALID" }
+    response 422 ErrorResponse { code: "AMOUNT_INVALID", message: any string }
     payments has []
     database has []
 
@@ -73,9 +74,11 @@ scenario "the receipt records the charge id the instrument assigned":
       amount: @when.amountCents
       currency: "usd"
       id: any string
+      livemode: false
     } ]
     database has [ INSERT with ReceiptRow {
       amountCents: @when.amountCents
       currency: @when.currency
       chargeRef: @payments[0].id
+      id: any string
     } ]
