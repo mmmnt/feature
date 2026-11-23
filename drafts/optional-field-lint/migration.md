@@ -6,12 +6,12 @@ Each row is one value block the lint flags. *Proposed* is the choice; *Statement
 
 | Choice | Blocks |
 |---|---|
-| absent | 225 |
+| absent | 230 |
 | value | 66 |
 | value (columns) | 4 |
-| absent + value | 43 |
-| partial | 45 |
-| **total** | **383** |
+| absent + value | 45 |
+| partial | 47 |
+| **total** | **392** |
 
 flmnt's three blocks (FLMNT-SPEC-PRJ-007 Erase, two REMOVE `NodeRecord`s; FLMNT-SPEC-PRJ-004 Rebuild, one INSERT `NodeRecord`) are `partial` by ruling L5 and are not repeated below.
 
@@ -152,7 +152,7 @@ flmnt's three blocks (FLMNT-SPEC-PRJ-007 Erase, two REMOVE `NodeRecord`s; FLMNT-
 | 1 | the adapter declares snapshot diff and state | response: ObserveResult | last, peekEqualsStop, readVia | absent | `last: absent, peekEqualsStop: absent, readVia: absent` | never returned in this scenario; stating it absent makes the prediction whole |
 | 2 | a window reports keys created and changed, seeds excluded | response: ObserveResult | peekEqualsStop, readVia | absent | `peekEqualsStop: absent, readVia: absent` | never returned in this scenario; stating it absent makes the prediction whole |
 | 3 | rotation and tags are changes of state | response: ObserveResult | peekEqualsStop, readVia | absent | `peekEqualsStop: absent, readVia: absent` | never returned in this scenario; stating it absent makes the prediction whole |
-| 4 | deleting a key's only alias changes its identity, so it reads as one removal and one insertion | response: ObserveResult | last, peekEqualsStop, readVia | absent + value | `peekEqualsStop: absent, readVia: absent, last: "INSERT:22d0db89-7584-411e-a36c-782807ee5391,REMOVE:three"` | every omitted field is either never returned or always the same value here |
+| 4 | deleting a key's only alias changes its identity, so it reads as one removal and one insertion | response: ObserveResult | last, peekEqualsStop, readVia | partial | `partial` | MG6 (Linux, d2cd2f0d): `last` carries the key id KMS mints, which differs per run; macOS showed one value by chance |
 | 5 | a key scheduled for deletion is a change, not a removal | response: ObserveResult | peekEqualsStop, readVia | absent | `peekEqualsStop: absent, readVia: absent` | never returned in this scenario; stating it absent makes the prediction whole |
 | 6 | two namespaces never see each other's keys | response: ObserveResult | peekEqualsStop, readVia | absent | `peekEqualsStop: absent, readVia: absent` | never returned in this scenario; stating it absent makes the prediction whole |
 | 7 | a key with no namespace tag and no namespaced alias is nobody's effect | response: ObserveResult | last, peekEqualsStop, readVia | absent | `last: absent, peekEqualsStop: absent, readVia: absent` | never returned in this scenario; stating it absent makes the prediction whole |
@@ -667,6 +667,21 @@ response: {"adapter":"@mmmnt/feat-adapter-handler","commands":{"Ping":{"module":
 ```
 
 
+
+## Added by MG6: blocks new on main 8559e92 (Feature v0.1.81, deliver-answer), proposals from the Linux run
+
+| # | Spec | Scenario | Block | Omitted | Proposed | Statement | Reason |
+|---|---|---|---|---|---|---|---|
+| 1 | SPEC-RPC-001 | a delivery answered with a status but no body is a protocol violation | response: ExchangeError | detail, message, rpcCode | partial | `partial` | detail is long diagnostic text — the scenario's claim is the listed fields |
+| 2 | SPEC-RT-016 | a delivery to response that answers is the case's response, and its prediction passes | response: RunResult | readHint, violationCodes, violations | absent | `readHint: absent, violationCodes: absent, violations: absent` | never returned in this scenario; stating it absent makes the prediction whole |
+| 3 | SPEC-RT-016 | a delivery to response whose answer differs from the predicted response fails the case | response: RunResult | readHint, violationCodes | absent + value | `readHint: absent, violationCodes: ""` | every omitted field is either never returned or always the same value here |
+| 4 | SPEC-RT-016 | a response predicted when nothing was delivered to response fails as no response captured | response: RunResult | readHint, violationCodes | absent + value | `readHint: absent, violationCodes: ""` | every omitted field is either never returned or always the same value here |
+| 5 | SPEC-RT-016 | a delivery to response that answers nothing leaves the case with no response | response: RunResult | readHint, violationCodes | absent + value | `readHint: absent, violationCodes: ""` | every omitted field is either never returned or always the same value here |
+| 6 | SPEC-RT-016 | when several deliveries to response answer, the last answer is the case's response | response: RunResult | readHint, violationCodes, violations | absent | `readHint: absent, violationCodes: absent, violations: absent` | never returned in this scenario; stating it absent makes the prediction whole |
+| 7 | SPEC-RT-016 | a later delivery to response that answers nothing keeps the earlier answer | response: RunResult | readHint, violationCodes, violations | absent | `readHint: absent, violationCodes: absent, violations: absent` | never returned in this scenario; stating it absent makes the prediction whole |
+| 8 | SPEC-RT-016 | a service's answer to a delivery is never the case's response | response: RunResult | readHint, violationCodes, violations | absent | `readHint: absent, violationCodes: absent, violations: absent` | never returned in this scenario; stating it absent makes the prediction whole |
+| 9 | SPEC-RT-016 | a delivery that answers, with no response predicted, is judged on its services alone | response: RunResult | readHint, violationCodes, violations | absent | `readHint: absent, violationCodes: absent, violations: absent` | never returned in this scenario; stating it absent makes the prediction whole |
+
 ## MG6 — re-check every `absent` on CI's Linux runners (plan, founder ruling d2cd2f0d)
 
 1. A throwaway Feature branch, `scratch/adr-0038-mg6-observed-fields`, from origin/main: the matcher logs each compared
@@ -677,3 +692,16 @@ response: {"adapter":"@mmmnt/feat-adapter-handler","commands":{"Ping":{"module":
    `absent` that Linux returned in any row is corrected (to its value if constant and short, else `partial`); a
    proposed value that differs on Linux is corrected the same way; blocks new since this table was written are added.
 3. The corrections are listed here before the founder is asked to agree the set.
+
+### MG6 result (CI run 45110222262, ubuntu-latest, Node 22, 24 and 26; draft PR mmmnt/feature#18, closed unmerged)
+
+- Every field proposed `absent` (225 blocks) was absent on Linux too, in every row and on every Node: no correction.
+- Two observed values differ from macOS:
+  - SPEC-ADPKMS-001 "deleting a key's only alias changes its identity…": `last` carries the key id KMS mints → corrected
+    from `absent + value` to `partial`.
+  - SPEC-RPC-002 "a role configured with another host command…": `detail` carries a process id; it was already
+    `partial`, so no change.
+- Nine blocks are new on main 8559e92 (v0.1.81: eight SPEC-RT-016 `RunResult` blocks and one SPEC-RPC-001
+  `ExchangeError` block); they are added above with proposals from the Linux run.
+- One block in the table is not on main: the SPEC-CORE-001 `'partial'` refusal outline, which exists only in this
+  draft's `run.patch`; it stays (MG1 columns).
