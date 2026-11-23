@@ -1,6 +1,6 @@
-# ADR-0037 — A delivery's answer is the case's response
+# ADR-0037 — a delivery's answer is the case's response
 
-- **Status:** Draft
+- **Status:** Accepted (founder, 2026-11-23: agreed f541c13a-c7c3-52ba-868f-2bcdb143042a; DA1–DA4 ruled 78c4b277, readability b9ebf9cb, C3 `ran` 9ae15423)
 - **Rulings:** flmnt founder ruling `814db4fb-8c72-577a-9f9e-132ec6916422` (2026-11-22, "Feature change (Recommended)"), the
   mechanism for flmnt ruling `10d35eb4-a501-5547-b264-84224be37944` (a spec host reports what a delivered policy issued);
   DA1–DA4 ruled `78c4b277-1afa-5363-bc0c-b7bbe9286caa`.

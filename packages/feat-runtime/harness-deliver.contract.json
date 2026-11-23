@@ -47,6 +47,9 @@
           "items": {
             "type": "string"
           }
+        },
+        "violationCodes": {
+          "type": "string"
         }
       }
     },
