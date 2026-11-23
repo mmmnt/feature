@@ -343,56 +343,80 @@ scenario "a word that merely begins with fault stays freeform context":
     response OK BuiltSpec equals fixture "../../packages/feat-core/fixtures/ok/fault-prefix-word.ir.json"
     filesystem has []
 
-scenario outline "rejects invalid specs with the precise code":
+scenario outline "rejects invalid specs with the precise code, naming the line and a hint":
   when: Parse { spec: <spec>, config: "packages/feat-core/fixtures/parse.config.json" }
   predict rejection <code>:
-    response ERR ParseError { code: <code> }
+    response ERR ParseError { code: <code>, line: <line>, hint: matching <hint> }
     filesystem has []
   examples:
-    | spec                                    | code                      |
-    | "packages/feat-core/fixtures/bad/missing-pragma.feat"      | "MISSING_PRAGMA"          |
-    | "packages/feat-core/fixtures/bad/unsupported-version.feat" | "UNSUPPORTED_VERSION"     |
-    | "packages/feat-core/fixtures/bad/malformed-syntax.feat"    | "MALFORMED_SYNTAX"        |
-    | "packages/feat-core/fixtures/bad/unknown-service.feat"     | "UNKNOWN_SERVICE_KEY"     |
-    | "packages/feat-core/fixtures/bad/unknown-capture-service.feat" | "UNKNOWN_SERVICE_KEY" |
-    | "packages/feat-core/fixtures/bad/unknown-command.feat"     | "UNKNOWN_COMMAND"         |
-    | "packages/feat-core/fixtures/bad/undeclared-schema.feat"   | "UNDECLARED_SCHEMA"       |
-    | "packages/feat-core/fixtures/bad/unknown-actor.feat"       | "UNKNOWN_ACTOR"           |
-    | "packages/feat-core/fixtures/bad/duplicate-scenario.feat"  | "DUPLICATE_SCENARIO_NAME" |
-    | "packages/feat-core/fixtures/bad/trigger-mismatch.feat"    | "TRIGGER_MISMATCH"        |
-    | "packages/feat-core/fixtures/bad/query-side-effect.feat"   | "QUERY_SIDE_EFFECT"       |
-    | "packages/feat-core/fixtures/bad/incomplete-prediction.feat" | "INCOMPLETE_PREDICTION" |
-    | "packages/feat-core/fixtures/bad/missing-minimum.feat"     | "MISSING_MINIMUM"         |
-    | "packages/feat-core/fixtures/bad/rejection-id-lower-camel.feat"      | "MALFORMED_SYNTAX" |
-    | "packages/feat-core/fixtures/bad/rejection-id-mixed-case-snake.feat" | "MALFORMED_SYNTAX" |
-    | "packages/feat-core/fixtures/bad/rejection-id-kebab.feat"            | "MALFORMED_SYNTAX" |
-    | "packages/feat-core/fixtures/bad/fault-missing-operation.feat"      | "MALFORMED_SYNTAX"        |
-    | "packages/feat-core/fixtures/bad/fault-lowercase-operation.feat"    | "MALFORMED_SYNTAX"        |
-    | "packages/feat-core/fixtures/bad/fault-times-zero.feat"             | "MALFORMED_SYNTAX"        |
-    | "packages/feat-core/fixtures/bad/fault-times-without-count.feat"    | "MALFORMED_SYNTAX"        |
-    | "packages/feat-core/fixtures/bad/fault-trailing-junk.feat"          | "MALFORMED_SYNTAX"        |
-    | "packages/feat-core/fixtures/bad/fault-bare-keyword.feat"           | "MALFORMED_SYNTAX"        |
-    | "packages/feat-core/fixtures/bad/fault-unknown-service.feat"        | "UNKNOWN_SERVICE_KEY"     |
-    | "packages/feat-core/fixtures/bad/not-not.feat"                      | "MALFORMED_SYNTAX"        |
-    | "packages/feat-core/fixtures/bad/random-seed-negative.feat"         | "MALFORMED_SYNTAX"        |
-    | "packages/feat-core/fixtures/bad/random-seed-missing.feat"          | "MALFORMED_SYNTAX"        |
-    | "packages/feat-core/fixtures/bad/not-absent.feat"                   | "MALFORMED_SYNTAX"        |
-    | "packages/feat-core/fixtures/bad/not-bare-any.feat"                 | "MALFORMED_SYNTAX"        |
-    | "packages/feat-core/fixtures/bad/not-block.feat"                    | "MALFORMED_SYNTAX"        |
-    | "packages/feat-core/fixtures/bad/not-bare.feat"                     | "MALFORMED_SYNTAX"        |
-    | "packages/feat-core/fixtures/bad/not-unknown-capture-service.feat"  | "UNKNOWN_SERVICE_KEY"     |
-    | "packages/feat-core/fixtures/bad/f32-zero-dims.feat"                | "MALFORMED_SYNTAX"        |
-    | "packages/feat-core/fixtures/bad/f32-fractional-dims.feat"          | "MALFORMED_SYNTAX"        |
-    | "packages/feat-core/fixtures/bad/f32-uppercase-digest.feat"         | "MALFORMED_SYNTAX"        |
-    | "packages/feat-core/fixtures/bad/f32-short-digest.feat"             | "MALFORMED_SYNTAX"        |
-    | "packages/feat-core/fixtures/bad/f32-missing-sha256.feat"           | "MALFORMED_SYNTAX"        |
-    | "packages/feat-core/fixtures/bad/f32-bare.feat"                     | "MALFORMED_SYNTAX"        |
-    | "packages/feat-core/fixtures/bad/not-f32.feat"                      | "MALFORMED_SYNTAX"        |
-    | "packages/feat-core/fixtures/bad/list-absent-item.feat"             | "MALFORMED_SYNTAX"        |
-    | "packages/feat-core/fixtures/bad/list-absent-field.feat"            | "MALFORMED_SYNTAX"        |
-    | "packages/feat-core/fixtures/bad/not-list.feat"                     | "MALFORMED_SYNTAX"        |
-    | "packages/feat-core/fixtures/bad/list-unterminated.feat"            | "MALFORMED_SYNTAX"        |
-    | "packages/feat-core/fixtures/bad/list-unknown-capture-service.feat" | "UNKNOWN_SERVICE_KEY"     |
+    | spec | code | line | hint |
+    | "packages/feat-core/fixtures/bad/missing-pragma.feat" | "MISSING_PRAGMA" | 2 | "^Add 'feat 1\\.0' as the first line\\.$" |
+    | "packages/feat-core/fixtures/bad/malformed-syntax.feat" | "MALFORMED_SYNTAX" | 22 | "^Use 'predict success:', 'predict rejection <ID>:' \\(ID is UPPER_SNAKE or UpperCamel\\), or 'predict error <CODE>:' \\(CODE is UPPER_SNAKE\\)$" |
+    | "packages/feat-core/fixtures/bad/rejection-id-lower-camel.feat" | "MALFORMED_SYNTAX" | 24 | "^Use 'predict success:', 'predict rejection <ID>:' \\(ID is UPPER_SNAKE or UpperCamel\\), or 'predict error <CODE>:' \\(CODE is UPPER_SNAKE\\)$" |
+    | "packages/feat-core/fixtures/bad/rejection-id-mixed-case-snake.feat" | "MALFORMED_SYNTAX" | 24 | "^Use 'predict success:', 'predict rejection <ID>:' \\(ID is UPPER_SNAKE or UpperCamel\\), or 'predict error <CODE>:' \\(CODE is UPPER_SNAKE\\)$" |
+    | "packages/feat-core/fixtures/bad/rejection-id-kebab.feat" | "MALFORMED_SYNTAX" | 24 | "^Use 'predict success:', 'predict rejection <ID>:' \\(ID is UPPER_SNAKE or UpperCamel\\), or 'predict error <CODE>:' \\(CODE is UPPER_SNAKE\\)$" |
+    | "packages/feat-core/fixtures/bad/fault-missing-operation.feat" | "MALFORMED_SYNTAX" | 22 | "^Form: fault <service> <Operation> <Fault> \\[\\{ json \\}\\] \\[once \\x7c times <n> \\x7c until reset\\]$" |
+    | "packages/feat-core/fixtures/bad/fault-lowercase-operation.feat" | "MALFORMED_SYNTAX" | 22 | "^Form: fault <service> <Operation> <Fault> \\[\\{ json \\}\\] \\[once \\x7c times <n> \\x7c until reset\\]$" |
+    | "packages/feat-core/fixtures/bad/fault-times-zero.feat" | "MALFORMED_SYNTAX" | 22 | "^Form: fault <service> <Operation> <Fault> \\[\\{ json \\}\\] \\[once \\x7c times <n> \\x7c until reset\\]$" |
+    | "packages/feat-core/fixtures/bad/fault-times-without-count.feat" | "MALFORMED_SYNTAX" | 22 | "^Form: fault <service> <Operation> <Fault> \\[\\{ json \\}\\] \\[once \\x7c times <n> \\x7c until reset\\]$" |
+    | "packages/feat-core/fixtures/bad/fault-trailing-junk.feat" | "MALFORMED_SYNTAX" | 22 | "^Form: fault <service> <Operation> <Fault> \\[\\{ json \\}\\] \\[once \\x7c times <n> \\x7c until reset\\]$" |
+    | "packages/feat-core/fixtures/bad/fault-bare-keyword.feat" | "MALFORMED_SYNTAX" | 22 | "^Form: fault <service> <Operation> <Fault> \\[\\{ json \\}\\] \\[once \\x7c times <n> \\x7c until reset\\]$" |
+    | "packages/feat-core/fixtures/bad/random-seed-negative.feat" | "MALFORMED_SYNTAX" | 22 | "^Write 'random seed <n>', n a whole number from 0 to 9007199254740991\\.$" |
+    | "packages/feat-core/fixtures/bad/random-seed-missing.feat" | "MALFORMED_SYNTAX" | 22 | "^Write 'random seed <n>', n a whole number from 0 to 9007199254740991\\.$" |
+
+scenario outline "rejects invalid specs with the precise code, with a hint and no line":
+  when: Parse { spec: <spec>, config: "packages/feat-core/fixtures/parse.config.json" }
+  predict rejection <code>:
+    response ERR ParseError { code: <code>, line: absent, hint: matching <hint> }
+    filesystem has []
+  examples:
+    | spec | code | hint |
+    | "packages/feat-core/fixtures/bad/unknown-service.feat" | "UNKNOWN_SERVICE_KEY" | "^Configured services: eventStore$" |
+    | "packages/feat-core/fixtures/bad/unknown-capture-service.feat" | "UNKNOWN_SERVICE_KEY" | "^Configured services: eventStore$" |
+    | "packages/feat-core/fixtures/bad/unknown-command.feat" | "UNKNOWN_COMMAND" | "^Configured commands: DoThing$" |
+    | "packages/feat-core/fixtures/bad/undeclared-schema.feat" | "UNDECLARED_SCHEMA" | "^Declared schemas: ThingInput, ThingResult$" |
+    | "packages/feat-core/fixtures/bad/unknown-actor.feat" | "UNKNOWN_ACTOR" | "^Configured actors: admin$" |
+    | "packages/feat-core/fixtures/bad/duplicate-scenario.feat" | "DUPLICATE_SCENARIO_NAME" | "^Scenario names are failure anchors and must be unique per spec\\.$" |
+    | "packages/feat-core/fixtures/bad/incomplete-prediction.feat" | "INCOMPLETE_PREDICTION" | "^Every configured service must appear; 'has \\[\\]' is the explicit zero-assertion\\.$" |
+    | "packages/feat-core/fixtures/bad/missing-minimum.feat" | "MISSING_MINIMUM" | "^See grammar reference §1\\.2\\.$" |
+    | "packages/feat-core/fixtures/bad/fault-unknown-service.feat" | "UNKNOWN_SERVICE_KEY" | "^Configured services: eventStore$" |
+    | "packages/feat-core/fixtures/bad/not-not.feat" | "MALFORMED_SYNTAX" | "^Write the operand itself: 'not not M' is 'M'\\.$" |
+    | "packages/feat-core/fixtures/bad/not-absent.feat" | "MALFORMED_SYNTAX" | "^Write 'any' for a field that must be present\\.$" |
+    | "packages/feat-core/fixtures/bad/not-bare-any.feat" | "MALFORMED_SYNTAX" | "^Write 'absent' for a field that must not exist; 'not any <type>' negates a type check\\.$" |
+    | "packages/feat-core/fixtures/bad/not-block.feat" | "MALFORMED_SYNTAX" | "^Negate a field inside the block instead: '\\{ field: not <matcher> \\}'\\.$" |
+    | "packages/feat-core/fixtures/bad/not-bare.feat" | "MALFORMED_SYNTAX" | "^Write 'not' and one matcher on the same line: 'not \"Failed\"', 'not @when\\.id', 'not matching \"\\^tmp-\"', 'not any uuid'\\.$" |
+    | "packages/feat-core/fixtures/bad/not-unknown-capture-service.feat" | "UNKNOWN_SERVICE_KEY" | "^Configured services: eventStore$" |
+    | "packages/feat-core/fixtures/bad/f32-zero-dims.feat" | "MALFORMED_SYNTAX" | "^Write 'f32 <dims> sha256 \"<64 lowercase hex>\"', e\\.g\\. 'embedding: f32 384 sha256 \"9c1e…\"'\\.$" |
+    | "packages/feat-core/fixtures/bad/f32-fractional-dims.feat" | "MALFORMED_SYNTAX" | "^Write 'f32 <dims> sha256 \"<64 lowercase hex>\"', e\\.g\\. 'embedding: f32 384 sha256 \"9c1e…\"'\\.$" |
+    | "packages/feat-core/fixtures/bad/f32-uppercase-digest.feat" | "MALFORMED_SYNTAX" | "^Write 'f32 <dims> sha256 \"<64 lowercase hex>\"', e\\.g\\. 'embedding: f32 384 sha256 \"9c1e…\"'\\.$" |
+    | "packages/feat-core/fixtures/bad/f32-short-digest.feat" | "MALFORMED_SYNTAX" | "^Write 'f32 <dims> sha256 \"<64 lowercase hex>\"', e\\.g\\. 'embedding: f32 384 sha256 \"9c1e…\"'\\.$" |
+    | "packages/feat-core/fixtures/bad/f32-missing-sha256.feat" | "MALFORMED_SYNTAX" | "^Write 'f32 <dims> sha256 \"<64 lowercase hex>\"', e\\.g\\. 'embedding: f32 384 sha256 \"9c1e…\"'\\.$" |
+    | "packages/feat-core/fixtures/bad/f32-bare.feat" | "MALFORMED_SYNTAX" | "^Write 'f32 <dims> sha256 \"<64 lowercase hex>\"', e\\.g\\. 'embedding: f32 384 sha256 \"9c1e…\"'\\.$" |
+    | "packages/feat-core/fixtures/bad/not-f32.feat" | "MALFORMED_SYNTAX" | "^Write 'f32 <dims> sha256 \"<64 lowercase hex>\"', e\\.g\\. 'embedding: f32 384 sha256 \"9c1e…\"'\\.$" |
+    | "packages/feat-core/fixtures/bad/list-absent-item.feat" | "MALFORMED_SYNTAX" | "^Write a shorter list: a list predicts every item it holds\\.$" |
+    | "packages/feat-core/fixtures/bad/list-absent-field.feat" | "MALFORMED_SYNTAX" | "^Leave the field out\\.$" |
+    | "packages/feat-core/fixtures/bad/not-list.feat" | "MALFORMED_SYNTAX" | "^Negate a field inside an item instead: '\\[ \\{ field: not <matcher> \\} \\]'\\.$" |
+    | "packages/feat-core/fixtures/bad/list-unknown-capture-service.feat" | "UNKNOWN_SERVICE_KEY" | "^Configured services: eventStore$" |
+
+scenario outline "rejects invalid specs with the precise code, naming the line, with no hint":
+  when: Parse { spec: <spec>, config: "packages/feat-core/fixtures/parse.config.json" }
+  predict rejection <code>:
+    response ERR ParseError { code: <code>, line: <line>, hint: absent }
+    filesystem has []
+  examples:
+    | spec | code | line |
+    | "packages/feat-core/fixtures/bad/unsupported-version.feat" | "UNSUPPORTED_VERSION" | 1 |
+    | "packages/feat-core/fixtures/bad/list-unterminated.feat" | "MALFORMED_SYNTAX" | 27 |
+
+scenario outline "rejects invalid specs with the precise code, with neither a line nor a hint":
+  when: Parse { spec: <spec>, config: "packages/feat-core/fixtures/parse.config.json" }
+  predict rejection <code>:
+    response ERR ParseError { code: <code>, line: absent, hint: absent }
+    filesystem has []
+  examples:
+    | spec | code |
+    | "packages/feat-core/fixtures/bad/trigger-mismatch.feat" | "TRIGGER_MISMATCH" |
+    | "packages/feat-core/fixtures/bad/query-side-effect.feat" | "QUERY_SIDE_EFFECT" |
 
 scenario outline "refuses a negation of a matcher it does not take, naming the spelling to use":
   when: Parse { spec: <spec>, config: "packages/feat-core/fixtures/parse.config.json" }
@@ -439,18 +463,26 @@ scenario "a record and a response block marked partial record partial: true, and
     response OK BuiltSpec equals fixture "../../packages/feat-core/fixtures/ok/partial-blocks.ir.json"
     filesystem has []
 
-scenario outline "refuses 'partial' anywhere but a predicted record's or response's head, naming where it goes":
+scenario outline "refuses 'partial' anywhere but a predicted record's or response's head, naming where it goes, with no line":
   when: Parse { spec: <spec>, config: "packages/feat-core/fixtures/parse-observes.config.json" }
   predict rejection MALFORMED_SYNTAX:
-    response ERR ParseError { code: "MALFORMED_SYNTAX", message: matching <message>, hint: matching <hint> }
+    response ERR ParseError { code: "MALFORMED_SYNTAX", message: matching <message>, hint: matching <hint>, line: absent }
     filesystem has []
   examples:
-    | spec                                                            | message                                       | hint                                   |
+    | spec                                                            | message                                       | hint |
     | "packages/feat-core/fixtures/bad/partial-in-payload.feat"       | "^'partial' is refused in data"               | "^Remove 'partial'; it marks"          |
     | "packages/feat-core/fixtures/bad/partial-on-seed.feat"          | "^'partial' is refused on a seed"             | "^Remove 'partial' from the seed"      |
     | "packages/feat-core/fixtures/bad/partial-list-item.feat"        | "^'partial' is refused inside a value"        | "^Put 'partial' after the record"      |
     | "packages/feat-core/fixtures/bad/partial-field.feat"            | "^'partial' is refused inside a value"        | "^Put 'partial' after the record"      |
     | "packages/feat-core/fixtures/bad/partial-record-golden.feat"    | "^'partial' is refused beside 'equals fixture'" | "^Use either a golden or a partial"  |
-    | "packages/feat-core/fixtures/bad/partial-response-golden.feat"  | "^'partial' is refused beside 'equals fixture'" | "^Use either a golden or a partial"  |
     | "packages/feat-core/fixtures/bad/partial-golden-after.feat"     | "^'partial' is refused beside 'equals fixture'" | "^Use either a golden or a partial"  |
-    | "packages/feat-core/fixtures/bad/partial-no-block.feat"         | "^'partial' must be followed by a value block" | "^Write '<Schema> partial"            |
+
+scenario outline "refuses 'partial' anywhere but a predicted record's or response's head, naming where it goes, naming the line":
+  when: Parse { spec: <spec>, config: "packages/feat-core/fixtures/parse-observes.config.json" }
+  predict rejection MALFORMED_SYNTAX:
+    response ERR ParseError { code: "MALFORMED_SYNTAX", message: matching <message>, hint: matching <hint>, line: <line> }
+    filesystem has []
+  examples:
+    | spec                                                            | message                                       | hint | line |
+    | "packages/feat-core/fixtures/bad/partial-response-golden.feat"  | "^'partial' is refused beside 'equals fixture'" | "^Use either a golden or a partial" | 26 |
+    | "packages/feat-core/fixtures/bad/partial-no-block.feat"         | "^'partial' must be followed by a value block" | "^Write '<Schema> partial" | 26 |

@@ -705,3 +705,18 @@ response: {"adapter":"@mmmnt/feat-adapter-handler","commands":{"Ping":{"module":
   `ExchangeError` block); they are added above with proposals from the Linux run.
 - One block in the table is not on main: the SPEC-CORE-001 `'partial'` refusal outline, which exists only in this
   draft's `run.patch`; it stays (MG1 columns).
+
+## Applied after review (2026-11-23)
+
+- **SPEC-CORE-001, the two outlines MG1 could not express** (an outline cell is always a literal, so a row without
+  `line`/`hint` cannot say `absent` through a column): split by founder ruling a83367c1-d6d0-5015-abd0-25b836193c5d
+  ("Split each outline (Recommended)").
+  - "rejects invalid specs with the precise code" (43 rows) → four outlines by what each row carries: "…, naming the line
+    and a hint" (13), "…, with a hint and no line" (26), "…, naming the line, with no hint" (2), "…, with neither a line
+    nor a hint" (2). Each row's hint is stated as an anchored regex of its exact text (`|` written `\x7c`, since a cell
+    cannot hold a raw `|`); values from the Linux run, identical on Node 22, 24 and 26.
+  - "refuses 'partial' anywhere but a predicted record's or response's head, naming where it goes" (8 rows) → "…, with no
+    line" (6) and "…, naming the line" (2, line 26).
+- **SPEC-RT-016, four `RunResult` blocks** whose decisions predate v0.1.81's optional `violationCodes`: each states
+  `violationCodes: absent`, by the ruled MG6 method (d2cd2f0d) — the field was absent in every Linux observation (Node
+  22, 24, 26).

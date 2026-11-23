@@ -75,6 +75,7 @@ scenario "an event delivered to a service reaches that service's deliver() insid
       calls: "reset:store start:store deliver:store=Placed/1 stop:store"
       readHint: absent
       violations: absent
+      violationCodes: absent
     }
     filesystem has []
 
@@ -89,6 +90,7 @@ scenario "an event delivered to response reaches the response adapter, and no se
       calls: "reset:store start:store deliver:response=Placed/1 stop:store"
       readHint: absent
       violations: absent
+      violationCodes: absent
     }
     filesystem has []
 
@@ -103,6 +105,7 @@ scenario "a sequence that delivers to a service and to response goes out in the 
       calls: "reset:store start:store deliver:store=Placed/1 deliver:response=Placed/2 deliver:store=Shipped/3 stop:store"
       readHint: absent
       violations: absent
+      violationCodes: absent
     }
     filesystem has []
 
@@ -117,6 +120,7 @@ scenario "a response delivery reaches a response adapter even when no service ca
       calls: "reset:store start:store deliver:response=Placed/1 stop:store"
       readHint: absent
       violations: absent
+      violationCodes: absent
     }
     filesystem has []
 
