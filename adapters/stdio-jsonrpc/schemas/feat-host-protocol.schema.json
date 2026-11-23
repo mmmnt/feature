@@ -402,7 +402,10 @@
         }
       },
       "startCapture": { "$ref": "#/definitions/empty" },
-      "deliver": { "$ref": "#/definitions/empty" },
+      "deliver": {
+        "description": "ADR-0037: a delivery answers nothing ({}), or, for the response role, what it answers in the invoke result's shape, which becomes the case's captured response.",
+        "anyOf": [{ "$ref": "#/definitions/empty" }, { "$ref": "#/definitions/results/invoke" }]
+      },
       "fault": { "$ref": "#/definitions/empty" },
       "invoke": {
         "type": "object",

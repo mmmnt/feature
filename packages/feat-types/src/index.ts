@@ -286,9 +286,11 @@ export interface FeatResponseAdapter extends ReportsNamespace {
   invoke(command: string, input: Record<string, unknown>, actor?: string): Promise<CapturedResponse>;
   /**
    * Optional (ADR-0036): receive an event a scenario delivers `to response`. A response adapter without
-   * it cannot run such a scenario (DELIVER_UNSUPPORTED, service "response").
+   * it cannot run such a scenario (DELIVER_UNSUPPORTED, service "response"). ADR-0037: what it answers, when it
+   * answers a response, is the case's captured response, so a delivery-only case can predict `response`; an
+   * adapter that answers nothing (undefined) leaves the case with no captured response.
    */
-  deliver?(event: string, payload: Record<string, unknown>): Promise<void>;
+  deliver?(event: string, payload: Record<string, unknown>): Promise<CapturedResponse | void>;
 }
 
 /** What the harness hands a response adapter's setup() besides its invoke options (SPEC-RT-008). */
