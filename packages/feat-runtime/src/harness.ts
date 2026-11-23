@@ -462,7 +462,11 @@ export async function createHarness(opts: { configPath: string; specPath?: strin
       // A delivered stimulus may also name what a precondition produced.
       const sent = resolveGivenRefs(d.payload, givenResponse, c.anchor) as Record<string, unknown>;
       sentDelivers.push(sent);
-      await adapter.deliver(d.event, sent);
+      const answered = await adapter.deliver(d.event, sent);
+      // ADR-0037: the response role's answer to a delivery is the case's captured response. A case has
+      // no `when:` beside its deliveries (TRIGGER_MISMATCH), so the last delivery to response that
+      // answered one is the response a `response` prediction is compared against.
+      if (d.service === "response" && answered) captured = answered;
     }
 
     await awaitConvergence(c.prediction.services, config.services, services);

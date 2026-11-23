@@ -95,8 +95,11 @@ export class StdioResponseAdapter extends Role implements FeatResponseAdapter {
     return (await this.call("invoke", { command, input, ...(actor !== undefined ? { actor } : {}) })) as CapturedResponse;
   }
   /** ADR-0036: `deliver … to response` — the host's deliver method, with the response role as its service. */
-  async deliver(event: string, payload: Record<string, unknown>): Promise<void> {
-    await this.call("deliver", { service: "response", event, payload });
+  async deliver(event: string, payload: Record<string, unknown>): Promise<CapturedResponse | void> {
+    const answer = (await this.call("deliver", { service: "response", event, payload })) as Partial<CapturedResponse> | undefined;
+    // ADR-0037: a host that answers a delivery with { status, body } answers the case's response; an
+    // empty answer (every host before it) leaves the case with none.
+    if (answer && "status" in answer && "body" in answer) return answer as CapturedResponse;
   }
 }
 
