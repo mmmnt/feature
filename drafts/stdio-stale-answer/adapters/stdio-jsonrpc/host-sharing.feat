@@ -23,12 +23,17 @@ feat 1.0
 # carries id n, the request carried n+1), n+1's answer went to n+2, and every later result of the
 # file was wrong or misleading. Amended: the request that timed out fails HOST_TIMEOUT; the adapter
 # writes nothing more to that host and ends it (close stdin, kill after the grace period); every
-# pending and every later call of every role of that file fails HOST_CRASHED, its detail naming the
-# request that timed out; the registry entry is dropped, so no other file is affected and a file
+# pending and every later call of every role of that file fails HOST_ENDED, a code of its own, its
+# detail naming the method that timed out and the limit (a real crash keeps HOST_CRASHED); the registry entry is dropped, so no other file is affected and a file
 # whose roles all leave and set up again gets a fresh host. The limit stays 30 s and is not
 # configurable on a shared host; RunFiles alone passes its registry a shorter one (requestTimeoutMs)
 # so a scenario need not wait 30 s. No protocol or schema change; the version stays 2. The one-shot
 # exchange (SPEC-RPC-001) already ends its host on a timeout and is unchanged.
+# Founder rulings cd46cd64 (2026-11-23) on workshop 3792ac58: (1) end the host; (2) a new code
+# HOST_ENDED, not HOST_CRASHED, for the pending and later calls, its detail naming the method and the
+# limit, a real crash keeping HOST_CRASHED; (3) the shorter limit is a HostRegistry constructor
+# parameter only the test driver passes; (4) close stdin, then kill after 2 s, in the background;
+# (5) release as a minor bump, 0.8.0, once the build is agreed.
 # The fake host's late-invoke mode answers requests one at a time, as a host is bound to, and answers
 # the first invoke 600 ms late, so the requests written after it wait behind it. It logs every method
 # it receives; receivedAfterTimeout is what reached it after the client saw the timeout.
@@ -76,7 +81,8 @@ construct:
   the limit (30 s; a RunFiles file may name requestTimeoutMs for its registry), that request fails
   HOST_TIMEOUT, the connection writes nothing more to the host and ends it (close stdin, then kill
   after the grace period), and every pending and every later call of every role of that file fails
-  HOST_CRASHED with a detail naming the request that timed out; a line the host writes after that is
+  HOST_ENDED, its detail naming the method that timed out and the limit (a host that exits by
+  itself still fails them HOST_CRASHED); a line the host writes after that is
   never taken as another request's answer. The scenario clock travels by setClock on each role, after the resets (an ISO-8601 time with a zone designator freezes it, null unfreezes it).
   settle returns the host's answer: true only when the host proves every task the scenario spawned
   has finished and written; false whenever it cannot vouch. peekCapture reads the captured
@@ -93,7 +99,7 @@ enforce:
   rejects INVALID_SEED when setSeed is given a seed that is not a whole number from 0 to 9007199254740991, refused before any setSeed reaches the host
   rejects HOST_CONFIG_MISMATCH when a role's host configuration differs from the host already open for its file
   fail with HOST_TIMEOUT a request the host does not answer within the limit, then write nothing more to that host and end it
-  rejects HOST_CRASHED when a role of a file calls after the file's host exited or was ended after a timeout, the detail naming the request that timed out
+  rejects HOST_ENDED when a role of a file calls after the file's host was ended after a timeout, the detail naming the method that timed out and the limit
   never take a line the host writes after a timeout as the answer to another request
   on every outcome leave no host process running
 
@@ -246,10 +252,10 @@ scenario "a seed that is not a whole number is refused INVALID_SEED before any h
     response ERR SharingError { code: "INVALID_SEED", hostsSpawned: 1, hostsAlive: 0, rpcCode: absent, casesRun: 1, detail: "'-1' is not a whole number from 0 to 9007199254740991" }
     filesystem has []
 
-scenario "a request the host does not answer in time fails HOST_TIMEOUT and every later call of the file fails HOST_CRASHED":
+scenario "a request the host does not answer in time fails HOST_TIMEOUT and every later call of the file fails HOST_ENDED":
   when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "late-invoke"] }, roles: ["response", "log", "kv"], requestTimeoutMs: 200 }] }
   predict success:
-    response OK RunFilesResult { files: { a: { roleOutcomes: { response: "HOST_TIMEOUT", log: "HOST_CRASHED", kv: "HOST_CRASHED" }, hostsSpawned: 1, hostsAlive: 0 } }, distinctHosts: 1 }
+    response OK RunFilesResult { files: { a: { roleOutcomes: { response: "HOST_TIMEOUT", log: "HOST_ENDED", kv: "HOST_ENDED" }, hostsSpawned: 1, hostsAlive: 0 } }, distinctHosts: 1 }
     filesystem has []
 
 scenario "a host that timed out is sent nothing more, so its late answer is never taken for another request's":
@@ -258,16 +264,16 @@ scenario "a host that timed out is sent nothing more, so its late answer is neve
     response OK RunFilesResult { files: { a: { receivedAfterTimeout: [], hostsAlive: 0 } }, distinctHosts: 1 }
     filesystem has []
 
-scenario "a timeout fails the file's later cases too, naming the request that timed out":
+scenario "a timeout fails the file's later cases too, HOST_ENDED naming the method and the limit":
   when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "late-invoke"] }, roles: ["response", "log"], clocks: [null, null], requestTimeoutMs: 200 }] }
-  predict rejection HOST_CRASHED:
-    response ERR SharingError { code: "HOST_CRASHED", detail: matching "invoke", casesRun: 2, hostsSpawned: 1, hostsAlive: 0, rpcCode: absent }
+  predict rejection HOST_ENDED:
+    response ERR SharingError { code: "HOST_ENDED", detail: matching "invoke.*200 ms", casesRun: 2, hostsSpawned: 1, hostsAlive: 0, rpcCode: absent }
     filesystem has []
 
 scenario "a timeout in one file leaves another file's host serving":
   when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "late-invoke"] }, roles: ["response", "log"], requestTimeoutMs: 200 }, { name: "b", namespace: "s3b04e21257fd", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, roles: ["response", "log"], requestTimeoutMs: 200 }] }
   predict success:
-    response OK RunFilesResult { files: { a: { roleOutcomes: { response: "HOST_TIMEOUT", log: "HOST_CRASHED" }, hostsAlive: 0 }, b: { roleOutcomes: { response: "ok", log: "ok" }, hostsAlive: 0 } }, distinctHosts: 2 }
+    response OK RunFilesResult { files: { a: { roleOutcomes: { response: "HOST_TIMEOUT", log: "HOST_ENDED" }, hostsAlive: 0 }, b: { roleOutcomes: { response: "ok", log: "ok" }, hostsAlive: 0 } }, distinctHosts: 2 }
     filesystem has []
 
 scenario "a file whose roles all left after a timeout and set up again gets a fresh host":

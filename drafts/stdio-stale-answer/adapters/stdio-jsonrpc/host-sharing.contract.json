@@ -153,6 +153,7 @@
                   "enum": [
                     "ok",
                     "HOST_CRASHED",
+                    "HOST_ENDED",
                     "HOST_TIMEOUT",
                     "PROTOCOL_VIOLATION"
                   ]
@@ -258,7 +259,7 @@
             "PROTOCOL_VIOLATION",
             "HOST_ERROR",
             "PROTOCOL_MISMATCH",
-            "HOST_CRASHED",
+            "HOST_ENDED",
             "HOST_TIMEOUT"
           ]
         },
