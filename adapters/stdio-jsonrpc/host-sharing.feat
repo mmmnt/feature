@@ -10,6 +10,9 @@ feat 1.0
 # (`files: { a: { ... } }`), not an array — nested value blocks match partially, so a scenario asserts
 # only the facts it lists; array elements compare exactly, which made two scenarios with one input
 # unsatisfiable. No language change.
+# AMENDED by founder rulings 02af6938 (2026-11-24, item 6 "Fix as part of the build"; ADR-0039): a nested value block
+# is now exact, so each file's facts block states every fact the probe answers for it (the values the probe gives,
+# checked on Linux, where the timeout scenarios run); a scenario's subject is still the facts it was written for.
 # AMENDED by founder ruling 5f05d5e1 (2026-11-14, "Seedable randomness", ADR-0029): the response role carries a
 # case's random seed to the host by setSeed(seed), a whole number or null; a seed that is not a whole number
 # from 0 to 2^53-1 is INVALID_SEED before any host call; a host that answers method not found leaves the seed
@@ -119,43 +122,43 @@ contract:
 scenario "one host serves the response role and every service role of a spec file":
   when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, roles: ["response", "log", "kv"] }] }
   predict success:
-    response OK RunFilesResult { files: { a: { hostsSpawned: 1, spawnedBy: "response", endedBy: "kv", hostsAlive: 0, roleOutcomes: { response: "ok", log: "ok", kv: "ok" } } }, distinctHosts: 1 }
+    response OK RunFilesResult { files: { a: { hostsSpawned: 1, spawnedBy: "response", endedBy: "kv", hostsAlive: 0, roleOutcomes: { response: "ok", log: "ok", kv: "ok" }, aliveAfterTeardown: [true,true,false], setups: [[],["log"],["kv"]], setupNamespaces: ["s0599e33863c1","s0599e33863c1","s0599e33863c1"], hostEnvNamespace: "s0599e33863c1", clocks: [null,null,null], clockRoles: ["response","log","kv"], resetsBeforeClock: true, settled: {"log":true,"kv":true}, peeks: [2,2], stopped: 2, recordsVisibleAfterSettle: 2 } }, distinctHosts: 1 }
     filesystem has []
 
 scenario "the first role to set up spawns the host, whichever role it is":
   when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, roles: ["log", "response", "kv"] }] }
   predict success:
-    response OK RunFilesResult { files: { a: { hostsSpawned: 1, spawnedBy: "log", endedBy: "kv", hostsAlive: 0 } }, distinctHosts: 1 }
+    response OK RunFilesResult { files: { a: { hostsSpawned: 1, spawnedBy: "log", endedBy: "kv", hostsAlive: 0, aliveAfterTeardown: [true,true,false], roleOutcomes: {"log":"ok","response":"ok","kv":"ok"}, setups: [["log"],[],["kv"]], setupNamespaces: ["s0599e33863c1","s0599e33863c1","s0599e33863c1"], hostEnvNamespace: "s0599e33863c1", clocks: [null,null,null], clockRoles: ["response","log","kv"], resetsBeforeClock: true, settled: {"log":true,"kv":true}, peeks: [2,2], stopped: 2, recordsVisibleAfterSettle: 2 } }, distinctHosts: 1 }
     filesystem has []
 
 scenario "the host stays up until the last role tears down":
   when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, roles: ["response", "log", "kv"] }] }
   predict success:
-    response OK RunFilesResult { files: { a: { aliveAfterTeardown: [true, true, false], hostsAlive: 0 } }, distinctHosts: 1 }
+    response OK RunFilesResult { files: { a: { aliveAfterTeardown: [true, true, false], hostsAlive: 0, hostsSpawned: 1, spawnedBy: "response", endedBy: "kv", roleOutcomes: {"response":"ok","log":"ok","kv":"ok"}, setups: [[],["log"],["kv"]], setupNamespaces: ["s0599e33863c1","s0599e33863c1","s0599e33863c1"], hostEnvNamespace: "s0599e33863c1", clocks: [null,null,null], clockRoles: ["response","log","kv"], resetsBeforeClock: true, settled: {"log":true,"kv":true}, peeks: [2,2], stopped: 2, recordsVisibleAfterSettle: 2 } }, distinctHosts: 1 }
     filesystem has []
 
 scenario "a file whose roles all tore down and set up again gets a fresh host":
   when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, roles: ["response", "log", "kv"], cycles: 2 }] }
   predict success:
-    response OK RunFilesResult { files: { a: { hostsSpawned: 2, hostsAlive: 0 } }, distinctHosts: 2 }
+    response OK RunFilesResult { files: { a: { hostsSpawned: 2, hostsAlive: 0, spawnedBy: "response", endedBy: "kv", aliveAfterTeardown: [true,true,false], roleOutcomes: {"response":"ok","log":"ok","kv":"ok"}, setups: [[],["log"],["kv"]], setupNamespaces: ["s0599e33863c1","s0599e33863c1","s0599e33863c1"], hostEnvNamespace: "s0599e33863c1", clocks: [null,null,null,null,null,null], clockRoles: ["response","log","kv","response","log","kv"], resetsBeforeClock: true, settled: {"log":true,"kv":true}, peeks: [2,2], stopped: 2, recordsVisibleAfterSettle: 2 } }, distinctHosts: 2 }
     filesystem has []
 
 scenario "two spec files get two hosts":
   when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, roles: ["response", "log"] }, { name: "b", namespace: "s3b04e21257fd", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, roles: ["response", "log"] }] }
   predict success:
-    response OK RunFilesResult { files: { a: { hostsSpawned: 1, hostsAlive: 0 }, b: { hostsSpawned: 1, hostsAlive: 0 } }, distinctHosts: 2 }
+    response OK RunFilesResult { files: { a: { hostsSpawned: 1, hostsAlive: 0, spawnedBy: "response", endedBy: "log", aliveAfterTeardown: [true,false], roleOutcomes: {"response":"ok","log":"ok"}, setups: [[],["log"]], setupNamespaces: ["s0599e33863c1","s0599e33863c1"], hostEnvNamespace: "s0599e33863c1", clocks: [null,null], clockRoles: ["response","log"], resetsBeforeClock: true, settled: {"log":true}, peeks: [2,2], stopped: 2, recordsVisibleAfterSettle: 2 }, b: { hostsSpawned: 1, hostsAlive: 0, spawnedBy: "response", endedBy: "log", aliveAfterTeardown: [true,false], roleOutcomes: {"response":"ok","log":"ok"}, setups: [[],["log"]], setupNamespaces: ["s3b04e21257fd","s3b04e21257fd"], hostEnvNamespace: "s3b04e21257fd", clocks: [null,null], clockRoles: ["response","log"], resetsBeforeClock: true, settled: {"log":true}, peeks: [2,2], stopped: 2, recordsVisibleAfterSettle: 2 } }, distinctHosts: 2 }
     filesystem has []
 
 scenario "each role opens only its own service and no setup closes another role's":
   when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, roles: ["response", "log", "kv"] }, { name: "b", namespace: "s3b04e21257fd", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, roles: ["response", "log"] }] }
   predict success:
-    response OK RunFilesResult { files: { a: { hostsSpawned: 1, hostsAlive: 0, setups: [[], ["log"], ["kv"]] }, b: { hostsSpawned: 1, hostsAlive: 0, setups: [[], ["log"]] } }, distinctHosts: 2 }
+    response OK RunFilesResult { files: { a: { hostsSpawned: 1, hostsAlive: 0, setups: [[], ["log"], ["kv"]], spawnedBy: "response", endedBy: "kv", aliveAfterTeardown: [true,true,false], roleOutcomes: {"response":"ok","log":"ok","kv":"ok"}, setupNamespaces: ["s0599e33863c1","s0599e33863c1","s0599e33863c1"], hostEnvNamespace: "s0599e33863c1", clocks: [null,null,null], clockRoles: ["response","log","kv"], resetsBeforeClock: true, settled: {"log":true,"kv":true}, peeks: [2,2], stopped: 2, recordsVisibleAfterSettle: 2 }, b: { hostsSpawned: 1, hostsAlive: 0, setups: [[], ["log"]], spawnedBy: "response", endedBy: "log", aliveAfterTeardown: [true,false], roleOutcomes: {"response":"ok","log":"ok"}, setupNamespaces: ["s3b04e21257fd","s3b04e21257fd"], hostEnvNamespace: "s3b04e21257fd", clocks: [null,null], clockRoles: ["response","log"], resetsBeforeClock: true, settled: {"log":true}, peeks: [2,2], stopped: 2, recordsVisibleAfterSettle: 2 } }, distinctHosts: 2 }
     filesystem has []
 
 scenario "a host crash fails every role of that file and no other file":
   when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "crash-on-invoke"] }, roles: ["response", "log", "kv"] }, { name: "b", namespace: "s3b04e21257fd", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, roles: ["response", "log"] }] }
   predict success:
-    response OK RunFilesResult { files: { a: { roleOutcomes: { response: "HOST_CRASHED", log: "HOST_CRASHED", kv: "HOST_CRASHED" }, hostsAlive: 0 }, b: { roleOutcomes: { response: "ok", log: "ok" }, hostsAlive: 0 } }, distinctHosts: 2 }
+    response OK RunFilesResult { files: { a: { roleOutcomes: { response: "HOST_CRASHED", log: "HOST_CRASHED", kv: "HOST_CRASHED" }, hostsAlive: 0, hostsSpawned: 1, spawnedBy: "response", endedBy: "response", aliveAfterTeardown: [false,false,false], setups: [[],["log"],["kv"]], setupNamespaces: ["s0599e33863c1","s0599e33863c1","s0599e33863c1"], hostEnvNamespace: "s0599e33863c1", clocks: [null,null,null], clockRoles: ["response","log","kv"], resetsBeforeClock: true, settled: {}, peeks: [] }, b: { roleOutcomes: { response: "ok", log: "ok" }, hostsAlive: 0, hostsSpawned: 1, spawnedBy: "response", endedBy: "log", aliveAfterTeardown: [true,false], setups: [[],["log"]], setupNamespaces: ["s3b04e21257fd","s3b04e21257fd"], hostEnvNamespace: "s3b04e21257fd", clocks: [null,null], clockRoles: ["response","log"], resetsBeforeClock: true, settled: {"log":true}, peeks: [2,2], stopped: 2, recordsVisibleAfterSettle: 2 } }, distinctHosts: 2 }
     filesystem has []
 
 scenario "a role configured with another host command than its file's host is refused":
@@ -167,37 +170,37 @@ scenario "a role configured with another host command than its file's host is re
 scenario "settle vouches only after every task the scenario spawned has finished":
   when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "spawn-task"] }, roles: ["response", "log"] }] }
   predict success:
-    response OK RunFilesResult { files: { a: { settled: { log: true }, recordsVisibleAfterSettle: 1, hostsAlive: 0 } }, distinctHosts: 1 }
+    response OK RunFilesResult { files: { a: { settled: { log: true }, recordsVisibleAfterSettle: 1, hostsAlive: 0, hostsSpawned: 1, spawnedBy: "response", endedBy: "log", aliveAfterTeardown: [true,false], roleOutcomes: {"response":"ok","log":"ok"}, setups: [[],["log"]], setupNamespaces: ["s0599e33863c1","s0599e33863c1"], hostEnvNamespace: "s0599e33863c1", clocks: [null,null], clockRoles: ["response","log"], resetsBeforeClock: true, peeks: [1,1], stopped: 1 } }, distinctHosts: 1 }
     filesystem has []
 
 scenario "settle answers false when a spawned task did not finish cleanly":
   when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "spawn-task-failed"] }, roles: ["response", "log"] }] }
   predict success:
-    response OK RunFilesResult { files: { a: { settled: { log: false }, hostsAlive: 0 } }, distinctHosts: 1 }
+    response OK RunFilesResult { files: { a: { settled: { log: false }, hostsAlive: 0, hostsSpawned: 1, spawnedBy: "response", endedBy: "log", aliveAfterTeardown: [true,false], roleOutcomes: {"response":"ok","log":"ok"}, setups: [[],["log"]], setupNamespaces: ["s0599e33863c1","s0599e33863c1"], hostEnvNamespace: "s0599e33863c1", clocks: [null,null], clockRoles: ["response","log"], resetsBeforeClock: true, peeks: [1,1], stopped: 1, recordsVisibleAfterSettle: 1 } }, distinctHosts: 1 }
     filesystem has []
 
 scenario "settle answers false when the host cannot vouch, so the harness keeps the ceiling":
   when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "unvouched"] }, roles: ["response", "log"] }] }
   predict success:
-    response OK RunFilesResult { files: { a: { settled: { log: false }, hostsAlive: 0 } }, distinctHosts: 1 }
+    response OK RunFilesResult { files: { a: { settled: { log: false }, hostsAlive: 0, hostsSpawned: 1, spawnedBy: "response", endedBy: "log", aliveAfterTeardown: [true,false], roleOutcomes: {"response":"ok","log":"ok"}, setups: [[],["log"]], setupNamespaces: ["s0599e33863c1","s0599e33863c1"], hostEnvNamespace: "s0599e33863c1", clocks: [null,null], clockRoles: ["response","log"], resetsBeforeClock: true, peeks: [2,2], stopped: 2, recordsVisibleAfterSettle: 2 } }, distinctHosts: 1 }
     filesystem has []
 
 scenario "peekCapture is non-destructive: repeated peeks and the stop all see the same records":
   when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, roles: ["response", "log"] }] }
   predict success:
-    response OK RunFilesResult { files: { a: { peeks: [2, 2], stopped: 2, hostsAlive: 0 } }, distinctHosts: 1 }
+    response OK RunFilesResult { files: { a: { peeks: [2, 2], stopped: 2, hostsAlive: 0, hostsSpawned: 1, spawnedBy: "response", endedBy: "log", aliveAfterTeardown: [true,false], roleOutcomes: {"response":"ok","log":"ok"}, setups: [[],["log"]], setupNamespaces: ["s0599e33863c1","s0599e33863c1"], hostEnvNamespace: "s0599e33863c1", clocks: [null,null], clockRoles: ["response","log"], resetsBeforeClock: true, settled: {"log":true}, recordsVisibleAfterSettle: 2 } }, distinctHosts: 1 }
     filesystem has []
 
 scenario "every role of a file sets up with the same namespace and the host reports it in its environment":
   when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, roles: ["response", "log", "kv"] }] }
   predict success:
-    response OK RunFilesResult { files: { a: { setupNamespaces: ["s0599e33863c1", "s0599e33863c1", "s0599e33863c1"], hostEnvNamespace: "s0599e33863c1", hostsAlive: 0 } }, distinctHosts: 1 }
+    response OK RunFilesResult { files: { a: { setupNamespaces: ["s0599e33863c1", "s0599e33863c1", "s0599e33863c1"], hostEnvNamespace: "s0599e33863c1", hostsAlive: 0, hostsSpawned: 1, spawnedBy: "response", endedBy: "kv", aliveAfterTeardown: [true,true,false], roleOutcomes: {"response":"ok","log":"ok","kv":"ok"}, setups: [[],["log"],["kv"]], clocks: [null,null,null], clockRoles: ["response","log","kv"], resetsBeforeClock: true, settled: {"log":true,"kv":true}, peeks: [2,2], stopped: 2, recordsVisibleAfterSettle: 2 } }, distinctHosts: 1 }
     filesystem has []
 
 scenario "two files get two namespaces and each host sees only its own":
   when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, roles: ["response", "log"] }, { name: "b", namespace: "s3b04e21257fd", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, roles: ["response", "log"] }] }
   predict success:
-    response OK RunFilesResult { files: { a: { setupNamespaces: ["s0599e33863c1", "s0599e33863c1"], hostEnvNamespace: "s0599e33863c1", hostsAlive: 0 }, b: { setupNamespaces: ["s3b04e21257fd", "s3b04e21257fd"], hostEnvNamespace: "s3b04e21257fd", hostsAlive: 0 } }, distinctHosts: 2 }
+    response OK RunFilesResult { files: { a: { setupNamespaces: ["s0599e33863c1", "s0599e33863c1"], hostEnvNamespace: "s0599e33863c1", hostsAlive: 0, hostsSpawned: 1, spawnedBy: "response", endedBy: "log", aliveAfterTeardown: [true,false], roleOutcomes: {"response":"ok","log":"ok"}, setups: [[],["log"]], clocks: [null,null], clockRoles: ["response","log"], resetsBeforeClock: true, settled: {"log":true}, peeks: [2,2], stopped: 2, recordsVisibleAfterSettle: 2 }, b: { setupNamespaces: ["s3b04e21257fd", "s3b04e21257fd"], hostEnvNamespace: "s3b04e21257fd", hostsAlive: 0, hostsSpawned: 1, spawnedBy: "response", endedBy: "log", aliveAfterTeardown: [true,false], roleOutcomes: {"response":"ok","log":"ok"}, setups: [[],["log"]], clocks: [null,null], clockRoles: ["response","log"], resetsBeforeClock: true, settled: {"log":true}, peeks: [2,2], stopped: 2, recordsVisibleAfterSettle: 2 } }, distinctHosts: 2 }
     filesystem has []
 
 scenario "a host that echoes another namespace stops the file before any case runs":
@@ -233,13 +236,13 @@ scenario "a role that sets up under another namespace is refused by the host":
 scenario "the scenario clock reaches the host through setClock on every role, response first, in every case":
   when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, roles: ["response", "log", "kv"], clocks: ["2026-07-16T00:00:00Z", "2026-07-17T12:00:00Z"] }] }
   predict success:
-    response OK RunFilesResult { files: { a: { clocks: ["2026-07-16T00:00:00Z", "2026-07-16T00:00:00Z", "2026-07-16T00:00:00Z", "2026-07-17T12:00:00Z", "2026-07-17T12:00:00Z", "2026-07-17T12:00:00Z"], clockRoles: ["response", "log", "kv", "response", "log", "kv"], resetsBeforeClock: true, hostsAlive: 0 } }, distinctHosts: 1 }
+    response OK RunFilesResult { files: { a: { clocks: ["2026-07-16T00:00:00Z", "2026-07-16T00:00:00Z", "2026-07-16T00:00:00Z", "2026-07-17T12:00:00Z", "2026-07-17T12:00:00Z", "2026-07-17T12:00:00Z"], clockRoles: ["response", "log", "kv", "response", "log", "kv"], resetsBeforeClock: true, hostsAlive: 0, hostsSpawned: 1, spawnedBy: "response", endedBy: "kv", aliveAfterTeardown: [true,true,false], roleOutcomes: {"response":"ok","log":"ok","kv":"ok"}, setups: [[],["log"],["kv"]], setupNamespaces: ["s0599e33863c1","s0599e33863c1","s0599e33863c1"], hostEnvNamespace: "s0599e33863c1", settled: {"log":true,"kv":true}, peeks: [2,2], stopped: 2, recordsVisibleAfterSettle: 2 } }, distinctHosts: 1 }
     filesystem has []
 
 scenario "a case without a clock sends null so the previous case's freeze does not leak":
   when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, roles: ["response", "log"], clocks: ["2026-07-16T00:00:00Z", null] }] }
   predict success:
-    response OK RunFilesResult { files: { a: { clocks: ["2026-07-16T00:00:00Z", "2026-07-16T00:00:00Z", null, null], hostsAlive: 0 } }, distinctHosts: 1 }
+    response OK RunFilesResult { files: { a: { clocks: ["2026-07-16T00:00:00Z", "2026-07-16T00:00:00Z", null, null], hostsAlive: 0, hostsSpawned: 1, spawnedBy: "response", endedBy: "log", aliveAfterTeardown: [true,false], roleOutcomes: {"response":"ok","log":"ok"}, setups: [[],["log"]], setupNamespaces: ["s0599e33863c1","s0599e33863c1"], hostEnvNamespace: "s0599e33863c1", clockRoles: ["response","log","response","log"], resetsBeforeClock: true, settled: {"log":true}, peeks: [2,2], stopped: 2, recordsVisibleAfterSettle: 2 } }, distinctHosts: 1 }
     filesystem has []
 
 scenario "a clock without a zone designator is refused INVALID_CLOCK before any host call":
@@ -251,7 +254,7 @@ scenario "a clock without a zone designator is refused INVALID_CLOCK before any 
 scenario "a case's random seed reaches the host through setSeed on the response role, and null unseeds it":
   when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, roles: ["response", "log"], clocks: [null, null], seeds: [42, null] }] }
   predict success:
-    response OK RunFilesResult { files: { a: { seeds: [42, null], hostsAlive: 0 } }, distinctHosts: 1 }
+    response OK RunFilesResult { files: { a: { seeds: [42, null], hostsAlive: 0, hostsSpawned: 1, spawnedBy: "response", endedBy: "log", aliveAfterTeardown: [true,false], roleOutcomes: {"response":"ok","log":"ok"}, setups: [[],["log"]], setupNamespaces: ["s0599e33863c1","s0599e33863c1"], hostEnvNamespace: "s0599e33863c1", clocks: [null,null,null,null], clockRoles: ["response","log","response","log"], resetsBeforeClock: true, settled: {"log":true}, peeks: [2,2], stopped: 2, recordsVisibleAfterSettle: 2 } }, distinctHosts: 1 }
     filesystem has []
 
 scenario "a seed that is not a whole number is refused INVALID_SEED before any host call":
@@ -263,13 +266,13 @@ scenario "a seed that is not a whole number is refused INVALID_SEED before any h
 scenario "a request the host does not answer in time fails HOST_TIMEOUT and every later call of the file fails HOST_ENDED":
   when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "late-invoke"] }, roles: ["response", "log", "kv"], requestTimeoutMs: 200 }] }
   predict success:
-    response OK RunFilesResult { files: { a: { roleOutcomes: { response: "HOST_TIMEOUT", log: "HOST_ENDED", kv: "HOST_ENDED" }, hostsSpawned: 1, hostsAlive: 0 } }, distinctHosts: 1 }
+    response OK RunFilesResult { files: { a: { roleOutcomes: { response: "HOST_TIMEOUT", log: "HOST_ENDED", kv: "HOST_ENDED" }, hostsSpawned: 1, hostsAlive: 0, spawnedBy: "response", endedBy: "response", aliveAfterTeardown: [false,false,false], setups: [[],["log"],["kv"]], setupNamespaces: ["s0599e33863c1","s0599e33863c1","s0599e33863c1"], hostEnvNamespace: "s0599e33863c1", clocks: [null,null,null], clockRoles: ["response","log","kv"], resetsBeforeClock: true, settled: {}, peeks: [], receivedAfterTimeout: [] } }, distinctHosts: 1 }
     filesystem has []
 
 scenario "a host that timed out is sent nothing more, so its late answer is never taken for another request's":
   when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "late-invoke"] }, roles: ["response", "log"], requestTimeoutMs: 200 }] }
   predict success:
-    response OK RunFilesResult { files: { a: { receivedAfterTimeout: [], hostsAlive: 0 } }, distinctHosts: 1 }
+    response OK RunFilesResult { files: { a: { receivedAfterTimeout: [], hostsAlive: 0, hostsSpawned: 1, spawnedBy: "response", endedBy: "response", aliveAfterTeardown: [false,false], roleOutcomes: {"response":"HOST_TIMEOUT","log":"HOST_ENDED"}, setups: [[],["log"]], setupNamespaces: ["s0599e33863c1","s0599e33863c1"], hostEnvNamespace: "s0599e33863c1", clocks: [null,null], clockRoles: ["response","log"], resetsBeforeClock: true, settled: {}, peeks: [] } }, distinctHosts: 1 }
     filesystem has []
 
 scenario "a timeout fails the file's later cases too, HOST_ENDED naming the method and the limit":
@@ -281,17 +284,17 @@ scenario "a timeout fails the file's later cases too, HOST_ENDED naming the meth
 scenario "a timeout in one file leaves another file's host serving":
   when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "late-invoke"] }, roles: ["response", "log"], requestTimeoutMs: 200 }, { name: "b", namespace: "s3b04e21257fd", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "canned"] }, roles: ["response", "log"], requestTimeoutMs: 200 }] }
   predict success:
-    response OK RunFilesResult { files: { a: { roleOutcomes: { response: "HOST_TIMEOUT", log: "HOST_ENDED" }, hostsAlive: 0 }, b: { roleOutcomes: { response: "ok", log: "ok" }, hostsAlive: 0 } }, distinctHosts: 2 }
+    response OK RunFilesResult { files: { a: { roleOutcomes: { response: "HOST_TIMEOUT", log: "HOST_ENDED" }, hostsAlive: 0, hostsSpawned: 1, spawnedBy: "response", endedBy: "response", aliveAfterTeardown: [false,false], setups: [[],["log"]], setupNamespaces: ["s0599e33863c1","s0599e33863c1"], hostEnvNamespace: "s0599e33863c1", clocks: [null,null], clockRoles: ["response","log"], resetsBeforeClock: true, settled: {}, peeks: [], receivedAfterTimeout: [] }, b: { roleOutcomes: { response: "ok", log: "ok" }, hostsAlive: 0, hostsSpawned: 1, spawnedBy: "response", endedBy: "log", aliveAfterTeardown: [true,false], setups: [[],["log"]], setupNamespaces: ["s3b04e21257fd","s3b04e21257fd"], hostEnvNamespace: "s3b04e21257fd", clocks: [null,null], clockRoles: ["response","log"], resetsBeforeClock: true, settled: {"log":true}, peeks: [2,2], stopped: 2, recordsVisibleAfterSettle: 2 } }, distinctHosts: 2 }
     filesystem has []
 
 scenario "a file whose roles all left after a timeout and set up again gets a fresh host":
   when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "late-invoke"] }, roles: ["response", "log"], cycles: 2, requestTimeoutMs: 200 }] }
   predict success:
-    response OK RunFilesResult { files: { a: { hostsSpawned: 2, hostsAlive: 0 } }, distinctHosts: 2 }
+    response OK RunFilesResult { files: { a: { hostsSpawned: 2, hostsAlive: 0, spawnedBy: "response", endedBy: "response", aliveAfterTeardown: [false,false], roleOutcomes: {"response":"HOST_TIMEOUT","log":"HOST_ENDED"}, setups: [[],["log"]], setupNamespaces: ["s0599e33863c1","s0599e33863c1"], hostEnvNamespace: "s0599e33863c1", clocks: [null,null,null,null], clockRoles: ["response","log","response","log"], resetsBeforeClock: true, settled: {}, peeks: [], receivedAfterTimeout: ["setup","setup","reset","setClock","setClock","startCapture","invoke"] } }, distinctHosts: 2 }
     filesystem has []
 
 scenario "a role that sets up after a timeout, while the ended host is still exiting, gets a fresh host and never the ended one":
   when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "late-invoke-slow-exit"] }, roles: ["response", "log"], lateRole: "kv", requestTimeoutMs: 200 }] }
   predict success:
-    response OK RunFilesResult { files: { a: { roleOutcomes: { response: "HOST_TIMEOUT", log: "HOST_ENDED" }, endedHostAliveAtLateSetup: true, lateRoleOutcome: "ok", lateRoleSpawnedHost: true, hostsSpawned: 2, hostsAlive: 0 } }, distinctHosts: 2 }
+    response OK RunFilesResult { files: { a: { roleOutcomes: { response: "HOST_TIMEOUT", log: "HOST_ENDED" }, endedHostAliveAtLateSetup: true, lateRoleOutcome: "ok", lateRoleSpawnedHost: true, hostsSpawned: 2, hostsAlive: 0, spawnedBy: "response", endedBy: "response", aliveAfterTeardown: [false,false], setups: [[],["log"]], setupNamespaces: ["s0599e33863c1","s0599e33863c1"], hostEnvNamespace: "s0599e33863c1", clocks: [null,null], clockRoles: ["response","log"], resetsBeforeClock: true, settled: {}, peeks: [], receivedAfterTimeout: ["setup","teardown"] } }, distinctHosts: 2 }
     filesystem has []
