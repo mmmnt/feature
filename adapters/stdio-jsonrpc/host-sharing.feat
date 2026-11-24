@@ -34,7 +34,7 @@ feat 1.0
 # limit, a real crash keeping HOST_CRASHED; (3) the shorter limit is a HostRegistry constructor
 # parameter only the test driver passes; (4) close stdin, then kill after 2 s, in the background;
 # (5) release as a minor bump, 0.8.0, once the build is agreed.
-# DRAFT AMENDMENT, NEEDS THE FOUNDER'S RATIFICATION (founder ruling bf2a3178, 2026-11-24, "Add a scenario first"):
+# AMENDED and agreed by founder decision 40f96664 (2026-11-24, "Ratify, merge, release (Recommended)"; ruling bf2a3178, "Add a scenario first"):
 # the last scenario, "a role that sets up after a timeout, while the ended host is still exiting, gets a fresh
 # host and never the ended one", and the RunFiles input lateRole it uses. Dropping the registry entry at the
 # timeout was not observable before: join spawns afresh once the ended host's process is gone, and every
