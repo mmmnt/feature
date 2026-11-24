@@ -20,9 +20,10 @@ The shared host (`HostConnection`, `HostRegistry`, every role of a spec file):
 
 - **A request times out.** It fails `HOST_TIMEOUT`, as today. The connection is then broken. It writes
   nothing more to that host and ends it: stdin is closed, and the process is killed after the grace period.
-- **Every later call of every role of that file** fails `HOST_CRASHED`. That covers calls queued behind
-  the timed-out one, calls in later cases, and setup and teardown. The detail names the request that
-  timed out.
+- **Every later call of every role of that file** fails `HOST_ENDED`, a new code (founder ruling
+  cd46cd64; a real crash keeps `HOST_CRASHED`). That covers calls queued behind
+  the timed-out one, calls in later cases, and setup and teardown. The detail names the method that
+  timed out and the limit.
 - **The registry entry is dropped**, as for a crash. If the file's roles all leave and set up again, the
   file gets a fresh host.
 - **What does not happen:**
@@ -35,8 +36,8 @@ The shared host (`HostConnection`, `HostRegistry`, every role of a spec file):
   - The limit stays 30 s and cannot be configured on a shared host.
   - The protocol schema and version (2) are unchanged.
   - The one-shot exchange (SPEC-RPC-001) already kills its host on a timeout, and it is unchanged.
-- **Error codes:** `HOST_TIMEOUT` is for the request that waited. `HOST_CRASHED` is for every call after
-  it (Q2 below). No new code.
+- **Error codes:** `HOST_TIMEOUT` is for the request that waited. `HOST_ENDED` (new) is for every call
+  after it. `HOST_CRASHED` stays for a host that exits by itself.
 
 ## Files
 
@@ -47,7 +48,11 @@ The shared host (`HostConnection`, `HostRegistry`, every role of a spec file):
   - `RunFilesInput.files[].requestTimeoutMs` is new.
   - `roleOutcomes` may be `HOST_TIMEOUT` or `PROTOCOL_VIOLATION`.
   - `receivedAfterTimeout` is new: the methods the host received after the client saw the timeout.
-  - `SharingError.code` gains `HOST_CRASHED` and `HOST_TIMEOUT`.
+  - `roleOutcomes` may also be `HOST_ENDED`.
+  - `SharingError.code` gains `HOST_ENDED` and `HOST_TIMEOUT`.
+- `error-set.change.diff` is the build's change to the adapter's error set (`ExchangeFailure` in
+  `src/protocol.ts` gains `HOST_ENDED`) and to its README (the shared host section and the error table).
+  It is not applied. The protocol schema carries no error codes, so it is unchanged.
 - `run.patch` holds what the scenarios need in order to run. It does **not** fix the defect.
   - The fake host gains a `late-invoke` mode. It answers requests one at a time and answers the first
     invoke 600 ms late. It logs `recv <method>` for every request.
@@ -61,7 +66,7 @@ The shared host (`HostConnection`, `HostRegistry`, every role of a spec file):
 - `feat generate` and then `feat verify` showed 48 files matching.
 - SPEC-RPC-002 passed 25 of 29 against the current code. All 4 failures are the defect:
   - "a request the host does not answer in time fails HOST_TIMEOUT and every later call of the file
-    fails HOST_CRASHED": log got `HOST_TIMEOUT` (it was queued behind the late invoke) and kv got
+    fails HOST_ENDED": log got `HOST_TIMEOUT` (it was queued behind the late invoke) and kv got
     `PROTOCOL_VIOLATION`.
   - "a host that timed out is sent nothing more…": the host received
     `["settle","peekCapture","peekCapture","stopCapture","teardown","teardown"]` after the timeout.
@@ -76,15 +81,22 @@ The shared host (`HostConnection`, `HostRegistry`, every role of a spec file):
 - The stdio-jsonrpc package typecheck passed, and its package tests passed 1 of 1.
 - Not proven: no fix was written, so nothing yet shows that the amendment is satisfiable.
 
+## Re-run after rulings cd46cd64 (HOST_ENDED)
+
+The results are the same: lint and audit clean, verify 48 matching, SPEC-RPC-002 25 of 29 with the same
+4 failures (now expecting `HOST_ENDED`; the later case's detail must match `invoke.*200 ms` and got "the
+answer carries id 12, the request carried 13"), and SPEC-RPC-001 60 of 60.
+
 ## Rulings workshop
 
-Recorded as `3792ac58-972b-5a1e-9060-c4cbe4cd205e`. The open questions:
+Recorded as `3792ac58-972b-5a1e-9060-c4cbe4cd205e`. The founder ruled all five in `cd46cd64`: 1, 3, 4 and 5 as
+recommended, and 2 differently:
 
 1. **After a timeout, end the host or match answers by id?** Recommended: end the host (drafted). Matching
    by id keeps a host that is still running the abandoned request. Its effects land in later capture
    windows, and the next request waits behind it.
-2. **Which code do the calls after a timeout fail with?** Recommended: `HOST_CRASHED`, with a detail naming
-   the request that timed out. It needs no new code, which consumers would have to match on.
+2. **Which code do the calls after a timeout fail with?** Recommended `HOST_CRASHED`. **Ruled (cd46cd64):
+   a new code, `HOST_ENDED`**, with a detail naming the method and the limit. A real crash keeps `HOST_CRASHED`.
 3. **How does a scenario get a short limit?** Recommended: a `HostRegistry` constructor parameter that only
    RunFiles passes. The adapters' 30 s limit stays unconfigurable.
 4. **How is the timed-out host ended?** Recommended: close stdin, then kill after the 2 s grace, in the
