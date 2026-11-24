@@ -625,8 +625,13 @@ const r = await exchange({
 | `HostConfig` | `{ command: string[], cwd?: string, env?: Record<string, string> }`. |
 
 When the host process exits without being asked to, every pending call and every
-later call of every role of that file fails with `HOST_CRASHED`. No other file is
-affected.
+later call of every role of that file fails with `HOST_CRASHED`. When a request
+has no answer within the limit, that request fails `HOST_TIMEOUT`; the adapter
+writes nothing more to the host and ends it (stdin closed, killed after 2 s), and
+every pending call and every later call of every role of that file fails with
+`HOST_ENDED`, naming the method that timed out and the limit. A line the host
+writes after the timeout is never taken as another request's answer. No other
+file is affected.
 
 ## Errors
 
@@ -638,7 +643,8 @@ Every refusal is an `ExchangeError` with a `code` and a `detail`.
 | `HOST_SPAWN_FAILED` | The host command could not be started. |
 | `HOST_EXITED` | In a one-shot exchange, the host exited before it answered. |
 | `HOST_CRASHED` | The shared host process exited. Every pending and later call of the file fails with it. |
-| `HOST_TIMEOUT` | No answer within the timeout (30 seconds by default). |
+| `HOST_ENDED` | The shared host was ended after a request had no answer within the limit. Every pending and later call of the file fails with it; the detail names the method that timed out and the limit. |
+| `HOST_TIMEOUT` | No answer within the timeout (30 seconds by default). On a shared host the host is then ended. |
 | `HOST_ERROR` | The host answered with a JSON-RPC error. The code and message are relayed verbatim (`rpcCode`, `message`). |
 | `PROTOCOL_VIOLATION` | The host's line is not JSON, does not validate against the protocol schema, carries another `id`, uses a null `id` outside `-32700` and `-32600`, or carries a result that breaks the closed shape of the method. Includes a `setup` answer with no namespace echo. |
 | `PROTOCOL_MISMATCH` | The host's `setup` result names a protocol version other than 2. |
@@ -647,7 +653,18 @@ Every refusal is an `ExchangeError` with a `code` and a `detail`.
 | `HOST_CONFIG_MISMATCH` | A role's host configuration differs from the host already open for its file. |
 | `FAULT_UNSUPPORTED` | The harness refuses an arm outside the service's fault catalog, or with a count the catalog does not declare for that fault. Raised by the runner before the case has any effect. |
 
-## This release (0.4.0)
+## This release (0.8.0)
+
+- **A timeout ends the shared host** (SPEC-RPC-002 amended, founder decision 78a98840, rulings
+  cd46cd64). A request with no answer within the limit fails `HOST_TIMEOUT`. Then nothing more is
+  written to that host. It is ended in the background (stdin closed, killed after 2 s), the registry
+  drops it, and every pending and later call of the file fails the new code `HOST_ENDED`, naming
+  the method that timed out and the limit. Before, the late answer was taken as the next request's
+  (`PROTOCOL_VIOLATION`, ids off by one for the rest of the file). A host that exits by itself still
+  fails them `HOST_CRASHED`. `HostRegistry` takes an optional request limit, for tests; the
+  adapters' limit stays 30 s. The protocol is unchanged and its version stays 2.
+
+## 0.4.0
 
 - **`transformSeed`** (SPEC-RPC-001 amended, ADR-0035): an optional protocol method,
   `{ service, records: [{ type, values }] }` -> `{ records: [{ type, values }] }`, sent only by a

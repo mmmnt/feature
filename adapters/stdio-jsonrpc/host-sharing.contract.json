@@ -103,6 +103,15 @@
                 "additionalProperties": {
                   "type": "string"
                 }
+              },
+              "requestTimeoutMs": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "The request limit of this file's registry (draft amendment, stale answer after HOST_TIMEOUT). The adapters' own limit stays 30 s and is not configurable on a shared host."
+              },
+              "lateRole": {
+                "type": "string",
+                "description": "A role RunFiles sets up right after the first HOST_TIMEOUT, while the ended host may still be running (draft amendment, founder ruling bf2a3178). Test driver only."
               }
             }
           }
@@ -147,7 +156,10 @@
                 "additionalProperties": {
                   "enum": [
                     "ok",
-                    "HOST_CRASHED"
+                    "HOST_CRASHED",
+                    "HOST_ENDED",
+                    "HOST_TIMEOUT",
+                    "PROTOCOL_VIOLATION"
                   ]
                 }
               },
@@ -221,6 +233,31 @@
               },
               "hostEnvNamespace": {
                 "type": "string"
+              },
+              "receivedAfterTimeout": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "The methods the host received after the client saw the first HOST_TIMEOUT, in order, from the host's own log."
+              },
+              "lateRoleOutcome": {
+                "enum": [
+                  "ok",
+                  "HOST_ENDED",
+                  "HOST_CRASHED",
+                  "HOST_TIMEOUT",
+                  "PROTOCOL_VIOLATION"
+                ],
+                "description": "What the late role's setup came to."
+              },
+              "lateRoleSpawnedHost": {
+                "type": "boolean",
+                "description": "Whether the late role's setup spawned a host rather than joining the open one."
+              },
+              "endedHostAliveAtLateSetup": {
+                "type": "boolean",
+                "description": "Whether the host that timed out was still running when the late role set up."
               }
             }
           }
@@ -243,7 +280,9 @@
             "NAMESPACE_NOT_HONOURED",
             "PROTOCOL_VIOLATION",
             "HOST_ERROR",
-            "PROTOCOL_MISMATCH"
+            "PROTOCOL_MISMATCH",
+            "HOST_ENDED",
+            "HOST_TIMEOUT"
           ]
         },
         "detail": {

@@ -61,7 +61,8 @@ abstract class Role {
     if (!host) return;
     this.host = undefined;
     try {
-      if (!host.ended) await host.request("teardown", { services: this.services() });
+      // A host that exited, or was ended after a timeout, has nothing to tear down.
+      if (!host.ended && !host.broken) await host.request("teardown", { services: this.services() });
     } finally {
       await this.registry.leave(host);
     }
