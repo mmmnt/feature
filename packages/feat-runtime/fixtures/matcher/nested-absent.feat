@@ -1,0 +1,30 @@
+feat 1.0
+
+# SPEC-RT-017 (founder ruling 02af6938 item 3, "Keep allowing it"): `absent` stays allowed inside a nested block;
+# the parser records it as { matcher: "absent" } in the nested block's fields, as before.
+
+spec SPEC-OK-203 "absent inside a nested block"
+context Bad
+aggregate Thing
+type command
+status draft
+
+construct:
+  handler at src/do-thing.ts
+  touches src/**
+
+enforce:
+  do the thing
+
+contract:
+  input ThingInput
+  response ThingResult
+  record ThingRow
+
+scenario "does the thing":
+  when: DoThing { value: 1 }
+  predict success:
+    response OK ThingResult { id: "t-1", meta: { source: "api", deletedAt: absent } }
+    eventStore has [ Wrote with ThingRow { id: "t-1", payload: { counted: 3, deletedAt: absent } } ]
+    cache has []
+    log has []

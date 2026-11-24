@@ -1,22 +1,14 @@
 feat 1.0
 
-# SPEC-RT-017 — DRAFT (needs the founder's agreement; see drafts/exact-nested-blocks/README.md). A nested value
-# block is exact: a key of the object it is matched against that the block does not declare is a violation.
+# SPEC-RT-017 — a nested value block is exact: a key of the object it is matched against that the block does not
+# declare is a violation. Founder ruling e9b228ec (2026-11-24, "Feature spec + fix (Recommended)"): payload predictions
+# must match exactly, so an unpredicted key fails the scenario. Agreed in the founder's rulings 02af6938 (2026-11-24, on
+# workshop 749e4a70): 1 "Nested blocks only (Recommended)", 2 "Nested stays exact (Recommended)", 3 "Keep allowing it
+# (Recommended)", 7 "Keep the current wording (Recommended)"; ADR-0039.
 #
-# Founder ruling e9b228ec (2026-11-24, "Feature spec + fix (Recommended)"): payload predictions must match exactly,
-# so an unpredicted key fails the scenario; this follows prediction inversion and ADR-0034's exact objects; `partial`
-# blocks keep their declared looseness (ADR-0038). Found in a consumer, where two policies' predictions of an event
-# `{ entryType, payload: { … }, … }` stayed green with a key dropped from the `payload` block: applyMatcher's
-# `nested` case runs applyValueBlock, which checks the declared fields only, and the OPTIONAL_UNSTATED lint
-# (ADR-0038) looks at the top-level block's schema only, so an open nested schema let the key through silently.
-#
-# The looseness lives in TWO places in packages/feat-runtime/src/matcher.ts, both by agreed rule (ADR-0002, grammar
-# reference §5.4 "Value blocks are partial"; SPEC-RT-015 "Unchanged: … `nested` (a value block outside a list stays
-# partial)"):
-#  (a) the top-level block of a record or response (recordMatches / diffResponse → applyValueBlock), which ADR-0038
-#      kept partial and closes with the schema and OPTIONAL_UNSTATED;
-#  (b) every `{ … }` in a field position (applyMatcher "nested" → applyValueBlock), which nothing closes.
-# This draft makes (b) exact and leaves (a) as ADR-0038 has it. Whether (a) becomes exact too is open question Q1.
+# Found in a consumer: two policies' predictions of an event `{ entryType, payload: { … }, … }` stayed green with a key
+# dropped from the `payload` block. applyMatcher's `nested` case ran applyValueBlock, which checks the declared fields
+# only, and the OPTIONAL_UNSTATED lint (ADR-0038) reads the top-level block's schema only.
 #
 # WHAT CHANGES (and nothing else):
 #  1. applyMatcher on a `nested` matcher: after each declared field is matched at "<anchor> › <key>" (unchanged),
@@ -24,19 +16,20 @@ feat 1.0
 #     "<anchor>: UNPREDICTED field '<key>' = <its value as JSON, cut to 80 characters with … appended when longer>"
 #     — the words and the cut of SPEC-RT-015's object inside a list.
 #  2. It holds wherever a nested block is evaluated: a record in `has` (ordered and unordered), a record in
-#     `contains`, a response body, at any depth, and inside a `partial` record or response (Q2).
-# Unchanged: the top-level block of a record or response (ADR-0002, ADR-0038), `partial`'s runtime meaning (none),
-# every other matcher, the record diff's words ("captured X does not match predicted Y"), the IR, the grammar.
+#     `contains`, a response body, at any depth, and inside a `partial` record or response (ruling 2).
+# Unchanged: the top-level block of a record or response (ADR-0002, ADR-0038; ruling 1), `partial`'s runtime meaning
+# (none), `absent` inside a nested block (parsed and evaluated as before; ruling 3), every other matcher, the record
+# diff's words ("captured X does not match predicted Y"; ruling 7), the IR, the grammar.
 #
 # Driven through the probe `MatchValue` (SPEC-RT-011) and its diff form
 # (packages/feat-runtime/fixtures/matcher/probe.mjs: the record diff, or the response diff, on captured data, every
-# schema inlined open so only the value block decides).
+# schema inlined open so only the value block decides), and `Parse` (SPEC-CORE-001) for `absent` in a nested block.
 
 spec SPEC-RT-017 "Matcher: a nested value block is exact"
 context Toolchain
 aggregate Runtime
 type infrastructure
-status draft
+status agreed
 
 construct:
   handler at packages/feat-runtime/src/matcher.ts
@@ -57,10 +50,12 @@ enforce:
   pass a nested block's object whose keys are exactly the declared ones and whose fields each pass
   leave the top-level block of a record or response checking its listed fields only (ADR-0002, ADR-0038)
   leave a partial block's top level unchecked beyond its listed fields
+  keep absent allowed inside a nested block, passing when the key is missing
 
 contract:
   input MatchInput
   response MatchResult
+  response BuiltSpec
 
 scenario "a nested block passes an object whose keys are exactly its declared fields":
   when: MatchValue { value: { warehouse: "w-1", counted: 3 }, matcher: { matcher: "nested", fields: { warehouse: { matcher: "literal", value: "w-1" }, counted: { matcher: "any", ofType: "number" } } } }
@@ -96,6 +91,18 @@ scenario "a field stated absent that is present is one violation, not two":
   when: MatchValue { value: { counted: 3, deletedAt: "2026-11-24T00:00:00Z" }, matcher: { matcher: "nested", fields: { counted: { matcher: "literal", value: 3 }, deletedAt: { matcher: "absent" } } } }
   predict success:
     response OK MatchResult { outcome: "failed", count: 1, violation: "a › deletedAt: expected field to be absent, found \"2026-11-24T00:00:00Z\"" }
+    filesystem has []
+
+scenario "a field stated absent passes when the key is missing":
+  when: MatchValue { value: { counted: 3 }, matcher: { matcher: "nested", fields: { counted: { matcher: "literal", value: 3 }, deletedAt: { matcher: "absent" } } } }
+  predict success:
+    response OK MatchResult { outcome: "passed", count: 0, violation: absent }
+    filesystem has []
+
+scenario "absent inside a nested block still parses, in a response and in a record":
+  when: Parse { spec: "packages/feat-runtime/fixtures/matcher/nested-absent.feat", config: "packages/feat-core/fixtures/parse-observes.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "fixtures/matcher/nested-absent.ir.json"
     filesystem has []
 
 scenario "a declared field missing from the object is still reported by its matcher":

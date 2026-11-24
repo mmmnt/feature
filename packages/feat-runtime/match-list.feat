@@ -19,8 +19,8 @@ feat 1.0
 #  4. An IR list without an items array, an object without a fields object, or an `absent` item in a list, is a
 #     violation (a malformed IR), never a pass.
 #  5. derive (feat-derive) substitutes an outline placeholder inside a list or object as it does elsewhere.
-# Unchanged: every other matcher, `nested` (a value block outside a list stays partial), the record and
-# response diffs, the anchors' form.
+# Unchanged: every other matcher, `nested` (a value block outside a list stayed partial here; SPEC-RT-017 and ADR-0039
+# make it exact), the record and response diffs, the anchors' form.
 #
 # Driven through the probe `MatchValue` (SPEC-RT-011, packages/feat-runtime/fixtures/matcher/probe.mjs).
 
