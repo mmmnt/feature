@@ -93,8 +93,26 @@ async function canned(req) {
   }
 }
 
-rl.on("line", async (line) => {
+// late-invoke: requests are answered one at a time, in order, as a host is bound to, and the first
+// invoke is answered 600 ms late, so every request written after it waits behind it.
+let chain = Promise.resolve();
+let lateDone = false;
+const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+
+rl.on("line", (line) => {
   const req = JSON.parse(line);
+  log(`recv ${req.method}`);
+  if (mode !== "late-invoke") return void handle(req);
+  chain = chain.then(async () => {
+    if (req.method === "invoke" && !lateDone) {
+      lateDone = true;
+      await delay(600);
+    }
+    await handle(req);
+  });
+});
+
+async function handle(req) {
   const reply = (r) => send({ jsonrpc: "2.0", id: req.id, ...r });
   switch (mode) {
     case "rpc-error": return reply({ error: { code: -32000, message: "boom" } });
@@ -110,4 +128,4 @@ rl.on("line", async (line) => {
     case "null-id-other": return send({ jsonrpc: "2.0", id: null, error: { code: -32000, message: "x" } });
     default: return reply(await canned(req));
   }
-});
+}

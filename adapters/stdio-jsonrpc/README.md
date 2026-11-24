@@ -625,8 +625,13 @@ const r = await exchange({
 | `HostConfig` | `{ command: string[], cwd?: string, env?: Record<string, string> }`. |
 
 When the host process exits without being asked to, every pending call and every
-later call of every role of that file fails with `HOST_CRASHED`. No other file is
-affected.
+later call of every role of that file fails with `HOST_CRASHED`. When a request
+has no answer within the limit, that request fails `HOST_TIMEOUT`; the adapter
+writes nothing more to the host and ends it (stdin closed, killed after 2 s), and
+every pending call and every later call of every role of that file fails with
+`HOST_ENDED`, naming the method that timed out and the limit. A line the host
+writes after the timeout is never taken as another request's answer. No other
+file is affected.
 
 ## Errors
 
@@ -638,7 +643,8 @@ Every refusal is an `ExchangeError` with a `code` and a `detail`.
 | `HOST_SPAWN_FAILED` | The host command could not be started. |
 | `HOST_EXITED` | In a one-shot exchange, the host exited before it answered. |
 | `HOST_CRASHED` | The shared host process exited. Every pending and later call of the file fails with it. |
-| `HOST_TIMEOUT` | No answer within the timeout (30 seconds by default). |
+| `HOST_ENDED` | The shared host was ended after a request had no answer within the limit. Every pending and later call of the file fails with it; the detail names the method that timed out and the limit. |
+| `HOST_TIMEOUT` | No answer within the timeout (30 seconds by default). On a shared host the host is then ended. |
 | `HOST_ERROR` | The host answered with a JSON-RPC error. The code and message are relayed verbatim (`rpcCode`, `message`). |
 | `PROTOCOL_VIOLATION` | The host's line is not JSON, does not validate against the protocol schema, carries another `id`, uses a null `id` outside `-32700` and `-32600`, or carries a result that breaks the closed shape of the method. Includes a `setup` answer with no namespace echo. |
 | `PROTOCOL_MISMATCH` | The host's `setup` result names a protocol version other than 2. |

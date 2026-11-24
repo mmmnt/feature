@@ -24,6 +24,8 @@ interface FileSpec {
   /** ADR-0029: a seed per case, sent to the response role after the clocks (absent: no setSeed at all). */
   seeds?: (number | null)[];
   secondHost?: { command: string[] };
+  /** The request limit of this file's registry (the adapters' own stays 30 s). */
+  requestTimeoutMs?: number;
 }
 
 type Role = { name: string; adapter: ReturnType<typeof createAdapter> & Record<string, (...a: never[]) => Promise<unknown>> };
@@ -38,7 +40,7 @@ const alive = (pid: number): boolean => {
 };
 
 async function runFile(f: FileSpec, tmp: string) {
-  const registry = new HostRegistry();
+  const registry = new HostRegistry(f.requestTimeoutMs);
   const logFile = path.join(tmp, `${f.name}.log`);
   writeFileSync(logFile, "");
   const hostConfig: HostConfig = { command: f.host.command, env: { FAKE_HOST_LOG: logFile } };
@@ -65,8 +67,11 @@ async function runFile(f: FileSpec, tmp: string) {
 
   const pids = (): number[] => [...new Set(readFileSync(logFile, "utf8").split("\n").filter((l) => l.startsWith("pid ")).map((l) => Number(l.slice(4))))];
   const hostAlive = (): boolean => pids().some(alive);
+  const received = (): string[] => readFileSync(logFile, "utf8").split("\n").filter((l) => l.startsWith("recv ")).map((l) => l.slice(5));
+  let receivedAtTimeout: number | undefined;
   const note = (role: string, e: unknown) => {
     if (!(e instanceof ExchangeError)) throw e;
+    if (e.code === "HOST_TIMEOUT" && receivedAtTimeout === undefined) receivedAtTimeout = received().length;
     if (outcomes[role] === "ok") outcomes[role] = e.code;
   };
   const guard = async (role: string, fn: () => Promise<unknown>): Promise<unknown> => {
@@ -163,6 +168,7 @@ async function runFile(f: FileSpec, tmp: string) {
     settled,
     peeks,
     ...(stopped !== undefined ? { stopped } : {}),
+    ...(receivedAtTimeout !== undefined ? { receivedAfterTimeout: received().slice(receivedAtTimeout) } : {}),
     ...(settled[services[0]?.name ?? ""] !== undefined && peeks.length > 0 ? { recordsVisibleAfterSettle: peeks[0] } : {}),
   });
   return { file: out, pids: all };
