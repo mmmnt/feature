@@ -902,6 +902,15 @@ buildability, and `feat report --evidence` to archive the bundle as a build
 artifact. For the integration tier add
 `feat run --config feat.integration.config.json`.
 
+## What changed in 0.16.0 (breaking)
+
+- **Breaking:** it runs with `@mmmnt/feat-runtime` 0.10.0, where a nested value block is exact (ADR-0039). An
+  undeclared key of a nested block's object fails the scenario, inside `partial` blocks too. The top-level block
+  stays partial. To migrate, state every key of the object, or write the field `any`.
+- `feat lint` adds the warning `NESTED_SCHEMA_OPEN` (`@mmmnt/feat-analyze` 0.3.0, SPEC-ANL-001). It names each nested
+  block whose schema lets the object carry undeclared keys, the places an unstated key can now fail a scenario.
+  Warnings never fail `feat lint`.
+
 ## What changed in 0.7.0
 
 - **`feat run` runs the project's own Vitest, never a fetched one (SPEC-RT-010,
