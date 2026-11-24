@@ -211,3 +211,71 @@ export function lintOptionalFields(spec: BuiltSpec, registry: Record<string, obj
   }
   return findings;
 }
+
+// ── ADR-0039 (founder rulings 02af6938, item 5 "Breaking, with a lint"): a nested block under an open schema ──────
+// From feat-runtime 0.10.0 a nested value block is exact: a key of its object it does not declare is a violation.
+// Where the contract leaves that object open (no `additionalProperties: false` / `unevaluatedProperties: false`, or no
+// schema for the property at all), nothing but the block states the object's keys, so a spec written against the
+// partial matcher may go red. The migration lint names each such block — a warning, never a config switch.
+type ObjectSchema = JsonSchema & {
+  additionalProperties?: unknown;
+  unevaluatedProperties?: unknown;
+  anyOf?: JsonSchema[];
+  oneOf?: JsonSchema[];
+};
+
+/** The schema of property `key` under `node` (following local refs and allOf), or undefined when none describes it. */
+function propertySchema(root: JsonSchema, node: JsonSchema | undefined, key: string): JsonSchema | undefined {
+  const n = local(root, node);
+  if (!n || typeof n !== "object") return undefined;
+  const own = (n.properties ?? {})[key] as JsonSchema | undefined;
+  if (own !== undefined) return own;
+  for (const part of n.allOf ?? []) {
+    const found = propertySchema(root, part, key);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
+/** True when the schema admits no key beyond the ones it declares. */
+function closedObject(root: JsonSchema, node: JsonSchema | undefined): boolean {
+  const n = local(root, node) as ObjectSchema | undefined;
+  if (!n || typeof n !== "object") return false;
+  if (n.additionalProperties === false || n.unevaluatedProperties === false) return true;
+  if ((n.allOf ?? []).some((part) => closedObject(root, part))) return true;
+  const branches = [...(n.anyOf ?? []), ...(n.oneOf ?? [])];
+  return branches.length > 0 && branches.every((b) => closedObject(root, b));
+}
+
+type BlockMatcher = { matcher?: string; fields?: Record<string, BlockMatcher> };
+
+export function lintNestedOpen(spec: BuiltSpec, registry: Record<string, object>): Finding[] {
+  const findings: Finding[] = [];
+  const walk = (where: string, schemaName: string, root: JsonSchema, node: JsonSchema | undefined, block: Record<string, unknown>, path: string[]) => {
+    for (const [key, m] of Object.entries(block)) {
+      const matcher = m as BlockMatcher;
+      if (matcher?.matcher !== "nested" || typeof matcher.fields !== "object" || matcher.fields === null) continue;
+      const sub = propertySchema(root, node, key);
+      const at = [...path, key];
+      if (!closedObject(root, sub))
+        findings.push({
+          level: "warn",
+          message: `warn [NESTED_SCHEMA_OPEN]: ${where} › ${at.join(" › ")}: ${schemaName} leaves '${at.join(".")}' open, so from feat-runtime 0.10.0 a key the block does not state fails the scenario (ADR-0039) — close it (additionalProperties: false), or check the block states every key`,
+        });
+      walk(where, schemaName, root, sub, matcher.fields, at);
+    }
+  };
+  const check = (where: string, schemaName: string, block: Record<string, unknown> | undefined) => {
+    if (!block) return;
+    const root = registry[schemaName] as JsonSchema | undefined;
+    walk(where, schemaName, root ?? {}, root, block, []);
+  };
+  for (const sc of spec.scenarios) {
+    const r = sc.prediction.response;
+    if (r?.valueBlock) check(`scenario "${sc.name}" › response`, r.schemaName, r.valueBlock);
+    for (const [svc, p] of Object.entries(sc.prediction.services ?? {}))
+      for (const rec of [...(p.records ?? []), ...(p.contains ?? [])])
+        if (rec.valueBlock) check(`scenario "${sc.name}" › ${svc} ${rec.type}`, rec.schemaName, rec.valueBlock);
+  }
+  return findings;
+}

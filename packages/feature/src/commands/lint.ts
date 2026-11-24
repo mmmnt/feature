@@ -8,7 +8,7 @@ import path from "node:path";
 import { Command, Flags } from "@oclif/core";
 import type { BuiltSpec, FeatConfig } from "@mmmnt/feat-types";
 import { parse } from "@mmmnt/feat-core";
-import { lintOptionalFields, lintSpec } from "@mmmnt/feat-analyze";
+import { lintNestedOpen, lintOptionalFields, lintSpec } from "@mmmnt/feat-analyze";
 import { discoverSpecs, loadSchemaAdapter, resolveContract } from "../pipeline.js";
 
 export default class Lint extends Command {
@@ -38,7 +38,8 @@ export default class Lint extends Command {
       }
       const contractPath = specAbs.replace(/\.feat$/, ".contract.json");
       const { registry } = await resolveContract(contractPath, schemaAdapter);
-      const findings = [...lintSpec(parsed.body as unknown as BuiltSpec), ...lintOptionalFields(parsed.body as unknown as BuiltSpec, registry)];
+      const spec = parsed.body as unknown as BuiltSpec;
+      const findings = [...lintSpec(spec), ...lintOptionalFields(spec, registry), ...lintNestedOpen(spec, registry)];
 
       if (findings.length === 0) this.log(`✓ ${rel}`);
       else {

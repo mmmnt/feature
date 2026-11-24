@@ -1,7 +1,7 @@
 {
   "name": "@mmmnt/feat-analyze",
   "version": "0.2.0",
-  "description": "Pure analysis for .feat specs: lint, audit (B1–B3 buildability), and conservative formatting — no filesystem, no CLI",
+  "description": "Pure analysis for .feat specs: lint, audit (B1\u2013B3 buildability), and conservative formatting \u2014 no filesystem, no CLI",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -17,6 +17,7 @@
     "@mmmnt/feat-types": "workspace:^"
   },
   "devDependencies": {
+    "@mmmnt/feat-runtime": "workspace:^",
     "typescript": "^5.8.0",
     "vitest": "^3.2.0"
   },
