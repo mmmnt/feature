@@ -34,6 +34,14 @@ feat 1.0
 # limit, a real crash keeping HOST_CRASHED; (3) the shorter limit is a HostRegistry constructor
 # parameter only the test driver passes; (4) close stdin, then kill after 2 s, in the background;
 # (5) release as a minor bump, 0.8.0, once the build is agreed.
+# DRAFT AMENDMENT, NEEDS THE FOUNDER'S RATIFICATION (founder ruling bf2a3178, 2026-11-24, "Add a scenario first"):
+# the last scenario, "a role that sets up after a timeout, while the ended host is still exiting, gets a fresh
+# host and never the ended one", and the RunFiles input lateRole it uses. Dropping the registry entry at the
+# timeout was not observable before: join spawns afresh once the ended host's process is gone, and every
+# role sets up before the first case. lateRole names a role RunFiles sets up right after the first
+# HOST_TIMEOUT; the fake host's late-invoke-slow-exit mode takes 1500 ms to exit once stdin closes (inside
+# the 2 s grace), so that setup lands while the ended host still runs. lateRole, like requestTimeoutMs, is
+# an input of the test driver only, unreachable from adapter config or feat.config.json.
 # The fake host's late-invoke mode answers requests one at a time, as a host is bound to, and answers
 # the first invoke 600 ms late, so the requests written after it wait behind it. It logs every method
 # it receives; receivedAfterTimeout is what reached it after the client saw the timeout.
@@ -280,4 +288,10 @@ scenario "a file whose roles all left after a timeout and set up again gets a fr
   when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "late-invoke"] }, roles: ["response", "log"], cycles: 2, requestTimeoutMs: 200 }] }
   predict success:
     response OK RunFilesResult { files: { a: { hostsSpawned: 2, hostsAlive: 0 } }, distinctHosts: 2 }
+    filesystem has []
+
+scenario "a role that sets up after a timeout, while the ended host is still exiting, gets a fresh host and never the ended one":
+  when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "late-invoke-slow-exit"] }, roles: ["response", "log"], lateRole: "kv", requestTimeoutMs: 200 }] }
+  predict success:
+    response OK RunFilesResult { files: { a: { roleOutcomes: { response: "HOST_TIMEOUT", log: "HOST_ENDED" }, endedHostAliveAtLateSetup: true, lateRoleOutcome: "ok", lateRoleSpawnedHost: true, hostsSpawned: 2, hostsAlive: 0 } }, distinctHosts: 2 }
     filesystem has []

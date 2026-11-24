@@ -13,7 +13,9 @@ log(`pid ${process.pid}`);
 log(`env ${process.env.FEAT_NAMESPACE ?? ""}`);
 
 const rl = createInterface({ input: process.stdin });
-rl.on("close", () => process.exit(0));
+// late-invoke-slow-exit: as late-invoke, and it takes 1500 ms to exit once stdin closes (inside the
+// adapter's 2 s grace), so a role can set up while an ended host is still running.
+rl.on("close", () => (mode === "late-invoke-slow-exit" ? setTimeout(() => process.exit(0), 1500) : process.exit(0)));
 
 const record = { type: "log.entry", payload: { n: 1 }, timestamp: 1000 };
 const state = { ns: undefined, services: new Set(), captured: new Map(), tasks: 0, failed: false };
@@ -102,7 +104,7 @@ const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 rl.on("line", (line) => {
   const req = JSON.parse(line);
   log(`recv ${req.method}`);
-  if (mode !== "late-invoke") return void handle(req);
+  if (mode !== "late-invoke" && mode !== "late-invoke-slow-exit") return void handle(req);
   chain = chain.then(async () => {
     if (req.method === "invoke" && !lateDone) {
       lateDone = true;
