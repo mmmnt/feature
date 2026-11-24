@@ -1,0 +1,171 @@
+feat 1.0
+
+# SPEC-RT-017 — DRAFT (needs the founder's agreement; see drafts/exact-nested-blocks/README.md). A nested value
+# block is exact: a key of the object it is matched against that the block does not declare is a violation.
+#
+# Founder ruling e9b228ec (2026-11-24, "Feature spec + fix (Recommended)"): payload predictions must match exactly,
+# so an unpredicted key fails the scenario; this follows prediction inversion and ADR-0034's exact objects; `partial`
+# blocks keep their declared looseness (ADR-0038). Found in a consumer, where two policies' predictions of an event
+# `{ entryType, payload: { … }, … }` stayed green with a key dropped from the `payload` block: applyMatcher's
+# `nested` case runs applyValueBlock, which checks the declared fields only, and the OPTIONAL_UNSTATED lint
+# (ADR-0038) looks at the top-level block's schema only, so an open nested schema let the key through silently.
+#
+# The looseness lives in TWO places in packages/feat-runtime/src/matcher.ts, both by agreed rule (ADR-0002, grammar
+# reference §5.4 "Value blocks are partial"; SPEC-RT-015 "Unchanged: … `nested` (a value block outside a list stays
+# partial)"):
+#  (a) the top-level block of a record or response (recordMatches / diffResponse → applyValueBlock), which ADR-0038
+#      kept partial and closes with the schema and OPTIONAL_UNSTATED;
+#  (b) every `{ … }` in a field position (applyMatcher "nested" → applyValueBlock), which nothing closes.
+# This draft makes (b) exact and leaves (a) as ADR-0038 has it. Whether (a) becomes exact too is open question Q1.
+#
+# WHAT CHANGES (and nothing else):
+#  1. applyMatcher on a `nested` matcher: after each declared field is matched at "<anchor> › <key>" (unchanged),
+#     each key of the value that the block does not declare is one violation, in the value's key order:
+#     "<anchor>: UNPREDICTED field '<key>' = <its value as JSON, cut to 80 characters with … appended when longer>"
+#     — the words and the cut of SPEC-RT-015's object inside a list.
+#  2. It holds wherever a nested block is evaluated: a record in `has` (ordered and unordered), a record in
+#     `contains`, a response body, at any depth, and inside a `partial` record or response (Q2).
+# Unchanged: the top-level block of a record or response (ADR-0002, ADR-0038), `partial`'s runtime meaning (none),
+# every other matcher, the record diff's words ("captured X does not match predicted Y"), the IR, the grammar.
+#
+# Driven through the probe `MatchValue` (SPEC-RT-011) and its diff form
+# (packages/feat-runtime/fixtures/matcher/probe.mjs: the record diff, or the response diff, on captured data, every
+# schema inlined open so only the value block decides).
+
+spec SPEC-RT-017 "Matcher: a nested value block is exact"
+context Toolchain
+aggregate Runtime
+type infrastructure
+status draft
+
+construct:
+  handler at packages/feat-runtime/src/matcher.ts
+  touches packages/feat-runtime/**
+  needs SPEC-RT-015
+  applyMatcher on a nested matcher, fields = the block:
+  a value that is absent, not an object, or null: "<anchor>: expected an object for nested block, got <value as
+  JSON, or (absent)>" (unchanged);
+  otherwise each declared key k, in written order, is applyMatcher(value[k], k in value, fields[k], ctx,
+  "<anchor> › <k>") (unchanged); then each key of the value not declared, in the value's key order, is one
+  violation "<anchor>: UNPREDICTED field '<key>' = <its value as JSON, cut to 80 characters with … appended when
+  longer>".
+  applyValueBlock (the top-level block of a record or response) is unchanged: it checks the declared fields only.
+
+enforce:
+  report a key of a nested block's object that the block does not declare, never pass it
+  report it at its own depth, for every nested block, in records, state and responses alike
+  pass a nested block's object whose keys are exactly the declared ones and whose fields each pass
+  leave the top-level block of a record or response checking its listed fields only (ADR-0002, ADR-0038)
+  leave a partial block's top level unchecked beyond its listed fields
+
+contract:
+  input MatchInput
+  response MatchResult
+
+scenario "a nested block passes an object whose keys are exactly its declared fields":
+  when: MatchValue { value: { warehouse: "w-1", counted: 3 }, matcher: { matcher: "nested", fields: { warehouse: { matcher: "literal", value: "w-1" }, counted: { matcher: "any", ofType: "number" } } } }
+  predict success:
+    response OK MatchResult { outcome: "passed", count: 0, violation: absent }
+    filesystem has []
+
+scenario "a key the nested block does not declare is a violation":
+  when: MatchValue { value: { warehouse: "w-1", counted: 3 }, matcher: { matcher: "nested", fields: { counted: { matcher: "literal", value: 3 } } } }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a: UNPREDICTED field 'warehouse' = \"w-1\"" }
+    filesystem has []
+
+scenario "an undeclared key two blocks down is reported at its own depth":
+  when: MatchValue { value: { counted: 3, check: { ok: true, differences: [], checkedBy: "night" } }, matcher: { matcher: "nested", fields: { counted: { matcher: "literal", value: 3 }, check: { matcher: "nested", fields: { ok: { matcher: "literal", value: true }, differences: { matcher: "literal", value: [] } } } } } }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a › check: UNPREDICTED field 'checkedBy' = \"night\"" }
+    filesystem has []
+
+scenario "a declared field's violation comes first, then each undeclared key in the value's key order":
+  when: MatchValue { value: { b: 2, a: 1, c: 3 }, matcher: { matcher: "nested", fields: { a: { matcher: "literal", value: 9 } } } }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 3, violation: "a › a: expected 9, got 1" }
+    filesystem has []
+
+scenario "an undeclared key's value is shown cut to 80 characters":
+  when: MatchValue { value: { counted: 3, note: "0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789" }, matcher: { matcher: "nested", fields: { counted: { matcher: "literal", value: 3 } } } }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a: UNPREDICTED field 'note' = \"0123456789012345678901234567890123456789012345678901234567890123456789012345678…" }
+    filesystem has []
+
+scenario "a field stated absent that is present is one violation, not two":
+  when: MatchValue { value: { counted: 3, deletedAt: "2026-11-24T00:00:00Z" }, matcher: { matcher: "nested", fields: { counted: { matcher: "literal", value: 3 }, deletedAt: { matcher: "absent" } } } }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a › deletedAt: expected field to be absent, found \"2026-11-24T00:00:00Z\"" }
+    filesystem has []
+
+scenario "a declared field missing from the object is still reported by its matcher":
+  when: MatchValue { value: { counted: 3 }, matcher: { matcher: "nested", fields: { counted: { matcher: "literal", value: 3 }, warehouse: { matcher: "any", ofType: "string" } } } }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a › warehouse: expected a value (any string), field is absent" }
+    filesystem has []
+
+scenario "a field written any accepts any object there, the way to leave a sub-object unchecked":
+  when: MatchValue { value: { counted: 3, check: { ok: true, checkedBy: "night" } }, matcher: { matcher: "nested", fields: { counted: { matcher: "literal", value: 3 }, check: { matcher: "any" } } } }
+  predict success:
+    response OK MatchResult { outcome: "passed", count: 0, violation: absent }
+    filesystem has []
+
+scenario "a record whose payload carries a key its prediction does not declare is not matched":
+  when: MatchValue { records: [ { type: "stock.counted", payload: { entryType: "stock.counted", payload: { warehouse: "w-1", counted: 3 }, timestamp: "2026-11-24T10:00:00.000Z" } } ], predicted: [ { type: "stock.counted", schemaName: "CountedEvent", valueBlock: { entryType: { matcher: "literal", value: "stock.counted" }, payload: { matcher: "nested", fields: { counted: { matcher: "literal", value: 3 } } }, timestamp: { matcher: "any", ofType: "timestamp" } } } ] }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a[0]: captured stock.counted does not match predicted stock.counted (CountedEvent)" }
+    filesystem has []
+
+scenario "the same record predicted with every payload key passes":
+  when: MatchValue { records: [ { type: "stock.counted", payload: { entryType: "stock.counted", payload: { warehouse: "w-1", counted: 3 }, timestamp: "2026-11-24T10:00:00.000Z" } } ], predicted: [ { type: "stock.counted", schemaName: "CountedEvent", valueBlock: { entryType: { matcher: "literal", value: "stock.counted" }, payload: { matcher: "nested", fields: { warehouse: { matcher: "literal", value: "w-1" }, counted: { matcher: "literal", value: 3 } } }, timestamp: { matcher: "any", ofType: "timestamp" } } } ] }
+  predict success:
+    response OK MatchResult { outcome: "passed", count: 0, violation: absent }
+    filesystem has []
+
+scenario "a key undeclared deeper in a record's payload is not matched either":
+  when: MatchValue { records: [ { type: "stock.counted", payload: { entryType: "stock.counted", payload: { counted: 3, check: { ok: true, checkedBy: "night" } } } } ], predicted: [ { type: "stock.counted", schemaName: "CountedEvent", valueBlock: { entryType: { matcher: "literal", value: "stock.counted" }, payload: { matcher: "nested", fields: { counted: { matcher: "literal", value: 3 }, check: { matcher: "nested", fields: { ok: { matcher: "literal", value: true } } } } } } } ] }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a[0]: captured stock.counted does not match predicted stock.counted (CountedEvent)" }
+    filesystem has []
+
+scenario "a top-level field the record's block does not list still passes":
+  when: MatchValue { records: [ { type: "stock.counted", payload: { entryType: "stock.counted", payload: { counted: 3 }, timestamp: "2026-11-24T10:00:00.000Z", tokenSize: 0 } } ], predicted: [ { type: "stock.counted", schemaName: "CountedEvent", valueBlock: { entryType: { matcher: "literal", value: "stock.counted" }, payload: { matcher: "nested", fields: { counted: { matcher: "literal", value: 3 } } } } } ] }
+  predict success:
+    response OK MatchResult { outcome: "passed", count: 0, violation: absent }
+    filesystem has []
+
+scenario "a partial record still leaves out top-level fields":
+  when: MatchValue { records: [ { type: "stock.counted", payload: { entryType: "stock.counted", payload: { warehouse: "w-1", counted: 3 }, timestamp: "2026-11-24T10:00:00.000Z" } } ], predicted: [ { type: "stock.counted", schemaName: "CountedEvent", partial: true, valueBlock: { entryType: { matcher: "literal", value: "stock.counted" } } } ] }
+  predict success:
+    response OK MatchResult { outcome: "passed", count: 0, violation: absent }
+    filesystem has []
+
+scenario "a partial record's nested block is exact":
+  when: MatchValue { records: [ { type: "stock.counted", payload: { entryType: "stock.counted", payload: { warehouse: "w-1", counted: 3 }, timestamp: "2026-11-24T10:00:00.000Z" } } ], predicted: [ { type: "stock.counted", schemaName: "CountedEvent", partial: true, valueBlock: { payload: { matcher: "nested", fields: { counted: { matcher: "literal", value: 3 } } } } } ] }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a[0]: captured stock.counted does not match predicted stock.counted (CountedEvent)" }
+    filesystem has []
+
+scenario "an unordered has is exact in nested blocks too":
+  when: MatchValue { mode: "unordered", records: [ { type: "stock.counted", payload: { payload: { warehouse: "w-1", counted: 3 } } } ], predicted: [ { type: "stock.counted", schemaName: "CountedEvent", valueBlock: { payload: { matcher: "nested", fields: { counted: { matcher: "literal", value: 3 } } } } } ] }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 2, violation: "a: MISSING predicted record stock.counted (CountedEvent)" }
+    filesystem has []
+
+scenario "contains is exact in nested blocks too":
+  when: MatchValue { mode: "contains", records: [ { type: "Stock", payload: { sku: "s-1", level: { onHand: 3, reserved: 1 } } } ], predicted: [ { type: "Stock", schemaName: "StockRow", valueBlock: { sku: { matcher: "literal", value: "s-1" }, level: { matcher: "nested", fields: { onHand: { matcher: "literal", value: 3 } } } } } ] }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a: state does not contain predicted record Stock (StockRow)" }
+    filesystem has []
+
+scenario "a response body's nested block is exact":
+  when: MatchValue { response: { status: "OK", body: { items: 2, page: { size: 2, cursor: "c-2" } } }, expect: { status: "OK", schemaName: "Page", valueBlock: { items: { matcher: "literal", value: 2 }, page: { matcher: "nested", fields: { size: { matcher: "literal", value: 2 } } } } } }
+  predict success:
+    response OK MatchResult { outcome: "failed", count: 1, violation: "a › response › page: UNPREDICTED field 'cursor' = \"c-2\"" }
+    filesystem has []
+
+scenario "a response's top-level field the block does not list still passes":
+  when: MatchValue { response: { status: "OK", body: { items: 2, page: { size: 2 } } }, expect: { status: "OK", schemaName: "Page", valueBlock: { page: { matcher: "nested", fields: { size: { matcher: "literal", value: 2 } } } } } }
+  predict success:
+    response OK MatchResult { outcome: "passed", count: 0, violation: absent }
+    filesystem has []
