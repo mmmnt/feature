@@ -92,8 +92,8 @@ enforce:
   carry a case's random seed to the host by setSeed on the response role, a null seed unseeding it (ADR-0029)
   rejects INVALID_SEED when setSeed is given a seed that is not a whole number from 0 to 9007199254740991, refused before any setSeed reaches the host
   rejects HOST_CONFIG_MISMATCH when a role's host configuration differs from the host already open for its file
-  rejects HOST_TIMEOUT when the host does not answer a request within the limit; the host is then ended and written to no more
-  rejects HOST_CRASHED on every pending and later call of every role of a file whose host exited or was ended after a timeout, naming the request that timed out
+  fail with HOST_TIMEOUT a request the host does not answer within the limit, then write nothing more to that host and end it
+  rejects HOST_CRASHED when a role of a file calls after the file's host exited or was ended after a timeout, the detail naming the request that timed out
   never take a line the host writes after a timeout as the answer to another request
   on every outcome leave no host process running
 
