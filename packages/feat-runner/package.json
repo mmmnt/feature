@@ -1,6 +1,6 @@
 {
   "name": "@mmmnt/feat-runner",
-  "version": "0.17.0",
+  "version": "0.17.1",
   "description": "Feat runner: thin vitest subprocess orchestrator (GAP-D09). Spec filtering, exit-code passthrough, JUnit collection.",
   "license": "BSD-3-Clause",
   "author": "listenrightmeow <@listenrightmeow> (https://sdd.mmmnt.dev/)",

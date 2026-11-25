@@ -1,6 +1,6 @@
 {
   "name": "@mmmnt/feat-schema-json",
-  "version": "0.17.0",
+  "version": "0.17.1",
   "description": "Feat schema adapter: JSON Schema resolution and validation (compile-time only; generated tests carry schemas inlined).",
   "license": "BSD-3-Clause",
   "author": "listenrightmeow <@listenrightmeow> (https://sdd.mmmnt.dev/)",
