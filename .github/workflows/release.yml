@@ -80,42 +80,38 @@ jobs:
       # `pnpm changeset`. Left uncommitted on purpose: changesets/action switches to the version
       # branch and hard-resets it to this commit; untracked files survive that reset, so
       # `changeset version` consumes it.
-      - name: Generate a changeset from the commit title
+      - name: Generate changesets from the commit titles since the last release
         run: |
           set -euo pipefail
-          HEAD_SHA=$(git rev-parse --short HEAD)
-          HEAD_SUBJECT=$(git log -1 --pretty=%s)
-          HEAD_BODY=$(git log -1 --pretty=%b)
-          echo "Head: $HEAD_SHA $HEAD_SUBJECT"
-
-          if [[ "$HEAD_SUBJECT" == "chore: version packages"* ]]; then
-            echo "The version-packages commit; nothing to generate."
-            exit 0
-          fi
-          if git diff --name-only --diff-filter=A HEAD~1 HEAD -- '.changeset/*.md' | grep -q .; then
-            echo "The commit adds a changeset; nothing to generate."
-            exit 0
-          fi
-
-          # A releasable type with ! or a BREAKING CHANGE footer → major, feat → minor,
-          # fix / perf / refactor → patch, anything else → no release.
-          if echo "$HEAD_SUBJECT" | grep -qE '^(feat|fix|perf|refactor)(\([^)]+\))?!:'; then
-            BUMP="major"
-          elif echo "$HEAD_BODY" | grep -qE '^BREAKING[ -]CHANGE:'; then
-            BUMP="major"
-          elif echo "$HEAD_SUBJECT" | grep -qE '^feat(\([^)]+\))?:'; then
-            BUMP="minor"
-          elif echo "$HEAD_SUBJECT" | grep -qE '^(fix|perf|refactor)(\([^)]+\))?:'; then
-            BUMP="patch"
-          else
-            echo "Not a releasable conventional-commit type; no changeset."
-            exit 0
-          fi
-
-          # The fixed group bumps every package together, so naming one is enough.
-          FILE=".changeset/auto-${HEAD_SHA}.md"
-          printf -- "---\n'@mmmnt/feature': %s\n---\n\n%s\n" "$BUMP" "$HEAD_SUBJECT" > "$FILE"
-          echo "Wrote $FILE ($BUMP)"
+          # Every releasable commit since the last version-packages commit, not only the head: a push
+          # can carry several commits (a direct push, a merge-queue batch), and a fix under a ci:
+          # head commit was missed. The files are never committed, so each run regenerates the same
+          # set and the version PR always reflects exactly what changed since the last release.
+          # (git log --grep, not git log | awk ... exit: under pipefail the early exit fails the pipe.)
+          BASE=$(git log -1 --format=%H --grep='^chore: version packages')
+          if [ -n "$BASE" ]; then RANGE="$BASE..HEAD"; else RANGE="HEAD~1..HEAD"; fi
+          echo "Commits in $RANGE:"
+          for SHA in $(git rev-list --reverse --no-merges "$RANGE"); do
+            SHORT=$(git rev-parse --short "$SHA")
+            SUBJECT=$(git log -1 --pretty=%s "$SHA")
+            BODY=$(git log -1 --pretty=%b "$SHA")
+            if [[ "$SUBJECT" == "chore: version packages"* ]]; then continue; fi
+            # A commit that adds its own changeset needs no generated one (it would duplicate the entry).
+            if git diff-tree --no-commit-id --name-only --diff-filter=A -r "$SHA" -- '.changeset/*.md' | grep -q .; then
+              echo "  $SHORT adds a changeset"; continue
+            fi
+            # A releasable type with ! or a BREAKING CHANGE footer → major, feat → minor,
+            # fix / perf / refactor → patch, anything else → no release.
+            if echo "$SUBJECT" | grep -qE '^(feat|fix|perf|refactor)(\([^)]+\))?!:'; then BUMP="major"
+            elif echo "$BODY" | grep -qE '^BREAKING[ -]CHANGE:'; then BUMP="major"
+            elif echo "$SUBJECT" | grep -qE '^feat(\([^)]+\))?:'; then BUMP="minor"
+            elif echo "$SUBJECT" | grep -qE '^(fix|perf|refactor)(\([^)]+\))?:'; then BUMP="patch"
+            else echo "  $SHORT not releasable: $SUBJECT"; continue
+            fi
+            # The fixed group bumps every package together, so naming one is enough.
+            printf -- "---\n'@mmmnt/feature': %s\n---\n\n%s\n" "$BUMP" "$SUBJECT" > ".changeset/auto-$SHORT.md"
+            echo "  $SHORT $BUMP: $SUBJECT"
+          done
 
       - name: Open or update the version PR, or publish
         id: changesets
