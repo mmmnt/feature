@@ -222,7 +222,7 @@ scenario "rejects duplicate flow name":
     projectionStore has []
 ```
 
-**Anchors (ADR-0010):** scenario names are unique within a spec (lint ERROR) and serve as
+**Anchors (ADR-0010):** scenario names are unique within a spec (the parser refuses a repeated name as `DUPLICATE_SCENARIO_NAME`) and serve as
 failure anchors — every ValidationReport assertion result carries
 `<specId> › "<scenario name>" › <surface>` (`response`, `<service>[index]`,
 `given › execute[i]`, `given › seed[i]`), so failures map to exact spec coordinates. The IR carries no
@@ -581,8 +581,9 @@ Generated tests import only `@mmmnt/feat-runtime` and run standalone under `npx 
 
 ## 8. The agent contract (ADR-0008)
 
-- **Buildability** (ERROR-level lint): B1 `handler at` present for code-producing types;
-  B2 two-way rejection traceability (`rejects` ↔ `predict rejection`); B3 `touches` present.
+- **Buildability** (`feat audit` checks, not `feat lint`): B1 `handler at` present for code-producing types;
+  B2 two-way rejection traceability (`rejects` ↔ `predict rejection`); B3 `touches` present. Each failure is an
+  audit `ERROR`, on any spec whatever its status, and makes `feat audit` exit `1`.
 - **Lifecycle**: the agent builds only `status agreed` specs; it may propose draft→agreed
   (human can revert). Nothing in the toolchain writes a status: `built` and `verified` are set by
   hand, by convention.
