@@ -1,0 +1,72 @@
+name: Dependabot Auto-Merge
+
+# Lets Dependabot land updates on main without a person in the loop.
+#
+# - Every Dependabot PR is approved by github-actions[bot], which satisfies
+#   main's one-approval rule (the repo allows Actions to approve PRs). The
+#   approval is dismissed whenever Dependabot pushes, and this job re-runs
+#   on that push and approves again.
+# - Minor and patch updates are then queued for auto-merge. Majors are
+#   approved but stay for a person to merge.
+# - Merging goes through main's merge queue, so the required checks run on
+#   the queued result before anything lands.
+#
+# Queueing uses the mmmnt GitHub App rather than GITHUB_TOKEN: a merge
+# made under GITHUB_TOKEN does not trigger the push run of CI on main,
+# and release.yml chains off that run. Dependabot-triggered runs only
+# receive Dependabot secrets, so APP_ID and APP_PRIVATE_KEY must exist
+# there as well as in the Actions secrets release.yml uses.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    env:
+      PR_URL: ${{ github.event.pull_request.html_url }}
+    steps:
+      - name: Fetch Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@v3
+        with:
+          github-token: '${{ secrets.GITHUB_TOKEN }}'
+
+      - name: Approve
+        run: |
+          gh pr review --approve "$PR_URL" \
+            --body "Dependabot $UPDATE_TYPE, approved automatically. The merge queue's required checks gate the merge."
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UPDATE_TYPE: ${{ steps.metadata.outputs.update-type }}
+
+      - name: Check the App secrets reach Dependabot runs
+        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
+        run: |
+          if [ -z "$APP_ID" ] || [ "$HAS_KEY" != "true" ]; then
+            echo "::error::APP_ID / APP_PRIVATE_KEY are not set as Dependabot secrets (Settings → Secrets and variables → Dependabot). The PR is approved but cannot be queued."
+            exit 1
+          fi
+        env:
+          APP_ID: ${{ secrets.APP_ID }}
+          HAS_KEY: ${{ secrets.APP_PRIVATE_KEY != '' }}
+
+      - name: Generate GitHub App token
+        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Queue minor and patch updates for auto-merge
+        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}

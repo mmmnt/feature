@@ -1,0 +1,43 @@
+version: 2
+updates:
+  # The pnpm workspace: packages/*, adapters/* and the root tooling.
+  - package-ecosystem: 'npm'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+    groups:
+      minor-and-patch:
+        update-types:
+          - 'minor'
+          - 'patch'
+    open-pull-requests-limit: 10
+    labels:
+      - 'dependencies'
+
+  # The VS Code extension has its own npm lockfile, outside the workspace.
+  - package-ecosystem: 'npm'
+    directory: '/editors/vscode'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+    groups:
+      minor-and-patch:
+        update-types:
+          - 'minor'
+          - 'patch'
+    labels:
+      - 'dependencies'
+
+  - package-ecosystem: 'github-actions'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+    groups:
+      actions:
+        patterns:
+          - '*'
+    labels:
+      - 'dependencies'
+      - 'ci'
