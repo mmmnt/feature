@@ -40,6 +40,8 @@ jobs:
     outputs:
       # The version this run tagged and released; empty when it only opened or updated the PR.
       released: ${{ steps.tag.outputs.version }}
+      # The commit that version was released from (the merged version PR).
+      released_sha: ${{ steps.tag.outputs.sha }}
     steps:
       # The mmmnt GitHub App (APP_ID / APP_PRIVATE_KEY are organization secrets) authors the version
       # PR, its branch and the release. Pushes made with GITHUB_TOKEN start no other workflows, so a
@@ -133,22 +135,17 @@ jobs:
         env:
           NPM_CONFIG_PROVENANCE: true
 
-      # Only the merged version PR releases: on any other commit with nothing pending, the publish
-      # script finds every version on npm already and nothing is tagged. A re-run of a release
-      # whose tag exists does nothing.
+      # Runs on every release run; it releases only a version that npm has and that has no tag yet,
+      # so on most commits it does nothing, and a re-run of a finished release does nothing.
+      # (changesets/action sets no hasChangesets output on a publish run, so this step cannot be
+      # gated on it.) The tag goes on the commit that introduced the version, which is the merged
+      # version PR, also when this runs later from a workflow_dispatch on a newer main.
       - name: Tag and release the version
         id: tag
-        if: steps.changesets.outputs.hasChangesets == 'false'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
         run: |
           set -euo pipefail
-          SUBJECT=$(git log -1 --pretty=%s "$SHA")
-          if [[ "$SUBJECT" != "chore: version packages"* ]]; then
-            echo "Not the version-packages commit; nothing to release."
-            exit 0
-          fi
           VERSION=$(node -p "require('./packages/feature/package.json').version")
           TAG="v$VERSION"
           if git ls-remote --exit-code --tags origin "refs/tags/$TAG" > /dev/null; then
@@ -156,9 +153,15 @@ jobs:
             exit 0
           fi
           if ! npm view "@mmmnt/feature@$VERSION" version > /dev/null 2>&1; then
-            echo "::error::@mmmnt/feature@$VERSION is not on npm after the publish step."
+            echo "@mmmnt/feature@$VERSION is not on npm; nothing to release."
+            exit 0
+          fi
+          SHA=$(git log -1 --format=%H -S"\"version\": \"$VERSION\"" -- packages/feature/package.json)
+          if [ -z "$SHA" ]; then
+            echo "::error::no commit introduces version $VERSION in packages/feature/package.json."
             exit 1
           fi
+          echo "Releasing $TAG at $(git log -1 --format='%h %s' "$SHA")"
           # The release notes are this version's section of the CLI's changelog.
           node -e '
             const fs = require("fs");
@@ -177,6 +180,7 @@ jobs:
           ' "$VERSION"
           gh release create "$TAG" --target "$SHA" --title "$TAG" --notes-file release-notes.md --latest
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
 
   extension:
     needs: release
@@ -184,7 +188,7 @@ jobs:
     uses: ./.github/workflows/extension.yml
     with:
       version: ${{ needs.release.outputs.released }}
-      ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      ref: ${{ needs.release.outputs.released_sha }}
     secrets: inherit
 
   discord-notify:
