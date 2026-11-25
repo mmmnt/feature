@@ -123,6 +123,24 @@ A Toxiproxy error status the library does not translate is rethrown as it came.
 - Spec: [fault-proxy.feat](fault-proxy.feat) (SPEC-FPX-001). Its probe starts Toxiproxy and throwaway containers, so it runs under `feat run`, not the package's `test` script.
 - [ADR-0023](../../docs/adr/ADR-0023-adapter-interface-v2.md): adapter interface v2, fault injection
 
+## Changelog
+
+Per-release changes are in [CHANGELOG.md](CHANGELOG.md). Every `@mmmnt` package is released at the same version.
+
+## Contributing
+
+This package is part of the [Feature monorepo](https://github.com/mmmnt/feature). See
+[CONTRIBUTING.md](../../CONTRIBUTING.md) for the development setup, the spec-driven rules and the
+local gate.
+
+```bash
+git clone https://github.com/mmmnt/feature.git
+cd feature
+pnpm install
+pnpm build --filter=@mmmnt/feat-fault-proxy
+pnpm --filter @mmmnt/feat-fault-proxy test
+```
+
 ## License
 
 BSD-3-Clause. See [LICENSE](LICENSE).

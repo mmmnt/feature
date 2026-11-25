@@ -29,6 +29,8 @@
   "devDependencies": {
     "@changesets/changelog-github": "^1.0.1",
     "@changesets/cli": "^3.0.3",
+    "@commitlint/cli": "^21.2.4",
+    "@commitlint/config-conventional": "^21.2.4",
     "@dotenvx/dotenvx": "^2.11.0",
     "@mmmnt/feat-adapter-fs": "workspace:*",
     "@mmmnt/feat-adapter-handler": "workspace:*",

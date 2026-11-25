@@ -374,6 +374,24 @@ that resolve against nothing.
 - [`inline.test.ts`](inline.test.ts): the adapter's tests.
 - [ADR-0023](../../docs/adr/ADR-0023-adapter-interface-v2.md): adapter interface v2.
 
+## Changelog
+
+Per-release changes are in [CHANGELOG.md](CHANGELOG.md). Every `@mmmnt` package is released at the same version.
+
+## Contributing
+
+This package is part of the [Feature monorepo](https://github.com/mmmnt/feature). See
+[CONTRIBUTING.md](../../CONTRIBUTING.md) for the development setup, the spec-driven rules and the
+local gate.
+
+```bash
+git clone https://github.com/mmmnt/feature.git
+cd feature
+pnpm install
+pnpm build --filter=@mmmnt/feat-schema-json
+pnpm --filter @mmmnt/feat-schema-json test
+```
+
 ## License
 
 BSD-3-Clause. See [LICENSE](LICENSE).

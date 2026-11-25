@@ -3,6 +3,7 @@
   "version": "0.16.0",
   "description": "The feat CLI — Feature, the quality spine of AI-native delivery.",
   "license": "BSD-3-Clause",
+  "author": "listenrightmeow <@listenrightmeow> (https://sdd.mmmnt.dev/)",
   "type": "module",
   "bin": {
     "feat": "./bin/run.js"
@@ -50,11 +51,23 @@
     "url": "git+https://github.com/mmmnt/feature.git",
     "directory": "packages/feature"
   },
-  "homepage": "https://github.com/mmmnt/feature#readme",
+  "homepage": "https://github.com/mmmnt/feature/tree/main/packages/feature#readme",
   "bugs": {
     "url": "https://github.com/mmmnt/feature/issues"
   },
   "publishConfig": {
-    "access": "public"
-  }
+    "access": "public",
+    "provenance": true
+  },
+  "keywords": [
+    "feature",
+    "feat",
+    "specification",
+    "spec-driven-development",
+    "testing",
+    "vitest",
+    "cli",
+    "test-generation",
+    "dsl"
+  ]
 }

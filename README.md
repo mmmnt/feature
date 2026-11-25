@@ -1,9 +1,17 @@
-# Feature
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo/feature-logo-light.png" />
+    <img src="docs/assets/logo/feature-logo-dark.png" alt="feature" height="46" />
+  </picture>
+</p>
 
-[![CI](https://github.com/mmmnt/feature/actions/workflows/ci.yml/badge.svg)](https://github.com/mmmnt/feature/actions/workflows/ci.yml)
-[![npm](https://img.shields.io/npm/v/@mmmnt/feature.svg?label=npm)](https://www.npmjs.com/package/@mmmnt/feature)
-[![Discord](https://img.shields.io/discord/1489758529219723486?color=5865F2&logo=discord&logoColor=white&label=Discord)](https://discord.gg/YcRqsQUQuu)
-[![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD--3--Clause-blue.svg)](LICENSE)
+<p align="center">
+  <a href="https://www.npmjs.com/package/@mmmnt/feature"><img src="https://img.shields.io/npm/v/@mmmnt/feature.svg?label=npm" alt="npm" /></a>
+  <a href="https://discord.gg/YcRqsQUQuu"><img src="https://img.shields.io/discord/1489758529219723486?color=5865F2&logo=discord&logoColor=white&label=Discord" alt="Discord" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-BSD--3--Clause-blue.svg" alt="License: BSD-3-Clause" /></a>
+</p>
+
+# Feature
 
 **Specify a feature once. Get the test suite that holds the code to it.**
 
@@ -21,20 +29,34 @@ spec for one command, query, policy, projection or saga. It does three things:
 The same spec compiles to the same test file, byte for byte, every time. That is what lets CI check
 that the committed tests are the ones the specs say (`feat verify`).
 
-## Where Feature fits: Moment, Facet and Feature
+**See it first.** [TicketWave](https://github.com/mmmnt/mmmnt/tree/main/examples/ticketwave), the example ticketing platform modelled in [Moment](https://moment.mmmnt.ai) and rehearsed in [Facet](https://facet.mmmnt.dev), takes its `RequestHold` command from the proven model to a `.feat` spec and the suite it compiles into. [Walk through it on the site.](https://feature.mmmnt.ai/#ticketwave)
 
-Feature is the last of three tools that take a domain from a design to verified code.
+## Why Feature
 
-| | The question it answers | What you write |
-| --- | --- | --- |
-| **[Moment](https://moment.mmmnt.ai)** | Is the design complete and consistent over time? | A `.moment` model: bounded contexts, aggregates, events and the flows between them |
-| **Facet** | Do the flows behave the way the design says? | Nothing new. Facet, Moment's sibling harness, replays the scenarios Moment derives from `.moment` files and validates every flow |
-| **Feature** | Does the code do what the design decided? | A `.feat` spec per command, query, policy, projection or saga |
+Every spec-to-test approach has a translation layer. Gherkin needs step definitions, contract tools
+need hand-written provider tests, and a Markdown spec needs a person, or a model, to decide what it
+means. That layer is where drift lives: the spec says one thing, the tests check another, and
+nobody notices until production does. A model that turns requirements into tests is the same layer,
+moved into an LLM: different every run, and impossible to verify.
 
-A `.feat` spec is cheap to write correctly once the design has stopped moving. Write it after the
-flows are validated in Facet and the Moment CLI; Feature then holds the implementation to them.
+Feature has no translation layer. The prediction is the assertion, the suite is derived from the
+spec deterministically, and `feat verify` fails the build when the two drift apart.
 
-## Install
+## From design to running code: Moment, Facet and Feature
+
+Feature is the last of three tools that take a domain from a design to verified code. Each answers
+one question and hands the next something it can check.
+
+| | The question it answers | What you write | What you get |
+| --- | --- | --- | --- |
+| **[Moment](https://moment.mmmnt.ai)** | Is the design complete and consistent over time? | A `.moment` model | Validation, every path through every flow, a board, scenarios, types and documents |
+| **[Facet](https://facet.mmmnt.dev)** | Does the design behave the way it says it does? | Nothing. Facet reads what Moment derives | Every scenario replayed and asserted, before any code exists |
+| **Feature** | Does the code do what the design decided? | A `.feat` spec for each command, taken from the model | Test suites compiled from the spec, the same ones every time, which gate CI |
+
+A `.feat` spec is cheap to write correctly only once the design has stopped moving, and Facet is
+where it stops moving.
+
+## Quick start
 
 Requires Node.js 22 or newer.
 
@@ -49,8 +71,6 @@ three exists. It creates a `package.json` if there is none, then installs `@mmmn
 `@mmmnt/feat-adapter-handler`, `@mmmnt/feat-adapter-fs`, `@mmmnt/feat-schema-json` and `vitest`
 with the package manager it detects (pnpm, yarn or npm). `--no-install` prints the install command
 instead.
-
-## Quick start
 
 ```sh
 npx feat parse specs/greet.feat   # validate the spec and print its IR
@@ -111,7 +131,9 @@ scenario "rejects duplicate email":
 | Test runner | the project's own Vitest; generated files are standard Vitest suites |
 | Reports | JUnit XML from `feat run` when `report.format` includes `junit`; `feat report` summarizes it |
 
-## The `feat` CLI
+## What Feature does
+
+### The `feat` CLI
 
 Every command that reads a config takes `-c, --config <path>` (default `feat.config.json`).
 
@@ -144,6 +166,25 @@ feat report --junit  # the JUnit path for your CI's test report
 ```
 
 The full reference, configuration included, is in [`packages/feature`](packages/feature/README.md).
+
+### The language
+
+- [`docs/grammar-reference.md`](docs/grammar-reference.md): the `.feat` v1 reference. It is the
+  source of truth: where code and reference disagree, the reference wins.
+- [`corpus/`](corpus/README.md): the exemplars, each a `.feat`, its `.contract.json`, its expected
+  IR (`.ir.json`) and its `feat.config.json`. The parser is tested against them.
+- [`schemas/`](schemas): the language-neutral JSON Schemas for the IR (`builtspec.schema.json`),
+  contracts and config. `pnpm corpus:validate` checks the corpus against them.
+- [`docs/evidence-bundle.md`](docs/evidence-bundle.md): the `feat report --evidence` format.
+- [`docs/adr/`](docs/adr/README.md): the architecture decision records.
+
+### Editor support
+
+[`editors/vscode`](editors/vscode) is the VS Code extension (`mmmnt.feat-vscode`): syntax
+highlighting from `@mmmnt/feat-grammar`, and live, spec-anchored test feedback from `feat watch`
+(commands **Feat: Start watch** and **Feat: Stop watch**). It is published to the VS Code
+Marketplace and Open VSX. [`editor/feat.tmLanguage.json`](editor/feat.tmLanguage.json) is a copy of
+the grammar for other editors.
 
 ## Packages
 
@@ -187,24 +228,13 @@ loaded by package name.
 | [`@mmmnt/feat-adapter-stripe`](adapters/stripe) | service | The Stripe Events API as the capture window. |
 | [`@mmmnt/feat-fault-proxy`](adapters/fault-proxy) | library | Transport faults (timeout, reset, partition, broker loss) through Toxiproxy, for the product adapters. |
 
-## Editor support
+## Documentation
 
-[`editors/vscode`](editors/vscode) is the VS Code extension (`mmmnt.feat-vscode`): syntax
-highlighting from `@mmmnt/feat-grammar`, and live, spec-anchored test feedback from `feat watch`
-(commands **Feat: Start watch** and **Feat: Stop watch**). It is published to the VS Code
-Marketplace and Open VSX. [`editor/feat.tmLanguage.json`](editor/feat.tmLanguage.json) is a copy of
-the grammar for other editors.
-
-## The language
-
-- [`docs/grammar-reference.md`](docs/grammar-reference.md): the `.feat` v1 reference. It is the
-  source of truth: where code and reference disagree, the reference wins.
-- [`corpus/`](corpus/README.md): the exemplars, each a `.feat`, its `.contract.json`, its expected
-  IR (`.ir.json`) and its `feat.config.json`. The parser is tested against them.
-- [`schemas/`](schemas): the language-neutral JSON Schemas for the IR (`builtspec.schema.json`),
-  contracts and config. `pnpm corpus:validate` checks the corpus against them.
-- [`docs/evidence-bundle.md`](docs/evidence-bundle.md): the `feat report --evidence` format.
-- [`docs/adr/`](docs/adr/README.md): the architecture decision records.
+- **[feature.mmmnt.ai](https://feature.mmmnt.ai)**: what Feature is, the language at a glance, and the TicketWave walkthrough
+- **[Grammar reference](docs/grammar-reference.md)**: the `.feat` language, construct by construct
+- **[Wiki](https://github.com/mmmnt/feature/wiki)**: core concepts, the architecture, testing mechanics and the package reference
+- **[Architecture decisions](docs/adr/README.md)**: why the language and the toolchain are the way they are
+- Each package's `README.md` covers its API, and its `CHANGELOG.md` covers what changed in each release
 
 ## Developing Feature
 
@@ -255,7 +285,15 @@ the Docker VM (`CI_LOCAL_DISK_MIN_GB`). Other settings: `CI_LOCAL_DIR` (run dire
 after it (`scripts/docker-sweep.sh`). A job CI runs on another OS (feat-cdk on Windows) is left to
 CI.
 
-### Releases
+- Use a conventional-commit title (`feat:`, `fix:`, ...): it decides the release.
+- A change to the language closes four layers in one change: the grammar reference, a corpus
+  exemplar, the parser and IR, and the whole corpus re-validated.
+- A design change comes with an ADR in [`docs/adr/`](docs/adr/README.md).
+- Run `scripts/ci-local.sh` before you push.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Releases
 
 All `@mmmnt/feat*` packages and `@mmmnt/feature` are one fixed version group and are released
 together. After CI succeeds on `main`, the release workflow turns the merged pull request's
@@ -265,19 +303,9 @@ patch, `!` or `BREAKING CHANGE` a major), and the project's bot opens or updates
 publishing with provenance, creates one `vX.Y.Z` tag and GitHub Release, and publishes the VS Code
 extension at the same version. Nobody pushes release tags by hand.
 
-## Contributing
-
-Issues and pull requests are welcome at
-[github.com/mmmnt/feature](https://github.com/mmmnt/feature). Start with
-[CONTRIBUTING.md](CONTRIBUTING.md).
+## Community
 
 Join the [Discord server](https://discord.gg/YcRqsQUQuu) to discuss Feature, get help, and meet other teams writing specs.
-
-- Use a conventional-commit title (`feat:`, `fix:`, ...): it decides the release.
-- A change to the language closes four layers in one change: the grammar reference, a corpus
-  exemplar, the parser and IR, and the whole corpus re-validated.
-- A design change comes with an ADR in [`docs/adr/`](docs/adr/README.md).
-- Run `scripts/ci-local.sh` before you push.
 
 ## License
 

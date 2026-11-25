@@ -249,6 +249,24 @@ The runner has one error code of its own, `VITEST_NOT_INSTALLED`.
 - [ADR-0024](../../docs/adr/ADR-0024-tier-bindings.md): tier bindings, `FEAT_CONFIG`, the timing envelope.
 - [Root README](../../README.md): the CLI and its exit codes.
 
+## Changelog
+
+Per-release changes are in [CHANGELOG.md](CHANGELOG.md). Every `@mmmnt` package is released at the same version.
+
+## Contributing
+
+This package is part of the [Feature monorepo](https://github.com/mmmnt/feature). See
+[CONTRIBUTING.md](../../CONTRIBUTING.md) for the development setup, the spec-driven rules and the
+local gate.
+
+```bash
+git clone https://github.com/mmmnt/feature.git
+cd feature
+pnpm install
+pnpm build --filter=@mmmnt/feat-runner
+pnpm --filter @mmmnt/feat-runner test
+```
+
 ## License
 
 BSD-3-Clause. See [LICENSE](LICENSE).

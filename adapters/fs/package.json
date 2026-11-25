@@ -3,6 +3,7 @@
   "version": "0.1.11",
   "description": "Feat service adapter: filesystem capture (files written during the capture window). Dogfood-critical.",
   "license": "BSD-3-Clause",
+  "author": "listenrightmeow <@listenrightmeow> (https://sdd.mmmnt.dev/)",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -29,12 +30,13 @@
     "url": "git+https://github.com/mmmnt/feature.git",
     "directory": "adapters/fs"
   },
-  "homepage": "https://github.com/mmmnt/feature#readme",
+  "homepage": "https://github.com/mmmnt/feature/tree/main/adapters/fs#readme",
   "bugs": {
     "url": "https://github.com/mmmnt/feature/issues"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "provenance": true
   },
   "engines": {
     "node": ">=22.15"
@@ -43,5 +45,15 @@
     "@mmmnt/feat-adapter-kit": "workspace:^",
     "@mmmnt/feat-runtime": "workspace:^",
     "vitest": "^3.2.0"
-  }
+  },
+  "keywords": [
+    "feature",
+    "feat",
+    "specification",
+    "spec-driven-development",
+    "testing",
+    "vitest",
+    "adapter",
+    "filesystem"
+  ]
 }

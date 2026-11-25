@@ -123,6 +123,24 @@ An HTTP error status is a response, not an adapter error: predict it with `predi
 - [Grammar reference](../../docs/grammar-reference.md): command routing and actors
 - [ADR-0023](../../docs/adr/ADR-0023-adapter-interface-v2.md): adapter interface v2
 
+## Changelog
+
+Per-release changes are in [CHANGELOG.md](CHANGELOG.md). Every `@mmmnt` package is released at the same version.
+
+## Contributing
+
+This package is part of the [Feature monorepo](https://github.com/mmmnt/feature). See
+[CONTRIBUTING.md](../../CONTRIBUTING.md) for the development setup, the spec-driven rules and the
+local gate.
+
+```bash
+git clone https://github.com/mmmnt/feature.git
+cd feature
+pnpm install
+pnpm build --filter=@mmmnt/feat-adapter-http
+pnpm --filter @mmmnt/feat-adapter-http test
+```
+
 ## License
 
 BSD-3-Clause. See [LICENSE](LICENSE).

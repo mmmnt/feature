@@ -3,6 +3,7 @@
   "version": "0.1.1",
   "description": "Kafka service adapter for Feat: namespaced topics become a capture window read at the last stable offset — an unpredicted record fails the suite",
   "license": "BSD-3-Clause",
+  "author": "listenrightmeow <@listenrightmeow> (https://sdd.mmmnt.dev/)",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -32,18 +33,29 @@
     "vitest": "^3.2.0"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/mmmnt/feature.git",
     "directory": "adapters/kafka"
   },
-  "homepage": "https://github.com/mmmnt/feature#readme",
+  "homepage": "https://github.com/mmmnt/feature/tree/main/adapters/kafka#readme",
   "bugs": {
     "url": "https://github.com/mmmnt/feature/issues"
   },
   "publishConfig": {
-    "access": "public"
-  }
+    "access": "public",
+    "provenance": true
+  },
+  "keywords": [
+    "feature",
+    "feat",
+    "specification",
+    "spec-driven-development",
+    "testing",
+    "vitest",
+    "adapter",
+    "kafka"
+  ]
 }

@@ -3,6 +3,7 @@
   "version": "0.10.0",
   "description": "What generated tests import: loadConfig, config-driven adapter loading (createAdapter contract), lifecycle/capture orchestration, precondition executor, toMatchPrediction. Deps: feat-types + Ajv only (ADR-0001).",
   "license": "BSD-3-Clause",
+  "author": "listenrightmeow <@listenrightmeow> (https://sdd.mmmnt.dev/)",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -36,11 +37,25 @@
     "url": "git+https://github.com/mmmnt/feature.git",
     "directory": "packages/feat-runtime"
   },
-  "homepage": "https://github.com/mmmnt/feature#readme",
+  "homepage": "https://github.com/mmmnt/feature/tree/main/packages/feat-runtime#readme",
   "bugs": {
     "url": "https://github.com/mmmnt/feature/issues"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "provenance": true
+  },
+  "keywords": [
+    "feature",
+    "feat",
+    "specification",
+    "spec-driven-development",
+    "testing",
+    "vitest",
+    "test-harness",
+    "runtime"
+  ],
+  "engines": {
+    "node": ">=22"
   }
 }

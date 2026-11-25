@@ -3,6 +3,7 @@
   "version": "0.8.0",
   "description": "Feat response and service adapters over the Feat Host Protocol: JSON-RPC 2.0 on a spec host's stdio (SPEC-RPC-001/002).",
   "license": "BSD-3-Clause",
+  "author": "listenrightmeow <@listenrightmeow> (https://sdd.mmmnt.dev/)",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -33,7 +34,7 @@
     "@mmmnt/feat-runtime": "workspace:^"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "repository": {
     "type": "git",
@@ -41,6 +42,19 @@
     "directory": "adapters/stdio-jsonrpc"
   },
   "publishConfig": {
-    "access": "public"
-  }
+    "access": "public",
+    "provenance": true
+  },
+  "homepage": "https://github.com/mmmnt/feature/tree/main/adapters/stdio-jsonrpc#readme",
+  "keywords": [
+    "feature",
+    "feat",
+    "specification",
+    "spec-driven-development",
+    "testing",
+    "vitest",
+    "adapter",
+    "json-rpc",
+    "polyglot"
+  ]
 }

@@ -43,7 +43,7 @@ Feature is built spec-driven on itself.
 Run the full gate before every push:
 
 ```bash
-git config core.hooksPath .githooks   # once per clone
+git config core.hooksPath .githooks   # once per clone: pre-push and commit-msg
 scripts/ci-local.sh                   # the ubuntu jobs of ci.yml, in containers, on HEAD
 git push
 ```
@@ -55,7 +55,13 @@ leaves out.
 ## Commits and releases
 
 Commit titles follow [Conventional Commits](https://www.conventionalcommits.org/), and they decide
-the release. Every `@mmmnt` package is in one fixed version group and is released at the same
+the release. The `commit-msg` hook checks them with commitlint (`commitlint.config.mjs`):
+
+- **Types:** `feat`, `fix`, `perf`, `refactor`, `test`, `spec`, `docs`, `ci`, `build`, `chore`, `revert`
+- **Scopes:** optional and free, usually the package or adapter (`fix(kurrent): …`)
+- Titles and bodies may be long, and a subject may start with a spec id or an error code.
+
+For example: `feat(stdio-jsonrpc): fault shape C carries untilReset`. Every `@mmmnt` package is in one fixed version group and is released at the same
 version.
 
 - After CI passes on `main`, `release.yml` writes a changeset from the commit title:

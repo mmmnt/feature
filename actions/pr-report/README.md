@@ -110,6 +110,24 @@ A refusal fails the step with `::error title=<CODE>::`: `NO_PR_CONTEXT`, `INSUFF
 cannot write comments or checks, as on a fork's own run), `NO_EVIDENCE`, `TRUSTED_RUN`, `PR_EVIDENCE_MISSING`,
 `EVIDENCE_STORE_FAILED`, `NOT_FAST_FORWARD`, `PUSH_RANGE_INCOMPLETE`, `STATEMENT_MISMATCH`.
 
+## Changelog
+
+The action is pinned by commit SHA (see Usage); what changed is in the repository's [GitHub Releases](https://github.com/mmmnt/feature/releases) and commit history.
+
+## Contributing
+
+This package is part of the [Feature monorepo](https://github.com/mmmnt/feature). See
+[CONTRIBUTING.md](../../CONTRIBUTING.md) for the development setup, the spec-driven rules and the
+local gate.
+
+```bash
+git clone https://github.com/mmmnt/feature.git
+cd feature
+pnpm install
+cd actions/pr-report
+npm install && npm run build && npm test
+```
+
 ## License
 
 BSD-3-Clause. See [LICENSE](LICENSE).

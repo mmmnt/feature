@@ -1,7 +1,7 @@
 {
   "name": "@mmmnt/feat-analyze",
   "version": "0.3.0",
-  "description": "Pure analysis for .feat specs: lint, audit (B1\u2013B3 buildability), and conservative formatting \u2014 no filesystem, no CLI",
+  "description": "Pure analysis for .feat specs: lint, audit (B1–B3 buildability), and conservative formatting — no filesystem, no CLI",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -22,19 +22,32 @@
     "vitest": "^3.2.0"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "license": "BSD-3-Clause",
+  "author": "listenrightmeow <@listenrightmeow> (https://sdd.mmmnt.dev/)",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/mmmnt/feature.git",
     "directory": "packages/feat-analyze"
   },
-  "homepage": "https://github.com/mmmnt/feature#readme",
+  "homepage": "https://github.com/mmmnt/feature/tree/main/packages/feat-analyze#readme",
   "bugs": {
     "url": "https://github.com/mmmnt/feature/issues"
   },
   "publishConfig": {
-    "access": "public"
-  }
+    "access": "public",
+    "provenance": true
+  },
+  "keywords": [
+    "feature",
+    "feat",
+    "specification",
+    "spec-driven-development",
+    "testing",
+    "vitest",
+    "lint",
+    "formatter",
+    "audit"
+  ]
 }

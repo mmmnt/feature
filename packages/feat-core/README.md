@@ -171,6 +171,24 @@ paired with its expected `.ir.json`, plus the bad-input vectors in [`fixtures/ba
 contract is the spec [SPEC-CORE-001](parse.feat). The language is defined in the
 [grammar reference](../../docs/grammar-reference.md).
 
+## Changelog
+
+Per-release changes are in [CHANGELOG.md](CHANGELOG.md). Every `@mmmnt` package is released at the same version.
+
+## Contributing
+
+This package is part of the [Feature monorepo](https://github.com/mmmnt/feature). See
+[CONTRIBUTING.md](../../CONTRIBUTING.md) for the development setup, the spec-driven rules and the
+local gate.
+
+```bash
+git clone https://github.com/mmmnt/feature.git
+cd feature
+pnpm install
+pnpm build --filter=@mmmnt/feat-core
+pnpm --filter @mmmnt/feat-core test
+```
+
 ## License
 
 BSD-3-Clause. See [LICENSE](LICENSE).

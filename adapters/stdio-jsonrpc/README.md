@@ -682,6 +682,24 @@ Every refusal is an `ExchangeError` with a `code` and a `detail`.
 - [Draft ADR](../../drafts/stdio-jsonrpc-adapter/ADR-DRAFT.md) for this adapter.
 - [Grammar reference](../../docs/grammar-reference.md): the `fault` and `clock at` lines.
 
+## Changelog
+
+Per-release changes are in [CHANGELOG.md](CHANGELOG.md). Every `@mmmnt` package is released at the same version.
+
+## Contributing
+
+This package is part of the [Feature monorepo](https://github.com/mmmnt/feature). See
+[CONTRIBUTING.md](../../CONTRIBUTING.md) for the development setup, the spec-driven rules and the
+local gate.
+
+```bash
+git clone https://github.com/mmmnt/feature.git
+cd feature
+pnpm install
+pnpm build --filter=@mmmnt/feat-adapter-stdio-jsonrpc
+pnpm --filter @mmmnt/feat-adapter-stdio-jsonrpc test
+```
+
 ## License
 
 BSD-3-Clause. See [LICENSE](LICENSE).

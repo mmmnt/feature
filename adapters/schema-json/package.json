@@ -3,6 +3,7 @@
   "version": "0.2.1",
   "description": "Feat schema adapter: JSON Schema resolution and validation (compile-time only; generated tests carry schemas inlined).",
   "license": "BSD-3-Clause",
+  "author": "listenrightmeow <@listenrightmeow> (https://sdd.mmmnt.dev/)",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -31,11 +32,25 @@
     "url": "git+https://github.com/mmmnt/feature.git",
     "directory": "adapters/schema-json"
   },
-  "homepage": "https://github.com/mmmnt/feature#readme",
+  "homepage": "https://github.com/mmmnt/feature/tree/main/adapters/schema-json#readme",
   "bugs": {
     "url": "https://github.com/mmmnt/feature/issues"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "provenance": true
+  },
+  "keywords": [
+    "feature",
+    "feat",
+    "specification",
+    "spec-driven-development",
+    "testing",
+    "vitest",
+    "json-schema",
+    "schema"
+  ],
+  "engines": {
+    "node": ">=22"
   }
 }

@@ -3,6 +3,7 @@
   "version": "0.1.9",
   "description": "Feat response adapter: HTTP invocation (method/path routes from response.commands, baseUrl/headers from invoke, actor headers from the actor registry).",
   "license": "BSD-3-Clause",
+  "author": "listenrightmeow <@listenrightmeow> (https://sdd.mmmnt.dev/)",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -32,11 +33,25 @@
     "url": "git+https://github.com/mmmnt/feature.git",
     "directory": "adapters/http"
   },
-  "homepage": "https://github.com/mmmnt/feature#readme",
+  "homepage": "https://github.com/mmmnt/feature/tree/main/adapters/http#readme",
   "bugs": {
     "url": "https://github.com/mmmnt/feature/issues"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "provenance": true
+  },
+  "keywords": [
+    "feature",
+    "feat",
+    "specification",
+    "spec-driven-development",
+    "testing",
+    "vitest",
+    "adapter",
+    "http"
+  ],
+  "engines": {
+    "node": ">=22"
   }
 }

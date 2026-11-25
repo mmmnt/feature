@@ -24,19 +24,31 @@
     "vitest": "^3.2.0"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "license": "BSD-3-Clause",
+  "author": "listenrightmeow <@listenrightmeow> (https://sdd.mmmnt.dev/)",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/mmmnt/feature.git",
     "directory": "packages/feat-adapter-kit"
   },
-  "homepage": "https://github.com/mmmnt/feature#readme",
+  "homepage": "https://github.com/mmmnt/feature/tree/main/packages/feat-adapter-kit#readme",
   "bugs": {
     "url": "https://github.com/mmmnt/feature/issues"
   },
   "publishConfig": {
-    "access": "public"
-  }
+    "access": "public",
+    "provenance": true
+  },
+  "keywords": [
+    "feature",
+    "feat",
+    "specification",
+    "spec-driven-development",
+    "testing",
+    "vitest",
+    "adapter",
+    "conformance"
+  ]
 }

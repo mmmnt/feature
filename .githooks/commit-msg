@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# The commit title must be a Conventional Commit (commitlint.config.mjs): it decides the release.
+set -euo pipefail
+ROOT=$(git rev-parse --show-toplevel)
+if [ ! -x "$ROOT/node_modules/.bin/commitlint" ]; then
+  echo "commit-msg: commitlint is not installed; run pnpm install" >&2
+  exit 1
+fi
+exec "$ROOT/node_modules/.bin/commitlint" --edit "$1"

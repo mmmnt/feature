@@ -248,6 +248,24 @@ scenario "the data stack has one table and publishes its name":
 - [SPEC-CDK-001](local-cdk.feat): `aws-cdk` resolves from the project, never fetched.
 - [ADR-0026](../../docs/adr/ADR-0026-local-vitest.md): the same rule for the runner's vitest.
 
+## Changelog
+
+Per-release changes are in [CHANGELOG.md](CHANGELOG.md). Every `@mmmnt` package is released at the same version.
+
+## Contributing
+
+This package is part of the [Feature monorepo](https://github.com/mmmnt/feature). See
+[CONTRIBUTING.md](../../CONTRIBUTING.md) for the development setup, the spec-driven rules and the
+local gate.
+
+```bash
+git clone https://github.com/mmmnt/feature.git
+cd feature
+pnpm install
+pnpm build --filter=@mmmnt/feat-cdk
+pnpm --filter @mmmnt/feat-cdk test
+```
+
 ## License
 
 BSD-3-Clause. See [LICENSE](LICENSE).

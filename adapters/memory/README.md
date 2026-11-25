@@ -174,6 +174,24 @@ The adapter defines no error codes. It serves both observation modes, so it neve
 - [Grammar reference, observation modes](../../docs/grammar-reference.md)
 - [ADR-0023, adapter interface v2](../../docs/adr/ADR-0023-adapter-interface-v2.md)
 
+## Changelog
+
+Per-release changes are in [CHANGELOG.md](CHANGELOG.md). Every `@mmmnt` package is released at the same version.
+
+## Contributing
+
+This package is part of the [Feature monorepo](https://github.com/mmmnt/feature). See
+[CONTRIBUTING.md](../../CONTRIBUTING.md) for the development setup, the spec-driven rules and the
+local gate.
+
+```bash
+git clone https://github.com/mmmnt/feature.git
+cd feature
+pnpm install
+pnpm build --filter=@mmmnt/feat-adapter-memory
+pnpm --filter @mmmnt/feat-adapter-memory test
+```
+
 ## License
 
 BSD-3-Clause. See [LICENSE](LICENSE).

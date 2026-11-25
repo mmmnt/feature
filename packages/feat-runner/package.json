@@ -3,6 +3,7 @@
   "version": "0.4.0",
   "description": "Feat runner: thin vitest subprocess orchestrator (GAP-D09). Spec filtering, exit-code passthrough, JUnit collection.",
   "license": "BSD-3-Clause",
+  "author": "listenrightmeow <@listenrightmeow> (https://sdd.mmmnt.dev/)",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -32,15 +33,28 @@
     "url": "git+https://github.com/mmmnt/feature.git",
     "directory": "packages/feat-runner"
   },
-  "homepage": "https://github.com/mmmnt/feature#readme",
+  "homepage": "https://github.com/mmmnt/feature/tree/main/packages/feat-runner#readme",
   "bugs": {
     "url": "https://github.com/mmmnt/feature/issues"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "provenance": true
   },
   "devDependencies": {
     "@mmmnt/feat-runtime": "workspace:^",
     "vitest": "^3.2.0"
+  },
+  "keywords": [
+    "feature",
+    "feat",
+    "specification",
+    "spec-driven-development",
+    "testing",
+    "vitest",
+    "test-runner"
+  ],
+  "engines": {
+    "node": ">=22"
   }
 }

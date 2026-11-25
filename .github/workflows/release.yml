@@ -186,3 +186,49 @@ jobs:
       version: ${{ needs.release.outputs.released }}
       ref: ${{ github.event.workflow_run.head_sha || github.sha }}
     secrets: inherit
+
+  discord-notify:
+    runs-on: ubuntu-latest
+    # Don't notify if release was skipped because CI failed — the CI workflow
+    # already announces its own failure on main.
+    if: always() && needs.release.result != 'skipped'
+    needs: [release]
+    steps:
+      - name: Notify Discord
+        env:
+          WEBHOOK_URL: ${{ secrets.DISCORD_CI_WEBHOOK_URL }}
+          RELEASE: ${{ needs.release.result }}
+          RELEASED: ${{ needs.release.outputs.released }}
+        run: |
+          if [ -z "$WEBHOOK_URL" ]; then
+            echo "::notice::Discord webhook URL not available — skipping notification."
+            exit 0
+          fi
+          if [ "$RELEASE" = "success" ] && [ -n "$RELEASED" ]; then
+            COLOR=4318933
+            EMOJI="🚀"
+            STATUS="Published"
+          elif [ "$RELEASE" = "success" ]; then
+            # The run only opened or updated the version PR; nothing reached npm.
+            COLOR=5793266
+            EMOJI="📦"
+            STATUS="Version PR Updated"
+          else
+            COLOR=15548997
+            EMOJI="❌"
+            STATUS="Failed"
+          fi
+
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          PAYLOAD=$(jq -n --arg title "$EMOJI Release $STATUS" \
+            --arg description "Release workflow completed with status: **$RELEASE**" \
+            --arg url "$RUN_URL" --argjson color "$COLOR" --arg footer "${{ github.repository }}" \
+            --arg timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{embeds: [{title: $title, description: $description, url: $url, color: $color, footer: {text: $footer}, timestamp: $timestamp}]}')
+          HTTP=$(curl -sS -o /tmp/discord-response.txt -w '%{http_code}' --connect-timeout 5 --max-time 15 \
+            -H "Content-Type: application/json" -d "$PAYLOAD" "$WEBHOOK_URL") || HTTP=000
+          # A failed notification must not fail the run, but it must be visible (it was silent).
+          if [ "${HTTP:0:1}" != "2" ]; then
+            echo "::warning title=Discord notification failed::HTTP $HTTP: $(head -c 300 /tmp/discord-response.txt 2>/dev/null)"
+          fi

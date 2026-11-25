@@ -486,6 +486,24 @@ and `report`. The field-by-field reference is in
 - [SPEC-RT-002](../feat-runtime/harness-observation.feat), [SPEC-RT-003](../feat-runtime/harness-faults.feat),
   [SPEC-RT-005](../feat-runner/serial-faults.feat), [SPEC-RT-006](../feat-runtime/harness-namespace.feat)
 
+## Changelog
+
+Per-release changes are in [CHANGELOG.md](CHANGELOG.md). Every `@mmmnt` package is released at the same version.
+
+## Contributing
+
+This package is part of the [Feature monorepo](https://github.com/mmmnt/feature). See
+[CONTRIBUTING.md](../../CONTRIBUTING.md) for the development setup, the spec-driven rules and the
+local gate.
+
+```bash
+git clone https://github.com/mmmnt/feature.git
+cd feature
+pnpm install
+pnpm build --filter=@mmmnt/feat-types
+pnpm --filter @mmmnt/feat-types test
+```
+
 ## License
 
 BSD-3-Clause. See [LICENSE](LICENSE).

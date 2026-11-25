@@ -154,6 +154,24 @@ The generated suites start throwaway KurrentDB and Toxiproxy containers, so they
 - [DESIGN.md](DESIGN.md): the client choice, the settle proof, the namespace, the faults and the TLS host rule
 - [ADR-0035](../../docs/adr/ADR-0035-seed-transform.md): seed transform; [`@mmmnt/feat-fault-proxy`](../fault-proxy/README.md)
 
+## Changelog
+
+Per-release changes are in [CHANGELOG.md](CHANGELOG.md). Every `@mmmnt` package is released at the same version.
+
+## Contributing
+
+This package is part of the [Feature monorepo](https://github.com/mmmnt/feature). See
+[CONTRIBUTING.md](../../CONTRIBUTING.md) for the development setup, the spec-driven rules and the
+local gate.
+
+```bash
+git clone https://github.com/mmmnt/feature.git
+cd feature
+pnpm install
+pnpm build --filter=@mmmnt/feat-adapter-kurrent
+pnpm --filter @mmmnt/feat-adapter-kurrent test
+```
+
 ## License
 
 BSD-3-Clause. See [LICENSE](LICENSE).

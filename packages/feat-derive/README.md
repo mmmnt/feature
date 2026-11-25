@@ -222,6 +222,24 @@ code on the error.
 - [ADR-0024](../../docs/adr/ADR-0024-tier-bindings.md): tier bindings and environment-agnostic generation.
 - [Grammar reference](../../docs/grammar-reference.md): outlines, seeds, `has` and `contains`, queries.
 
+## Changelog
+
+Per-release changes are in [CHANGELOG.md](CHANGELOG.md). Every `@mmmnt` package is released at the same version.
+
+## Contributing
+
+This package is part of the [Feature monorepo](https://github.com/mmmnt/feature). See
+[CONTRIBUTING.md](../../CONTRIBUTING.md) for the development setup, the spec-driven rules and the
+local gate.
+
+```bash
+git clone https://github.com/mmmnt/feature.git
+cd feature
+pnpm install
+pnpm build --filter=@mmmnt/feat-derive
+pnpm --filter @mmmnt/feat-derive test
+```
+
 ## License
 
 BSD-3-Clause. See [LICENSE](LICENSE).

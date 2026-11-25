@@ -3,6 +3,7 @@
   "version": "0.2.1",
   "description": "Feat response adapter: direct function invocation (module/export routes from response.commands).",
   "license": "BSD-3-Clause",
+  "author": "listenrightmeow <@listenrightmeow> (https://sdd.mmmnt.dev/)",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -29,16 +30,30 @@
     "url": "git+https://github.com/mmmnt/feature.git",
     "directory": "adapters/handler"
   },
-  "homepage": "https://github.com/mmmnt/feature#readme",
+  "homepage": "https://github.com/mmmnt/feature/tree/main/adapters/handler#readme",
   "bugs": {
     "url": "https://github.com/mmmnt/feature/issues"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "provenance": true
   },
   "devDependencies": {
     "@mmmnt/feat-adapter-kit": "workspace:^",
     "@mmmnt/feat-runtime": "workspace:^",
     "vitest": "^3.2.0"
+  },
+  "keywords": [
+    "feature",
+    "feat",
+    "specification",
+    "spec-driven-development",
+    "testing",
+    "vitest",
+    "adapter",
+    "handler"
+  ],
+  "engines": {
+    "node": ">=22"
   }
 }

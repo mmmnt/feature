@@ -3,6 +3,7 @@
   "version": "0.13.0",
   "description": "Feat language core: recursive-descent parser, AST->BuiltSpec IR, closed-reference-space validation.",
   "license": "BSD-3-Clause",
+  "author": "listenrightmeow <@listenrightmeow> (https://sdd.mmmnt.dev/)",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -35,11 +36,26 @@
     "url": "git+https://github.com/mmmnt/feature.git",
     "directory": "packages/feat-core"
   },
-  "homepage": "https://github.com/mmmnt/feature#readme",
+  "homepage": "https://github.com/mmmnt/feature/tree/main/packages/feat-core#readme",
   "bugs": {
     "url": "https://github.com/mmmnt/feature/issues"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "provenance": true
+  },
+  "keywords": [
+    "feature",
+    "feat",
+    "specification",
+    "spec-driven-development",
+    "testing",
+    "vitest",
+    "parser",
+    "dsl",
+    "ir"
+  ],
+  "engines": {
+    "node": ">=22"
   }
 }

@@ -642,6 +642,24 @@ which is where an unstated key can appear.
 - [ADR-0024](../../docs/adr/ADR-0024-tier-bindings.md): tier bindings.
 - [Grammar reference](../../docs/grammar-reference.md): the language the predictions come from.
 
+## Changelog
+
+Per-release changes are in [CHANGELOG.md](CHANGELOG.md). Every `@mmmnt` package is released at the same version.
+
+## Contributing
+
+This package is part of the [Feature monorepo](https://github.com/mmmnt/feature). See
+[CONTRIBUTING.md](../../CONTRIBUTING.md) for the development setup, the spec-driven rules and the
+local gate.
+
+```bash
+git clone https://github.com/mmmnt/feature.git
+cd feature
+pnpm install
+pnpm build --filter=@mmmnt/feat-runtime
+pnpm --filter @mmmnt/feat-runtime test
+```
+
 ## License
 
 BSD-3-Clause. See [LICENSE](LICENSE).

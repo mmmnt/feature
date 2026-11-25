@@ -77,6 +77,24 @@ The extension is versioned with the toolchain: when the release workflow
 publishes the `@mmmnt/feat*` packages and `@mmmnt/feature`, it publishes the
 extension at the same version, with that release's grammar.
 
+## Changelog
+
+Per-release changes are in the [GitHub Releases](https://github.com/mmmnt/feature/releases). The extension is released at the toolchain's version.
+
+## Contributing
+
+This package is part of the [Feature monorepo](https://github.com/mmmnt/feature). See
+[CONTRIBUTING.md](../../CONTRIBUTING.md) for the development setup, the spec-driven rules and the
+local gate.
+
+```bash
+git clone https://github.com/mmmnt/feature.git
+cd feature
+pnpm install
+cd editors/vscode
+npm ci && npm run build && npm test
+```
+
 ## License
 
 BSD-3-Clause. See [LICENSE](LICENSE).

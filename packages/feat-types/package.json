@@ -3,6 +3,7 @@
   "version": "0.11.0",
   "description": "Feat contracts: TypeScript types derived from the JSON Schema IR/config/report definitions. Zero dependencies; types plus one runtime constant, EXCLUSIVE_FAULTS (DP-8).",
   "license": "BSD-3-Clause",
+  "author": "listenrightmeow <@listenrightmeow> (https://sdd.mmmnt.dev/)",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -26,11 +27,25 @@
     "url": "git+https://github.com/mmmnt/feature.git",
     "directory": "packages/feat-types"
   },
-  "homepage": "https://github.com/mmmnt/feature#readme",
+  "homepage": "https://github.com/mmmnt/feature/tree/main/packages/feat-types#readme",
   "bugs": {
     "url": "https://github.com/mmmnt/feature/issues"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "provenance": true
+  },
+  "keywords": [
+    "feature",
+    "feat",
+    "specification",
+    "spec-driven-development",
+    "testing",
+    "vitest",
+    "types",
+    "typescript"
+  ],
+  "engines": {
+    "node": ">=22"
   }
 }

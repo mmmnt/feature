@@ -3,6 +3,7 @@
   "version": "0.2.1",
   "description": "Feat emit: TestTopology + resolved schemas/goldens -> complete deterministic Vitest test file (ADR-0006 header, ADR-0001 inlining). Owns no runtime code.",
   "license": "BSD-3-Clause",
+  "author": "listenrightmeow <@listenrightmeow> (https://sdd.mmmnt.dev/)",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -33,11 +34,25 @@
     "url": "git+https://github.com/mmmnt/feature.git",
     "directory": "packages/feat-emit-ts"
   },
-  "homepage": "https://github.com/mmmnt/feature#readme",
+  "homepage": "https://github.com/mmmnt/feature/tree/main/packages/feat-emit-ts#readme",
   "bugs": {
     "url": "https://github.com/mmmnt/feature/issues"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "provenance": true
+  },
+  "keywords": [
+    "feature",
+    "feat",
+    "specification",
+    "spec-driven-development",
+    "testing",
+    "vitest",
+    "code-generation",
+    "typescript"
+  ],
+  "engines": {
+    "node": ">=22"
   }
 }

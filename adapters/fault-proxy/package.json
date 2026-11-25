@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "Feat fault-proxy library: transport faults (timeout, connection reset, partition, broker loss) for the product adapters, through Toxiproxy",
   "license": "BSD-3-Clause",
+  "author": "listenrightmeow <@listenrightmeow> (https://sdd.mmmnt.dev/)",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -29,15 +30,30 @@
     "url": "git+https://github.com/mmmnt/feature.git",
     "directory": "adapters/fault-proxy"
   },
-  "homepage": "https://github.com/mmmnt/feature#readme",
+  "homepage": "https://github.com/mmmnt/feature/tree/main/adapters/fault-proxy#readme",
   "bugs": {
     "url": "https://github.com/mmmnt/feature/issues"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "provenance": true
   },
   "devDependencies": {
     "@mmmnt/feat-runtime": "workspace:^",
     "vitest": "^3.2.0"
+  },
+  "keywords": [
+    "feature",
+    "feat",
+    "specification",
+    "spec-driven-development",
+    "testing",
+    "vitest",
+    "fault-injection",
+    "toxiproxy",
+    "chaos"
+  ],
+  "engines": {
+    "node": ">=22"
   }
 }
