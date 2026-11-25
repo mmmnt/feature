@@ -131,7 +131,9 @@ spec declares `observes`); `has []` is the explicit zero-assertion.
 
 ## Error codes
 
-A spec failure is a returned `{ status: "ERR", body }`, never a throw. `body` is `{ code, message, line?, hint? }`;
+A spec failure is a returned `{ status: "ERR", body }`, with two exceptions that throw today: a string with an
+escape other than `\"`, `\\`, `\/`, `\b`, `\f`, `\n`, `\r` or `\t` (including `\uXXXX`) throws a raw `SyntaxError`, and a
+scenario with no `predict` throws a `TypeError`. `body` is `{ code, message, line?, hint? }`;
 `line` is 1-based and is present where the scanner can place the error.
 
 | Code | When |

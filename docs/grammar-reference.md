@@ -23,7 +23,7 @@ type <spec-type>
 status <lifecycle>              ← draft | agreed | built | verified (ADR-0008)
 observes <service>, ...         ← optional (ADR-0033): the services this spec observes; absent = all configured
 
-construct:                      ← agent zone (required, ≥1 directive + ≥1 touches)
+construct:                      ← agent zone (required, ≥1 directive; `feat audit` requires ≥1 touches)
   ...
 
 enforce:                        ← agent zone (required, ≥1 directive)
@@ -47,10 +47,25 @@ feat 1.x". Minor versions are strictly additive; majors may break.
 
 ### 1.2 Lexical rules
 
-- **Indentation-sensitive**: block membership by indentation (Python/YAML style). A section ends
-  when indentation returns to the parent level. Spaces only; a tab in leading whitespace is a
-  parse error.
-- **Comments**: `#` to end of line, allowed anywhere.
+- **Directive- and keyword-driven, not indentation-sensitive**: the parser does not read
+  indentation. A section opener (`construct:`, `enforce:`, `contract:`, `variables:`,
+  `scenario "…":`) starts a section that runs to the next opener, and inside a scenario `given:`,
+  `when:` / `deliver`, `predict …:` and `examples:` decide what the following lines are. The indentation
+  in this reference is conventional: it is how specs are written, but a spec
+  with none parses to the same IR. A line whose `{` or `[` is not closed continues on the next lines
+  until it is. Spaces only: a tab in leading whitespace is a parse error (`MALFORMED_SYNTAX`).
+- **Comments**: whole-line only. A line whose first non-blank character is `#` is skipped, outside a
+  multi-line `{ … }` / `[ … ]` value (inside one it is part of the value, and a parse error). A `#`
+  after content on the same line is not a comment:
+  - on a compiler-zone line (a `when:` or `predict` line, a `has` line, a `contract:` entry, a header
+    directive, a `scenario` opener) it is `MALFORMED_SYNTAX`, and on the pragma line `MISSING_PRAGMA`;
+  - in an agent zone it is part of the line's text: `mint an invite  # note` is captured verbatim, and a
+    `touches` or `handler at` line that carries one is no longer recognized and becomes a freeform
+    directive;
+  - on a `given:` line it turns an `execute`, `seed` or `clock at` line into freeform context;
+  - after a `response` line's closing `}` it is dropped without an error.
+
+  Write comments on their own line.
 - **Rejection ids** (ADR-0022): the `<ID>` of `rejects <ID> when …` and `predict rejection <ID>:`
   is one token, either **UPPER_SNAKE** (`[A-Z0-9_]+`, e.g. `UNIQUE_NAME`) or **UpperCamel**
   (`[A-Z][A-Za-z0-9]*`, e.g. `NotOperator`). The two forms are both valid and may be mixed in one
@@ -59,14 +74,21 @@ feat 1.x". Minor versions are strictly additive; majors may break.
   line (`notOperator`, `Not_Operator`, `not-operator`) is a `MALFORMED_SYNTAX` parse error whose
   hint names both valid forms. A `rejects` line whose id is not valid is, as before, an opaque
   enforce-zone constraint; the two-way lint (B2) then reports the predicted id with no `rejects`.
-- **No escape hatches**: every file must have at minimum the header, one construct directive,
-  one enforce directive, one contract reference, and one scenario with a prediction.
+- **Minimum**: the parser refuses a file as `MISSING_MINIMUM` unless it has a complete header
+  (`spec`, `context`, `aggregate`, `type`, `status`), at least one construct directive, one enforce
+  directive, one contract entry and one scenario. Every scenario also needs a trigger (`when:` or
+  `deliver`; without one it is `MALFORMED_SYNTAX`, "has no trigger") and a prediction: a scenario
+  without a `predict` is not a valid spec, though `MISSING_MINIMUM` does not cover it and the parser
+  reports it with no error code today.
+- **Strings**: a string in a payload, seed record or value block is `"…"`. A backslash escapes the next character, and the valid escapes are
+  JSON's single-character ones: `\"`, `\\`, `\/`, `\b`, `\f`, `\n`, `\r`, `\t`. Any other escape, including
+  `\uXXXX`, is refused with a raw `SyntaxError` from the parser rather than a coded parse error.
 
 ### 1.3 The two zones (DP-5, non-negotiable)
 
 | Zone | Sections | Parser behavior |
 | --- | --- | --- |
-| **Agent** | `construct:`, `enforce:` | Freeform natural language. Keyword-matching lines produce typed IR nodes; every other line is captured verbatim as an opaque directive. A parse error here is impossible. |
+| **Agent** | `construct:`, `enforce:` | Freeform natural language. Keyword-matching lines produce typed IR nodes; every other line is captured verbatim as an opaque directive. Header directives are still read here, as on any line of the file: a line of exactly the form `spec <ID> "<name>"`, `context <Name>`, `aggregate <Name>`, `type <type>` or `status <status>` (one token after the keyword) sets that header field, overwriting the header's value (`context Other` replaces the header context), and an unknown `type` or `status` (`status shipped`) is `MALFORMED_SYNTAX`. A line that merely starts with the word (`context matters here`) stays a directive. Section openers (`construct:`, `enforce:`, `contract:`, `variables:`, `scenario "…":`) end the zone. |
 | **Compiler** | `contract:`, `scenario`, `predict` | Strict typed grammar. Malformation is a parse error, never a silent failure. |
 
 ### 1.4 Token classes (ADR-0007 — normative)
@@ -96,7 +118,7 @@ KEYWORD-qualifier (`uuid`); `flowId: any zebra` is a parse error, not a comment.
 | `context` | `context Automation` | Bounded context |
 | `aggregate` | `aggregate Flow` | Aggregate / entity |
 | `type` | `type command` | One of: `command`, `query`, `policy`, `projection`, `saga`, `infrastructure`, `integration`, `scaffold` |
-| `status` | `status agreed` | Lifecycle (ADR-0008): `draft` → `agreed` → `built` → `verified`. The agent refuses to build a spec that is not `agreed`; the agent may *propose* the draft→agreed flip, the human can revert; tooling flips `built`/`verified`. |
+| `status` | `status agreed` | Lifecycle (ADR-0008): `draft` → `agreed` → `built` → `verified`. The agent refuses to build a spec that is not `agreed`; the agent may *propose* the draft→agreed flip, the human can revert. Nothing in the toolchain writes a status: `built` and `verified` are set by hand, by convention. |
 | `observes` | `observes log, cache` | Optional, at most once (ADR-0033). The services this spec observes, each a key of the config's `services` (closed space: an unknown key is `UNKNOWN_SERVICE_KEY`). Absent = every configured service, as before. A key written twice, a bare `observes`, an empty item or a second line is `MALFORMED_SYNTAX`. Recorded in the IR as top-level `observes`, in written order. |
 
 ---
@@ -113,8 +135,8 @@ Recognized line keywords (produce typed IR nodes):
 | `imports <X> from <path>` | `imports FlowAggregate from core/domain/flow-aggregate` |
 | `register <kind> <name> in <path>` | `register mutation createFlow in resolvers/mutations.ts` |
 | `emit to <stream-pattern>` | `emit to automation-flow-{flowId}` |
-| `touches <glob>` | `touches features/create-flow/**` — **change boundary** (ADR-0008): the build may create/modify ONLY paths matching a `touches` glob; the `handler at` path must fall inside one. Repeatable. **Always required**, even in drafts — the build-time mirror of prediction inversion. |
-| `needs <SPEC-ID>` | `needs SPEC-USR-001` — **cross-spec dependency** (ADR-0012): explicit build-order DAG; `feat audit` detects cycles; the agent builds in topological order. Repeatable. |
+| `touches <glob>` | `touches features/create-flow/**` — **change boundary** (ADR-0008): the build may create/modify ONLY paths matching a `touches` glob; the `handler at` path must fall inside one. Repeatable. The parser does not require it; `feat audit` does (B3: an error on any spec without one, drafts included) — the build-time mirror of prediction inversion. |
+| `needs <SPEC-ID>` | `needs SPEC-USR-001` — **cross-spec dependency** (ADR-0012): explicit build-order DAG; the agent builds in topological order (no tool checks the graph for cycles). Repeatable. |
 
 Any other line is a **freeform directive**, captured verbatim:
 
@@ -203,8 +225,8 @@ scenario "rejects duplicate flow name":
 **Anchors (ADR-0010):** scenario names are unique within a spec (lint ERROR) and serve as
 failure anchors — every ValidationReport assertion result carries
 `<specId> › "<scenario name>" › <surface>` (`response`, `<service>[index]`,
-`given › execute[i]`, `given › seed[i]`), so failures map to exact spec coordinates. The parser
-additionally stamps optional `loc` (line/column) on IR nodes for editor jump-to-line.
+`given › execute[i]`, `given › seed[i]`), so failures map to exact spec coordinates. The IR carries no
+`loc` (line/column); a parse error carries its line.
 
 ### 5.1 `given:` — the hybrid zone
 
@@ -299,7 +321,7 @@ The spec `type` declares its trigger discipline (parse error on mismatch):
 
 | Spec types | Trigger | Form |
 | --- | --- | --- |
-| `command`, `query` | `when:` | `when [(as <actor>)]: <Command> { <json> }` — exactly one; command ∈ `response.commands`; actor ∈ `response.actors` or reserved `anonymous`, omitted = `actors.default` (ADR-0012) |
+| `command`, `query` | `when:` | `when [(as <actor>)]: <Command> { <json> }` — one per scenario; a second `when:` replaces the first (the last one wins); command ∈ `response.commands`; actor ∈ `response.actors` or reserved `anonymous`, omitted = `actors.default` (ADR-0012) |
 | `projection`, `policy`, `saga` | `deliver` | `deliver <EventType> { <json> }` `to <service>` or `to response` (ADR-0036: the response role's invoke host; `response` is reserved, never a service key) — one or more, in order; saga sequences chain multiple lines |
 
 Delivered stimuli are **excluded from capture** — they are the input, not the output — so
@@ -307,7 +329,7 @@ Delivered stimuli are **excluded from capture** — they are the input, not the 
 A deliver-triggered scenario's `response` surface is the answer to its delivery `to response` (ADR-0036, ADR-0037):
 when the response adapter's `deliver()` answers, the last delivery to `response` that answered is the case's captured
 response, compared exactly as a `when:` answer. A `response` predicted when no delivery to `response` answered fails
-(`response: no response captured`). `predict rejection` is invalid for them (lint ERROR; `success`/`error` only).
+(`response: no response captured`).
 
 ### 5.3 `predict` — the measurement contract
 
@@ -324,7 +346,7 @@ Prediction lines:
 | Form | Meaning |
 | --- | --- |
 | `response <status> <Schema> [{ <value block> }]` | Response surface: status + body schema (+ optional value assertions) |
-| `<service> has [ <record>, ... ]` | Exactly these records **captured** (writes during the window) |
+| `<service> has [ <record>, ... ]` | Exactly these records **captured** (writes during the window). One per service: a second `has` for the same service replaces the earlier one (the last one wins). |
 | `<service> has []` | Zero records captured (explicit absence assertion) |
 | `<service> has ordered [...]` / `has unordered [...]` | Ordering override (ADR-0004) |
 | `<service> contains [ <record>, ... ]` | **Resulting state** via adapter `read()` (ADR-0011) — polled to convergence for eventual services; may appear alongside `has` for the same service |
@@ -552,7 +574,7 @@ Deterministic header, no timestamp:
 ```
 
 Same inputs → byte-identical file (INV-3); `feat verify` is a byte compare. Generated files are
-excluded from user formatters (`specs.outputPattern` in `.prettierignore`; `feat audit` warns).
+excluded from user formatters (list `specs.outputPattern` in `.prettierignore`).
 Generated tests import only `@mmmnt/feat-runtime` and run standalone under `npx vitest`.
 
 ---
@@ -562,7 +584,8 @@ Generated tests import only `@mmmnt/feat-runtime` and run standalone under `npx 
 - **Buildability** (ERROR-level lint): B1 `handler at` present for code-producing types;
   B2 two-way rejection traceability (`rejects` ↔ `predict rejection`); B3 `touches` present.
 - **Lifecycle**: the agent builds only `status agreed` specs; it may propose draft→agreed
-  (human can revert); `built`/`verified` are flipped by tooling, never by hand.
+  (human can revert). Nothing in the toolchain writes a status: `built` and `verified` are set by
+  hand, by convention.
 - **Ambiguity protocol**: on an ambiguous directive the agent halts that spec and asks —
   never guesses. The ambiguity is recorded to flmnt; the spec file is not annotated or demoted.
   Resolution is a spec edit after the human answers. Ambiguity count per spec is the standing
