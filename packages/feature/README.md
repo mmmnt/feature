@@ -45,7 +45,7 @@ Requirements:
 - **The adapters your config names**, installed in the project that owns
   `feat.config.json`. An npm adapter resolves from the project's own
   `package.json`, never from the toolchain's `node_modules`.
-- **git**, only for `feat diff` and for the commit in an evidence bundle.
+- **git**, only for `feat diff`, `feat audit --changed` and the commit in an evidence bundle.
 
 `feat init` installs the starter set: `@mmmnt/feat-runtime`,
 `@mmmnt/feat-adapter-handler`, `@mmmnt/feat-adapter-fs`,
@@ -887,7 +887,7 @@ description is
 | --- | --- |
 | `0` | success |
 | `1` | validation failure: a parse error, a seed violation, drift (`verify`), a failed prediction, a failed audit, a `feat lint` error, a change outside its `touches` (`audit --changed`: `OUTSIDE_TOUCHES`, `HANDLER_OUTSIDE_FEATURE`, `SPEC_UNPARSEABLE`), a failed `fmt --check` |
-| `2` | configuration error: a refused config (`CONFIG_NOT_FOUND`, `INVALID_CONFIG`, the `EXTENDS_*` codes, `TIER_SPACE_MISMATCH`, ...), a module named as an adapter that cannot be resolved or loaded (`INVALID_CONFIG`), no environment to name (`NO_ENVIRONMENT`), a harness refusal during `run` (`CLOCK_UNSUPPORTED`, `MODE_UNSUPPORTED`, `FAULT_*`, `NAMESPACE_*`, `SEED_UNSUPPORTED`, `DELIVER_UNSUPPORTED`), no vitest installed in the project (`VITEST_NOT_INSTALLED`, `run`), `NO_REPORT`, `ALREADY_INITIALIZED`, `CONFIG_MULTIPLE` (`audit`), and the `audit --changed` refusals that are not a violation (`PATH_OUTSIDE_ROOT`, `NO_SPECS_FOUND`, `GIT_UNAVAILABLE`, `NOT_A_GIT_REPO`, `BASE_NOT_FOUND`, `NO_MERGE_BASE`) |
+| `2` | configuration error: a refused config (`CONFIG_NOT_FOUND`, `INVALID_CONFIG`, the `EXTENDS_*` codes, `TIER_SPACE_MISMATCH`, ...), a module named as an adapter that cannot be resolved or loaded (`INVALID_CONFIG`), no environment to name (`NO_ENVIRONMENT`), a harness refusal during `run` (`CLOCK_UNSUPPORTED`, `RANDOM_UNSUPPORTED`, `MODE_UNSUPPORTED`, `FAULT_*`, `NAMESPACE_*`, `SEED_UNSUPPORTED`, `DELIVER_UNSUPPORTED`), no vitest installed in the project (`VITEST_NOT_INSTALLED`, `run`), `NO_REPORT`, `ALREADY_INITIALIZED`, `CONFIG_MULTIPLE` (`audit`), and the `audit --changed` refusals that are not a violation (`PATH_OUTSIDE_ROOT`, `NO_SPECS_FOUND`, `GIT_UNAVAILABLE`, `NOT_A_GIT_REPO`, `BASE_NOT_FOUND`, `NO_MERGE_BASE`) |
 
 Each exit `2` prints a `[CODE]`.
 
