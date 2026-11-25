@@ -1,7 +1,7 @@
 # The `.feat` Language — Grammar Reference v1.3
 
 > Language version: `feat 1.0`
-> Design decisions are recorded as ADRs (ADR-0001…0023) in the project decision log.
+> Design decisions are recorded as ADRs (ADR-0001…0039; 0022 onward are in docs/adr/) in the project decision log.
 > The `corpus/` directory holds canonical exemplars paired with expected-IR fixtures —
 > when this document and the corpus disagree, that is a bug in one of them; fix the spec first.
 
@@ -208,7 +208,7 @@ additionally stamps optional `loc` (line/column) on IR nodes for editor jump-to-
 
 ### 5.1 `given:` — the hybrid zone
 
-Four line kinds, freely mixed. The `seed` and `execute` lines run in the order they are written
+Six line kinds, freely mixed. The `seed` and `execute` lines run in the order they are written
 (ADR-0025), so a given states history in sequence: `execute EnableX { … }` then `seed s [ XDisabled … ]`
 leaves the seeded event as the latest. A given with both kinds records their written order in the IR as
 `given.order`, an array of `"seed"` and `"execute"` (the n-th of a kind names `seeds[n]` or
@@ -220,7 +220,8 @@ leaves the seeded event as the latest. A given with both kinds records their wri
 | `execute` | `execute [(as <actor>)] <Command> { <json> }` | Runs the command through the **response adapter** before the capture window opens (INV-9) |
 | `seed` (ADR-0003) | `seed <service> [ <records> ]` or `seed <service> from "<path.json>"` | Injects state directly through the service adapter's `seed()`; fixture form for bulk state |
 | `fault` (ADR-0023) | `fault <service> <Operation> <Fault> [{ <json> }] [once \| times <n> \| until reset]` | Declares a **logical fault** the product will return, as a precondition armed after the seeds and the `given` executes and before the capture window, in written order. Consumed by the system's next call of `<Operation>` on `<service>` (`once`, the default), the next `<n>` calls (`times <n>`, `n` ≥ 1), or every call until the case ends (`until reset`). `<service>` is a configured service key (INV-7). `<Operation>` is UpperCamel; `<Fault>` is UpperCamel or UPPER_SNAKE (§1.2); both are the **adapter's vocabulary**, not the language's. The optional `{ … }` is literal data for the adapter (no matchers, no `@when`). The IR is `given.faults[]` = `{ service, operation, fault, detail?, times }`, `times` always present (`1`, `n`, or `"reset"`). |
-| `clock at` (ADR-0012, ADR-0023) | `clock at "2026-07-16T00:00:00Z"` | Freezes scenario time: an ISO-8601 instant **with a zone designator**. The harness delivers it on every case (a `null` when the case has no `clock at`), after the resets and before anything runs, to every adapter that offers the optional `setClock(clock)` hook. The **response adapter** must offer the hook, or a case that uses `clock at` is a configuration error (`CLOCK_UNSUPPORTED`) before any effect — never a silent pass. Which adapters offer it: none yet (the handler adapter's side, SPEC-ADPHND-001, is not built); remote protocols need their own test-time hooks. `now()`/`iso()` in `variables:` honour the clock regardless. |
+| `clock at` (ADR-0012, ADR-0023) | `clock at "2026-07-16T00:00:00Z"` | Freezes scenario time: an ISO-8601 instant **with a zone designator**. The harness delivers it on every case (a `null` when the case has no `clock at`), after the resets and before anything runs, to every adapter that offers the optional `setClock(clock)` hook. The **response adapter** must offer the hook, or a case that uses `clock at` is a configuration error (`CLOCK_UNSUPPORTED`) before any effect — never a silent pass. The handler and stdio-jsonrpc response adapters offer it; other remote protocols need their own test-time hooks. `now()`/`iso()` in `variables:` honour the clock regardless. |
+| `random seed` (ADR-0029) | `random seed <n>` | Seeds the system's random source for the case: `<n>` is a whole number from 0 to 2^53 − 1, recorded as `given.random`; any other line that begins `random seed` is `MALFORMED_SYNTAX`. The harness delivers it after the clock to the **response adapter's** optional `setSeed(seed)`, and `setSeed(null)` on the first case after a seeded one, so a seed never reaches the next case; a case that neither seeds nor follows a seeded case sends nothing. A response adapter without the hook is a configuration error (`RANDOM_UNSUPPORTED`) before any effect. The stdio-jsonrpc response adapter offers it (the host protocol's `setSeed` request). What a seed means is the host's: the same seed yields the same draws in the same order within the case. Corpus exemplar: `corpus/given-ref/`. |
 
 Seed records take **full literal values only** — no matchers, no `@when` (seeds are writes, and
 `given` precedes `when`). Optional `with <Schema>` validates seed data at generate time.
@@ -303,8 +304,10 @@ The spec `type` declares its trigger discipline (parse error on mismatch):
 
 Delivered stimuli are **excluded from capture** — they are the input, not the output — so
 `eventStore has []` on a projection asserts "the projection emitted nothing new."
-Deliver-triggered scenarios have **no `response` surface**, and `predict rejection` is invalid
-for them (lint ERROR; `success`/`error` only).
+A deliver-triggered scenario's `response` surface is the answer to its delivery `to response` (ADR-0036, ADR-0037):
+when the response adapter's `deliver()` answers, the last delivery to `response` that answered is the case's captured
+response, compared exactly as a `when:` answer. A `response` predicted when no delivery to `response` answered fails
+(`response: no response captured`). `predict rejection` is invalid for them (lint ERROR; `success`/`error` only).
 
 ### 5.3 `predict` — the measurement contract
 
@@ -396,6 +399,7 @@ record      := DOTTED-IDENT:type "with" IDENT:schemaName [ [ "partial" ] valueBl
 DOTTED-IDENT := IDENT { "." IDENT }                                  # ADR-0015: adapters own the type vocabulary
 valueBlock  := "{" { IDENT:field ":" matcher } "}"
 matcher     := LITERAL | "@when." PATH | "@deliver" [ "[" INT "]" ] "." PATH
+             | "@given" [ "[" INT "]" ] ".response." PATH           # ADR-0028: the given's response
              | "@" IDENT:serviceKey [ "[" INT "]" ] "." PATH        # ADR-0021: cross-surface
              | "any" [ "uuid"|"timestamp"|"string"|"number"|"boolean" ]
              | "matching" STRING | "absent" | valueBlock
@@ -405,6 +409,7 @@ matcher     := LITERAL | "@when." PATH | "@deliver" [ "[" INT "]" ] "." PATH
 list        := "[" { part } "]"                                       # ADR-0034
 part        := list | "{" { IDENT:field ":" part } "}" | matcher     # an object in a list is exact; never "absent"
 operand     := LITERAL | "@when." PATH | "@deliver" [ "[" INT "]" ] "." PATH
+             | "@given" [ "[" INT "]" ] ".response." PATH
              | "@" IDENT:serviceKey [ "[" INT "]" ] "." PATH
              | "any" ( "uuid"|"timestamp"|"string"|"number"|"boolean" )
              | "matching" STRING | PLACEHOLDER | "matching" PLACEHOLDER
@@ -416,14 +421,14 @@ operand     := LITERAL | "@when." PATH | "@deliver" [ "[" INT "]" ] "." PATH
 | --- | --- |
 | `"str"`, `42`, `true`, `null` | Strict equality |
 | `@when.<path>` | Equals the value sent in the `when:` payload |
-| `@given.response.<path>` | **Input-side, not a matcher.** Usable in `execute`, `when:`, and `deliver` payloads; reads the most recent preceding `execute`'s response body, so a scenario can name an id the system minted during setup. Unresolvable references fail the case rather than passing the literal through. |
+| `@given.response.<path>` / `@given[i].response.<path>` | **The given's response** (ADR-0028): a matcher in any value block of a prediction (`response`, records) and an operand of `not`, as well as an input-side reference in `execute`, `when:` and `deliver` payloads. `@given.response` reads the response body of the most recent preceding `execute`; `@given[i].response` the i-th `execute` of the `given`, 0-based, in written order (ADR-0025). So a scenario can name an id the system minted during setup (`inviteId: @given.response.inviteId`) or predict a fresh draw (`code: not @given.response.code`). A reference that cannot resolve (no `execute`, an index out of range, a path absent on that body) fails the case: a violation, never a pass; only the body is addressable, not the status. IR: `{ "matcher": "givenRef", "index"?: <int>, "path": "<path>" }`. Corpus exemplar: `corpus/given-ref/`. |
 | `@deliver.<path>` / `@deliver[i].<path>` | Equals the value in the delivered stimulus (index required for saga sequences) |
 | `@<service>[i].<path>` | **Cross-surface capture reference** (ADR-0021): equals a value captured on another surface in the same scenario. `<service>` is a configured service key (INV-7); `[i]` selects the i-th record captured on it in **capture order**, defaulting to `0`. Use it when a value travels between surfaces and no literal can name it — a system-minted id written to one surface and recorded on another. A reference that cannot resolve (unknown index, absent field) is a **violation**, never a silent pass. |
 | `any` | Present, any value |
 | `any uuid` · `any timestamp` · `any string` · `any number` · `any boolean` | Present + format/type check |
 | `matching "<regex>"` | String matches pattern |
 | `absent` | Field must not exist |
-| `not <matcher>` | **Negation** (ADR-0027): the field is present and `<matcher>` fails on its value — `cycleId: not @log[0].data.cycleId` (a redo's id differs from the first attempt's), `status: not "Failed"`, `ref: not matching "^tmp-"`, `id: not any uuid`. An absent field fails `not M` whatever `M` is. The operand is a literal, an `@when` / `@deliver` / `@<service>[i]` reference, `any <type>`, `matching "<regex>"`, or an outline placeholder. A reference operand that cannot resolve (a service that captured nothing, an index out of range, a path absent on the referent) is a **violation**, as a plain reference is. Refused as `MALFORMED_SYNTAX`: `not not M` (write `M`), `not absent` (write `any`), `not any` without a type (it can never pass; write `absent`), `not { … }` (negate a field inside the block instead) and a bare `not`. A violation names the negated matcher and, for a reference, the value it resolved to: `expected not @log[0].data.cycleId (= "c-1"), got "c-1"`. IR: `{ "matcher": "not", "operand": <matcher> }`. Corpus exemplar: `corpus/not-matcher/`. |
+| `not <matcher>` | **Negation** (ADR-0027): the field is present and `<matcher>` fails on its value — `cycleId: not @log[0].data.cycleId` (a redo's id differs from the first attempt's), `status: not "Failed"`, `ref: not matching "^tmp-"`, `id: not any uuid`. An absent field fails `not M` whatever `M` is. The operand is a literal, an `@when` / `@deliver` / `@given` / `@<service>[i]` reference, `any <type>`, `matching "<regex>"`, or an outline placeholder. A reference operand that cannot resolve (a service that captured nothing, an index out of range, a path absent on the referent) is a **violation**, as a plain reference is. Refused as `MALFORMED_SYNTAX`: `not not M` (write `M`), `not absent` (write `any`), `not any` without a type (it can never pass; write `absent`), `not { … }` (negate a field inside the block instead) and a bare `not`. A violation names the negated matcher and, for a reference, the value it resolved to: `expected not @log[0].data.cycleId (= "c-1"), got "c-1"`. IR: `{ "matcher": "not", "operand": <matcher> }`. Corpus exemplar: `corpus/not-matcher/`. |
 | `f32 <dims> sha256 "<hex>"` | **f32 digest** (ADR-0030): the field is an array of exactly `<dims>` numbers, each exactly an IEEE-754 single (`Math.fround(x) === x`), and the sha256 of the values written as consecutive 4-byte little-endian f32s is `<hex>` (64 lowercase hex) — `embedding: f32 384 sha256 "9c1e…"` predicts a pinned encoder's vector exactly in one line. Each check is a violation, the first failing one reported: absent; not an array of numbers; wrong length (`expected 384 f32 values, got 512`); a value that is not an f32 (`value [17] = 0.1 is not an f32 (the nearest f32 is 0.10000000149011612)`); a differing digest (both shown in full). A malformed IR is a violation, never a pass. Refused as `MALFORMED_SYNTAX` with the form as hint: a length that is not a positive integer, a digest that is not 64 lowercase hex, a missing part, and `not f32 …` (a negated digest pins nothing). No outline placeholders. IR: `{ "matcher": "f32Digest", "dims": <int>, "sha256": "<hex>" }`. Corpus exemplar: `corpus/f32-digest/`. |
 | `equals fixture "<path>"` | **Golden fixture** (ADR-0013): deep structural equality against a JSON fixture (key-order insensitive, array-order sensitive). Also valid directly on `response` and on records (`<Type> with <Schema> equals fixture "<path>"`, incl. `contains`) — there it is mutually exclusive with a value block. Fixture resolves relative to the spec, inlines at compile time, and must validate against the position's schema (type-safe goldens). No escape clause — dynamic fields belong in value blocks. |
 | `{ ... }` | **Nested value block — exact** (ADR-0039): each declared field passes its matcher and every other key of the object is a violation (`a › payload: UNPREDICTED field 'workspace' = "6f96…"`), inside a `partial` block too; `absent` is allowed in it; write the field `any` to leave a sub-object unchecked |
@@ -568,15 +573,15 @@ Generated tests import only `@mmmnt/feat-runtime` and run standalone under `npx 
 **Block openers:** `spec` `context` `aggregate` `type` `status` `construct:` `enforce:` `contract:`
 `scenario` `scenario outline` `given:` `when:` `predict` `examples:`
 **Status values:** `draft` `agreed` `built` `verified`
-**Trigger/actor:** `deliver … to` `as` `anonymous` · **Given:** `clock at` `fault`
+**Trigger/actor:** `when:` `deliver … to` (`to response`) `as` `anonymous`
 **Contract:** `input` `response` `event` `record` `error` `stream` `from`
-**Construct:** `handler at` `imports … from` `register … in` `emit to` `touches`
+**Header:** `observes` · **Spec variables:** `variables:`
+**Construct:** `handler at` `imports … from` `register … in` `emit to` `touches` `needs`
 **Enforce:** `rejects … when`
-**Given:** `execute` `seed` `from` `with`
-**Trigger:** `when:` `deliver … to`
+**Given:** `execute` `seed` `from` `with` `fault` `clock at` `random seed`
 **Predict:** `success` `rejection` `error` `response` `has` `contains` `ordered` `unordered` `with` `equals fixture`
-**Value blocks:** `any` (`uuid` `timestamp` `string` `number` `boolean`) `matching` `absent` `not` `f32 … sha256`
-`@when.<path>`
+**Value blocks:** `any` (`uuid` `timestamp` `string` `number` `boolean`) `matching` `absent` `not` `f32 … sha256` `partial`
+`@when.<path>` `@given[i].response.<path>` `@deliver[i].<path>` `@<service>[i].<path>`
 **Pragma:** `feat <major>.<minor>`
 
 ---
