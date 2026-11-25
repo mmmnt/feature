@@ -21,6 +21,11 @@ updates:
     schedule:
       interval: 'weekly'
       day: 'monday'
+    ignore:
+      # @types/vscode must not pass engines.vscode (^1.85.0), or vsce refuses to package the
+      # extension. Raise both together, by hand, when the minimum VS Code version moves.
+      - dependency-name: '@types/vscode'
+        update-types: ['version-update:semver-minor', 'version-update:semver-major']
     groups:
       minor-and-patch:
         update-types:
