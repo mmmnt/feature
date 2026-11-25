@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/mmmnt/feature/actions/workflows/ci.yml/badge.svg)](https://github.com/mmmnt/feature/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@mmmnt/feature.svg?label=npm)](https://www.npmjs.com/package/@mmmnt/feature)
+[![Discord](https://img.shields.io/discord/1489758529219723486?color=5865F2&logo=discord&logoColor=white&label=Discord)](https://discord.gg/YcRqsQUQuu)
 [![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD--3--Clause-blue.svg)](LICENSE)
 
 **Specify a feature once. Get the test suite that holds the code to it.**
@@ -267,7 +268,10 @@ extension at the same version. Nobody pushes release tags by hand.
 ## Contributing
 
 Issues and pull requests are welcome at
-[github.com/mmmnt/feature](https://github.com/mmmnt/feature).
+[github.com/mmmnt/feature](https://github.com/mmmnt/feature). Start with
+[CONTRIBUTING.md](CONTRIBUTING.md).
+
+Join the [Discord server](https://discord.gg/YcRqsQUQuu) to discuss Feature, get help, and meet other teams writing specs.
 
 - Use a conventional-commit title (`feat:`, `fix:`, ...): it decides the release.
 - A change to the language closes four layers in one change: the grammar reference, a corpus

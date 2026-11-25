@@ -120,6 +120,8 @@ jobs:
         uses: changesets/action@v2
         with:
           github-token: ${{ steps.app-token.outputs.token }}
+          # changeset:version also regenerates the committed suites of both tiers: their header names the
+          # emitter's version, so a version bump without it fails feat verify.
           version-script: pnpm changeset:version
           # Publishes each package whose version npm does not have yet (idempotent, OIDC,
           # provenance). The tag and GitHub Release are made once for the version below, not one
