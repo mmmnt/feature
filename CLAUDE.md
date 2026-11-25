@@ -1,39 +1,40 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Feature: the `.feat` execution specification language and toolchain (see README.md).
 
-## What this is
+## flmnt
 
-**Feature** — the `.feat` execution specification language and toolchain (github.com/mmmnt/feature).
-A `.feat` file instructs an AI agent how to build a feature and predicts every observable effect;
-it compiles deterministically to complete test suites with zero human-authored test code
-(prediction inversion: unpredicted = failure).
+flmnt is the memory of record for this repo: decisions, rulings, history and runbooks live there,
+not here.
 
-**This project is built spec-driven on itself.** No issue tracker decomposition:
+- This repo records into the flmnt workspace `feature` (`d52ee565-8e27-4fec-adb6-9247a7f067a6`) on
+  the local server `http://localhost:8000/mcp`.
+- `.flmnt.json` (CLI and hooks) and `.mcp.json` (the `flmnt` MCP entry) are tracked and must agree.
+  Change them with `flmnt setup --server-url http://localhost:8000/mcp --project feature`; never
+  hand-edit them, except the local-harness keys (`local_graphql_endpoint`, `volumes_path`,
+  `compose_files`, `env_file`). Never edit `.claude/flmnt-hooks/*`.
+- Pass `workspace: d52ee565-8e27-4fec-adb6-9247a7f067a6` on flmnt tool calls.
+- Before reading code to answer why something is the way it is, or what was decided, query flmnt
+  (`query_context`, `materialize_context`). Verify a recalled fact against current code before
+  acting on it.
+- Record a decision when it is made (`record_decision`, `record_operational_decision`). Quote the
+  person's ruling verbatim.
+- Diagnostics: `flmnt health`, `flmnt whoami`. A "not connected" MCP is often fixed by `/mcp`
+  reconnect.
 
-- Scope is tracked in a local working ledger (untracked, maintained alongside each change).
-- **`.feat` specs are the unit of work.** The agent builds only `status agreed` specs, only within
-  their `touches` globs. Ambiguity = halt and ask — never guess, never annotate the file.
-- Design changes require an ADR — see the project decision log. A
-  language change is incomplete until all four layers close in the same change: grammar reference
-  updated, corpus exemplar added, parser/IR implemented, full corpus re-validated.
+## Feature
 
-## The language (source of truth in-repo)
-
-- `docs/grammar-reference.md` — the `.feat` v1 reference. When code and reference disagree, fix
-  the spec first (spec is source of truth).
-- `corpus/` — exemplars, each `.feat` + `.contract.json` + expected-IR `.ir.json` + `feat.config.json`.
-  The corpus is the parser's ground truth; it grows with every language change, forever.
-- `schemas/` — `builtspec.schema.json` (the language-neutral IR contract — TS types mirror it),
-  `contract.schema.json`, `feat.config.schema.json`. Validate: `pnpm corpus:validate`.
-
-## Toolchain
-
-- pnpm + Turborepo, TypeScript strict, Vitest. Node version per `.tool-versions`.
-- Packages: `@mmmnt/feature` (CLI, owns the `feat` bin) + `@mmmnt/feat-*` (types, core, runtime,
-  derive, emit-ts, runner, adapters). Dependency law: `types ← runtime ← {core, generated tests}`;
-  derive/emit are pure; adapters are leaves exporting `createAdapter(config)`.
-- `pnpm build` / `pnpm test` / `pnpm typecheck` via turbo. The CI chain is
-  `feat verify && feat run` (generated suites execute from the project root; package-level vitest
-  covers non-generated tests only).
-- Secrets in `.env.local` (gitignored); never commit `.env.*` files.
+- Build: `pnpm install`, `pnpm build`, `pnpm typecheck`, `pnpm test`, `pnpm corpus:validate`.
+  The spec chain: `node packages/feature/bin/run.js verify`, then `audit`, `lint`, `run`.
+- `.feat` specs are the unit of work. Build only `status agreed` specs, and only within their
+  `touches` globs.
+- Ambiguity means halt and ask. Never guess, never annotate the spec to cover a guess.
+- `docs/grammar-reference.md` is the source of truth for the language. When code and reference
+  disagree, the code is wrong or the reference changes first, by decision.
+- A language change is incomplete until all four layers close in the same change: the grammar
+  reference, a corpus exemplar (`corpus/`), the parser and IR, and the full corpus re-validated.
+- A design change needs an ADR in `docs/adr/` and an entry in `docs/adr/README.md`.
+- Before any push run `scripts/ci-local.sh` (the full gate), then push. `.githooks/pre-push` only
+  checks the pass record; it runs nothing. Enable it with `git config core.hooksPath .githooks`.
+- Commit titles are conventional commits; they drive the release. Never push release tags by hand.
+- Secrets live in `.env.local` (gitignored). Never commit `.env.*` files.
