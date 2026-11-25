@@ -95,6 +95,30 @@ On a push to `main` the job also needs `packages: write`, and a second step (or 
         signing-password: ${{ secrets.SIGNING_PASSWORD }}
 ```
 
+A fork's pull request gets a read-only token on `pull_request`, so its own report job is refused
+`INSUFFICIENT_PERMISSIONS`. A separate workflow reports it from the results that run uploaded, without checking out or
+running the fork's code (ADR-0032 decision 10). The Action downloads the run's `feat-evidence-*` artifacts itself:
+
+```yaml
+# .github/workflows/fork-report.yml
+on:
+  workflow_run:
+    workflows: [ci]                 # the name of the workflow that uploads the evidence
+    types: [completed]
+jobs:
+  report:
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.head_repository.full_name != github.repository
+    runs-on: ubuntu-24.04
+    permissions: { pull-requests: write, checks: write, actions: read }
+    steps:
+      - uses: mmmnt/feature/actions/pr-report@<full sha>
+```
+
+Attestations show as "not attested (fork PR); attested on merge": a fork's run holds no secrets, so it signed nothing.
+A run from this repository itself is refused `TRUSTED_RUN`, which the `if:` above avoids.
+
 The producer signs each subject with `cosign attest --key … --signing-config <a config with no services>
 --type slsaprovenance1`; an auditor checks it with `cosign verify-attestation --key <public key>
 --insecure-ignore-tlog --type slsaprovenance1 <repository>@<digest>`.
@@ -112,7 +136,7 @@ cannot write comments or checks, as on a fork's own run), `NO_EVIDENCE`, `TRUSTE
 
 ## Changelog
 
-The action is pinned by commit SHA (see Usage); what changed is in the repository's [GitHub Releases](https://github.com/mmmnt/feature/releases) and commit history.
+The action is pinned by commit SHA (see Installation); what changed is in the repository's [GitHub Releases](https://github.com/mmmnt/feature/releases) and commit history.
 
 ## Contributing
 
@@ -124,9 +148,12 @@ local gate.
 git clone https://github.com/mmmnt/feature.git
 cd feature
 pnpm install
-cd actions/pr-report
-npm install && npm run build && npm test
+pnpm --filter @mmmnt/feat-pr-report build && pnpm --filter @mmmnt/feat-pr-report test
 ```
+
+The package is a pnpm workspace member (`@mmmnt/feat-pr-report`, private), so run it through pnpm from the
+repository root: its `workspace:*` dependency does not install with npm. Commit `dist/main.js` after a build that
+changes it.
 
 ## License
 
