@@ -1,0 +1,111 @@
+{
+  "featVersion": "1.0",
+  "identity": {
+    "id": "SPEC-OK-203",
+    "name": "absent inside a nested block",
+    "context": "Bad",
+    "aggregate": "Thing",
+    "type": "command",
+    "status": "draft"
+  },
+  "construct": [
+    {
+      "kind": "handler",
+      "path": "src/do-thing.ts"
+    },
+    {
+      "kind": "touches",
+      "glob": "src/**"
+    }
+  ],
+  "enforce": [
+    {
+      "kind": "constraint",
+      "text": "do the thing"
+    }
+  ],
+  "contract": [
+    {
+      "kind": "input",
+      "schemaName": "ThingInput"
+    },
+    {
+      "kind": "response",
+      "schemaName": "ThingResult"
+    },
+    {
+      "kind": "record",
+      "schemaName": "ThingRow"
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "does the thing",
+      "when": {
+        "command": "DoThing",
+        "payload": {
+          "value": 1
+        }
+      },
+      "prediction": {
+        "type": "success",
+        "response": {
+          "status": "OK",
+          "schemaName": "ThingResult",
+          "valueBlock": {
+            "id": {
+              "matcher": "literal",
+              "value": "t-1"
+            },
+            "meta": {
+              "matcher": "nested",
+              "fields": {
+                "source": {
+                  "matcher": "literal",
+                  "value": "api"
+                },
+                "deletedAt": {
+                  "matcher": "absent"
+                }
+              }
+            }
+          }
+        },
+        "services": {
+          "eventStore": {
+            "records": [
+              {
+                "type": "Wrote",
+                "schemaName": "ThingRow",
+                "valueBlock": {
+                  "id": {
+                    "matcher": "literal",
+                    "value": "t-1"
+                  },
+                  "payload": {
+                    "matcher": "nested",
+                    "fields": {
+                      "counted": {
+                        "matcher": "literal",
+                        "value": 3
+                      },
+                      "deletedAt": {
+                        "matcher": "absent"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          "cache": {
+            "records": []
+          },
+          "log": {
+            "records": []
+          }
+        }
+      }
+    }
+  ]
+}

@@ -45,7 +45,7 @@ scenario "loads a valid config":
     response OK FeatConfigResult {
       featVersion: "1.0"
       environment: "local"
-      services: { filesystem: { consistency: "acid" } }
+      services: { filesystem: { adapter: "@mmmnt/feat-adapter-fs", consistency: "acid" } }
       extends: absent
       report: {"format":["console"]}
       response: {"adapter":"@mmmnt/feat-adapter-handler","commands":{"Ping":{"module":"src/ping.ts","export":"ping"}}}

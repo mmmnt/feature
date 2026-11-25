@@ -1,0 +1,46 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-ANL-001",
+  "schemas": {
+    "LintInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "scenario": { "type": "string" },
+        "registry": { "type": "object" },
+        "response": {
+          "type": "object",
+          "required": ["schemaName", "valueBlock"],
+          "additionalProperties": false,
+          "properties": { "schemaName": { "type": "string" }, "valueBlock": { "type": "object" }, "partial": { "const": true } }
+        },
+        "records": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["service", "type", "schemaName", "valueBlock"],
+            "additionalProperties": false,
+            "properties": {
+              "service": { "type": "string" },
+              "type": { "type": "string" },
+              "schemaName": { "type": "string" },
+              "valueBlock": { "type": "object" },
+              "partial": { "const": true },
+              "contains": { "const": true }
+            }
+          }
+        }
+      }
+    },
+    "LintResult": {
+      "type": "object",
+      "required": ["count"],
+      "additionalProperties": false,
+      "properties": {
+        "count": { "type": "integer", "minimum": 0 },
+        "level": { "enum": ["error", "warn", "info"] },
+        "finding": { "type": "string" }
+      }
+    }
+  }
+}

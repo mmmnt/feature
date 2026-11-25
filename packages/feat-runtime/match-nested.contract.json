@@ -1,0 +1,111 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-RT-017",
+  "schemas": {
+    "MatchInput": {
+      "description": "MatchValue takes value + matcher (SPEC-RT-011's probe); its diff form takes records + predicted (+ mode), or response + expect; Parse takes spec + config (SPEC-CORE-001)",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "value": {},
+        "matcher": {
+          "type": "object",
+          "required": [
+            "matcher"
+          ]
+        },
+        "mode": {
+          "enum": [
+            "ordered",
+            "unordered",
+            "contains"
+          ]
+        },
+        "records": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "type",
+              "payload"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "payload": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "predicted": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "type",
+              "schemaName"
+            ]
+          }
+        },
+        "response": {
+          "type": "object",
+          "required": [
+            "status",
+            "body"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "status": {},
+            "body": {
+              "type": "object"
+            }
+          }
+        },
+        "expect": {
+          "type": "object",
+          "required": [
+            "status",
+            "schemaName"
+          ]
+        },
+        "spec": {
+          "type": "string",
+          "minLength": 1
+        },
+        "config": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "MatchResult": {
+      "type": "object",
+      "required": [
+        "outcome",
+        "count"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "outcome": {
+          "enum": [
+            "passed",
+            "failed"
+          ]
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "violation": {
+          "type": "string"
+        }
+      }
+    },
+    "BuiltSpec": {
+      "$ref": "../../schemas/builtspec.schema.json"
+    }
+  }
+}

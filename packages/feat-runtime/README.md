@@ -459,7 +459,7 @@ console.log(out); // [ 'response › id: expected any uuid, got "nope"' ]
 
 Matchers: `literal`, `whenRef` (`@when.<path>`), `deliverRef` (`@deliver.<path>`), `captureRef`
 (`@<service>[i].<path>`, a value captured on another surface), `any` (optionally `uuid`, `timestamp`,
-`string`, `number` or `boolean`), `regex`, `absent`, `goldenFixture`, `nested`, `not`, `f32Digest`, `list` and `object`. `@when` and
+`string`, `number` or `boolean`), `regex`, `absent`, `goldenFixture`, `nested` (exact from 0.10.0: an undeclared key of its object is `UNPREDICTED`, ADR-0039), `not`, `f32Digest`, `list` and `object`. `@when` and
 `@deliver` equal the values actually sent, after `@given.response.*` resolved. A `captureRef` whose
 service captured nothing, or whose index is out of range, is a violation, never a pass. A
 `placeholder` matcher that reaches the runtime is a violation too: derive should have replaced it.
@@ -601,6 +601,22 @@ why `loadConfig` validates the merged document.
 Environment variables the runtime reads or sets: `FEAT_ENVIRONMENT` and `ENVIRONMENT`
 (`resolveEnvironment`), `FEAT_NAMESPACE` (set per file), `FEAT_SERIAL` (read in preflight) and
 `FEAT_FENCE_AUDIT` (read in the convergence wait).
+
+## What changed in 0.10.0 (breaking)
+
+- **A nested value block is exact** (ADR-0039, SPEC-RT-017; founder rulings 02af6938). A `{ … }` in a field position
+  now reports each key of its object that it does not declare: `<anchor>: UNPREDICTED field '<key>' = <value, cut to
+  80>`. This holds at every depth, in `has` (ordered and unordered), in `contains`, and in a response body.
+- **Inside `partial` too.** A `partial` record or response keeps its top level unchecked beyond its listed fields, but
+  its nested blocks are exact.
+- **Unchanged:**
+  - The top-level block of a record or response checks only its listed fields (ADR-0002, ADR-0038).
+  - `absent` inside a nested block works as before.
+  - A failing record still reports "captured X does not match predicted Y".
+- **Why it is breaking:** a spec that predicted part of a nested object now fails with no change of its own.
+- **To migrate:** state every key of the object, or write the field `any` to leave a sub-object unchecked.
+- **Finding the blocks:** `@mmmnt/feature` 0.16.0's `feat lint` warns `NESTED_SCHEMA_OPEN` on every nested block whose
+  schema is open, which is where an unstated key can appear.
 
 ## What changed in 0.2.2
 

@@ -1,0 +1,139 @@
+feat 1.0
+
+# SPEC-ANL-001 — the migration lint of ADR-0039. Founder rulings 02af6938 (2026-11-24, on workshop 749e4a70), item 5
+# "Breaking, with a lint" (NOT the recommendation): the release notes call exact nested blocks breaking, and the
+# release ships a migration lint that flags nested blocks whose schema allows extra keys; a lint finding, never a config
+# flag.
+#
+# From feat-runtime 0.10.0 a nested value block is exact (SPEC-RT-017). Where the contract leaves the nested object open,
+# only the block states its keys, so a spec written against the partial matcher may go red. `feat lint` names each such
+# block as the warning NESTED_SCHEMA_OPEN — a warning, as ADR-0007's advisory rules are: the runtime is what fails the
+# scenario, and closing a consumer's contract is the consumer's decision. `feat lint` still exits 1 only on errors.
+#
+# The rule (packages/feat-analyze lintNestedOpen, run by `feat lint` beside lintSpec and lintOptionalFields): for every
+# predicted response block and every `has` and `contains` record block, `partial` or not (ruling 2), each nested
+# matcher at path p is resolved against the block's schema — the property p names, following local refs and allOf, at
+# each depth. It is open unless that sub-schema says `additionalProperties: false` or `unevaluatedProperties: false`,
+# directly, through a local ref, through an allOf part, or in every anyOf/oneOf branch. A property no schema describes,
+# and a schema the registry lacks, are open. Literal objects and `any` are not nested blocks. Findings come in
+# scenario, record and written field order, outer before inner.
+#
+# Driven through the probe `LintNested` (packages/feat-analyze/fixtures/probe.mjs): one scenario built from the input's
+# response and records, linted against the input's registry; the answer is the count and the first finding.
+
+spec SPEC-ANL-001 "Lint: a nested block whose schema is open"
+context Toolchain
+aggregate Analyze
+type infrastructure
+status agreed
+
+construct:
+  handler at packages/feat-analyze/src/index.ts
+  touches packages/feat-analyze/**
+  touches packages/feature/src/commands/lint.ts
+  needs SPEC-RT-017
+  lintNestedOpen(spec, registry) returns one Finding { level: "warn", message } per nested block under an open schema:
+  "warn [NESTED_SCHEMA_OPEN]: scenario \"<name>\" › <response | <service> <type>> › <path joined by ' › '>: <Schema>
+  leaves '<path joined by .>' open, so from feat-runtime 0.10.0 a key the block does not state fails the scenario
+  (ADR-0039) — close it (additionalProperties: false), or check the block states every key".
+  feat lint prints each finding under its spec and counts it as a warning.
+
+enforce:
+  warn on a nested block whose schema lets its object carry undeclared keys
+  stay silent on a nested block whose schema is closed, however the closing is written
+  check partial and contains blocks and responses as records are checked
+  never make feat lint exit non-zero for this rule
+
+contract:
+  input LintInput
+  response LintResult
+
+scenario "a nested block whose schema is open is a warning naming the scenario, the record and the path":
+  when: LintNested { registry: { CountedEvent: { type: "object", properties: { payload: { type: "object" } } } }, records: [ { service: "log", type: "stock.counted", schemaName: "CountedEvent", valueBlock: { payload: { matcher: "nested", fields: { counted: { matcher: "literal", value: 3 } } } } } ] }
+  predict success:
+    response OK LintResult { count: 1, level: "warn", finding: "warn [NESTED_SCHEMA_OPEN]: scenario \"s\" › log stock.counted › payload: CountedEvent leaves 'payload' open, so from feat-runtime 0.10.0 a key the block does not state fails the scenario (ADR-0039) — close it (additionalProperties: false), or check the block states every key" }
+    filesystem has []
+
+scenario "a nested block whose schema is closed is not flagged":
+  when: LintNested { registry: { CountedEvent: { type: "object", properties: { payload: { type: "object", additionalProperties: false, properties: { counted: { type: "integer" } } } } } }, records: [ { service: "log", type: "stock.counted", schemaName: "CountedEvent", valueBlock: { payload: { matcher: "nested", fields: { counted: { matcher: "literal", value: 3 } } } } } ] }
+  predict success:
+    response OK LintResult { count: 0, level: absent, finding: absent }
+    filesystem has []
+
+scenario "a property the schema does not describe at all is open":
+  when: LintNested { registry: { CountedEvent: { type: "object", properties: { entryType: { type: "string" } } } }, records: [ { service: "log", type: "stock.counted", schemaName: "CountedEvent", valueBlock: { payload: { matcher: "nested", fields: { counted: { matcher: "literal", value: 3 } } } } } ] }
+  predict success:
+    response OK LintResult { count: 1, level: "warn", finding: "warn [NESTED_SCHEMA_OPEN]: scenario \"s\" › log stock.counted › payload: CountedEvent leaves 'payload' open, so from feat-runtime 0.10.0 a key the block does not state fails the scenario (ADR-0039) — close it (additionalProperties: false), or check the block states every key" }
+    filesystem has []
+
+scenario "additionalProperties true is open":
+  when: LintNested { registry: { CountedEvent: { type: "object", properties: { payload: { type: "object", additionalProperties: true, properties: { counted: { type: "integer" } } } } } }, records: [ { service: "log", type: "stock.counted", schemaName: "CountedEvent", valueBlock: { payload: { matcher: "nested", fields: { counted: { matcher: "literal", value: 3 } } } } } ] }
+  predict success:
+    response OK LintResult { count: 1, level: "warn", finding: "warn [NESTED_SCHEMA_OPEN]: scenario \"s\" › log stock.counted › payload: CountedEvent leaves 'payload' open, so from feat-runtime 0.10.0 a key the block does not state fails the scenario (ADR-0039) — close it (additionalProperties: false), or check the block states every key" }
+    filesystem has []
+
+scenario "a sub-schema closed through a local ref is not flagged":
+  when: LintNested { registry: { CountedEvent: { type: "object", properties: { payload: { $ref: "#/$defs/Counted" } }, $defs: { Counted: { type: "object", additionalProperties: false, properties: { counted: { type: "integer" } } } } } }, records: [ { service: "log", type: "stock.counted", schemaName: "CountedEvent", valueBlock: { payload: { matcher: "nested", fields: { counted: { matcher: "literal", value: 3 } } } } } ] }
+  predict success:
+    response OK LintResult { count: 0, level: absent, finding: absent }
+    filesystem has []
+
+scenario "a sub-schema closed through an allOf part is not flagged":
+  when: LintNested { registry: { CountedEvent: { type: "object", properties: { payload: { allOf: [ { type: "object", unevaluatedProperties: false, properties: { counted: { type: "integer" } } } ] } } } }, records: [ { service: "log", type: "stock.counted", schemaName: "CountedEvent", valueBlock: { payload: { matcher: "nested", fields: { counted: { matcher: "literal", value: 3 } } } } } ] }
+  predict success:
+    response OK LintResult { count: 0, level: absent, finding: absent }
+    filesystem has []
+
+scenario "a property found through the record schema's allOf is resolved there":
+  when: LintNested { registry: { CountedEvent: { allOf: [ { type: "object", properties: { payload: { type: "object", additionalProperties: false, properties: { counted: { type: "integer" } } } } } ] } }, records: [ { service: "log", type: "stock.counted", schemaName: "CountedEvent", valueBlock: { payload: { matcher: "nested", fields: { counted: { matcher: "literal", value: 3 } } } } } ] }
+  predict success:
+    response OK LintResult { count: 0, level: absent, finding: absent }
+    filesystem has []
+
+scenario "anyOf is closed only when every branch is closed":
+  when: LintNested { registry: { CountedEvent: { type: "object", properties: { payload: { anyOf: [ { type: "object", additionalProperties: false }, { type: "object" } ] } } } }, records: [ { service: "log", type: "stock.counted", schemaName: "CountedEvent", valueBlock: { payload: { matcher: "nested", fields: { counted: { matcher: "literal", value: 3 } } } } } ] }
+  predict success:
+    response OK LintResult { count: 1, level: "warn", finding: "warn [NESTED_SCHEMA_OPEN]: scenario \"s\" › log stock.counted › payload: CountedEvent leaves 'payload' open, so from feat-runtime 0.10.0 a key the block does not state fails the scenario (ADR-0039) — close it (additionalProperties: false), or check the block states every key" }
+    filesystem has []
+
+scenario "an open block two levels down is named by its whole path":
+  when: LintNested { registry: { CountedEvent: { type: "object", properties: { payload: { type: "object", additionalProperties: false, properties: { check: { type: "object" } } } } } }, records: [ { service: "log", type: "stock.counted", schemaName: "CountedEvent", valueBlock: { payload: { matcher: "nested", fields: { check: { matcher: "nested", fields: { ok: { matcher: "literal", value: true } } } } } } } ] }
+  predict success:
+    response OK LintResult { count: 1, level: "warn", finding: "warn [NESTED_SCHEMA_OPEN]: scenario \"s\" › log stock.counted › payload › check: CountedEvent leaves 'payload.check' open, so from feat-runtime 0.10.0 a key the block does not state fails the scenario (ADR-0039) — close it (additionalProperties: false), or check the block states every key" }
+    filesystem has []
+
+scenario "each open nested block is one finding, outer first":
+  when: LintNested { registry: { CountedEvent: { type: "object" } }, records: [ { service: "log", type: "stock.counted", schemaName: "CountedEvent", valueBlock: { payload: { matcher: "nested", fields: { check: { matcher: "nested", fields: { ok: { matcher: "literal", value: true } } } } } } } ] }
+  predict success:
+    response OK LintResult { count: 2, level: "warn", finding: "warn [NESTED_SCHEMA_OPEN]: scenario \"s\" › log stock.counted › payload: CountedEvent leaves 'payload' open, so from feat-runtime 0.10.0 a key the block does not state fails the scenario (ADR-0039) — close it (additionalProperties: false), or check the block states every key" }
+    filesystem has []
+
+scenario "a nested block inside a partial record is checked too":
+  when: LintNested { registry: { CountedEvent: { type: "object", properties: { payload: { type: "object" } } } }, records: [ { service: "log", type: "stock.counted", schemaName: "CountedEvent", valueBlock: { payload: { matcher: "nested", fields: { counted: { matcher: "literal", value: 3 } } } }, partial: true } ] }
+  predict success:
+    response OK LintResult { count: 1, level: "warn", finding: "warn [NESTED_SCHEMA_OPEN]: scenario \"s\" › log stock.counted › payload: CountedEvent leaves 'payload' open, so from feat-runtime 0.10.0 a key the block does not state fails the scenario (ADR-0039) — close it (additionalProperties: false), or check the block states every key" }
+    filesystem has []
+
+scenario "a contains record is checked like a has record":
+  when: LintNested { registry: { CountedEvent: { type: "object", properties: { payload: { type: "object" } } } }, records: [ { service: "log", type: "stock.counted", schemaName: "CountedEvent", valueBlock: { payload: { matcher: "nested", fields: { counted: { matcher: "literal", value: 3 } } } }, contains: true } ] }
+  predict success:
+    response OK LintResult { count: 1, level: "warn", finding: "warn [NESTED_SCHEMA_OPEN]: scenario \"s\" › log stock.counted › payload: CountedEvent leaves 'payload' open, so from feat-runtime 0.10.0 a key the block does not state fails the scenario (ADR-0039) — close it (additionalProperties: false), or check the block states every key" }
+    filesystem has []
+
+scenario "a response block is checked like a record":
+  when: LintNested { registry: { Page: { type: "object", properties: { page: { type: "object" } } } }, response: { schemaName: "Page", valueBlock: { page: { matcher: "nested", fields: { size: { matcher: "literal", value: 2 } } } } } }
+  predict success:
+    response OK LintResult { count: 1, level: "warn", finding: "warn [NESTED_SCHEMA_OPEN]: scenario \"s\" › response › page: Page leaves 'page' open, so from feat-runtime 0.10.0 a key the block does not state fails the scenario (ADR-0039) — close it (additionalProperties: false), or check the block states every key" }
+    filesystem has []
+
+scenario "a literal object and a field written any are not nested blocks and are not flagged":
+  when: LintNested { registry: { CountedEvent: { type: "object" } }, records: [ { service: "log", type: "stock.counted", schemaName: "CountedEvent", valueBlock: { payload: { matcher: "literal", value: { counted: 3 } }, check: { matcher: "any" } } } ] }
+  predict success:
+    response OK LintResult { count: 0, level: absent, finding: absent }
+    filesystem has []
+
+scenario "a block that names a schema the registry lacks is open":
+  when: LintNested { registry: {}, records: [ { service: "log", type: "stock.counted", schemaName: "CountedEvent", valueBlock: { payload: { matcher: "nested", fields: { counted: { matcher: "literal", value: 3 } } } } } ] }
+  predict success:
+    response OK LintResult { count: 1, level: "warn", finding: "warn [NESTED_SCHEMA_OPEN]: scenario \"s\" › log stock.counted › payload: CountedEvent leaves 'payload' open, so from feat-runtime 0.10.0 a key the block does not state fails the scenario (ADR-0039) — close it (additionalProperties: false), or check the block states every key" }
+    filesystem has []

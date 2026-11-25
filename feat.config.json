@@ -201,6 +201,10 @@
       "MatchValue": {
         "module": "packages/feat-runtime/fixtures/matcher/probe.mjs",
         "export": "matchValue"
+      },
+      "LintNested": {
+        "module": "packages/feat-analyze/fixtures/probe.mjs",
+        "export": "lintNested"
       }
     }
   },

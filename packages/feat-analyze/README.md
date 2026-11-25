@@ -139,7 +139,24 @@ optional means declared and not required, following `allOf` and the bundle's loc
 | --- | --- | --- |
 | A block leaves out an optional property | `error` | `error [OPTIONAL_UNSTATED]: scenario "<name>" › <where>: <Schema> leaves out optional '<p>' — state each (absent, any, or a value), or mark the block '<Schema> partial { … }' (ADR-0038)` |
 
-`feat lint` runs both and exits 1 on any error-level finding.
+### `lintNestedOpen(spec: BuiltSpec, registry: Record<string, object>): Finding[]`
+
+ADR-0039 (SPEC-ANL-001), the migration lint for exact nested blocks. From `@mmmnt/feat-runtime` 0.10.0 a nested value
+block is exact. This rule names each nested block whose schema lets the object carry keys the block does not declare,
+because only the block then states them. It checks every predicted response, `has` record and `contains` record,
+`partial` or not.
+
+A nested block's schema is the property it names, resolved at each depth through the bundle's local `$ref`s and
+`allOf`. It is closed when it says `additionalProperties: false` or `unevaluatedProperties: false`, directly, through
+a ref, through an allOf part, or in every anyOf/oneOf branch. A property no schema describes is open. Literal objects
+and `any` are not nested blocks.
+
+| Rule | Level | Message |
+| --- | --- | --- |
+| A nested block under an open schema | `warn` | `warn [NESTED_SCHEMA_OPEN]: scenario "<name>" › <response \| <service> <type>> › <path>: <Schema> leaves '<path>' open, so from feat-runtime 0.10.0 a key the block does not state fails the scenario (ADR-0039) — close it (additionalProperties: false), or check the block states every key` |
+
+`feat lint` runs all three and exits 1 on any error-level finding. NESTED_SCHEMA_OPEN is a warning and never fails the
+run.
 
 Findings come in rule order: schemas, variables, duplicates, status. No rule in
 this release returns `level: "error"`; the type allows it so a future rule can.
@@ -204,12 +221,18 @@ not detected. The parser itself does not reject tab indentation (see
 
 | Command | Calls | Exit codes |
 | --- | --- | --- |
-| `feat lint` | `lintSpec` on every spec | `0`, or `1` if any spec fails to parse. Warnings and notes never fail the run. |
+| `feat lint` | `lintSpec`, `lintOptionalFields` and `lintNestedOpen` on every spec | `0`, or `1` if any spec fails to parse. Warnings and notes never fail the run. |
 | `feat audit` | `auditSpec`, plus the paired-file warnings | `0`, or `1` if any spec has an error (a parse failure or a B1, B2 or B3 error). Warnings never fail the run. |
 | `feat fmt` | `formatSource`; `--check` reports without writing | `0`, or `1` with `--check` when any file would change, or when any file has a leading tab. |
 
 A configuration error is exit `2`, as everywhere in the toolchain. The library
 itself returns values and never exits.
+
+## What changed in 0.3.0
+
+- `lintNestedOpen` (ADR-0039, SPEC-ANL-001): the warning `NESTED_SCHEMA_OPEN` names each nested block whose schema is
+  open. It is the migration aid for `@mmmnt/feat-runtime` 0.10.0, where nested blocks became exact. A warning, never a
+  config switch; `feat lint` still exits 1 only on errors.
 
 ## What changed in 0.1.9
 

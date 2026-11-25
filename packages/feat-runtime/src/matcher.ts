@@ -200,7 +200,12 @@ export function applyMatcher(actual: unknown, present: boolean, m: Matcher, ctx:
         out.push(`${anchor}: expected an object for nested block, got ${present ? JSON.stringify(actual) : "(absent)"}`);
         return;
       }
+      // ADR-0039 (SPEC-RT-017): a nested block is exact — each key of the object it does not declare is a violation,
+      // in the value's key order, with the words and cut of an object inside a list (ADR-0034).
       applyValueBlock(actual as Record<string, unknown>, m.fields, ctx, anchor, out);
+      for (const k of Object.keys(actual as object))
+        if (!Object.prototype.hasOwnProperty.call(m.fields, k))
+          out.push(`${anchor}: UNPREDICTED field '${k}' = ${shownCut((actual as Record<string, unknown>)[k])}`);
       return;
     }
     case "placeholder":
