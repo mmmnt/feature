@@ -129,7 +129,7 @@ scenario "the table is production-grade and pinned to the endpoint":
   when: SynthStack {
     stack: "my-app-<env>-data",
     select: {
-      table: { path: "WorkspaceTable/Table/Resource" },
+      table: { path: "WorkspaceTable/Table/Resource", where: { BillingMode: "PAY_PER_REQUEST" } },
       pinned: { type: "AWS::DynamoDB::Table", regex: "aws:sourceVpce" }
     }
   }
@@ -137,11 +137,15 @@ scenario "the table is production-grade and pinned to the endpoint":
     response 200 StackSurface {
       closure: ["my-app-<env>-network", "my-app-<env>-data"]
       selected: {
-        table: { count: 1, first: { properties: { BillingMode: "PAY_PER_REQUEST" } } }
-        pinned: { count: 1 }
+        table: { count: 1, paths: any, first: any }
+        pinned: { count: 1, paths: any, first: any }
       }
     }
 ```
+
+A nested value block is exact (ADR-0039), and a selection is `{ count, paths, first }`, so a prediction states
+all three keys. Put the property claim in the query's `where`, where `count: 1` proves it, and write `first: any`
+rather than predicting the whole resource. A selection with no match is `{ count: 0, paths: [] }`, with no `first`.
 
 `count: 0` is how "public must never reach intra" and "intra has no internet
 route" become verified predictions — no projection code, any AWS service,
@@ -208,7 +212,7 @@ scenario "the data stack has one table and publishes its name":
       stackName: "data"
       closure: ["net", "data"]
       publishes: ["/app/table-name"]
-      selected: { tables: { count: 1 } }
+      selected: { tables: { count: 1, paths: any, first: any } }
     }
     # plus `<service> has []` for every other configured service
 ```
