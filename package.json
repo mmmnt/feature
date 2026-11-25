@@ -24,7 +24,7 @@
     "corpus:validate": "ajv validate --spec=draft7 -s schemas/builtspec.schema.json -d 'corpus/*/*.ir.json' && ajv validate --spec=draft7 -s schemas/contract.schema.json -d 'corpus/*/*.contract.json' && ajv validate --spec=draft7 -s schemas/feat.config.schema.json -d 'corpus/*/feat.config.json'",
     "claude:session": "npx @dotenvx/dotenvx run -f .env.local -- npx -y @anthropic-ai/claude-code",
     "changeset": "changeset",
-    "changeset:version": "changeset version && node packages/feature/bin/run.js generate && node packages/feature/bin/run.js generate -c feat.integration.config.json"
+    "changeset:version": "changeset version && node packages/feature/bin/run.js generate && node packages/feature/bin/run.js generate -c feat.integration.config.json && node scripts/sync-extension.mjs"
   },
   "devDependencies": {
     "@changesets/changelog-github": "^1.0.1",

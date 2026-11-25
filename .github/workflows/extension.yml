@@ -76,7 +76,9 @@ jobs:
         run: npm version --no-git-tag-version --allow-same-version "$VERSION"
 
       - name: Package .vsix
-        run: npx --yes @vscode/vsce package --allow-missing-repository
+        # The README links to files elsewhere in the monorepo (../../packages/…). Without a base,
+        # vsce resolves them from the repository root and the registry listing links nowhere.
+        run: npx --yes @vscode/vsce package --allow-missing-repository --baseContentUrl https://github.com/mmmnt/feature/blob/main/editors/vscode --baseImagesUrl https://raw.githubusercontent.com/mmmnt/feature/main/editors/vscode
 
       - name: Upload .vsix artifact
         uses: actions/upload-artifact@v7

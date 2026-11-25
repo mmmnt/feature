@@ -1,0 +1,7 @@
+# Only the built extension, its grammar and the listing files go into the .vsix.
+src/**
+test/**
+tsconfig.json
+scripts-sync-grammar.mjs
+**/*.map
+*.vsix

@@ -1,4 +1,4 @@
-# Feat for VS Code
+# Feature for VS Code
 
 Syntax highlighting and live, spec-anchored test feedback for `.feat` execution
 specifications. The extension runs your project's `feat watch --json` and puts
@@ -7,14 +7,14 @@ the generated test file.
 
 ## Installation
 
-Install **Feat — execution specifications** (`mmmnt.feat-vscode`) from the
+Install **Feature — execution specifications** (`mmmnt.feat-vscode`) from the
 [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=mmmnt.feat-vscode),
 or from [Open VSX](https://open-vsx.org/extension/mmmnt/feat-vscode) for Cursor,
 Windsurf and other VS Code forks. The release workflow also builds the `.vsix` as
 an artifact, which installs with `code --install-extension <file>.vsix`.
 
 Requires VS Code 1.85 or newer. The live feedback also needs Node.js 22 or newer
-on your `PATH` and [`@mmmnt/feature`](../../packages/feature/README.md) installed
+on your `PATH` and [`@mmmnt/feature`](https://github.com/mmmnt/feature/blob/main/packages/feature/README.md) installed
 in the project:
 
 ```sh
@@ -25,7 +25,7 @@ npm install --save-dev @mmmnt/feature
 
 - **Highlighting.** Registers the `feat` language for `.feat` files, with the
   TextMate grammar `source.feat` from
-  [`@mmmnt/feat-grammar`](../../packages/feat-grammar/README.md) (copied in at
+  [`@mmmnt/feat-grammar`](https://github.com/mmmnt/feature/blob/main/packages/feat-grammar/README.md) (copied in at
   build time), and comment, bracket, auto-closing and surrounding pairs from
   `language-configuration.json`.
 - **Live feedback.** The extension activates in a workspace that contains a
@@ -79,12 +79,12 @@ extension at the same version, with that release's grammar.
 
 ## Changelog
 
-Per-release changes are in the [GitHub Releases](https://github.com/mmmnt/feature/releases). The extension is released at the toolchain's version.
+Per-release changes are in [CHANGELOG.md](CHANGELOG.md), the toolchain's changelog, and in the [GitHub Releases](https://github.com/mmmnt/feature/releases). The extension is released at the toolchain's version.
 
 ## Contributing
 
 This package is part of the [Feature monorepo](https://github.com/mmmnt/feature). See
-[CONTRIBUTING.md](../../CONTRIBUTING.md) for the development setup, the spec-driven rules and the
+[CONTRIBUTING.md](https://github.com/mmmnt/feature/blob/main/CONTRIBUTING.md) for the development setup, the spec-driven rules and the
 local gate.
 
 ```bash
@@ -99,4 +99,4 @@ npm ci && npm run build && npm test
 
 BSD-3-Clause. See [LICENSE](LICENSE).
 
-Part of [Feature](../../README.md), the .feat execution specification toolchain.
+Part of [Feature](https://github.com/mmmnt/feature#readme), the .feat execution specification toolchain.

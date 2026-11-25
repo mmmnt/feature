@@ -1,10 +1,11 @@
 {
   "name": "feat-vscode",
-  "displayName": "Feat — execution specifications",
+  "displayName": "Feature — execution specifications",
   "description": "Syntax highlighting and live spec-anchored test feedback for .feat files",
-  "version": "0.1.55",
+  "version": "0.17.0",
   "publisher": "mmmnt",
   "license": "BSD-3-Clause",
+  "homepage": "https://feature.mmmnt.ai",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/mmmnt/feature.git",
