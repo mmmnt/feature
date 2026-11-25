@@ -348,7 +348,7 @@
         "object",
         "null"
       ],
-      "description": "Attestation envelope. Null for locally produced bundles; the account lane signs on ingestion (key infrastructure is account-side).",
+      "description": "Attestation envelope. Null for locally produced bundles. Signed attestations stored in a hosted ledger are the commercial version of Feature, which is paid; free accounts have no dashboard access.",
       "required": [
         "alg",
         "key_id",
