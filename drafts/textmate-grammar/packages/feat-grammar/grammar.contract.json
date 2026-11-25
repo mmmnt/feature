@@ -1,0 +1,96 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-GRM-001",
+  "schemas": {
+    "TokenizeInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "line": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string",
+          "minLength": 1
+        },
+        "file": {
+          "type": "string"
+        },
+        "lineNo": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "column": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "line",
+            "at"
+          ]
+        },
+        {
+          "required": [
+            "file",
+            "lineNo",
+            "column"
+          ]
+        }
+      ]
+    },
+    "SweepInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+    "TokenizeResult": {
+      "type": "object",
+      "required": [
+        "scopes"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "scopes": {
+          "type": "string"
+        }
+      }
+    },
+    "SweepResult": {
+      "type": "object",
+      "required": [
+        "unscoped",
+        "checked"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "unscoped": {
+          "type": "string"
+        },
+        "checked": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "TokenizeError": {
+      "type": "object",
+      "required": [
+        "code"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "enum": [
+            "NOT_IN_LINE"
+          ]
+        },
+        "detail": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,137 @@
+feat 1.0
+
+# SPEC-GRM-001 (DRAFT, drafts/textmate-grammar, awaiting the owner) — the TextMate grammar scopes every word
+# the parser reads as a keyword, in the forms the parser reads it, and leaves the same word in prose alone.
+#
+# No spec owns packages/feat-grammar today. Its tests (tokenize.test.ts, copies.test.ts, language.test.ts)
+# pin some scopes and the two byte-identical editor copies (editor/feat.tmLanguage.json,
+# editors/vscode/syntaxes/feat.tmLanguage.json). The grammar has fallen behind the language: tokenized with
+# vscode-textmate 9.2 and vscode-oniguruma 2.0 (the package's devDependencies) at main 72f71de, these get no
+# scope but source.feat (drafts/textmate-grammar/README.md has each line and its output):
+#   `variables:`; an indented `given:` (the opener matches only at column 0, and every corpus given is
+#   indented); `random seed 42`; a given `seed eventStore [ … ]` and `seed … from "…"`; `needs SPEC-…`;
+#   `register mutation createFlow in …`; `emit to …`; a contract `stream "…"`; `from` in `imports … from`,
+#   `seed … from` and `input X from "…"`; a fault's `once`, `times 3`, `until reset`; a dotted record type
+#   (`stripe.charge with Charge`) and a lowercase one (`userCreated with User`); a bare `any`; `when` and the
+#   command in `when (as admin): DoThing { … }`; `touches src/**` written without indentation (indentation is
+#   conventional, grammar reference §1.2).
+# And three are scoped wrongly:
+#   the spec-variable reference: the `placeholders` rule matches `{$x}` (`\{\$[A-Za-z_][A-Za-z0-9_]*\}`,
+#   feat.tmLanguage.json, repository.placeholders), never `${x}` (VAR_REF in packages/feat-core/src/parse.ts:658
+#   is /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/), and `${x}` is only written inside a string, which the `strings` rule
+#   `"[^"]*"` scopes whole, so no rule can reach it;
+#   a string with an escaped quote, `"a\"b"`: `"[^"]*"` ends the string at the escaped quote;
+#   `deliver … to response`: `response` is scoped variable.other.service.feat, a service, which ADR-0036 says
+#   it never is.
+# A sweep of the corpus (a scratch script: every line whose first word is a §9 keyword, outside a keyword
+# used as a value-block field, and one prose line set aside) found 47 such lines with no scope but source.feat.
+#
+# Driven through packages/feat-grammar/fixtures/probe.mjs (part of the build, not shipped). It loads
+# feat.tmLanguage.json with vscode-textmate and vscode-oniguruma, as tokenize.test.ts does.
+#   `Tokenize { line, at }` tokenizes `line` alone (a fresh rule stack) and answers `scopes`: the scopes of the
+#   token holding the first occurrence of `at`, without source.feat, space-joined ("" for none); `at` not in
+#   the line is ERR NOT_IN_LINE. `Tokenize { file, lineNo, column }` tokenizes the file up to that line (the rule
+#   stack carried) and answers the scopes of the token at that 1-based column. A spec cannot write `${name}` in a
+#   string without it being a spec-variable reference (ADR-0017; UNKNOWN_VARIABLE), so the reference is checked
+#   where the corpus writes one.
+#   `SweepCorpus {}` tokenizes every corpus exemplar line by line (the rule stack carried, as an editor does)
+#   and answers `unscoped`: every line the parser reads by a keyword whose keyword token has no scope but
+#   source.feat, as "<exemplar>:<line>:<word>", comma-joined ("" for none), and `checked`, how many lines it
+#   looked at. "The parser reads by a keyword" is decided by feat-core's own section rules: a header line, a
+#   section opener, a contract or variables line, a scenario line, and a construct line in a typed form; the
+#   keywords are the ones the grammar reference lists in §9, read from docs/grammar-reference.md at run time,
+#   so a keyword added to the reference is swept without a change to the probe.
+
+spec SPEC-GRM-001 "TextMate grammar: every keyword the parser reads is scoped"
+context Toolchain
+aggregate Editor
+type infrastructure
+status draft
+
+construct:
+  handler at packages/feat-grammar/feat.tmLanguage.json
+  touches packages/feat-grammar/**
+  touches editor/feat.tmLanguage.json
+  touches editors/vscode/syntaxes/feat.tmLanguage.json
+  touches feat.config.json
+  Edit packages/feat-grammar/feat.tmLanguage.json only, then refresh both copies with
+  editors/vscode/scripts-sync-grammar.mjs (copies.test.ts holds them byte-identical). Scopes follow the
+  grammar's existing names: section openers keyword.control.section.feat; construct, contract and given
+  directives, `from`, `in` and `random seed` keyword.other.directive.feat; a fault count (`once`, `times`,
+  `until reset`) keyword.other.fault-count.feat; record types entity.name.type.record.feat; `any`
+  support.function.matcher.feat; a spec-variable reference variable.parameter.placeholder.feat, inside the
+  string that holds it; a string escape constant.character.escape.feat; `to response` keyword.other.response.feat.
+  Strings become a begin/end rule with escapes and `${name}` inside it. A line pattern does not require
+  leading indentation. A comment is `#` as the first non-blank character only. feat.config.json gains the
+  commands Tokenize and SweepCorpus routed to packages/feat-grammar/fixtures/probe.mjs.
+
+enforce:
+  scope every keyword the parser reads, in the forms it reads it
+  leave a keyword's word unscoped where the parser reads it as prose
+  sweep the corpus against the reference's keyword list, never against a list kept in the probe
+  scope a comment only where the parser skips one
+
+contract:
+  input TokenizeInput
+  input SweepInput
+  response TokenizeResult
+  response SweepResult
+  error TokenizeError
+
+scenario outline "a keyword the parser reads is scoped":
+  when: Tokenize { line: <line>, at: <at> }
+  predict success:
+    response OK TokenizeResult { scopes: matching <scope> }
+    filesystem has []
+  examples:
+    | line                                                          | at              | scope                                    |
+    | "variables:"                                                  | "variables"     | "keyword\\.control\\.section\\.feat"     |
+    | "  given:"                                                    | "given"         | "keyword\\.control\\.section\\.feat"     |
+    | "    random seed 42"                                          | "random"        | "keyword\\.other\\.directive\\.feat"     |
+    | "    seed eventStore [ Wrote with Row { a: 1 } ]"             | "seed"          | "keyword\\.other\\.directive\\.feat"     |
+    | "    seed eventStore from \"fixtures/x.json\""                | "from"          | "keyword\\.other\\.directive\\.feat"     |
+    | "  needs SPEC-USR-001"                                        | "needs"         | "keyword\\.other\\.directive\\.feat"     |
+    | "  register mutation createFlow in resolvers/mutations.ts"    | "register"      | "keyword\\.other\\.directive\\.feat"     |
+    | "  emit to automation-flow-{flowId}"                          | "emit to"       | "keyword\\.other\\.directive\\.feat"     |
+    | "  stream \"automation-flow-*\""                              | "stream"        | "keyword\\.other\\.directive\\.feat"     |
+    | "  imports FlowAggregate from core/domain/flow"               | "from"          | "keyword\\.other\\.directive\\.feat"     |
+    | "touches src/**"                                              | "touches"       | "keyword\\.other\\.directive\\.feat"     |
+    | "    fault store Append Timeout once"                         | "once"          | "keyword\\.other\\.fault-count\\.feat"   |
+    | "    fault store Append Timeout times 3"                      | "times"         | "keyword\\.other\\.fault-count\\.feat"   |
+    | "    fault store Append Timeout until reset"                  | "until reset"   | "keyword\\.other\\.fault-count\\.feat"   |
+    | "    payments has [ stripe.charge with Charge { a: 1 } ]"     | "stripe.charge" | "entity\\.name\\.type\\.record\\.feat"   |
+    | "    eventStore has [ userCreated with User { a: 1 } ]"       | "userCreated"   | "entity\\.name\\.type\\.record\\.feat"   |
+    | "    response OK R { id: any }"                               | "any"           | "support\\.function\\.matcher\\.feat"    |
+    | "  when (as admin): DoThing { a: 1 }"                         | "when"          | "keyword\\.control\\.trigger\\.feat"     |
+    | "  when (as admin): DoThing { a: 1 }"                         | "DoThing"       | "entity\\.name\\.function\\.command\\.feat" |
+    | "  when: Join { email: \"a\\\"b\", n: 1 }"                    | "b\""           | "string\\.quoted\\.double\\.feat"        |
+    | "  when: Join { email: \"a\\\"b\", n: 1 }"                    | "\\\""          | "constant\\.character\\.escape\\.feat"   |
+    | "  deliver OrderShipped { id: 1 } to response"                | "response"      | "keyword\\.other\\.response\\.feat"      |
+    | "  # a whole-line comment"                                    | "#"             | "comment\\.line\\.number-sign\\.feat"    |
+
+scenario "a spec-variable reference inside a string is scoped as one":
+  when: Tokenize { file: "corpus/waitlist-variables/waitlist-variables.feat", lineNo: 36, column: 32 }
+  predict success:
+    response OK TokenizeResult { scopes: matching "string\\.quoted\\.double\\.feat variable\\.parameter\\.placeholder\\.feat" }
+    filesystem has []
+
+scenario outline "a word the parser reads as prose, or as data, is not scoped as a keyword":
+  when: Tokenize { line: <line>, at: <at> }
+  predict success:
+    response OK TokenizeResult { scopes: not matching <scope> }
+    filesystem has []
+  examples:
+    | line                                                    | at        | scope                                 |
+    | "  when: Join { email: \"{$email}\" }"                  | "{$email}" | "placeholder"                         |
+    | "  deliver OrderShipped { id: 1 } to response"          | "response" | "variable\\.other\\.service"          |
+    | "  seed the cache before the first request"             | "seed"     | "keyword"                             |
+    | "  the flow runs once a day"                            | "once"     | "keyword"                             |
+    | "  pick any slot that is free"                          | "any"      | "support\\.function\\.matcher"        |
+    | "  when: Join { title: \"#1\" }"                        | "#1"       | "comment"                             |
+    | "    response OK R { ok: true }   # the answer"         | "#"        | "comment"                             |
+
+scenario "every line of the corpus that the parser reads by a keyword is scoped":
+  when: SweepCorpus {}
+  predict success:
+    response OK SweepResult { unscoped: "", checked: any number }
+    filesystem has []
