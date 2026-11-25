@@ -1,21 +1,21 @@
 # @mmmnt/feat-adapter-memory
 
-In-memory event service adapter for [Feature](https://github.com/mmmnt/feature), the `.feat`
-execution specification language. It runs deliver-triggered specs (`projection`, `policy`, `saga`)
+In-memory event service adapter for [Feature](../../README.md). It runs deliver-triggered specs (`projection`, `policy`, `saga`)
 with no infrastructure. `deliver` routes an event to the consumer modules you configure. Anything a
 consumer publishes lands in an in-memory event log and is captured while the window is open.
 
 Use it for the spec tier, where specs run in process and fast, and as the stand-in for a bus or an
 event store in any config that needs a service key but no real service.
 
-## Install
+## Installation
+
+Requires Node.js 22 or newer.
 
 ```sh
-npm install --save-dev @mmmnt/feat-adapter-memory
+npm install -D @mmmnt/feat-adapter-memory
 ```
 
-Requires Node 20 or later and `@mmmnt/feature` in the project. There are no runtime dependencies
-beyond `@mmmnt/feat-types`.
+The project also needs `@mmmnt/feature`. The adapter has no runtime dependency beyond `@mmmnt/feat-types`.
 
 ## Configuration
 
@@ -168,22 +168,14 @@ The adapter defines no error codes. It serves both observation modes, so it neve
   type, not at setup.
 - **No faults.** The adapter offers no fault catalog.
 
-## What changed in this release (v0.1.48, package 0.1.7)
-
-- Declares `observes = { diff: "native", state: true }` (SPEC-ADPMEM-001, SPEC-RT-002).
-- Adds `peekCapture()` (ADR-0020).
-- Adds `settle()`, which vouches inside an open window (ADR-0021).
-- `startCapture` accepts the spec type the harness passes (ADR-0011) and ignores it.
-
 ## Specs
 
-- [SPEC-ADPMEM-001, peek and settle](https://github.com/mmmnt/feature/blob/main/adapters/memory/observe.feat)
-- [Grammar reference, observation modes](https://github.com/mmmnt/feature/blob/main/docs/grammar-reference.md)
-- [ADR-0023, adapter interface v2](https://github.com/mmmnt/feature/blob/main/docs/adr/ADR-0023-adapter-interface-v2.md)
-
-Part of [Feature](https://github.com/mmmnt/feature). Adapter contract:
-https://github.com/mmmnt/feature/wiki/Architecture
+- [SPEC-ADPMEM-001, peek and settle](observe.feat)
+- [Grammar reference, observation modes](../../docs/grammar-reference.md)
+- [ADR-0023, adapter interface v2](../../docs/adr/ADR-0023-adapter-interface-v2.md)
 
 ## License
 
-MIT
+BSD-3-Clause. See [LICENSE](LICENSE).
+
+Part of [Feature](../../README.md), the .feat execution specification toolchain.

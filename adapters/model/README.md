@@ -1,6 +1,6 @@
 # @mmmnt/feat-adapter-model
 
-Recorded-judge service adapter for [Feature](https://github.com/mmmnt/feature), the `.feat` execution
+Recorded-judge service adapter for [Feature](../../README.md), the `.feat` execution
 specification language. Use it for a **judgment port**: the part of your system that asks a language model to
 decide something. A spec seeds the answers the judge gives and predicts the asks the system makes. Nothing goes
 over a network and no model is ever called, so a run is repeatable, free and needs no key.
@@ -9,14 +9,15 @@ The adapter keeps the port's records in one JSON Lines file per namespace. Your 
 from that file and appends its asks to it. The adapter is the same at every tier, because there is no product
 behind it (ADR-0028, SPEC-ADPMODEL-001).
 
-## Install
+## Installation
+
+Requires Node.js 22 or newer.
 
 ```sh
-npm install --save-dev @mmmnt/feat-adapter-model
+npm install -D @mmmnt/feat-adapter-model
 ```
 
-Requires Node 20 or later and `@mmmnt/feature` in the project. There are no runtime dependencies beyond
-`@mmmnt/feat-types`.
+The project also needs `@mmmnt/feature`. The adapter has no runtime dependency beyond `@mmmnt/feat-types`.
 
 ## Configuration
 
@@ -117,4 +118,6 @@ specify a judge that does not answer, seed no answer and predict your system's r
 
 ## License
 
-MIT
+BSD-3-Clause. See [LICENSE](LICENSE).
+
+Part of [Feature](../../README.md), the .feat execution specification toolchain.

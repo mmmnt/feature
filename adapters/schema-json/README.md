@@ -1,6 +1,6 @@
 # @mmmnt/feat-schema-json
 
-**The JSON Schema adapter for Feat.** It resolves the schemas a spec's contract
+The JSON Schema adapter for [Feature](../../README.md). It resolves the schemas a spec's contract
 declares, bundles them so each one is self-contained, and validates payloads
 against them with [Ajv](https://ajv.js.org/). It speaks **draft-07** and
 **draft 2020-12**.
@@ -16,8 +16,9 @@ run time, which is why the output of `resolve()` must stand alone.
 }
 ```
 
-Unset, `schemas.adapter` defaults to this package. Naming it keeps the config
-explicit, and a project can swap in its own resolver the same way.
+`schemas.adapter` is required by the config schema. A project can name its own
+resolver there instead; it must export `createAdapter(config)` returning a
+`FeatSchemaAdapter`.
 
 ## Where it sits
 
@@ -42,18 +43,16 @@ The adapter implements the `FeatSchemaAdapter` interface of
 An inline schema with no file reference is kept verbatim: its generated output
 does not change.
 
-## Install
+## Installation
+
+Requires Node.js 22 or newer.
 
 ```sh
-npm install --save-dev @mmmnt/feat-schema-json
+npm install -D @mmmnt/feat-schema-json
 ```
 
-Requirements: a Node version that runs ES modules and Ajv 8 (the package sets no `engines` field; the Feature repository targets Node 20).
-Dependencies: `@mmmnt/feat-types`, `ajv` 8 and `ajv-formats` 3. The package ships
-`dist/` only.
-
-`@mmmnt/feature` loads the adapter from `schemas.adapter`, so a project normally
-installs it and names it in the config. It has no other options.
+Dependencies: `@mmmnt/feat-types`, `ajv` 8 and `ajv-formats` 3. `@mmmnt/feature`
+loads the adapter from `schemas.adapter`; it has no options.
 
 ## `feat.config.json`
 
@@ -201,13 +200,13 @@ directory of `feat.config.json`. That is the same project-relative convention as
 has the base `<projectRoot>/contracts/identity/account-registered.json`, and the
 ref lands on `<projectRoot>/contracts/adrs/event-envelope.json`, not on
 `features/adrs/...`. Only file references are re-based: a local `#/...` pointer
-still means the schema itself or the contract document, as above. Left on the
-contract file's directory, as before: an absolute-URI `$id` (`https:`, `urn:`)
-names no file the adapter can reach, and an adapter created without a
-`projectRoot` (a bare `createAdapter({})`) has nothing to anchor a relative
-`$id` to. A `$ref` under a *nested* `$id` is still refused (see Errors).
-`resolve()` of a bare `$ref` is unchanged; a referenced file is followed from its
-own location.
+still means the schema itself or the contract document, as above. References
+stay resolved against the contract file's directory when the `$id` is an
+absolute URI (`https:`, `urn:`), which names no file the adapter can reach, and
+when the adapter was created without a `projectRoot` (a bare
+`createAdapter({})`). A `$ref` under a *nested* `$id` is refused (see Errors).
+For `resolve()` of a bare `$ref`, a referenced file is followed from its own
+location.
 
 ```jsonc
 // features/place.contract.json
@@ -352,7 +351,9 @@ Resolution failures are plain `Error`s whose message starts with
 | `'<path>' is not valid JSON: <cause>` | A referenced file is not JSON. |
 | `'<ref>' (from <path>) uses a plain-name fragment; only JSON-pointer fragments are supported` | A `$ref` ends in `#name` rather than `#/pointer`. |
 | `pointer '#<pointer>' does not resolve in <path>` | A JSON pointer names nothing in its file. |
-| `'<ref>' (from <path>) does not point at a JSON Schema object` | The target is not an object (for example an array or a string). Also raised for a relocated file or node. |
+| `'<ref>' (from <path>) does not point at a JSON Schema object` | The target of a `resolve()` reference is not an object (for example an array or a string). |
+| `'<path>' is not a JSON Schema object` | A referenced file, relocated into the bundle, is not an object. |
+| `'#<pointer>' in <path> does not point at a JSON Schema object` | A relocated JSON-pointer target is not an object. |
 | `'<ref>' in <path> sits under a subschema that declares its own $id, which re-bases relative references — unsupported. Give the subschema its own file.` | A relative `$ref` appears under a nested `$id`. |
 
 `validate` throws one coded error:
@@ -365,42 +366,16 @@ A failure stops generation, loudly. The generator never falls back to reading
 the referenced file verbatim, which would put `$ref`s into the generated test
 that resolve against nothing.
 
-## This release (0.2.1, Feature v0.1.48)
-
-Patch release, on 0.2.0.
-
-- **draft 2020-12 validates.** `validate()` compiles a `$schema` of
-  `https://json-schema.org/draft/2020-12/schema` with its own dialect instead of
-  refusing it. Ajv's default compiler knew draft-07 only.
-- **Inline contract schemas are bundled too.** A nested cross-file `$ref`, or a
-  sibling `#/schemas/<Name>` reference, inside an inline entry now reaches the
-  generated test resolved. This adds the optional `resolveInline()` to the
-  `FeatSchemaAdapter` interface.
-
-## Fixed after 0.2.1 (regression findings c1 and c2, founder ruling 2026-11-10)
-
-- **`validate()` no longer crashes on a repeated `$id`.** It used to compile
-  `normalized` on one shared Ajv, which refused the second compile with
-  `schema with key or id "..." already exists`. See "`validate` is idempotent" above.
-
-- **A root `$id` on an inline schema re-bases its relative `$ref`s.** They used
-  to resolve against the contract file's directory, so a consumer's
-  `"$id": "contracts/identity/account-registered.json"` with
-  `{"$ref": "../adrs/event-envelope.json"}` failed with
-  `referenced schema file '.../features/adrs/event-envelope.json' could not be read`.
-  See "Inline schemas".
-
 ## Docs
 
-- [Grammar reference](https://github.com/mmmnt/feature/blob/main/docs/grammar-reference.md): contract roles and `.contract.json`.
-- [`feat.config.schema.json`](https://github.com/mmmnt/feature/blob/main/schemas/feat.config.schema.json): the config schema.
-- [`contract.schema.json`](https://github.com/mmmnt/feature/blob/main/schemas/contract.schema.json): the shape of `.contract.json`.
-- [`inline.test.ts`](https://github.com/mmmnt/feature/blob/main/adapters/schema-json/inline.test.ts): the adapter's tests.
-- [ADR-0023](https://github.com/mmmnt/feature/blob/main/docs/adr/ADR-0023-adapter-interface-v2.md): adapter interface v2.
-
-Part of [Feature](https://github.com/mmmnt/feature), the `.feat` execution
-specification language.
+- [Grammar reference](../../docs/grammar-reference.md): contract roles and `.contract.json`.
+- [`feat.config.schema.json`](../../schemas/feat.config.schema.json): the config schema.
+- [`contract.schema.json`](../../schemas/contract.schema.json): the shape of `.contract.json`.
+- [`inline.test.ts`](inline.test.ts): the adapter's tests.
+- [ADR-0023](../../docs/adr/ADR-0023-adapter-interface-v2.md): adapter interface v2.
 
 ## License
 
-MIT
+BSD-3-Clause. See [LICENSE](LICENSE).
+
+Part of [Feature](../../README.md), the .feat execution specification toolchain.
