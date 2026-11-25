@@ -70,9 +70,9 @@
     "package": "vsce package"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
+    "@types/node": "^26.6.10",
     "@types/vscode": "~1.85.0",
-    "typescript": "^5.8.0"
+    "typescript": "^7.0.2"
   },
   "icon": "icon.png",
   "galleryBanner": {

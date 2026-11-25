@@ -61,6 +61,8 @@ jobs:
         run: bash scripts/node26-kafka-native.sh
       - name: Build
         run: pnpm build
+      - name: Pull the adapter test images (retried)
+        run: bash scripts/ci-pull-images.sh
       - name: Install chromium (real-browser adapter e2e; other nodes auto-skip)
         if: matrix.node == 24
         run: pnpm --filter @mmmnt/feat-adapter-playwright exec playwright install --with-deps chromium
@@ -83,6 +85,31 @@ jobs:
         run: pnpm --filter @mmmnt/feat-cdk... build
       - name: Test (assembly analysis + resolver + adapter over fixtures)
         run: pnpm --filter @mmmnt/feat-cdk test
+
+  extension:
+    name: VS Code extension
+    runs-on: ubuntu-latest
+    # Each step names its directory: scripts/ci-local.sh runs this job too and does not read a
+    # job-level `defaults:`.
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Install
+        working-directory: editors/vscode
+        run: npm ci
+      - name: Build
+        working-directory: editors/vscode
+        run: npm run build
+      - name: Test
+        working-directory: editors/vscode
+        run: npm test
+      # The same package step the release runs, so a dependency or manifest change that vsce
+      # refuses (e.g. @types/vscode above engines.vscode) fails here, not at publish time.
+      - name: Package .vsix
+        working-directory: editors/vscode
+        run: npx --yes @vscode/vsce package --allow-missing-repository --baseContentUrl https://github.com/mmmnt/feature/blob/main/editors/vscode --baseImagesUrl https://raw.githubusercontent.com/mmmnt/feature/main/editors/vscode
 
   spec:
     name: Spec chain (Node ${{ matrix.node }})
@@ -116,6 +143,8 @@ jobs:
         run: bash scripts/node26-kafka-native.sh
       - name: Build
         run: pnpm build
+      - name: Pull the adapter test images (retried)
+        run: bash scripts/ci-pull-images.sh
       - name: feat verify (spec ↔ test integrity)
         run: node packages/feature/bin/run.js verify
       - name: feat audit (buildability gates)
