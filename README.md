@@ -1,15 +1,65 @@
 # Feature
 
 [![CI](https://github.com/mmmnt/feature/actions/workflows/ci.yml/badge.svg)](https://github.com/mmmnt/feature/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/@mmmnt/feature.svg?label=npm)](https://www.npmjs.com/package/@mmmnt/feature)
+[![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD--3--Clause-blue.svg)](LICENSE)
 
-Feature is the **`.feat` execution specification language** and its toolchain. A `.feat` file
-does three things at once:
+**Specify a feature once. Get the test suite that holds the code to it.**
 
-1. **Instructs** — natural-language build directives an AI agent (or human) follows.
-2. **Predicts** — quantified declarations of every observable effect the feature will produce:
-   responses, events, database writes, messages.
-3. **Compiles** — deterministically, into complete executable test suites. No step definitions,
-   no glue code, no model interpreting your spec. If it's captured and wasn't predicted, it fails.
+Feature is the `.feat` execution specification language and its toolchain. A `.feat` file is the
+spec for one command, query, policy, projection or saga. It does three things:
+
+1. **Instructs.** Build directives that the builder, a person or an AI agent, follows: where the
+   handler lives, which files it may touch, what it must enforce and what it must refuse.
+2. **Predicts.** Every observable effect of each scenario: the response, the events, the records
+   written, the messages sent.
+3. **Compiles.** Deterministically, into a complete Vitest suite. There are no step definitions and
+   no glue code, and no model reads the spec at test time. An effect the system produces that the
+   spec did not predict is a failure.
+
+The same spec compiles to the same test file, byte for byte, every time. That is what lets CI check
+that the committed tests are the ones the specs say (`feat verify`).
+
+## Where Feature fits: Moment, Facet and Feature
+
+Feature is the last of three tools that take a domain from a design to verified code.
+
+| | The question it answers | What you write |
+| --- | --- | --- |
+| **[Moment](https://moment.mmmnt.ai)** | Is the design complete and consistent over time? | A `.moment` model: bounded contexts, aggregates, events and the flows between them |
+| **Facet** | Do the flows behave the way the design says? | Nothing new. Facet, Moment's sibling harness, replays the scenarios Moment derives from `.moment` files and validates every flow |
+| **Feature** | Does the code do what the design decided? | A `.feat` spec per command, query, policy, projection or saga |
+
+A `.feat` spec is cheap to write correctly once the design has stopped moving. Write it after the
+flows are validated in Facet and the Moment CLI; Feature then holds the implementation to them.
+
+## Install
+
+Requires Node.js 22 or newer.
+
+```sh
+npm install --save-dev @mmmnt/feature
+npx feat init
+```
+
+`feat init` writes `feat.config.json`, a first spec (`specs/greet.feat`, `status draft`) and its
+contract (`specs/greet.contract.json`). It refuses with exit 2 (`ALREADY_INITIALIZED`) if any of the
+three exists. It creates a `package.json` if there is none, then installs `@mmmnt/feat-runtime`,
+`@mmmnt/feat-adapter-handler`, `@mmmnt/feat-adapter-fs`, `@mmmnt/feat-schema-json` and `vitest`
+with the package manager it detects (pnpm, yarn or npm). `--no-install` prints the install command
+instead.
+
+## Quick start
+
+```sh
+npx feat parse specs/greet.feat   # validate the spec and print its IR
+# edit the spec, then change `status draft` to `status agreed`
+npx feat generate                 # compile specs/greet.feat into specs/greet.test.ts
+# implement src/greet.ts: an exported async function that returns { status, body }
+npx feat run                      # red until the handler does what the spec predicts
+```
+
+A spec:
 
 ```feat
 feat 1.0
@@ -49,146 +99,182 @@ scenario "rejects duplicate email":
     database has []
 ```
 
-The same spec compiles to the same tests, byte for byte, every time — which is what makes the
-CI gate possible.
-
-## Getting started
-
-```sh
-npm install --save-dev @mmmnt/feature
-npx feat init        # scaffolds config + first spec, installs everything else
-
-npx feat generate    # compiles specs into test files
-npx feat run         # executes them (red until you implement the handler)
-```
-
-`feat init` detects your package manager (npm/pnpm/yarn), adds the runtime,
-starter adapters, and test runner to your project, and creates a `package.json`
-if you don't have one. `--no-install` prints the command instead of running it.
-
-Where things live:
+`database` is a service key from `feat.config.json`; the schemas are in the paired
+`create-user.contract.json`. The full exemplar, with its config and expected IR, is
+[`corpus/create-user/`](corpus/create-user/).
 
 | | |
 | --- | --- |
-| Your specs | `specs/*.feat` + `specs/*.contract.json` (configurable) |
-| Generated tests | next to each spec — `specs/greet.feat` → `specs/greet.test.ts`, committed |
-| Test runner | Vitest — generated files are standard Vitest suites and also run directly |
-| Reports | JUnit XML via `feat run` (path in `feat.config.json`); summary via `feat report` |
-| Coverage | `feat run --coverage` (Vitest coverage provider; your thresholds apply) |
+| Specs | `specs/**/*.feat`, each beside its `.contract.json` (`specs` in `feat.config.json`) |
+| Generated tests | next to each spec by `specs.outputPattern` (`greet.feat` → `greet.test.ts`), committed |
+| Test runner | the project's own Vitest; generated files are standard Vitest suites |
+| Reports | JUnit XML from `feat run` when `report.format` includes `junit`; `feat report` summarizes it |
 
-Full walkthrough and integration guide: see **Getting Started** and **Testing Mechanics** in the
-wiki.
+## The `feat` CLI
 
-## The CLI
+Every command that reads a config takes `-c, --config <path>` (default `feat.config.json`).
 
 | Command | What it does |
 | --- | --- |
-| `feat init` | Scaffold `feat.config.json` and a first spec. |
-| `feat parse <file>` | Validate a spec and print its intermediate representation. Catches syntax errors and every closed-reference violation (unknown service, command, schema, or actor) at parse time. |
-| `feat generate` | Compile every spec into its test file (committed next to the spec). |
-| `feat verify` | CI integrity gate: regenerate and byte-compare against the committed test files. Any drift fails the build. |
-| `feat run [--spec ID] [--coverage]` | Execute the generated suites with the full adapter lifecycle; writes JUnit XML when configured; `--coverage` passes through to the runner's coverage provider. |
-| `feat report [--junit]` | Summarize the last run per suite; `--junit` prints the XML path for CI import. |
-| `feat audit` | Buildability gate: every spec has a handler, declared change boundaries (`touches`), and two-way traceability between predicted rejections and `rejects` directives. |
-| `feat lint` | Language-quality warnings: unused schema declarations, duplicates, lifecycle surfacing. |
-| `feat fmt [--check]` | Conservative, content-preserving formatting. |
-| `feat watch` | Regenerate on spec or contract change. |
-| `feat diff <file> [--ref]` | Spec-level change summary against a git ref — what scenarios, contracts, or statuses changed, for PR review. |
+| `feat init [--no-install]` | Scaffold `feat.config.json`, a first spec and contract, and install the starter dependencies. |
+| `feat parse <file>` | Parse and validate one spec and print its IR (BuiltSpec JSON). Reports syntax errors and closed-reference violations (an unknown service, command, schema or actor) with the line. |
+| `feat generate` | Compile every spec into its test file (parse, derive, emit). |
+| `feat verify` | Regenerate in memory and compare with the committed test files; a missing or differing file is `VERIFY_FAILED`. |
+| `feat run [--spec <ID>] [--coverage] [--shard <i>/<n>]` | Run the generated suites with the adapter lifecycle (a missing generated file is `NOT_GENERATED`). `--spec` runs one spec, `--coverage` uses the runner's coverage provider, `--shard` runs slice *i* of *n* (each shard needs its own instruments). |
+| `feat report [--junit] [--evidence [--out <path>] [--force]]` | Summarize the last run from its JUnit XML; `--junit` prints the XML path. `--evidence` writes a `feat-evidence/2` bundle to `.feature/evidence/<environment>/<sha>.json` ([format](docs/evidence-bundle.md)); the `local` environment is skipped unless `--force`. |
+| `feat audit` | Buildability gate (B1 to B3): a code-producing spec has its `handler at`, every spec declares `touches`, and every predicted rejection has its `rejects` line and the reverse. Warns on a draft, a missing paired contract or a missing generated test. |
+| `feat audit --changed <base> [-c <config>...]` | The touches gate: every path changed since the merge base of `<base>` and `HEAD`, plus the working tree, is checked against the specs' `touches`. `-c` is repeatable and takes globs. |
+| `feat lint` | Language-quality findings: unused or duplicate declarations, drafts, an optional property left unstated (`OPTIONAL_UNSTATED`), a nested block over an open schema (`NESTED_SCHEMA_OPEN`). |
+| `feat fmt [--check]` | Conservative, content-preserving formatting; `--check` exits 1 if a file would change. |
+| `feat watch [--run] [--json] [--src <dir>...]` | Regenerate on a spec or contract change; `--run` runs the affected suites, `--json` emits NDJSON events (implies `--run`), `--src` adds directories whose changes rerun every suite. |
+| `feat diff <file> [--ref <ref>]` | Spec-level change summary against a git ref (default `HEAD`): status, scenarios added, removed or changed, contract entries. |
 
-Exit codes everywhere: `0` success · `1` validation failure · `2` configuration error.
+Exit codes: `0` success, `1` a validation failure (a spec that does not parse, a failed prediction,
+drift, a lint or audit error), `2` a configuration error (a config that does not load, no resolvable
+environment, an adapter the config cannot use, no JUnit report for `feat report`).
 
-A typical CI pipeline is three lines:
-
-```sh
-feat verify   # committed tests match the specs
-feat run      # predictions hold against the real system
-feat report --junit
-```
-
-## How this repository works
-
-Feature is **built spec-driven on itself**: its own components are specified in `.feat`
-(`packages/*/[name].feat`), their test suites are generated by `feat generate`, and the CI chain
-above runs against them.
-
-- **`docs/grammar-reference.md`** — the complete language reference.
-- **`corpus/`** — nine canonical exemplars, each paired with its expected IR: the language's
-  executable ground truth.
-- **`schemas/`** — the language-neutral JSON Schema contracts (IR, contract registry, config).
-- **`editor/feat.tmLanguage.json`** — syntax highlighting.
-
-Deeper documentation — concepts, architecture, the full CLI reference with examples, and the
-roadmap — lives in the **project wiki**.
-
-### Local CI before a push
-
-`scripts/ci-local.sh` runs the ubuntu jobs of `.github/workflows/ci.yml` on your machine. It reads the
-jobs, their matrix and their steps from `ci.yml` itself, so it runs what CI runs. By default it runs every
-ubuntu job at the Node version of `.tool-versions` (24): Typecheck & corpus, Workspace tests and Spec chain.
-The other Node versions are printed as OFF lines and left to CI; `--node <major>` or `--all` runs them.
-
-The jobs of one Node version share a throwaway Linux container from a pinned `node:<major>-bookworm` image
-(`scripts/ci-local.images.json`), on a fresh `git archive` of the commit, with the Docker socket and the host
-network so the tests' own containers work as they do on a GitHub runner. The steps they all start with
-(Install, Build) run once, then each job's own steps, one job after another (side by side in one tree the
-spec job observes the files the test job writes, ADR-0031); each job writes a log and gets a PASS or FAIL line. A job CI runs on another OS (feat-cdk on Windows) is printed
-as a GAP line and left to CI. It needs Docker, and Node with this workspace installed (`pnpm install`). See
-ADR-0031.
+A CI pipeline:
 
 ```sh
-scripts/ci-local.sh                 # the full gate: every ubuntu job at Node 24, on HEAD; run it before a push
-scripts/ci-local.sh --changed       # the loop while working: the packages changed since origin/main + dependents
-scripts/ci-local.sh --rebased       # after rebasing a commit that passed: what differs from it (ORIG_HEAD)
-scripts/ci-local.sh --node 26       # another matrix version; --all runs all of them
-scripts/ci-local.sh --job spec      # a subset; --ref <commit> checks another commit
-scripts/ci-local.sh --list          # what would run
+feat verify          # the committed tests are what the specs compile to
+feat audit           # every spec is buildable
+feat run --coverage  # the predictions hold against the real system
+feat report --junit  # the JUnit path for your CI's test report
 ```
 
-A full-gate run that passes leaves a pass record in the clone's git directory (`scripts/ci-local.sh
---record-path` prints where). `.githooks/pre-push` runs nothing: it refuses a push unless every commit pushed has
-its record, so the push itself takes a moment (it used to run the gate, and `git push` held its connection to
-the remote idle for those minutes until the remote dropped it and the push silently did not land). `--changed`
-and `--since <ref>` run every tier for the scope (build, typecheck, workspace tests, `feat verify`/`audit`/`lint`
-and the scope's generated suites) and leave no record; a change to a shared root widens to the full gate, and a
-change that maps to nothing the gate runs is refused. `--rebased` records the rebased commit as passed when the
-check of what differs from ORIG_HEAD, which must have its own record, passes. Changing `ci-local.sh`,
-`ci-local-plan.mjs`, `ci-local.images.json`, `docker-sweep.sh`, `gate-lock.sh` or `ci-local-watchdog.sh` makes
-every record stale. Enable the hook once per clone:
+The full reference, configuration included, is in [`packages/feature`](packages/feature/README.md).
+
+## Packages
+
+All packages are published to npm under `@mmmnt`. Adapters are named in `feat.config.json` and
+loaded by package name.
+
+**Toolchain**
+
+| Package | Purpose |
+| --- | --- |
+| [`@mmmnt/feature`](packages/feature) | The `feat` CLI. |
+| [`@mmmnt/feat-core`](packages/feat-core) | Langium grammar, parser, AST to BuiltSpec IR, closed-reference validation. |
+| [`@mmmnt/feat-types`](packages/feat-types) | TypeScript types for the IR, config and reports, mirroring `schemas/`. No dependencies. |
+| [`@mmmnt/feat-derive`](packages/feat-derive) | BuiltSpec IR and config to a test topology: outline expansion, ordering, query implicit-zero. Pure and deterministic. |
+| [`@mmmnt/feat-emit-ts`](packages/feat-emit-ts) | Test topology to a complete, deterministic Vitest file. |
+| [`@mmmnt/feat-runtime`](packages/feat-runtime) | What generated tests import: config loading, adapter loading, the capture lifecycle, preconditions, `toMatchPrediction`. |
+| [`@mmmnt/feat-runner`](packages/feat-runner) | Runs the project's Vitest as a subprocess: spec filtering, exit codes, JUnit. |
+| [`@mmmnt/feat-analyze`](packages/feat-analyze) | Pure lint, audit (B1 to B3) and formatting for specs. |
+| [`@mmmnt/feat-grammar`](packages/feat-grammar) | The TextMate grammar for `.feat`, for editors, Shiki and other highlighters. |
+| [`@mmmnt/feat-adapter-kit`](packages/feat-adapter-kit) | Conformance suites for adapter authors. |
+| [`@mmmnt/feat-cdk`](packages/feat-cdk) | Derives a deployment (resources, SSM contract, dependency closure) from a CDK cloud assembly. |
+
+**Adapters**
+
+| Package | Role | Purpose |
+| --- | --- | --- |
+| [`@mmmnt/feat-adapter-handler`](adapters/handler) | response | Invokes a module's exported function directly. |
+| [`@mmmnt/feat-adapter-http`](adapters/http) | response | Invokes HTTP routes; actor headers from the actor registry. |
+| [`@mmmnt/feat-adapter-playwright`](adapters/playwright) | response | A command is a real browser journey. |
+| [`@mmmnt/feat-adapter-stdio-jsonrpc`](adapters/stdio-jsonrpc) | response, service | The Feat Host Protocol: JSON-RPC 2.0 on a spec host's stdio. |
+| [`@mmmnt/feat-schema-json`](adapters/schema-json) | schema | JSON Schema resolution and validation at generate time. |
+| [`@mmmnt/feat-adapter-fs`](adapters/fs) | service | Files written during the capture window. |
+| [`@mmmnt/feat-adapter-memory`](adapters/memory) | service | In-memory events for deliver-triggered specs, no infrastructure. |
+| [`@mmmnt/feat-adapter-model`](adapters/model) | service | A recorded judge: seeded answers and captured asks in a JSON Lines file; never calls a model. |
+| [`@mmmnt/feat-adapter-dynamodb`](adapters/dynamodb) | service | DynamoDB writes captured through DynamoDB Streams. |
+| [`@mmmnt/feat-adapter-kafka`](adapters/kafka) | service | Namespaced Kafka topics read at the last stable offset. |
+| [`@mmmnt/feat-adapter-kms`](adapters/kms) | service | A snapshot diff of KMS key state. |
+| [`@mmmnt/feat-adapter-kurrent`](adapters/kurrent) | service | KurrentDB's `$all` log as the capture window, with a fence-marker settle. |
+| [`@mmmnt/feat-adapter-neo4j`](adapters/neo4j) | service | A snapshot diff of the namespace's graph, node and relationship seeds. |
+| [`@mmmnt/feat-adapter-redis`](adapters/redis) | service | A snapshot diff of the namespace's keys. |
+| [`@mmmnt/feat-adapter-stripe`](adapters/stripe) | service | The Stripe Events API as the capture window. |
+| [`@mmmnt/feat-fault-proxy`](adapters/fault-proxy) | library | Transport faults (timeout, reset, partition, broker loss) through Toxiproxy, for the product adapters. |
+
+## Editor support
+
+[`editors/vscode`](editors/vscode) is the VS Code extension (`mmmnt.feat-vscode`): syntax
+highlighting from `@mmmnt/feat-grammar`, and live, spec-anchored test feedback from `feat watch`
+(commands **Feat: Start watch** and **Feat: Stop watch**). It is published to the VS Code
+Marketplace and Open VSX. [`editor/feat.tmLanguage.json`](editor/feat.tmLanguage.json) is a copy of
+the grammar for other editors.
+
+## The language
+
+- [`docs/grammar-reference.md`](docs/grammar-reference.md): the `.feat` v1 reference. It is the
+  source of truth: where code and reference disagree, the reference wins.
+- [`corpus/`](corpus/README.md): the exemplars, each a `.feat`, its `.contract.json`, its expected
+  IR (`.ir.json`) and its `feat.config.json`. The parser is tested against them.
+- [`schemas/`](schemas): the language-neutral JSON Schemas for the IR (`builtspec.schema.json`),
+  contracts and config. `pnpm corpus:validate` checks the corpus against them.
+- [`docs/evidence-bundle.md`](docs/evidence-bundle.md): the `feat report --evidence` format.
+- [`docs/adr/`](docs/adr/README.md): the architecture decision records.
+
+## Developing Feature
+
+Feature is built spec-driven on itself: its components are specified in `.feat` files beside their
+code, and their suites are generated by `feat generate` and run by `feat run`.
+
+```sh
+pnpm install
+pnpm build        # turbo
+pnpm typecheck
+pnpm test         # package tests (vitest)
+pnpm corpus:validate
+node packages/feature/bin/run.js verify && node packages/feature/bin/run.js run
+```
+
+### The local gate
+
+Run [`scripts/ci-local.sh`](scripts/ci-local.sh) before every push. It runs the ubuntu jobs of
+`.github/workflows/ci.yml` (Typecheck & corpus, Workspace tests, Spec chain), read from `ci.yml`
+itself, in a container from a pinned `node:<major>-bookworm` image (`scripts/ci-local.images.json`)
+on a fresh `git archive` of the commit. It needs Docker and an installed workspace. See
+[ADR-0031](docs/adr/ADR-0031-local-gate.md).
+
+```sh
+scripts/ci-local.sh               # the full gate on HEAD at the .tool-versions Node; leaves a pass record
+scripts/ci-local.sh --changed     # while working: what changed since origin/main and its dependents; no record
+scripts/ci-local.sh --since <ref> # the same, against another base
+scripts/ci-local.sh --rebased     # after a rebase: what differs from ORIG_HEAD, which must have a record
+scripts/ci-local.sh --node 26     # another matrix Node; --all runs every one
+scripts/ci-local.sh --job spec    # a subset; --ref <commit> checks another commit
+scripts/ci-local.sh --list        # what would run
+```
+
+[`.githooks/pre-push`](.githooks/pre-push) runs nothing: it refuses a push unless every pushed
+commit has a full-gate pass record (`scripts/ci-local.sh --record-path` prints where it is).
+Enable it once per clone:
 
 ```sh
 git config core.hooksPath .githooks
 ```
 
-Runs go under `${TMPDIR:-/tmp}/feat-ci-local` (set `CI_LOCAL_DIR` to move them; on Docker Desktop the
-directory must be in a shared path). Caches are docker volumes named `feat-ci-cache-*`, kept between runs:
-the pnpm store (CI's `cache: pnpm`), each `actions/cache` path in `ci.yml` (the Node 26 Kafka client
-binary), and Playwright's browser and apt downloads. Remove them with `docker volume rm` to start cold.
+One gate runs at a time on a machine (the host-wide `~/.flmnt/gate.lock`, `scripts/gate-lock.sh`).
+A run stops after 30 minutes (`CI_LOCAL_MAX_SECONDS`) and refuses to start with under 20 GB free in
+the Docker VM (`CI_LOCAL_DISK_MIN_GB`). Other settings: `CI_LOCAL_DIR` (run directory, default
+`${TMPDIR:-/tmp}/feat-ci-local`), `CI_LOCAL_MAX_WORKERS` (vitest workers, default 3),
+`CI_LOCAL_TURBO_CONCURRENCY`, `FLMNT_GATE_CPU_MAX`. Caches are docker volumes named
+`feat-ci-cache-*`; the containers a run's tests start are labelled with their owner and removed
+after it (`scripts/docker-sweep.sh`). A job CI runs on another OS (feat-cdk on Windows) is left to
+CI.
 
-Every container a run's tests start carries `feat-test.owner-pid`, the pid of the run that owns it (ci-local
-hands its own to the jobs as `FEAT_CI_LOCAL_PID`), and is removed with `-v`, so images that declare `VOLUME`
-(KurrentDB, Neo4j, Kafka) leave no anonymous volume behind. After each Node version, ci-local removes what its
-own run left (`scripts/docker-sweep.sh --run <pid>`), and at the start of a run, what a run that is gone left
-(`--gone`, for a run killed outright). Both go by the label only: nothing else on the daemon is touched and
-nothing is pruned, since other clones and sessions share it. A test process inside a container (ci-local's job
-container, or your own) also labels `feat-test.owner-container` (`scripts/test-owner.mjs`): its pid means nothing
-on the host, so what it started counts as alive while that container runs. A host owner is alive while `ps -p`
-finds its pid.
+### Releases
 
-ci-local keeps the host rule every gate on this machine keeps (`scripts/gate-lock.sh`, ADR-0031): one gate at a
-time, through the host-wide lock `~/.flmnt/gate.lock` that flmnt's gate takes too (flock(2), so a gate that dies
-releases it), then it starts while the Docker daemon's containers use under 12 cores (`docker stats`, summed;
-`FLMNT_GATE_CPU_MAX`), saying what it waits for. `scripts/ci-local-watchdog.sh` stops a run that passes 30
-minutes (`CI_LOCAL_MAX_SECONDS`), removing its container and releasing the lock. Turbo's build cache lives in a
-docker volume per lockfile, toolchain and image (`feat-ci-cache-turbo-*`, at most four, the least recently used
-removed past that); only `build` is cached. A run refuses to start while the Docker VM has under 20 GB free
-(`CI_LOCAL_DISK_MIN_GB`).
+All `@mmmnt/feat*` packages and `@mmmnt/feature` are one fixed version group and are released
+together. After CI succeeds on `main`, the release workflow turns the merged pull request's
+conventional-commit title into a changeset (`feat` is a minor, `fix`, `perf` and `refactor` a
+patch, `!` or `BREAKING CHANGE` a major), and the project's bot opens or updates a
+`chore: version packages` pull request. Merging it publishes every package to npm through trusted
+publishing with provenance, creates one `vX.Y.Z` tag and GitHub Release, and publishes the VS Code
+extension at the same version. Nobody pushes release tags by hand.
 
-The job container runs vitest with the runner's parallelism, 3 workers as on a 4-vCPU `ubuntu-latest` runner
-(`CI_LOCAL_MAX_WORKERS`): with the 15 a 16-CPU Docker Desktop VM would give it, workers beside the product containers
-their specs start were descheduled for up to 54 s, and past 60 s a worker's RPC timed out ("Timeout calling
-onTaskUpdate", every test passed). Workspace tests run two packages at a time locally (`CI_LOCAL_TURBO_CONCURRENCY`, passed as `FEAT_TEST_CONCURRENCY`;
-turbo's default of ten on CI).
+## Contributing
+
+Issues and pull requests are welcome at
+[github.com/mmmnt/feature](https://github.com/mmmnt/feature).
+
+- Use a conventional-commit title (`feat:`, `fix:`, ...): it decides the release.
+- A change to the language closes four layers in one change: the grammar reference, a corpus
+  exemplar, the parser and IR, and the whole corpus re-validated.
+- A design change comes with an ADR in [`docs/adr/`](docs/adr/README.md).
+- Run `scripts/ci-local.sh` before you push.
 
 ## License
 
-Every published `@mmmnt/*` package is MIT-licensed and ships its own `LICENSE`; the repository as a whole is BSD-3-Clause (see `LICENSE`).
+BSD-3-Clause. See [LICENSE](LICENSE). Every published package ships the same license.
