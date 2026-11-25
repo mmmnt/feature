@@ -388,7 +388,13 @@ if [ "$FAIL" = 0 ] && [ "$PASS" -gt 0 ] && [ "$DEFAULT_SELECTION" = 1 ] && { [ "
   # Written through a temporary name, so a record is never half there. A scoped check records a pass only after
   # --rebased: what differs from a commit that passed the full gate has passed every tier for its scope.
   mkdir -p "$(dirname "$RECORD")"
-  how="$PASS passed"; [ "$REBASED" = 1 ] && how="$how, rebased from $BASE_SHA$([ "$SCOPED" = 1 ] && echo " (scoped check)")"
+  # if-statements, not `a && b`: under set -e a false test that ends an && list exits the script. A --rebased run that
+  # widened to the full gate (SCOPED=0) died here, after passing, without writing its record.
+  how="$PASS passed"
+  if [ "$REBASED" = 1 ]; then
+    how="$how, rebased from $BASE_SHA"
+    if [ "$SCOPED" = 1 ]; then how="$how (scoped check)"; fi
+  fi
   { echo "$how at $(date -u +%Y-%m-%dT%H:%M:%SZ)"; cat "$SUMMARY"; } > "$RECORD.tmp.$$"
   mv "$RECORD.tmp.$$" "$RECORD"
   echo "ci-local: pass recorded in $RECORD"
