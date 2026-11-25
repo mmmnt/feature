@@ -3,7 +3,7 @@
 Response adapter for [Feature](../../README.md), the `.feat` execution
 specification language, where a command is a **real browser journey**. Each command routes to a
 journey module you write. The journey receives a Playwright `Page`, drives the flow, and returns the
-normalised outcome that predictions match against. The spec does not change: `when: CheckoutWithCard {…}`
+outcome that predictions match against. The spec does not change: `when: CheckoutWithCard {…}`
 reads the same whether the stimulus is an HTTP call or a full browser checkout.
 
 The adapter drives a browser. It observes nothing by itself. Pair it with service adapters
@@ -83,7 +83,7 @@ Signature: `(page, payload, ctx) => Promise<{ status, body }>`.
 
 The context is created with `baseURL` set to the resolved origin, so `page.goto("/checkout")` works too.
 The journey decides the outcome: it returns the `status` and `body` that the scenario's
-`response <status> <Schema>` line is matched against. Nothing is normalised for you. Return the
+`response <status> <Schema>` line is matched against. Nothing is normalized for you. Return the
 numeric status the spec predicts and a body that matches the named schema.
 
 TypeScript types are exported:

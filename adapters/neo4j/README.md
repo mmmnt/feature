@@ -4,7 +4,7 @@ Service adapter for [Feature](../../README.md) that turns **a Neo4j graph into a
 snapshot diff**: the adapter snapshots the namespace's nodes and relationships
 when the window opens and compares at the end, so every node or relationship the
 system created, changed or removed becomes a captured `INSERT`, `MODIFY` or
-`REMOVE` record. An unpredicted change fails the suite by prediction inversion.
+`REMOVE` record. An unpredicted change fails the case by prediction inversion.
 The adapter is built on the official `neo4j-driver`.
 
 ```jsonc

@@ -637,7 +637,7 @@ const r = await exchange({
 
 | Export | Meaning |
 |---|---|
-| `HostConnection` | A long-lived host process. `HostConnection.spawn(config, namespace, timeoutMs?)`, `request(method, params)`, `close()`, `pid`, `ended`, `crashed`. Calls are serialised. |
+| `HostConnection` | A long-lived host process. `HostConnection.spawn(config, namespace, timeoutMs?)`, `request(method, params)`, `close()`, `pid`, `ended`, `crashed`. Calls are serialized. |
 | `HostRegistry` | The open host of one spec file. `new HostRegistry(requestTimeoutMs?)`, `join(config, namespace)` and `leave(host)`. The last role to leave ends the host. |
 | `defaultRegistry` | The module-scoped registry the adapters use by default. |
 | `SeedTransform`, `parseSeedTransform`, `canonicalJson`, `SeedTransformError` | The seed transform the store adapters share (ADR-0035). `parseSeedTransform(options.seedTransform)` checks the option; `SeedTransform` joins the host and asks `transformSeed` twice. |

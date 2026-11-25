@@ -93,7 +93,7 @@ Creates the handle; no network until `open()`.
 
 `ArmDetail` is `{ stream?: "upstream" | "downstream" }` for `Timeout` and `ConnectionReset`, and `{ mode?: "pause" | "stop" }` for `BrokerLoss`. Direction matters: a downstream `Timeout` lets the product apply the request while the system never hears the answer (the ambiguous write); an upstream one drops the request before the product sees it. Each adapter documents the direction it arms.
 
-Faults stack until `disarm()`; arming the same fault again replaces it. The library has no count: a byte stream cannot honour "once" or "times n", so adapters declare each `Connection` fault as until-reset and the harness refuses `once` and `times n` with `FAULT_UNSUPPORTED`. `BrokerLoss` is shared fate (pausing a container hits every namespace that uses it), so a spec file that arms it runs in the runner's serial pass.
+Faults stack until `disarm()`; arming the same fault again replaces it. The library has no count: a byte stream cannot honor "once" or "times n", so adapters declare each `Connection` fault as until-reset and the harness refuses `once` and `times n` with `FAULT_UNSUPPORTED`. `BrokerLoss` is shared fate (pausing a container hits every namespace that uses it), so a spec file that arms it runs in the runner's serial pass.
 
 `traffic()` counts bytes that crossed the proxy, which is evidence of exposure, not of consumption. An adapter with only this reports its fault evidence as `unobserved`.
 
@@ -115,7 +115,7 @@ A Toxiproxy error status the library does not translate is rethrown as it came.
 
 1. In `setup()`, build the proxy from the adapter's `options.proxy` and the runner's namespace, then `open()`.
 2. Make the `listen` address available so the host can point the system under test at it.
-3. Declare the catalog from the library so they cannot drift: `catalog.Connection = Object.fromEntries(proxy.catalog.map((f) => [f, ["reset"]]))`.
+3. Declare the `Connection` catalog. Taking it from the library keeps the two from drifting, as the Kafka and Kurrent adapters do: `catalog.Connection = Object.fromEntries(proxy.catalog.map((f) => [f, ["reset"]]))`. The DynamoDB, KMS and Neo4j adapters declare their own list of `Connection` faults instead, so theirs can drift from the library's.
 4. `arm(fault)` when the harness arms one, `disarm()` on reset, `close()` at teardown.
 
 ## See also

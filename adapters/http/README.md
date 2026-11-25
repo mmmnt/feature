@@ -1,6 +1,6 @@
 # @mmmnt/feat-adapter-http
 
-The HTTP response adapter for Feature. It sends a spec's `when:` stimulus (and each `execute` line of a `given:`) as an HTTP request to a running service and normalises the reply to the `{ status, body }` that a scenario's `response` line is matched against. Use it to run `.feat` specs against any service that speaks HTTP, whatever it is written in.
+The HTTP response adapter for Feature. It sends a spec's `when:` stimulus (and each `execute` line of a `given:`) as an HTTP request to a running service and normalizes the reply to the `{ status, body }` that a scenario's `response` line is matched against. Use it to run `.feat` specs against any service that speaks HTTP, whatever it is written in.
 
 It drives the service; it does not observe what the service does behind the API. Pair it with service adapters (DynamoDB, Kafka, Kurrent, the filesystem, ...) to predict the full footprint of a request. The service must already be running when `feat run` starts: the adapter does not start it.
 
