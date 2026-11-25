@@ -17,13 +17,6 @@ is tested against. The corpus grows with every language change, forever.
 | 8 | `suspend-user/` | SPEC-USR-002 | ADR-0012 set: `when (as <actor>)` + `anonymous` rejection, `clock at` freeze, scenario outline + examples table (incl. placeholder rejection-ID and matching-argument positions), `needs` cross-spec dependency, config actors registry |
 | 9 | `ship-order/` | SPEC-ORD-002 | True saga (owed from the publish-order retype): ordered multi-deliver sequence, `@deliver[i]` indexed references, no response surface, deliver-only + mixed acid/eventual services |
 | 10 | `capture-charge/` | SPEC-PAY-001 | Dotted record types (ADR-0015): `charge.succeeded with Charge` in a `has` prediction, plain-IDENT types alongside, seed + mixed eventual/acid services, `unordered` override on an event-feed service. ALSO the cross-surface capture reference (ADR-0021): `@payments[0].id` in both a response value block and a record value block — the instrument assigns the id, the local receipt must record THAT id, and neither a literal nor `any` can state it |
-
-Validation (until `feat parse` exists in M2):
-
-```
-pnpm dlx ajv-cli@5 validate --spec=draft7 -s schemas/builtspec.schema.json -d "corpus/*/*.ir.json"
-pnpm dlx ajv-cli@5 validate --spec=draft7 -s schemas/contract.schema.json -d "corpus/*/*.contract.json"
-```
 | 11 | `waitlist-variables/` | SPEC-WL-001 | Spec variables (ADR-0017): `variables:` block, source calls (`now()`), definition-side template composition, `${ref}` interpolation in when-payloads and predictions, idempotent-repeat via shared per-case resolution |
 | 12 | `userinfo-profile/` | SPEC-IDP-001 | Quoted payload keys (ADR-0019): colon-namespaced IdP claims in payloads and shapes |
 | 13 | `rejection-camelcase/` | SPEC-REJ-001 | UpperCamel rejection ids (ADR-0022): `rejects NotOperator`, `rejects AlreadyAnswered`, `predict rejection NotOperator:` beside an UPPER_SNAKE id (`UNKNOWN_QUESTION`) in one spec; actors (`as operator` / `as reader`); ids kept verbatim in the IR |
@@ -31,6 +24,16 @@ pnpm dlx ajv-cli@5 validate --spec=draft7 -s schemas/contract.schema.json -d "co
 | 15 | `given-fault/` | SPEC-ORD-003 | Logical faults as preconditions (ADR-0023): `fault <service> <Operation> <Fault>` in `given:`, the three consumption forms (default once, `times n` with a detail object, `until reset`), recorded in `given.faults` with `times` always present; a fault line is reserved, never freeform |
 | 16 | `given-order/` | SPEC-WSP-001 | Given steps in written order (ADR-0025): `execute` then `seed`, and `seed`, `execute`, `seed`, recorded as `given.order` beside `given.executes` and `given.seeds`; a given of one kind carries no order |
 | 17 | `not-matcher/` | SPEC-CYC-001 | The negation matcher (ADR-0027): `not` over a literal, `@when`, `@log[0]` (a capture reference inside `not`, beside a plain one), `any <type>` and `matching "<regex>"` in response and record value blocks, and over a placeholder and a `matching` placeholder in an outline; recorded as `{ matcher: "not", operand }` |
+| 18 | `given-ref/` | SPEC-INV-001 | The given's response as a matcher (ADR-0028) and the case's random seed (ADR-0029): `@given.response.<path>` in a response value block, under `not`, and indexed as `@given[0].response.<path>`; `random seed 42` in `given:`; recorded as `{ matcher: "givenRef", path, index? }` and `given.random` |
 | 19 | `f32-digest/` | SPEC-EMB-001 | The f32 digest matcher (ADR-0030): `f32 <dims> sha256 "<hex>"` in a response value block, a record's value block and a nested block, beside `absent` for an entry with no text; recorded as `{ matcher: "f32Digest", dims, sha256 }` |
 | 20 | `spec-observes/` | SPEC-PAU-001 | A spec observes a subset of the configured services (ADR-0033): `observes log, cache` with a third service (`files`) configured and never named; every prediction names exactly the observed two; recorded as top-level `observes` in written order |
 | 21 | `list-matcher/` | SPEC-ARC-001 | Matchers inside a list (ADR-0034): an archive's members as a list in which one member's text is `matching "<regex>"`, another's `not ""`, and, in an outline, `any` and `any string` fields beside literal ones; matcher-free lists (`tags`, the response's `members`, `tags: [<tag>]`) stay `literal`; recorded as `{ matcher: "list", items }` with `{ matcher: "object", fields }` for an object item that holds a matcher |
+
+Validate every exemplar's IR, contract and config against `schemas/`:
+
+```sh
+pnpm corpus:validate
+```
+
+`feat parse corpus/<name>/<name>.feat -c corpus/<name>/feat.config.json` prints the IR the parser produces for one
+exemplar; `packages/feat-core`'s tests check the parser against the corpus.
