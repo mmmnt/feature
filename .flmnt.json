@@ -1,0 +1,6 @@
+{
+  "local_graphql_endpoint": "http://localhost:4000/graphql",
+  "project_id": "d52ee565-8e27-4fec-adb6-9247a7f067a6",
+  "project_name": "feature",
+  "server_url": "http://localhost:8000/mcp"
+}
