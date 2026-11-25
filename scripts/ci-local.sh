@@ -36,10 +36,10 @@
 #
 # A run of the default selection (no --job, --node or --all) that passes every job leaves a pass record in the
 # clone's git directory, feat-ci-local/passed/<commit>-<runner>, where <runner> hashes this script, the plan
-# script and the image pins as they are on disk: a runner change makes every record stale. A run is a function
-# of the commit and the runner (it checks a `git archive` of the commit, never the working tree), so with
-# --skip-passed (.githooks/pre-push passes it) a commit that passed is not run again, as when its tag is pushed
-# after the branch.
+# script, the image pins, docker-sweep.sh, gate-lock.sh and ci-local-watchdog.sh as they are on disk: a runner
+# change makes every record stale. A run is a function of the commit and the runner (it checks a `git archive`
+# of the commit, never the working tree), so with --skip-passed a commit that passed is not run again.
+# .githooks/pre-push runs nothing: it only looks for the record (--record-path).
 set -euo pipefail
 
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)

@@ -12,7 +12,7 @@
 #   scripts/ci-local.sh            # the full gate on HEAD; a pass leaves the record
 #   git push origin HEAD:main      # instant: this hook checks the record
 #
-# The one-time setup per clone is in README.md ("Local CI before a push").
+# The one-time setup per clone is in README.md ("The local gate").
 set -euo pipefail
 
 ROOT=$(git rev-parse --show-toplevel)

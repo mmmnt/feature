@@ -154,7 +154,7 @@ loaded by package name.
 | Package | Purpose |
 | --- | --- |
 | [`@mmmnt/feature`](packages/feature) | The `feat` CLI. |
-| [`@mmmnt/feat-core`](packages/feat-core) | Langium grammar, parser, AST to BuiltSpec IR, closed-reference validation. |
+| [`@mmmnt/feat-core`](packages/feat-core) | Recursive-descent parser, AST to BuiltSpec IR, closed-reference validation. |
 | [`@mmmnt/feat-types`](packages/feat-types) | TypeScript types for the IR, config and reports, mirroring `schemas/`. No dependencies. |
 | [`@mmmnt/feat-derive`](packages/feat-derive) | BuiltSpec IR and config to a test topology: outline expansion, ordering, query implicit-zero. Pure and deterministic. |
 | [`@mmmnt/feat-emit-ts`](packages/feat-emit-ts) | Test topology to a complete, deterministic Vitest file. |
