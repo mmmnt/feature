@@ -22,9 +22,13 @@
     "test": "turbo run test",
     "typecheck": "turbo run typecheck",
     "corpus:validate": "ajv validate --spec=draft7 -s schemas/builtspec.schema.json -d 'corpus/*/*.ir.json' && ajv validate --spec=draft7 -s schemas/contract.schema.json -d 'corpus/*/*.contract.json' && ajv validate --spec=draft7 -s schemas/feat.config.schema.json -d 'corpus/*/feat.config.json'",
-    "claude:session": "npx @dotenvx/dotenvx run -f .env.local -- npx -y @anthropic-ai/claude-code"
+    "claude:session": "npx @dotenvx/dotenvx run -f .env.local -- npx -y @anthropic-ai/claude-code",
+    "changeset": "changeset",
+    "changeset:version": "changeset version"
   },
   "devDependencies": {
+    "@changesets/changelog-github": "^1.0.1",
+    "@changesets/cli": "^3.0.3",
     "@dotenvx/dotenvx": "^2.11.0",
     "@mmmnt/feat-adapter-fs": "workspace:*",
     "@mmmnt/feat-adapter-handler": "workspace:*",

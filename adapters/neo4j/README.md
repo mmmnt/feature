@@ -1,6 +1,6 @@
 # @mmmnt/feat-adapter-neo4j
 
-Service adapter for Feat that turns **a Neo4j graph into a capture window by
+Service adapter for [Feature](../../README.md) that turns **a Neo4j graph into a capture window by
 snapshot diff**: the adapter snapshots the namespace's nodes and relationships
 when the window opens and compares at the end, so every node or relationship the
 system created, changed or removed becomes a captured `INSERT`, `MODIFY` or
@@ -28,8 +28,24 @@ predict success:
   graph has [ INSERT with OrderNode { orderId: @when.orderId, status: "placed" } ]
 ```
 
-Part of [Feature](https://github.com/mmmnt/feature), the `.feat` execution
-specification language.
+## Installation
+
+Requires Node.js 22 or newer.
+
+```sh
+npm install -D @mmmnt/feat-adapter-neo4j
+```
+
+- The project also needs `@mmmnt/feature`. `neo4j-driver` (pinned at 6.3.0),
+  `@mmmnt/feat-fault-proxy` and `@mmmnt/feat-adapter-stdio-jsonrpc` are regular
+  dependencies; there are no peer dependencies. The adapter is ESM.
+- The supported product is Neo4j **Community**, with one user database. The
+  adapter's tests run against `neo4j:2026.01.4-community` over a direct `bolt://`
+  connection, with `ghcr.io/shopify/toxiproxy:2.12.0` for the transport specs.
+  Other server versions and Enterprise are not exercised.
+- The instrument's user must be allowed to run `SHOW TRANSACTIONS` (the default
+  admin can), create and drop constraints (faults and reset), and read and write
+  the namespace.
 
 ## What it observes, and how
 
@@ -92,30 +108,9 @@ range) and temporal and spatial values become strings, so payloads compare as
 plain JSON. `read()` returns the same shape without the diff type: `type` is the
 node's identity label, or the relationship type.
 
-## Install
-
-```sh
-npm install --save-dev @mmmnt/feature @mmmnt/feat-adapter-neo4j
-```
-
-- Node 20 or later (`engines.node` is `>=20`). The adapter is ESM.
-- No peer dependencies. `neo4j-driver` (pinned at 6.3.0) and
-  `@mmmnt/feat-fault-proxy` are regular dependencies.
-- The supported product is Neo4j **Community**, with one user database. The
-  adapter's tests run against `neo4j:2026.01.4-community` over a direct `bolt://`
-  connection, with `ghcr.io/shopify/toxiproxy:2.12.0` for the transport specs.
-  Against that image the driver connects, `SHOW TRANSACTIONS` works, and an
-  uncommitted node is invisible to other sessions. Other server versions and
-  Enterprise are not exercised. A deployment with CDC on could one day get a
-  native binding, but none exists.
-- The instrument's user must be allowed to run `SHOW TRANSACTIONS` (the default
-  admin can), create and drop constraints (faults and reset), and read and write
-  the namespace.
-- The package ships `dist/` only. Its `fixtures/` helpers are internal.
-
 ## Configuration
 
-A complete service entry. `uri` or `uriEnv` and `keys` are required; every other
+A complete service entry. One of `uri`, `uriEnv` or `uriFile`, and `keys`, are required; every other
 option is optional.
 
 ```jsonc
@@ -152,18 +147,19 @@ option is optional.
 | Option | Meaning |
 | --- | --- |
 | `uri` | A Bolt URI. `bolt://` direct is the supported shape. |
-| `uriEnv` | The name of an environment variable holding the URI. Used when `uri` is absent. Neither set, or the variable unset or empty, is a configuration error. |
+| `uriEnv` | The name of an environment variable holding the URI. Used when `uri` is absent. Neither set, or the variable unset or empty, fails `setup()` with a plain `Error`. |
 | `uriFile` | The path of a file whose content is the URI (SPEC-ADPNEO-003). Never given with `uri` or `uriEnv` (`OPTIONS_INVALID`); `uri` and `uriEnv` together still mean the literal wins. |
 | `auth` | Either `{ username, password }`: the **names** of two environment variables, both of which must be set; or `{ user, passwordFile }` (SPEC-ADPNEO-003): the login name itself and the path of a file whose content is the password. The two forms are never mixed, and the file form needs both keys (`OPTIONS_INVALID`). Omit it for a server without authentication. |
+| `keys` | **Required** (a config without it is refused at `setup()` with `OPTIONS_INVALID`) for every label the system writes: label to key property. A namespaced node whose labels declare no key, or that has no value for its key property, makes the snapshot fail with `NODE_KEY_UNDECLARED`. If a node has several declared labels, the first one in this object's order is its identity. |
+| `settleTimeoutMs` | How long `settle()` may wait for other transactions to finish. Default 5000. Keep `convergenceTimeout` at or above it. |
+| `proxy` | A Toxiproxy in front of the server for `Connection` faults. `api` and `upstream` are required. See below. |
+| `seedTransform` | `{ host: { command: [...], cwd?, env? } }`: a spec host that transforms seeds before they are written. See below. |
 
 A file option holds a path, never a secret. A relative path is resolved against the working directory of the run. The file is
 read at `setup()`, before any connection: exactly one trailing LF or CRLF is removed and nothing else, so a password with spaces
 is kept as written. The driver takes the password as an auth token, so it is never decoded or re-encoded. A file that is missing,
 is a directory, cannot be read, or is empty after the line ending is removed is refused with `CREDENTIAL_FILE_UNREADABLE`, whose
 detail names the option, the path and the cause and never the content.
-| `keys` | **Required** (a config without it is refused at `setup()` with `OPTIONS_INVALID`) for every label the system writes: label to key property. A namespaced node whose labels declare no key, or that has no value for its key property, makes the snapshot fail with `NODE_KEY_UNDECLARED`. If a node has several declared labels, the first one in this object's order is its identity. |
-| `settleTimeoutMs` | How long `settle()` may wait for other transactions to finish. Default 5000. Keep `convergenceTimeout` at or above it. |
-| `proxy` | A Toxiproxy in front of the server for `Connection` faults. `api` and `upstream` are required. See below. |
 
 The adapter does not reject unknown keys under `options`; a misspelled option is
 ignored. The adapter's own driver (snapshots, settle, seeds, faults, reset)
@@ -219,7 +215,7 @@ window, so seeds are never in a capture. Include the key property, or the node
 cannot be identified later. The fault line must say `until reset` (see the fault
 table).
 
-A seed may also write a **relationship** (SPEC-ADPNEO-004, 0.3.0), in the shape
+A seed may also write a **relationship** (SPEC-ADPNEO-004), in the shape
 the adapter reports one: a record whose type is not a label with a declared key
 and whose values carry `from` and `to`, each naming a namespaced node as
 `Label:value`. Its other values are the relationship's properties (`relType` and
@@ -296,7 +292,7 @@ fault.
 
 Set `options.proxy` and the catalog gains `Connection.Timeout`,
 `Connection.ConnectionReset` and `Connection.Partition`. The mechanism is
-[`@mmmnt/feat-fault-proxy`](https://github.com/mmmnt/feature/blob/main/adapters/fault-proxy/README.md) (SPEC-FPX-001): one
+[`@mmmnt/feat-fault-proxy`](../fault-proxy/README.md) (SPEC-FPX-001): one
 Toxiproxy proxy per namespace and product, named `feat-<ns>-<name>`.
 
 - A transport fault is on the **system's path only**. The adapter observes on its
@@ -321,12 +317,11 @@ same `host`), asks the optional protocol method `transformSeed` **twice** per se
 writes the first answer only when both agree as canonical JSON and each keeps the records'
 count, order, type and identity. Seeds only: what the adapter captures and reads is what is
 stored. Every seed, transformed or plain, is checked against what Neo4j can store before
-anything is written: a property value is a string, a finite number, a boolean, an empty list, or a list of one of those kinds.
+anything is written: a property value is a string, a finite number, a boolean, an empty list, or a
+list whose items are all of one of those kinds.
 
-Refusals: `OPTIONS_INVALID` (no command), `SEED_TRANSFORM_UNAVAILABLE` (the host cannot be
-started, at setup), `SEED_TRANSFORM_FAILED` (an error, method not found, the host ended, or a
-changed count, order, type or identity), `SEED_TRANSFORM_NONDETERMINISTIC` (the two answers
-differ), `SEED_VALUE_UNSTORABLE`.
+A `null` property is refused too: Neo4j drops it rather than storing it, so leave the
+property out to state it absent. The refusals are in the table below.
 
 ## Errors and refusals
 
@@ -336,11 +331,17 @@ Adapter errors are `Neo4jAdapterError`, with a `code` and a `detail`.
 | --- | --- | --- |
 | `NAMESPACE_INVALID` | construction | The namespace does not match `^s[0-9a-f]{12}$`. Defensive: the runner never passes another. |
 | `NEO4J_UNREACHABLE` | `setup()` | The server did not answer `verifyConnectivity`. The detail names the URI with any credentials removed. |
-| `OPTIONS_INVALID` | `setup()` | `options.keys` is missing, is not an object, or maps a label to something other than a non-empty string. Also `uriFile` given with `uri` or `uriEnv`, an `auth` that mixes the variable names with `user`/`passwordFile`, or an `auth` with only one of `user` and `passwordFile` (SPEC-ADPNEO-003). Refused before any file is read or any connection. An empty object is accepted (nothing is declared yet; a namespaced node then fails with `NODE_KEY_UNDECLARED`). |
+| `OPTIONS_INVALID` | `setup()` | A malformed `options.seedTransform`. `options.keys` is missing, is not an object, or maps a label to something other than a non-empty string. Also `uriFile` given with `uri` or `uriEnv`, an `auth` that mixes the variable names with `user`/`passwordFile`, or an `auth` with only one of `user` and `passwordFile` (SPEC-ADPNEO-003). Refused before any file is read or any connection. An empty object is accepted (nothing is declared yet; a namespaced node then fails with `NODE_KEY_UNDECLARED`). |
 | `CREDENTIAL_FILE_UNREADABLE` | `setup()` | A file named by `uriFile` or `auth.passwordFile` is missing, is a directory, cannot be read, or is empty after one trailing line ending is removed. Refused before any connection; the detail never carries the content. |
 | `NODE_KEY_UNDECLARED` | snapshot: `startCapture()`, `peekCapture()`, `stopCapture()`, and `read()` | A namespaced node carries no label that declares a key in `options.keys`, or has no value for its key property. |
 | `NAMESPACE_BREACH` | snapshot: `startCapture()`, `peekCapture()`, `stopCapture()`, and an unhinted `read()` | A relationship joins a namespaced node and a node outside the namespace. |
 | `FAULT_UNSUPPORTED` | `fault()` | The fault is not in the catalog (including `Connection` without `options.proxy`), the count is not `until reset`, or the detail is missing `property` (an identifier) or `value` (a scalar). The detail lists the catalog. |
+| `SEED_RELATIONSHIP_INVALID` | `seed()` | A relationship seed's type is not an identifier, an end is not `Label:value`, an end's label declares no key, or it sets a reserved property (`relType`, `count`). |
+| `SEED_END_NOT_FOUND` | `seed()` | A relationship seed names an end that is not a node of the namespace; the whole call is rolled back. |
+| `SEED_VALUE_UNSTORABLE` | `seed()` | A seed's values are not a map, or a property is `null` or a value Neo4j cannot store. Nothing is written. |
+| `SEED_TRANSFORM_UNAVAILABLE` | `setup()` | The seed-transform host could not be started or did not set up. |
+| `SEED_TRANSFORM_FAILED` | `seed()` | The host answered an error, does not implement `transformSeed`, ended, or changed the count, order, type or identity of the records. |
+| `SEED_TRANSFORM_NONDETERMINISTIC` | `seed()` | The two answers differ. |
 
 `NODE_KEY_UNDECLARED` and `NAMESPACE_BREACH` surface when the snapshot is taken,
 not at `setup()`; a missing `options.keys` is refused at `setup()`, as `OPTIONS_INVALID`. Plain `Error`s (no code) report a missing `uri` (or `uriEnv`, or `uriFile`) and
@@ -372,15 +373,18 @@ layer keep the codes of `@mmmnt/feat-fault-proxy` (`PROXY_UNREACHABLE`,
   exercised. The adapter never uses CDC.
 - The `options.proxy` block needs a Toxiproxy server you run; the adapter does
   not start one.
-- Options are validated only for `keys`: unknown keys are ignored.
+- Unknown keys under `options` are ignored.
 
 ## Specs and design
 
-- [`observe.feat`](https://github.com/mmmnt/feature/blob/main/adapters/neo4j/observe.feat): SPEC-ADPNEO-001, snapshot diff, namespaced
+- [`observe.feat`](observe.feat): SPEC-ADPNEO-001, snapshot diff, namespaced
   graph, settle, reset and faults.
-- [`transport.feat`](https://github.com/mmmnt/feature/blob/main/adapters/neo4j/transport.feat): SPEC-ADPNEO-002, transport faults on the
+- [`transport.feat`](transport.feat): SPEC-ADPNEO-002, transport faults on the
   system's path (integration tier).
-- [`DESIGN.md`](https://github.com/mmmnt/feature/blob/main/adapters/neo4j/DESIGN.md): the client choice, why the diff is a snapshot, the
+- [`credential-files.feat`](credential-files.feat): SPEC-ADPNEO-003, the URI and password from files.
+- [`relationship-seeds.feat`](relationship-seeds.feat): SPEC-ADPNEO-004, relationship seeds.
+- [`seed-transform.feat`](seed-transform.feat): SPEC-ADPNEO-005, seed transform and storable seeds.
+- [`DESIGN.md`](DESIGN.md): the client choice, why the diff is a snapshot, the
   settle proof, the namespace and the faults, with sources.
 
 The generated suites run under `feat run` against throwaway containers that the
@@ -389,4 +393,6 @@ script.
 
 ## License
 
-MIT. Docs: https://github.com/mmmnt/feature/wiki
+BSD-3-Clause. See [LICENSE](LICENSE).
+
+Part of [Feature](../../README.md), the .feat execution specification toolchain.

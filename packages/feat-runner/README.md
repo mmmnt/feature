@@ -1,8 +1,7 @@
 # @mmmnt/feat-runner
 
-**The runner of Feature: it runs generated test files under vitest, in the right passes, and tells a
-configuration error from a failed test.**
-`runTests(options)` takes a list of generated test files and runs them in a vitest subprocess. Files
+The runner of Feature: it runs generated test files under Vitest, in the right passes, and tells a
+configuration error from a failed test. `runTests(options)` takes a list of generated test files and runs them in a vitest subprocess. Files
 that arm an exclusive fault (`BrokerLoss`) run last, alone, in a serial pass. The runner merges the
 two JUnit reports, collects coverage when asked, and says whether the run failed because a harness
 refused its configuration. It never lets a run that selected no tests pass.
@@ -23,18 +22,19 @@ feat run  ->  generate / read config  ->  pick files (--spec, --shard)
                       generated tests -> feat-runtime harness -> adapters
 ```
 
-Most users get this package through [`@mmmnt/feature`](https://www.npmjs.com/package/@mmmnt/feature):
+Most users get this package through [`@mmmnt/feature`](../feature/README.md):
 `feat run` calls it. Depend on it directly when you drive generated suites from your own tooling and
 want the same passes, the same JUnit merge and the same configuration-error detection without the
 CLI.
 
-## Install
+## Installation
 
-```sh
-npm install @mmmnt/feat-runner
+Requires Node.js 22 or newer. ESM only.
+
+```bash
+npm install -D @mmmnt/feat-runner
 ```
 
-- Node 20 or later. The package is ESM only.
 - `vitest` must be installed in the project you run from: add it as a dev dependency
   (`npm install --save-dev vitest`, `pnpm add -D vitest`). It is a peer dependency, range `>=3.2.0`;
   this repository tests against vitest 3.2. The runner finds it as an `import "vitest"` from a file at
@@ -48,7 +48,7 @@ npm install @mmmnt/feat-runner
 - The generated files you pass must be Feature's (`@mmmnt/feat-emit-ts` output). They import
   `@mmmnt/feat-runtime`.
 
-## Use
+## Usage
 
 ```ts
 import { plan, runTests } from "@mmmnt/feat-runner";
@@ -77,7 +77,10 @@ process.exit(result.configurationError ? 2 : result.exitCode === 0 ? 0 : 1);
 ```
 
 `faults` is every fault any scenario of the file arms, written `Operation.Fault`. `feat run` fills it
-from the parsed IR. `runTests` is synchronous: it returns when the last pass has ended.
+from the parsed IR. `runTests` is synchronous (`spawnSync`): it returns when the last pass has ended. `runTestsAsync` takes the
+same options and returns the same result as a promise, awaiting each pass, so the caller's event loop keeps
+turning; use it when the caller is itself inside a Vitest worker, which misses Vitest's RPC timeout if it
+blocks for 60 s.
 
 ## What one run does
 
@@ -172,7 +175,7 @@ failed hooks. It marks the run as a configuration error when any error message c
 | `feat run` | `2` | `configurationError` was set, or two spec files derived one namespace before any ran. |
 
 The code in the message is one of the harness codes. They are listed in
-[`@mmmnt/feat-runtime`](https://www.npmjs.com/package/@mmmnt/feat-runtime), for example
+[`@mmmnt/feat-runtime`](../feat-runtime/README.md), for example
 `Configuration error (exit 2): [FAULT_UNSUPPORTED] ...`.
 
 Only messages that carry that exact prefix are recognised. Every refusal the harness and the adapter
@@ -184,9 +187,12 @@ loader raise carries it: an adapter module that cannot be resolved or loaded, or
 
 ```ts
 function runTests(opts: RunOptions): RunResult;
+function runTestsAsync(opts: RunOptions): Promise<RunResult>;
 function resolveVitest(root: string): { bin: string; version: string }; // throws VitestNotInstalledError
 function plan(specs: readonly PlannedSpec[], exclusive?: readonly string[]): Plan;
 function runPlan(p: Plan, runPass: (files: string[], opts: { serial: boolean }) => number): { exitCode: number };
+function runPlanAsync(p: Plan, runPass: (files: string[], opts: { serial: boolean }) => Promise<number>): Promise<{ exitCode: number }>;
+function faultsOf(cases: readonly SweptCase[], exclusive?: readonly string[]): string[];
 function runConfigSource(root: string, absFiles: string[], timeouts?: { testTimeoutMs?: number; hookTimeoutMs?: number }): string;
 function mergeJunit(a: string, b: string): string;
 const CONFIG_ERROR_REPORTER_SOURCE: string;
@@ -216,7 +222,7 @@ before any pass; `message` is the line it printed.
 `Plan`: `parallel`, `serial`, `order` (`"parallel"`, `"serial"` or `"parallel then serial"`) and
 `serialWorkers` (1 when there is a serial pass, else 0). `PlannedSpec`: `{ path, faults }`. `plan`'s
 second argument replaces `EXCLUSIVE_FAULTS`, for tests. `faultsOf(cases, exclusive?)` returns the
-sorted `Operation.Fault` names a file's scenarios arm (`SweptCase`: `{ given?: { faults? }, when? }`). `runPlan` runs the parallel set, then the
+sorted `Operation.Fault` names a file's scenarios arm (`SweptCase`: `{ given?: { faults? }, when? }`). `runPlan` (and `runPlanAsync`, with awaited passes) runs the parallel set, then the
 serial set, and returns the larger exit code. `runConfigSource` returns the text of the run config
 and `CONFIG_ERROR_REPORTER_SOURCE` the text of the reporter. Both are exported for testing.
 
@@ -232,41 +238,19 @@ The runner has one error code of its own, `VITEST_NOT_INSTALLED`.
 | A pass fails | Its exit code counts. The other pass still runs. |
 | A harness refused its configuration | `configurationError: true`. |
 
-## What changed in 0.3.0
+## References
 
-- **The project's own vitest, never a fetched one (SPEC-RT-010, ADR-0026).** The runner used to spawn
-  `npx vitest run`, and npx fetched the latest vitest from the registry when the project had none
-  (`npm warn exec The following package was not found and will be installed: vitest@...`), outside the
-  project's lockfile. It now resolves vitest from the project root and runs its bin with Node; a
-  project without vitest is refused with `VITEST_NOT_INSTALLED`, exit `2` through `feat run`. vitest is
-  a peer dependency (`>=3.2.0`). New: `resolveVitest`, `VitestNotInstalledError`, `RunResult.refusal`.
-
-## What changed in 0.2.0
-
-- **Serial pass for exclusive faults (SPEC-RT-005, ADR-0023).** New `plan` and `runPlan`, the
-  `serialFiles` option, and a second vitest run with one worker and `FEAT_SERIAL=1`. The two JUnit
-  reports are merged and either pass failing fails the run. `faultsOf` sweeps a `when` input's
-  strings as well as the `given` faults.
-- **Configuration errors are told from failures.** `RunResult.configurationError`, so `feat run`
-  exits `2` when a harness refused its configuration.
-- **Tier-aware runs (ADR-0024).** New `testTimeoutMs`, `hookTimeoutMs` and `configPath` options. The
-  runner hands the active config to the suites as `FEAT_CONFIG` and no longer relies on a timing
-  envelope baked into the generated file.
-
-## Specs and decisions
-
-- [SPEC-RT-005](https://github.com/mmmnt/feature/blob/main/packages/feat-runner/serial-faults.feat): the runner's serial pass for exclusive faults.
-- [SPEC-RT-010](https://github.com/mmmnt/feature/blob/main/packages/feat-runner/local-vitest.feat): the project's own vitest, never fetched.
-- [ADR-0026](https://github.com/mmmnt/feature/blob/main/docs/adr/ADR-0026-local-vitest.md): the runner runs the project's vitest and never fetches one.
-- [SPEC-RT-003](https://github.com/mmmnt/feature/blob/main/packages/feat-runtime/harness-faults.feat): fault arming, consumption and refusal in the harness.
-- [SPEC-RT-006](https://github.com/mmmnt/feature/blob/main/packages/feat-runtime/harness-namespace.feat): one namespace per spec file.
-- [ADR-0023](https://github.com/mmmnt/feature/blob/main/docs/adr/ADR-0023-adapter-interface-v2.md): fault injection and the observation modes.
-- [ADR-0024](https://github.com/mmmnt/feature/blob/main/docs/adr/ADR-0024-tier-bindings.md): tier bindings, `FEAT_CONFIG`, the timing envelope.
-- [Root README](https://github.com/mmmnt/feature#the-cli): the CLI and its exit codes.
+- [SPEC-RT-005](serial-faults.feat): the runner's serial pass for exclusive faults.
+- [SPEC-RT-010](local-vitest.feat): the project's own vitest, never fetched.
+- [ADR-0026](../../docs/adr/ADR-0026-local-vitest.md): the runner runs the project's vitest and never fetches one.
+- [SPEC-RT-003](../feat-runtime/harness-faults.feat): fault arming, consumption and refusal in the harness.
+- [SPEC-RT-006](../feat-runtime/harness-namespace.feat): one namespace per spec file.
+- [ADR-0023](../../docs/adr/ADR-0023-adapter-interface-v2.md): fault injection and the observation modes.
+- [ADR-0024](../../docs/adr/ADR-0024-tier-bindings.md): tier bindings, `FEAT_CONFIG`, the timing envelope.
+- [Root README](../../README.md): the CLI and its exit codes.
 
 ## License
 
-MIT
+BSD-3-Clause. See [LICENSE](LICENSE).
 
-Part of [Feature](https://github.com/mmmnt/feature) — the `.feat` execution specification
-language. Docs: https://github.com/mmmnt/feature/wiki
+Part of [Feature](../../README.md), the .feat execution specification toolchain.

@@ -1,6 +1,6 @@
 # @mmmnt/feat-runtime
 
-**The library every generated Feature test imports.** It loads and validates `feat.config.json`,
+The library every generated Feature test imports. It loads and validates `feat.config.json`,
 loads adapters, and runs each case as one fixed choreography: reset, preconditions, a capture window,
 the stimulus, a consistency-aware sweep, and a prediction diff. A failure names the exact spec
 coordinate it came from. If something was captured and not predicted, the case fails.
@@ -26,17 +26,18 @@ package, and `feat run` runs them. Depend on it directly when you:
 
 A generated suite also needs `vitest`.
 
-## Install
+## Installation
 
-```sh
+Requires Node.js 22 or newer. ESM only.
+
+```bash
 npm install @mmmnt/feat-runtime
 ```
 
-- Node 20 or later. The package is ESM only.
 - Adapters named in your config are installed in your project, not here (`npm install
   @mmmnt/feat-adapter-memory`, for example). The runtime resolves them from your project root.
 
-## Use
+## Usage
 
 A harness over a config with a response adapter and one service. `AddItem` is routed by the config;
 the stubs here stand in for your adapters.
@@ -88,12 +89,15 @@ the next case has started: at its next call it rejects with `CaseSupersededError
 case runs as if the superseded one had never started.
 
 1. **Preflight**, before any adapter is called. A case that asks for something its adapters cannot
-   give is refused here: `CLOCK_UNSUPPORTED`, then for each fault `FAULT_UNSUPPORTED` and
+   give is refused here: `CLOCK_UNSUPPORTED`, then `RANDOM_UNSUPPORTED`, then for each fault `FAULT_UNSUPPORTED` and
    `FAULT_REQUIRES_SERIAL`, then `MODE_UNSUPPORTED`.
 2. **Variables.** The spec's `variables:` table resolves once for the case (see below).
 3. **Reset.** `reset()` on every service, in config order.
 4. **Clock.** `setClock(clock)` to the response adapter, then to each service adapter that has one.
-   `clock` is the case's `given.clock`, or `null`, on every case.
+   `clock` is the case's `given.clock`, or `null`, on every case. Then the random seed (ADR-0029,
+   SPEC-RT-013): a case with `random seed <n>` calls the response adapter's `setSeed(n)`, and the first case
+   after a seeded one calls `setSeed(null)`, so one case's seed never reaches the next. A case that never
+   seeds sends nothing.
 5. **Seeds and executes, in written order** (SPEC-RT-009, ADR-0025). `given.order` lists the kinds as the
    spec wrote them: a `"seed"` calls `seed(records)` on the next seed's service, an `"execute"` runs the
    next `given.executes` entry through the response adapter. Without `given.order` (a given of one kind,
@@ -103,8 +107,10 @@ case runs as if the superseded one had never started.
 6. **Faults.** Each `given.faults` entry is armed with `fault({ operation, fault, detail, times })`,
    in written order. Arming is never a captured effect.
 7. **Capture window.** `startCapture({ specType })` on every service.
-8. **Stimulus.** The `when` through the response adapter, then each `delivers` to its service. The
-   response adapter's namespace is checked right after the invoke.
+8. **Stimulus.** The `when` through the response adapter, then each `delivers` to its service, or to
+   the response adapter's `deliver()` for `deliver … to response` (ADR-0036, SPEC-RT-016). The last
+   delivery to response that answers is the case's captured response (ADR-0037). The response adapter's
+   namespace is checked right after the invoke.
 9. **Convergence.** The harness waits for eventual services (below).
 10. **Capture.** `stopCapture()` on every service.
 11. **Fault consumption.** For a service with `firedFaults()`, an armed fault that fired fewer times
@@ -385,11 +391,13 @@ export function createAdapter(cfg: { key: string; namespace?: string }): FeatSer
 Required: `setup`, `teardown`, `reset`, `startCapture`, `stopCapture`, `read`. Optional: `seed`, `deliver`,
 `setClock`, `faults` with `fault` and `firedFaults`, `observes`, `reportedNamespace`, `peekCapture`
 and `settle` (below). A response adapter has `setup(config)`, `teardown()`, `invoke(command, input,
-actor?)` and optionally `setClock` and `reportedNamespace`.
+actor?)` and optionally `setClock`, `setSeed`, `deliver` and `reportedNamespace`.
 
 `createAdapter` receives, for a service, `{ key, ...serviceConfig, projectRoot, namespace? }`, and for
 the response adapter `{ ...responseConfig, projectRoot, namespace? }`. The response adapter's `setup`
-gets `response.invoke ?? {}`. `importAdapter(specifier, projectRoot)` is the one door every adapter
+gets `response.invoke ?? {}` and, when `createHarness` is given `cases`, a second argument
+`{ commands }`: each command the file invokes, once (SPEC-RT-008). An error `setup()` throws with
+`code: "ROUTE_UNLOADABLE"` becomes that `HarnessConfigurationError`. `importAdapter(specifier, projectRoot)` is the one door every adapter
 comes through, so resolution and failure messages are the same everywhere.
 
 ## Convergence
@@ -458,10 +466,13 @@ console.log(out); // [ 'response › id: expected any uuid, got "nope"' ]
   anchor, out)`: one value block, or one matcher.
 
 Matchers: `literal`, `whenRef` (`@when.<path>`), `deliverRef` (`@deliver.<path>`), `captureRef`
-(`@<service>[i].<path>`, a value captured on another surface), `any` (optionally `uuid`, `timestamp`,
+(`@<service>[i].<path>`, a value captured on another surface), `givenRef` (`@given.response.<path>` or
+`@given[i].response.<path>`, the body of a given `execute`'s response; ADR-0028 given-response matcher,
+SPEC-RT-012), `any` (optionally `uuid`, `timestamp`,
 `string`, `number` or `boolean`), `regex`, `absent`, `goldenFixture`, `nested` (exact from 0.10.0: an undeclared key of its object is `UNPREDICTED`, ADR-0039), `not`, `f32Digest`, `list` and `object`. `@when` and
 `@deliver` equal the values actually sent, after `@given.response.*` resolved. A `captureRef` whose
-service captured nothing, or whose index is out of range, is a violation, never a pass. A
+service captured nothing, or whose index is out of range, is a violation, never a pass, and so is a
+`givenRef` whose given ran no execute, whose index is out of range, or whose path is absent. A
 `placeholder` matcher that reaches the runtime is a violation too: derive should have replaced it.
 
 `not` (SPEC-RT-011, ADR-0027) passes when the field is present and its operand fails on the value. An
@@ -520,14 +531,14 @@ recent execute's response body. An unresolvable reference fails the case loudly,
 | --- | --- | --- |
 | `CONFIG_NOT_FOUND` | No file at the path. | `path` |
 | `INVALID_CONFIG` | The file is not valid JSON. The merged document violates the schema, and `detail` names the first failing path and the allowed values. A base config violates the schema, or is unreadable. An overlay redeclares `featVersion` or `schemas`. | `detail` |
-
-`loadConfig` raises none of these as an exception. `createHarness` does: it throws a
-`HarnessConfigurationError` carrying the same code (see below), and `importAdapter` raises
-`INVALID_CONFIG` when a module named as an adapter cannot be used.
 | `MISSING_CONVERGENCE_TIMEOUT` | A service is `eventual` and has no `convergenceTimeout`. For an overlay, the merged service. | `detail`: the service key |
 | `EXTENDS_NOT_FOUND` | The base file does not exist. | `detail` names the path as written and as resolved |
 | `EXTENDS_CHAIN` | The base itself has `extends`, or the file extends itself. | `detail` names both files |
 | `TIER_SPACE_MISMATCH` | An overlay adds a service, or adds or removes a command or an actor. | `space` (`service`, `command` or `actor`), `change` (`added` or `removed`), `detail`: the name |
+
+`loadConfig` raises none of these as an exception. `createHarness` does: it throws a
+`HarnessConfigurationError` carrying the same code (see below), and `importAdapter` raises
+`INVALID_CONFIG` when a module named as an adapter cannot be used.
 
 ### `HarnessConfigurationError`
 
@@ -538,6 +549,7 @@ before the case has any effect. None is a silent pass.
 | Code | When it fires | Raised at |
 | --- | --- | --- |
 | `CLOCK_UNSUPPORTED` | A case has `clock at` and no adapter that could receive it has `setClock()`. | Preflight |
+| `RANDOM_UNSUPPORTED` | A case has `random seed` and the response adapter has no `setSeed()`, or there is no response adapter. | Preflight |
 | `MODE_UNSUPPORTED` | A prediction has `contains` on a service whose `observes.state` is `false`. `mode` is `"state"`. | Preflight |
 | `FAULT_UNSUPPORTED` | A fault names an unconfigured service, an operation or fault the adapter does not offer, an adapter with no `fault()`, a detail the adapter cannot carry, or a count the fault does not declare. | Preflight |
 | `FAULT_REQUIRES_SERIAL` | A case arms an exclusive fault and `FEAT_SERIAL` is not `1`. | Preflight |
@@ -596,79 +608,42 @@ why `loadConfig` validates the merged document.
 | `deriveNamespace`, `normalizeSpecPath`, `assertNoNamespaceCollision`, `assertNamespaceNotConfigured`, `NAMESPACE_PATTERN` | Namespaces |
 | `resolveVariables`, `substituteVariables` | Variables |
 | `applyMatcher`, `applyValueBlock`, `diffRecords`, `diffResponse`, `InlineData`, `MatchContext` | Matcher |
-| `CapturedResponse`, `LoadConfigInput`, `AdapterModule` | Types |
+| `CapturedResponse`, `LoadConfigInput`, `AdapterModule`, `Digest` | Types |
 
 Environment variables the runtime reads or sets: `FEAT_ENVIRONMENT` and `ENVIRONMENT`
 (`resolveEnvironment`), `FEAT_NAMESPACE` (set per file), `FEAT_SERIAL` (read in preflight) and
 `FEAT_FENCE_AUDIT` (read in the convergence wait).
 
-## What changed in 0.10.0 (breaking)
+## Upgrading to 0.10.0
 
-- **A nested value block is exact** (ADR-0039, SPEC-RT-017; founder rulings 02af6938). A `{ … }` in a field position
-  now reports each key of its object that it does not declare: `<anchor>: UNPREDICTED field '<key>' = <value, cut to
-  80>`. This holds at every depth, in `has` (ordered and unordered), in `contains`, and in a response body.
-- **Inside `partial` too.** A `partial` record or response keeps its top level unchecked beyond its listed fields, but
-  its nested blocks are exact.
-- **Unchanged:**
-  - The top-level block of a record or response checks only its listed fields (ADR-0002, ADR-0038).
-  - `absent` inside a nested block works as before.
-  - A failing record still reports "captured X does not match predicted Y".
-- **Why it is breaking:** a spec that predicted part of a nested object now fails with no change of its own.
-- **To migrate:** state every key of the object, or write the field `any` to leave a sub-object unchecked.
-- **Finding the blocks:** `@mmmnt/feature` 0.16.0's `feat lint` warns `NESTED_SCHEMA_OPEN` on every nested block whose
-  schema is open, which is where an unstated key can appear.
+0.10.0 is breaking (ADR-0039, SPEC-RT-017). A nested value block is exact: a `{ … }` in a field position reports
+each key of its object it does not declare, `<anchor>: UNPREDICTED field '<key>' = <value, cut to 80>`, at every
+depth, in `has`, `contains` and responses, inside `partial` blocks too. The top-level block of a record or
+response still checks only its listed fields (ADR-0038), and `absent` inside a nested block works as before. To
+migrate, state every key of the object, or write the field `any` to leave a sub-object unchecked. `feat lint`
+(`@mmmnt/feature` 0.16.0 and later) warns `NESTED_SCHEMA_OPEN` on each nested block whose schema is open,
+which is where an unstated key can appear.
 
-## What changed in 0.2.2
+## References
 
-- **The file's commands at setup (SPEC-RT-008).** `createHarness({ configPath, specPath, cases })`
-  takes the file's cases and calls the response adapter's `setup(invoke, { commands })` with each
-  command they invoke (given executes, then the stimulus, once each). Without `cases` it calls
-  `setup(invoke)` as before. Generated suites pass their cases from `@mmmnt/feat-emit-ts` 0.2.1.
-- **`ROUTE_UNLOADABLE`.** An error the response adapter's `setup()` throws with that code becomes a
-  `HarnessConfigurationError`, so `feat run` exits 2 with `[ROUTE_UNLOADABLE]`. Any other error from
-  `setup()` propagates as before.
-
-## What changed in 0.2.1
-
-- **One case at a time (SPEC-RT-007).** A case that a test runner gave up on no longer touches the
-  adapters once the next case starts. It rejects with `CaseSupersededError` (`CASE_SUPERSEDED`).
-  Before, its late `stopCapture` or `reset` could land inside the next case's window, and one
-  timeout became two failures.
-
-## What changed in 0.2.0
-
-- **Namespaces (SPEC-RT-006).** `deriveNamespace` and its helpers, `createHarness({ specPath })`,
-  `FEAT_NAMESPACE`, `reportedNamespace()` checks, and the codes `NAMESPACE_COLLISION`,
-  `NAMESPACE_NOT_HONOURED` and `NAMESPACE_CONFIGURED`. A response route can declare
-  `"namespace": true`.
-- **Faults (SPEC-RT-003, SPEC-RT-005, ADR-0023).** Catalogs with per-fault counts, preflight refusal,
-  arming after the executes, consumption checks, `faultProblem`, `FAULT_UNSUPPORTED`,
-  `FAULT_NOT_CONSUMED` and `FAULT_REQUIRES_SERIAL`.
-- **Clock and observation modes (SPEC-RT-002, ADR-0023).** `setClock` delivery on every case,
-  `observes`, the `read()` query hint, `CLOCK_UNSUPPORTED` and `MODE_UNSUPPORTED`.
-- **Tier overlays (SPEC-RT-004, ADR-0024).** `extends` in `loadConfig`, `EXTENDS_NOT_FOUND`,
-  `EXTENDS_CHAIN`, `TIER_SPACE_MISMATCH`, and the default `has` ordering resolved from the active
-  tier's `consistency`.
-- **Codes in messages.** A harness configuration error's message now begins
-  `Configuration error (exit 2): [CODE]`, so the runner's output shows which refusal it was.
-
-## Specs and decisions
-
-- [SPEC-RT-001](https://github.com/mmmnt/feature/blob/main/packages/feat-runtime/load-config.feat): load and validate `feat.config.json`.
-- [SPEC-RT-002](https://github.com/mmmnt/feature/blob/main/packages/feat-runtime/harness-observation.feat): clock delivery and the observation-mode check.
-- [SPEC-RT-003](https://github.com/mmmnt/feature/blob/main/packages/feat-runtime/harness-faults.feat): fault arming, consumption and refusal.
-- [SPEC-RT-004](https://github.com/mmmnt/feature/blob/main/packages/feat-runtime/load-config-extends.feat): load a tier overlay.
-- [SPEC-RT-005](https://github.com/mmmnt/feature/blob/main/packages/feat-runner/serial-faults.feat): the runner's serial pass for exclusive faults.
-- [SPEC-RT-006](https://github.com/mmmnt/feature/blob/main/packages/feat-runtime/harness-namespace.feat): one namespace per spec file.
-- [SPEC-RT-007](https://github.com/mmmnt/feature/blob/main/packages/feat-runtime/harness-cases.feat): one case at a time.
-- [SPEC-RT-008](https://github.com/mmmnt/feature/blob/main/packages/feat-runtime/harness-setup.feat): the response adapter is set up with the file's commands.
-- [ADR-0023](https://github.com/mmmnt/feature/blob/main/docs/adr/ADR-0023-adapter-interface-v2.md): adapter interface v2.
-- [ADR-0024](https://github.com/mmmnt/feature/blob/main/docs/adr/ADR-0024-tier-bindings.md): tier bindings.
-- [Grammar reference](https://github.com/mmmnt/feature/blob/main/docs/grammar-reference.md): the language the predictions come from.
+- [SPEC-RT-001](load-config.feat): load and validate `feat.config.json`.
+- [SPEC-RT-002](harness-observation.feat): clock delivery and the observation-mode check.
+- [SPEC-RT-003](harness-faults.feat): fault arming, consumption and refusal.
+- [SPEC-RT-004](load-config-extends.feat): load a tier overlay.
+- [SPEC-RT-005](../feat-runner/serial-faults.feat): the runner's serial pass for exclusive faults.
+- [SPEC-RT-006](harness-namespace.feat): one namespace per spec file.
+- [SPEC-RT-007](harness-cases.feat): one case at a time.
+- [SPEC-RT-008](harness-setup.feat): the response adapter is set up with the file's commands.
+- [SPEC-RT-009](harness-given-order.feat): given steps in written order.
+- [SPEC-RT-011](match-not.feat), [SPEC-RT-012](match-given.feat), [SPEC-RT-014](match-f32-digest.feat), [SPEC-RT-015](match-list.feat), [SPEC-RT-017](match-nested.feat): the `not`, `givenRef`, `f32Digest`, `list` and exact nested matchers.
+- [SPEC-RT-013](harness-seed.feat): the case's random seed.
+- [SPEC-RT-016](harness-deliver.feat): deliver to a service or to the response role.
+- [ADR-0023](../../docs/adr/ADR-0023-adapter-interface-v2.md): adapter interface v2.
+- [ADR-0024](../../docs/adr/ADR-0024-tier-bindings.md): tier bindings.
+- [Grammar reference](../../docs/grammar-reference.md): the language the predictions come from.
 
 ## License
 
-MIT
+BSD-3-Clause. See [LICENSE](LICENSE).
 
-Part of [Feature](https://github.com/mmmnt/feature) — the `.feat` execution specification
-language. Docs: https://github.com/mmmnt/feature/wiki
+Part of [Feature](../../README.md), the .feat execution specification toolchain.

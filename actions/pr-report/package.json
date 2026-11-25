@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "GitHub Action: a pull request build report from feat evidence, the run's jobs and its own-key cosign attestations (SPEC-PRR-001, ADR-0032).",
-  "license": "MIT",
+  "license": "BSD-3-Clause",
   "type": "module",
   "main": "./dist/main.js",
   "scripts": {

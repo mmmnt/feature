@@ -2,7 +2,7 @@
   "name": "@mmmnt/feat-adapter-http",
   "version": "0.1.9",
   "description": "Feat response adapter: HTTP invocation (method/path routes from response.commands, baseUrl/headers from invoke, actor headers from the actor registry).",
-  "license": "MIT",
+  "license": "BSD-3-Clause",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

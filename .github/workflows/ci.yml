@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # main merges through a merge queue; the queued result is checked before it lands.
+  merge_group:
 
 jobs:
   check:

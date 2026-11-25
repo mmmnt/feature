@@ -1,20 +1,22 @@
 # @mmmnt/feat-cdk
 
-**Point Feature at the CDK app you already have.** No conventions, no
-declaration files, no restructuring — the contract is CDK's own cloud
+A Feature response adapter for the CDK app you already have. No conventions, no
+declaration files, no restructuring: the contract is CDK's own cloud
 assembly (`cdk.out/`), so Feature derives the deployment from `cdk synth`
 output: resources, the SSM publish/consume graph, and the dependency closure.
 
 Adding infrastructure means adding a construct to *your* app. Feature reads
 the assembly.
 
-## Install
+## Installation
 
-```sh
-npm install --save-dev @mmmnt/feat-cdk aws-cdk
+Requires Node.js 22 or newer, [`@mmmnt/feature`](../feature/README.md), and a CDK app.
+
+```bash
+npm install -D @mmmnt/feat-cdk aws-cdk
 ```
 
-Requires Node 20 or later, `@mmmnt/feature`, and a CDK app. To synthesize, the adapter runs the
+To synthesize, the adapter runs the
 `aws-cdk` CLI your project installed: the first `node_modules/aws-cdk` from the app directory upward
 (so a workspace-hoisted install is found), its `cdk` bin run with the current Node, no shell. It never
 fetches one with `npx`: without `aws-cdk` the command is refused with `AWS_CDK_NOT_INSTALLED`, a
@@ -41,11 +43,10 @@ From a synthesized assembly (`cdk synth --output cdk.out`):
 
 The CDK bootstrap parameter is never mistaken for a dependency.
 
-## A first-class adapter — zero consumer code
+## Usage
 
-Feature's execution layer lives in published adapters, and this package IS
-one. The consumer's total authored surface is their CDK app, their `.feat`
-specs, and the config they already have — no handler files, no wiring code:
+The adapter needs no handler files or wiring code: your CDK app, your `.feat` specs and the config
+are the whole authored surface.
 
 ```jsonc
 // feat.config.json
@@ -156,7 +157,7 @@ The command answers `{ status, body }`:
 | `400` | `{ code: "MISSING_STACK", message }` | The payload has no `stack` string. |
 | `404` | `{ code: "UNKNOWN_STACK", message }` | The stack is not in the assembly. The message lists the available stacks, stage-normalized. |
 
-Specs predict them with `predict error MISSING_STACK` and `predict error UNKNOWN_STACK`. Two other
+Specs predict them with `predict error MISSING_STACK` and `predict error UNKNOWN_STACK`. Three other
 failures are thrown, not answered: a consumed SSM name with no publisher and no `externalPublications`
 entry (it would fail at deploy), a cyclic stack dependency, and a failed `cdk synth`. A command that must
 synthesize while the app has no `aws-cdk` (and no `invoke.cdkBin`) throws
@@ -233,35 +234,22 @@ scenario "the data stack has one table and publishes its name":
   `SynthStackConfig`, `CdkInvokeConfig`, `CdkCommandConfig`, `StageConfig`, `NormalizedResource`,
   `SelectQuery`, `Selection`.
 
-The [LocalStack adapter](https://www.npmjs.com/package/@mmmnt/feat-adapter-localstack)
-consumes the same analysis to deploy exactly the closure a run needs and
-resolve materialized values afterward.
-
 ## Limitations
 
-- The package reads CloudFormation. It does not deploy anything. The LocalStack adapter deploys.
+- The package reads CloudFormation. It does not deploy anything.
 - It synthesizes the whole app on each invocation unless `assemblyDir` is set. Use `assemblyDir` in CI
   to synthesize once.
 - A resource without `aws:cdk:path` metadata is addressed by its logical id.
 - The adapter takes no actors and offers no `setClock`, so `clock at` against it is a
   `CLOCK_UNSUPPORTED` configuration error.
 
-## What changed in this release (v0.1.54, package 0.5.0)
+## References
 
-- **The project's own `aws-cdk`, never a fetched one (SPEC-CDK-001, ADR-0026).** Without `aws-cdk` in
-  the app, synthesis used to fall back to `npx cdk synth`, and npx fetched the npm package `cdk` (which
-  is not `aws-cdk`) from the registry at run time. Now `aws-cdk` is found from the app directory upward
-  (a workspace-hoisted install is served) and run with Node; without it the command is refused with
-  `AWS_CDK_NOT_INSTALLED`, exit `2`. `invoke.cdkBin` still runs a binary of your own. New export
-  `CdkNotInstalledError`.
-
-## What changed in v0.1.48 (package 0.4.1)
-
-No source change. The package is republished as 0.4.1 against `@mmmnt/feat-types` 0.2.0, with this README.
-
-Part of [Feature](https://github.com/mmmnt/feature) — the `.feat` execution
-specification language. Adapter contract: https://github.com/mmmnt/feature/wiki/Architecture
+- [SPEC-CDK-001](local-cdk.feat): `aws-cdk` resolves from the project, never fetched.
+- [ADR-0026](../../docs/adr/ADR-0026-local-vitest.md): the same rule for the runner's vitest.
 
 ## License
 
-MIT
+BSD-3-Clause. See [LICENSE](LICENSE).
+
+Part of [Feature](../../README.md), the .feat execution specification toolchain.

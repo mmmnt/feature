@@ -1,44 +1,29 @@
 # @mmmnt/feat-analyze
 
-**Pure analysis for `.feat` specs: lint, audit and format.** Three functions,
-no filesystem, no process, no CLI. Each takes a parsed spec (or the source text)
-and returns findings you can print, gate on or show in an editor.
-
-If you only write `.feat` specs, you do not need this package. The `feat lint`,
-`feat audit` and `feat fmt` commands in
-[`@mmmnt/feature`](https://www.npmjs.com/package/@mmmnt/feature) are thin
-callers over these functions and print the exact strings they return. Use this
-package when you embed the same checks in a service, an editor or a bot.
-
-## Where it sits
+Pure analysis of `.feat` specs: lint, audit and format. Each function takes a parsed `BuiltSpec` (or the source
+text) and returns findings you can print, gate on or show in an editor. It reads no files, starts no process and
+never exits. `feat lint`, `feat audit` and `feat fmt` in [`@mmmnt/feature`](../feature/README.md) are thin callers
+over these functions and print the strings they return.
 
 ```
-.feat source ──► feat-core (parse) ──► BuiltSpec ──► lintSpec(spec)   ──► Finding[]
-      │                                    └───────► auditSpec(spec)  ──► { errors, warnings }
-      └─────────────────────────────────────────────► formatSource(src) ──► { formatted, changed, hasLeadingTab }
+.feat source ──► feat-core (parse) ──► BuiltSpec ──► lintSpec / lintOptionalFields / lintNestedOpen ──► Finding[]
+      │                                    └───────► auditSpec   ──► { errors, warnings }
+      └─────────────────────────────────────────────► formatSource ──► { formatted, changed, hasLeadingTab }
 ```
 
-The package depends only on
-[`@mmmnt/feat-types`](https://www.npmjs.com/package/@mmmnt/feat-types), for the
-`BuiltSpec` type. It does not parse. To get a `BuiltSpec`, use
-[`@mmmnt/feat-core`](https://www.npmjs.com/package/@mmmnt/feat-core).
+The package depends only on [`@mmmnt/feat-types`](../feat-types/README.md). It does not parse: get a `BuiltSpec`
+from [`@mmmnt/feat-core`](../feat-core/README.md). Whether a spec has a paired `<name>.contract.json` and a
+generated test file is a filesystem question, so `feat audit` adds those warnings itself.
 
-What the library leaves to a caller, because it needs the filesystem: whether a
-spec has a paired `<name>.contract.json`, and whether its generated test file
-exists. `feat audit` adds both as warnings.
+## Installation
 
-## Install
+Requires Node.js 22 or newer.
 
-```sh
+```bash
 npm install @mmmnt/feat-analyze @mmmnt/feat-core
 ```
 
-Requirements:
-
-- Node 20 or later (`engines`).
-- ESM only (`"type": "module"`).
-- `@mmmnt/feat-types` installs with it. `@mmmnt/feat-core` is only needed if you
-  parse specs yourself, as below.
+`@mmmnt/feat-core` is needed only to parse specs yourself, as below. The package is ESM only.
 
 ## Usage
 
@@ -84,7 +69,7 @@ console.log(auditSpec(spec));
 console.log(formatSource(source).changed);
 ```
 
-That prints:
+prints:
 
 ```
 [
@@ -104,153 +89,90 @@ false
 
 ## API
 
-### `lintSpec(spec: BuiltSpec): Finding[]`
-
-Language-quality rules beyond the buildability gate (ADR-0007, ADR-0017).
-
-```ts
-interface Finding {
-  level: "error" | "warn" | "info";
-  message: string;      // already prefixed with its level, e.g. "warn: ..."
-}
-```
-
-| Rule | Level | Message |
-| --- | --- | --- |
-| A contract schema that no scenario references | `warn` | `warn: schema 'X' is declared but never referenced by a scenario` |
-| A variable that nothing references | `warn` | `warn: variable 'x' is declared but never referenced` |
-| The same `kind schema` declared twice in `contract:` | `warn` | `warn: duplicate contract declaration 'kind X'` |
-| The spec is still a draft | `info` | `info: status draft — not buildable until agreed` |
-
-What counts as a reference to a schema: the response schema of a prediction,
-every record schema in a `has` or `contains` list, and every `with <Schema>` on
-an inline seed record. `input` entries are used by definition (they are the
-`when:` payload's contract), and `stream` entries are never checked. A variable
-is referenced when a `${name}` appears anywhere in a scenario, or in the template
-of another variable.
-
-### `lintOptionalFields(spec: BuiltSpec, registry: Record<string, object>): Finding[]`
-
-ADR-0038: a predicted response or record value block that leaves out an optional property of its schema is an
-error, unless the block is marked `partial`. `registry` is the spec's contract, resolved by the schema adapter;
-optional means declared and not required, following `allOf` and the bundle's local `$ref`s.
-
-| Rule | Level | Message |
-| --- | --- | --- |
-| A block leaves out an optional property | `error` | `error [OPTIONAL_UNSTATED]: scenario "<name>" › <where>: <Schema> leaves out optional '<p>' — state each (absent, any, or a value), or mark the block '<Schema> partial { … }' (ADR-0038)` |
-
-### `lintNestedOpen(spec: BuiltSpec, registry: Record<string, object>): Finding[]`
-
-ADR-0039 (SPEC-ANL-001), the migration lint for exact nested blocks. From `@mmmnt/feat-runtime` 0.10.0 a nested value
-block is exact. This rule names each nested block whose schema lets the object carry keys the block does not declare,
-because only the block then states them. It checks every predicted response, `has` record and `contains` record,
-`partial` or not.
-
-A nested block's schema is the property it names, resolved at each depth through the bundle's local `$ref`s and
-`allOf`. It is closed when it says `additionalProperties: false` or `unevaluatedProperties: false`, directly, through
-a ref, through an allOf part, or in every anyOf/oneOf branch. A property no schema describes is open. Literal objects
-and `any` are not nested blocks.
-
-| Rule | Level | Message |
-| --- | --- | --- |
-| A nested block under an open schema | `warn` | `warn [NESTED_SCHEMA_OPEN]: scenario "<name>" › <response \| <service> <type>> › <path>: <Schema> leaves '<path>' open, so from feat-runtime 0.10.0 a key the block does not state fails the scenario (ADR-0039) — close it (additionalProperties: false), or check the block states every key` |
-
-`feat lint` runs all three and exits 1 on any error-level finding. NESTED_SCHEMA_OPEN is a warning and never fails the
-run.
-
-Findings come in rule order: schemas, variables, duplicates, status. No rule in
-this release returns `level: "error"`; the type allows it so a future rule can.
-A parse failure is the caller's to report, since there is no spec to lint.
-
-### `auditSpec(spec: BuiltSpec): AuditResult`
-
-The buildability gate of an `agreed` spec (ADR-0008).
+| Export | Signature |
+| --- | --- |
+| `lintSpec` | `(spec: BuiltSpec) => Finding[]` |
+| `lintOptionalFields` | `(spec: BuiltSpec, registry: Record<string, object>) => Finding[]` |
+| `lintNestedOpen` | `(spec: BuiltSpec, registry: Record<string, object>) => Finding[]` |
+| `auditSpec` | `(spec: BuiltSpec) => AuditResult` |
+| `formatSource` | `(source: string) => FormatResult` |
+| types | `Finding`, `AuditResult`, `FormatResult` |
 
 ```ts
-interface AuditResult {
-  errors: string[];     // B1 to B3: block the gate
-  warnings: string[];   // lifecycle surfacing: advisory
-}
+interface Finding { level: "error" | "warn" | "info"; message: string } // message is prefixed with its level
+interface AuditResult { errors: string[]; warnings: string[] }
+interface FormatResult { formatted: string; changed: boolean; hasLeadingTab: boolean }
 ```
+
+`registry` is the spec's contract as the schema adapter resolves it (schema name to JSON Schema).
+
+### `lintSpec`
+
+| Rule | Level | Message |
+| --- | --- | --- |
+| A contract schema no scenario references | `warn` | `warn: schema 'X' is declared but never referenced by a scenario` |
+| A variable nothing references | `warn` | `warn: variable 'x' is declared but never referenced` |
+| The same `kind Schema` declared twice in `contract:` | `warn` | `warn: duplicate contract declaration 'kind X'` |
+| The spec is a draft | `info` | `info: status draft — not buildable until agreed` |
+
+A schema is referenced by a prediction's response, a record in a `has` or `contains` list, or a `with <Schema>` on
+an inline seed record. `input` entries count as used, and `stream` entries are not checked. A variable is referenced
+by a `${name}` anywhere in a scenario or in another variable's template. Findings come in that rule order.
+
+### `lintOptionalFields` (ADR-0038)
+
+A predicted response or record value block that leaves out an optional property of its schema is an error unless the
+block is marked `partial`. Optional means declared and not required, following `allOf` and the schema's local `$ref`s.
+
+```
+error [OPTIONAL_UNSTATED]: scenario "<name>" › <response | <service> <type>>: <Schema> leaves out optional '<p>' — state each (absent, any, or a value), or mark the block '<Schema> partial { … }' (ADR-0038)
+```
+
+### `lintNestedOpen` (ADR-0039)
+
+The migration lint for exact nested blocks: from `@mmmnt/feat-runtime` 0.10.0 a nested value block is exact, so a
+nested block whose schema lets the object carry undeclared keys is named. It checks every predicted response, `has`
+record and `contains` record, `partial` or not. A nested schema is closed when it says `additionalProperties: false`
+or `unevaluatedProperties: false` directly, through a local `$ref`, through an `allOf` part, or in every
+`anyOf`/`oneOf` branch. A property no schema describes is open. Literal objects and `any` are not nested blocks.
+
+```
+warn [NESTED_SCHEMA_OPEN]: scenario "<name>" › <where> › <key> › …: <Schema> leaves '<key.path>' open, so from feat-runtime 0.10.0 a key the block does not state fails the scenario (ADR-0039) — close it (additionalProperties: false), or check the block states every key
+```
+
+### `auditSpec` (buildability, ADR-0008)
 
 | Rule | Fails when | Message |
 | --- | --- | --- |
-| **B1** | the spec type is `command`, `query`, `policy`, `projection` or `saga` and there is no `handler at` | ``B1: no `handler at` for a code-producing spec type`` |
-| **B3** | there is no `touches` | ``B3: no `touches` change boundary declared`` |
-| **B2**, predicted | a scenario predicts `rejection X` and no `rejects X when ...` line exists | ``B2: predicted rejection 'X' has no `rejects X when …` line`` |
-| **B2**, declared | a `rejects X` line exists and no scenario predicts it | ``B2: `rejects X` is never predicted by any scenario`` |
+| B1 | the type is `command`, `query`, `policy`, `projection` or `saga` and there is no `handler at` | ``B1: no `handler at` for a code-producing spec type`` |
+| B3 | there is no `touches` | ``B3: no `touches` change boundary declared`` |
+| B2, predicted | a scenario predicts `rejection X` and no `rejects X when …` line exists | ``B2: predicted rejection 'X' has no `rejects X when …` line`` |
+| B2, declared | a `rejects X` line exists and no scenario predicts it | ``B2: `rejects X` is never predicted by any scenario`` |
 
-Errors come in the order B1, B3, B2 (predicted first, then declared). Types
-`infrastructure`, `integration` and `scaffold` are exempt from B1 but not from
-B3. B2 is two-way: every rejection a spec promises is predicted, and every
-predicted rejection is promised. Rejection ids are compared exactly and
-case-sensitively (ADR-0022), so `NotOperator` and `NOT_OPERATOR` are different
-ids.
+Errors come in the order B1, B3, B2 (predicted, then declared). `infrastructure`, `integration` and `scaffold` specs
+are exempt from B1, not from B3. Rejection ids compare exactly and case-sensitively (ADR-0022). In a scenario
+outline, a rejection id written as a placeholder (`<code>`) is resolved through the `examples:` rows. The one warning
+is `status draft — not buildable until agreed`.
 
-In a scenario outline, a rejection id written as a placeholder (`<code>`) is
-resolved through the `examples:` rows: every string value in that column counts
-as a predicted id.
+### `formatSource`
 
-The one warning is `status draft — not buildable until agreed`, for a spec whose
-status is `draft`. An `agreed`, `built` or `verified` spec has none.
-
-### `formatSource(source: string): FormatResult`
-
-Conservative, content-preserving, idempotent formatting.
-
-```ts
-interface FormatResult {
-  formatted: string;
-  changed: boolean;          // formatted !== source
-  hasLeadingTab: boolean;    // a line that begins with a tab character
-}
-```
-
-It does exactly four things: it strips trailing spaces and tabs from every
-line, collapses any run of blank lines to one, removes blank lines at the end of
-the file, and ends the file with one newline. CRLF line endings become LF. It
-never re-indents, reorders or rewrites a token, and formatting its own output
-changes nothing.
-
-`hasLeadingTab` reports a tab as the first character of a line. `feat fmt`
-treats it as an error and leaves that file alone. A space followed by a tab is
-not detected. The parser itself does not reject tab indentation (see
-[`@mmmnt/feat-core`](https://www.npmjs.com/package/@mmmnt/feat-core)).
+Conservative, content-preserving and idempotent. It strips trailing spaces and tabs from every line, collapses runs
+of blank lines to one, drops blank lines at the end, ends the file with one newline and turns CRLF into LF. It never
+re-indents, reorders or rewrites a token. `hasLeadingTab` is true when a line begins with a tab character; the parser
+refuses tab indentation (`MALFORMED_SYNTAX`), and `feat fmt` reports such a file and leaves it alone.
 
 ## In the CLI
 
 | Command | Calls | Exit codes |
 | --- | --- | --- |
-| `feat lint` | `lintSpec`, `lintOptionalFields` and `lintNestedOpen` on every spec | `0`, or `1` if any spec fails to parse. Warnings and notes never fail the run. |
-| `feat audit` | `auditSpec`, plus the paired-file warnings | `0`, or `1` if any spec has an error (a parse failure or a B1, B2 or B3 error). Warnings never fail the run. |
-| `feat fmt` | `formatSource`; `--check` reports without writing | `0`, or `1` with `--check` when any file would change, or when any file has a leading tab. |
+| `feat lint` | `lintSpec`, `lintOptionalFields`, `lintNestedOpen` on every spec | `1` when a spec does not parse or any finding is `error` level; warnings never fail |
+| `feat audit` | `auditSpec`, plus the paired-file warnings | `1` when a spec does not parse or has a B1 to B3 error |
+| `feat fmt [--check]` | `formatSource` | `1` when a file has a leading tab, or with `--check` when a file would change |
 
-A configuration error is exit `2`, as everywhere in the toolchain. The library
-itself returns values and never exits.
+A configuration error is exit `2`.
 
-## What changed in 0.3.0
+## License
 
-- `lintNestedOpen` (ADR-0039, SPEC-ANL-001): the warning `NESTED_SCHEMA_OPEN` names each nested block whose schema is
-  open. It is the migration aid for `@mmmnt/feat-runtime` 0.10.0, where nested blocks became exact. A warning, never a
-  config switch; `feat lint` still exits 1 only on errors.
+BSD-3-Clause. See [LICENSE](LICENSE).
 
-## What changed in 0.1.9
-
-No source change in release v0.1.48. The package is republished as 0.1.9 against
-`@mmmnt/feat-types` 0.2.0, with this README; until now it had none.
-
-## Specs and decisions
-
-- [Grammar reference](https://github.com/mmmnt/feature/blob/main/docs/grammar-reference.md):
-  the language the rules apply to
-- [ADR-0022: UpperCamel rejection ids](https://github.com/mmmnt/feature/blob/main/docs/adr/ADR-0022-uppercamel-rejection-ids.md):
-  why B2 compares ids exactly
-- ADR-0007 (declared-but-unused lint), ADR-0008 (the buildability rules B1 to
-  B3 and the `draft`, `agreed`, `built`, `verified` lifecycle) and ADR-0017 (the
-  variable lint) record the rules. ADR-0001 to ADR-0021 are not in the
-  repository yet.
-
-Part of [Feature](https://github.com/mmmnt/feature), the `.feat` execution
-specification language. Docs: https://github.com/mmmnt/feature/wiki
-
-MIT
+Part of [Feature](../../README.md), the .feat execution specification toolchain.

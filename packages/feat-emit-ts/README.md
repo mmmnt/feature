@@ -1,48 +1,35 @@
 # @mmmnt/feat-emit-ts
 
-**The TypeScript emitter of Feature: a test topology in, one complete vitest file out.**
-`emit(inputs)` takes the cases that `@mmmnt/feat-derive` produced, the resolved schemas and golden
-fixtures, and writes the text of a generated test file. The file imports only `vitest`, a few Node
-built-ins and `@mmmnt/feat-runtime`. It holds no logic of its own: every test calls the runtime's
-harness.
-
-The output is deterministic. The same inputs give the same bytes. There is no timestamp, no random
-value and no machine-specific path in it, which is what lets `feat verify` byte-compare committed
-tests against a fresh generation.
-
-## Where it sits
+The TypeScript emitter of Feature. `emit(inputs)` takes the test topology that
+[`@mmmnt/feat-derive`](../feat-derive/README.md) produced for one spec, with the spec's resolved schemas and
+golden fixtures, and returns the text of one complete Vitest test file. The file imports only `vitest`, a few
+Node built-ins and [`@mmmnt/feat-runtime`](../feat-runtime/README.md), and holds no logic of its own: every test
+calls the runtime's harness. The output is deterministic. The same inputs give the same bytes, with no
+timestamp, random value or machine-specific path, which is what lets `feat verify` byte-compare committed tests
+against a fresh generation. The package does not parse, derive or write to disk.
 
 ```
-BuiltSpec IR -> feat-derive -> TestTopology
-                                   |
-                        feat-emit-ts (this package)
-                                   |
-                  specs/foo.test.ts  (committed, generated)
-                                   |
-        run by vitest through feat-runner; imports feat-runtime
+BuiltSpec IR -> feat-derive -> TestTopology -> feat-emit-ts -> specs/foo.test.ts (committed)
+                                                                  run by vitest through feat-runner,
+                                                                  imports feat-runtime
 ```
 
-Most users get this package through [`@mmmnt/feature`](https://www.npmjs.com/package/@mmmnt/feature),
-whose `feat generate` calls `emit` once per spec. Depend on it directly when you build your own
-generator: you hold a topology and want the file Feature would write. It does not parse, does not
-derive and does not write to disk.
+Most projects get this package through [`@mmmnt/feature`](../feature/README.md), whose `feat generate` calls
+`emit` once per spec. Depend on it directly when you build your own generator.
 
-## Install
+## Installation
 
-```sh
+Requires Node.js 22 or newer. ESM only.
+
+```bash
 npm install @mmmnt/feat-emit-ts
 ```
 
-- Node 20 or later. The package is ESM only.
-- Runtime dependencies are `@mmmnt/feat-derive` (for the `TestTopology` type) and
-  `@mmmnt/feat-types`.
-- The package emits text. To run what it emits, the project needs `vitest` and
-  `@mmmnt/feat-runtime`. This repository tests against vitest 3.2.
+To run what it emits, the project needs `vitest` and `@mmmnt/feat-runtime`.
 
-## Use
+## Usage
 
-This uses the spec shown in the [`@mmmnt/feat-derive`](https://www.npmjs.com/package/@mmmnt/feat-derive)
-README, saved as `specs/add-item.feat`, and a `feat.config.json` whose only service is `store`.
+Run from the root of this repository, against the `create-user` corpus exemplar:
 
 ```ts
 import { readFileSync } from "node:fs";
@@ -51,35 +38,27 @@ import { derive } from "@mmmnt/feat-derive";
 import { EMITTER_VERSION, emit, timingEnvelope } from "@mmmnt/feat-emit-ts";
 import type { BuiltSpec, FeatConfig } from "@mmmnt/feat-types";
 
-const config = JSON.parse(readFileSync("feat.config.json", "utf8")) as FeatConfig;
-const specText = readFileSync("specs/add-item.feat", "utf8");
+const config = JSON.parse(readFileSync("corpus/create-user/feat.config.json", "utf8")) as FeatConfig;
+const specText = readFileSync("corpus/create-user/create-user.feat", "utf8");
 const parsed = parseSource(specText, contextFromConfig(config));
 if (parsed.status === "ERR") throw new Error(JSON.stringify(parsed.body));
 const topology = derive(parsed.body as unknown as BuiltSpec, config);
 
 const source = emit({
   topology,
-  schemas: {},
+  schemas: {}, // in a real run: the spec's resolved contract registry
   goldens: {},
-  hashInputs: {
-    specText,
-    contractText: "{}",
-    configSlice: { featVersion: "1.0", commands: ["AddItem"], actors: [], services: ["store"] },
-  },
-  specPath: "specs/add-item.feat",
-  namespacePath: "specs/add-item.feat",
-  configPath: "../feat.config.json",
+  hashInputs: { specText, contractText: "{}", configSlice: { featVersion: "1.0" } },
+  specPath: "corpus/create-user/create-user.feat",
+  namespacePath: "create-user.feat",
+  configPath: "feat.config.json",
   emitterVersion: EMITTER_VERSION,
   featVersion: "1.0",
 });
 
-console.log(source.split("\n").slice(0, 4).join("\n"));
-console.log(timingEnvelope(topology.cases, { services: { store: { consistency: "eventual", convergenceTimeout: 2500 } } }));
+console.log(source.split("\n").slice(0, 4).join("\n")); // the header
+console.log(timingEnvelope(topology.cases, config));    // { testTimeoutMs: 90000, hookTimeoutMs: 120000 }
 ```
-
-The first four lines of `source` are the header. The last line prints
-`{ testTimeoutMs: 62500, hookTimeoutMs: 120000 }`. In a real run `schemas` is the spec's resolved
-contract registry and `contractText` is the contract file's text.
 
 ## The generated file
 
@@ -89,49 +68,37 @@ In order:
 
    ```
    // AUTO-GENERATED by feat emit — do not edit manually
-   // Source: specs/add-item.feat (SPEC-ITM-002)
-   // Language: feat 1.0 · Emitter: @mmmnt/feat-emit-ts@0.2.1
+   // Source: corpus/create-user/create-user.feat (SPEC-USR-001)
+   // Language: feat 1.0 · Emitter: @mmmnt/feat-emit-ts@<version>
    // Inputs-hash: sha256:<64 hex digits>
    ```
 
-2. **Imports.** `describe`, `it`, `beforeAll` and `afterAll` from `vitest`; `path` and
-   `fileURLToPath`; and `createHarness` with the `Harness`, `HarnessCase` and `InlineData` types from
-   `@mmmnt/feat-runtime`.
-3. **`CONFIG_PATH`.** `process.env.FEAT_CONFIG` when set, resolved from the working directory.
-   Otherwise `configPath`, resolved relative to the generated file. `feat run` sets `FEAT_CONFIG` to
-   the active tier's config, so one file serves every tier (ADR-0024).
-4. **`SPEC_PATH`.** The `namespacePath` input. The harness derives the file's namespace from this
-   string alone (SPEC-RT-006).
-5. **`INLINE`.** The schemas and golden fixtures as JSON constants. The file reads no schema or
-   fixture at run time (ADR-0001, ADR-0013).
+2. **Imports.** `describe`, `it`, `beforeAll`, `afterAll` from `vitest`; `path` and `fileURLToPath`; and
+   `createHarness` with the `Harness`, `HarnessCase` and `InlineData` types from `@mmmnt/feat-runtime`.
+3. **`CONFIG_PATH`.** `process.env.FEAT_CONFIG` when set, resolved from the working directory; otherwise
+   `configPath`, resolved relative to the generated file. `feat run` sets `FEAT_CONFIG` to the active tier's
+   config, so one file serves every tier (ADR-0024).
+4. **`SPEC_PATH`.** The `namespacePath` input. The harness derives the file's namespace from this string alone
+   (SPEC-RT-006).
+5. **`INLINE`.** The schemas and golden fixtures as JSON constants. The file reads no schema or fixture at run
+   time.
 6. **`CASES`.** The topology's cases as JSON, typed `HarnessCase[]`.
 7. **The suite.** One `describe("<specId>: <specName>")`. `beforeAll` calls
-   `createHarness({ configPath: CONFIG_PATH, specPath: SPEC_PATH, cases: CASES })`, so the response
-   adapter is set up with the commands the cases invoke (SPEC-RT-008). Each case becomes
-   `it(c.name, ...)` calling `h.runCase(c, INLINE)`. `afterAll` calls `h?.teardown()`.
-
-The optional chain in teardown is deliberate. `createHarness` throws on a configuration error, and
-then there is no harness to tear down. Without the `?.` that refusal would end in a `TypeError`
-that hides it.
+   `createHarness({ configPath: CONFIG_PATH, specPath: SPEC_PATH, cases: CASES })`, so the response adapter is
+   set up with the commands the cases invoke (SPEC-RT-008). Each case is `it(c.name, …)` calling
+   `h.runCase(c, INLINE)`. `afterAll` calls `h?.teardown()`: `createHarness` throws on a configuration error,
+   and the optional chain keeps that refusal from being hidden by a `TypeError`.
 
 ## Inputs-hash
 
-The header's hash is the SHA-256 of three values joined by a NUL byte (`\0`):
+The header's hash is the SHA-256 of three values joined by a NUL byte: `hashInputs.specText`,
+`hashInputs.contractText`, and `hashInputs.configSlice` serialized with sorted keys at every depth. The emitter
+version is in the header but not in the hash, and the topology, schemas and goldens are not hashed. `feat verify`
+compares whole files; the hash tells you which input moved.
 
-1. `hashInputs.specText`, the spec source;
-2. `hashInputs.contractText`, the contract file's text;
-3. `hashInputs.configSlice`, serialized with sorted keys at every depth, so key order never
-   changes the hash.
-
-Change any of the three and the hash changes. The emitter version is in the header but not in the
-hash. The hash fingerprints the inputs, not the output: the topology, the schemas and the goldens
-are not hashed. `feat verify` compares the whole file byte for byte, so the hash is a quick way to
-tell which input moved.
-
-What goes in `configSlice` is the caller's choice. `feat generate` passes only what can change the
-parse or the derived structure: `featVersion` and the sorted names of the services, commands and
-actors (without `default`). Adapters, consistency, timeouts and options stay out, so a tier's
-config can change without regenerating anything (ADR-0024).
+`feat generate` passes as `configSlice` only what can change the parse or the derived structure: `featVersion`
+and the sorted names of the services, commands and actors (without `default`). Adapters, consistency, timeouts
+and options stay out, so a tier's config can change without regenerating anything (ADR-0024).
 
 ## API
 
@@ -149,79 +116,46 @@ function timingEnvelope(
 const EMITTER_VERSION: string; // this package's version, read from its package.json
 ```
 
-`EmitInputs`:
-
-| Field | Meaning |
+| `EmitInputs` field | Meaning |
 | --- | --- |
 | `topology` | The `TestTopology` from `@mmmnt/feat-derive`. |
-| `schemas` | Resolved schema registry for this spec: name to JSON Schema, `$ref`s already resolved. |
+| `schemas` | Resolved schema registry: name to JSON Schema, `$ref`s already resolved. |
 | `goldens` | Resolved golden fixtures: spec-relative path to parsed JSON. |
-| `hashInputs` | `{ specText, contractText, configSlice }`, the three values hashed. |
+| `hashInputs` | `{ specText, contractText, configSlice }`, the three hashed values. |
 | `specPath` | Repo-root-relative path of the `.feat` file, for the header. |
-| `namespacePath` | The spec file's path relative to the config directory, with `/` separators. It is the input of the file's namespace. |
-| `configPath` | Path to `feat.config.json` from the generated file's directory. `feat generate` passes the base config's, so the file does not depend on the tier. |
+| `namespacePath` | The spec's path relative to the config directory, `/`-separated; the input of the file's namespace. |
+| `configPath` | Path to `feat.config.json` from the generated file's directory. `feat generate` passes the base config's. |
 | `emitterVersion` | Written into the header. Pass `EMITTER_VERSION`. |
 | `featVersion` | The language version, written into the header. |
 
-`emit` does not validate its inputs. Hand it a topology from `derive` and schemas that match it.
+`emit` does not validate its inputs and defines no error codes. A bad spec fails earlier, in the parser or in
+`derive`; a bad run fails in the harness, with the codes listed in `@mmmnt/feat-runtime`.
 
 ### timingEnvelope
 
-The generated file carries no timeouts, because they depend on the active tier. `feat run` computes
-them from the active config with `timingEnvelope` and hands them to vitest as `testTimeout` and
-`hookTimeout`:
+The generated file carries no timeouts, because they depend on the active tier. `feat run` computes them with
+`timingEnvelope` and hands them to Vitest as `testTimeout` and `hookTimeout`:
 
 ```
 testTimeoutMs = invoke * steps + window + 30000
 hookTimeoutMs = 120000
 ```
 
-- `invoke` is `config.response.invoke.timeout` when that is a number, else `30000` (ms).
-- `steps` is the largest, over the cases, of the `given.executes` count plus the greater of 1 and
-  the `delivers` count. It is never below 1.
-- `window` is the largest `convergenceTimeout` among services whose `consistency` is `eventual`,
-  else 0.
+- `invoke` is `config.response.invoke.timeout` when that is a number, else `30000` ms.
+- `steps` is the largest, over the cases, of `given.executes` count plus the greater of 1 and the `delivers`
+  count; never below 1.
+- `window` is the largest `convergenceTimeout` among services whose `consistency` is `eventual`, else 0.
 
-Run a generated file under plain `vitest` and it gets vitest's default timeouts. A scenario that
-waits out an eventual capture window needs `feat run`, or a config you write with the same numbers.
+A generated file run under plain `vitest` gets Vitest's default timeouts.
 
-## Errors
+## References
 
-The emitter has no error codes and defines no refusals. A bad topology fails earlier, in the parser
-or in `derive`. A bad run fails in the harness, with the codes listed in
-[`@mmmnt/feat-runtime`](https://www.npmjs.com/package/@mmmnt/feat-runtime).
-
-## What changed in 0.2.1
-
-- **The file's cases reach the harness (SPEC-RT-008).** `beforeAll` passes `cases: CASES` to
-  `createHarness`, so the response adapter loads what those cases invoke at setup, under the hook
-  timeout. Needs `@mmmnt/feat-runtime` 0.2.2. Every generated file changes once: that line and the
-  emitter version in its header.
-
-## What changed in 0.2.0
-
-- **One file for every tier (ADR-0024).** The file no longer bakes a timing envelope. It resolves
-  its config from `FEAT_CONFIG` first. The hash covers only the spec, the contract and the closed
-  spaces, so changing a timeout, an adapter or an option regenerates nothing. This changes the
-  header hash of every generated file once.
-- **Namespace input (SPEC-RT-006).** New `namespacePath` input and a `SPEC_PATH` constant in the
-  file. `createHarness` now receives `specPath`, and the harness derives the file's namespace from
-  it.
-- **Safe teardown.** `afterAll` tears down only a harness that was created, so a refused
-  `createHarness` no longer ends in a `TypeError`.
-- **`timingEnvelope` is exported**, so `feat run` and your own tooling share one formula.
-
-## Specs and decisions
-
-- [SPEC-FEAT-001](https://github.com/mmmnt/feature/blob/main/corpus/emit-test-file/emit-test-file.feat): the corpus exemplar for the emitter. It names `src/emit.ts` as its handler. The code lives in `src/index.ts`.
-- [SPEC-RT-006](https://github.com/mmmnt/feature/blob/main/packages/feat-runtime/harness-namespace.feat): the namespace each generated file's harness derives.
-- [ADR-0023](https://github.com/mmmnt/feature/blob/main/docs/adr/ADR-0023-adapter-interface-v2.md): adapter interface v2.
-- [ADR-0024](https://github.com/mmmnt/feature/blob/main/docs/adr/ADR-0024-tier-bindings.md): tier bindings and environment-agnostic generation.
-- [Grammar reference](https://github.com/mmmnt/feature/blob/main/docs/grammar-reference.md): the language the topology comes from.
+- [SPEC-FEAT-001](../../corpus/emit-test-file/emit-test-file.feat): the corpus exemplar for the emitter.
+- [ADR-0024](../../docs/adr/ADR-0024-tier-bindings.md): tier bindings and environment-agnostic generation.
+- [Grammar reference](../../docs/grammar-reference.md).
 
 ## License
 
-MIT
+BSD-3-Clause. See [LICENSE](LICENSE).
 
-Part of [Feature](https://github.com/mmmnt/feature) — the `.feat` execution specification
-language. Docs: https://github.com/mmmnt/feature/wiki
+Part of [Feature](../../README.md), the .feat execution specification toolchain.

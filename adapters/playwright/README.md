@@ -1,6 +1,6 @@
 # @mmmnt/feat-adapter-playwright
 
-Response adapter for [Feature](https://github.com/mmmnt/feature), the `.feat` execution
+Response adapter for [Feature](../../README.md), the `.feat` execution
 specification language, where a command is a **real browser journey**. Each command routes to a
 journey module you write. The journey receives a Playwright `Page`, drives the flow, and returns the
 normalised outcome that predictions match against. The spec does not change: `when: CheckoutWithCard {…}`
@@ -10,17 +10,16 @@ The adapter drives a browser. It observes nothing by itself. Pair it with servic
 (filesystem, Stripe, DynamoDB, ...) to predict the full footprint of a user journey, not only what the
 page shows.
 
-## Install
+## Installation
+
+Requires Node.js 22 or newer.
 
 ```sh
-npm install --save-dev @mmmnt/feat-adapter-playwright playwright
+npm install -D @mmmnt/feat-adapter-playwright playwright
 npx playwright install chromium
 ```
 
-Requires Node 20 or later, `@mmmnt/feature`, and `playwright` 1.40 or later in your project.
-`playwright` is an optional peer dependency: your project provides it and the adapter resolves it from
-the project root, so your version and your installed browsers are the ones used. Install whichever
-browsers you configure (`chromium`, `firefox`, `webkit`).
+The project also needs `@mmmnt/feature` and `playwright` 1.40 or later. `playwright` is an optional peer dependency: the adapter resolves it from the project root, so your version and your installed browsers are the ones used. Install whichever browsers you configure (`chromium`, `firefox`, `webkit`).
 
 ## Configuration
 
@@ -179,19 +178,13 @@ The adapter defines no error codes. A missing browser binary surfaces as Playwri
   `convergenceTimeout` accordingly, and keep journey scenarios few.
 - **Headless by default.** Set `invoke.headless` to `false` to watch a journey while debugging.
 
-## What changed in this release (v0.1.48, package 0.1.9)
-
-No source change in this release. It is republished as 0.1.9 against `@mmmnt/feat-types` 0.2.0, with this README. The behaviour is as of 0.1.8, which added `invoke.baseUrlEnv`, with
-the same contract as `@mmmnt/feat-adapter-http`.
-
 ## Specs
 
-- [Grammar reference, command routing and actors](https://github.com/mmmnt/feature/blob/main/docs/grammar-reference.md)
-- [ADR-0023, adapter interface v2](https://github.com/mmmnt/feature/blob/main/docs/adr/ADR-0023-adapter-interface-v2.md)
-
-Part of [Feature](https://github.com/mmmnt/feature). Adapter contract:
-https://github.com/mmmnt/feature/wiki/Architecture
+- [Grammar reference, command routing and actors](../../docs/grammar-reference.md)
+- [ADR-0023, adapter interface v2](../../docs/adr/ADR-0023-adapter-interface-v2.md)
 
 ## License
 
-MIT
+BSD-3-Clause. See [LICENSE](LICENSE).
+
+Part of [Feature](../../README.md), the .feat execution specification toolchain.

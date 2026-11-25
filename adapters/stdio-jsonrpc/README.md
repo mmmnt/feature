@@ -1,6 +1,6 @@
 # @mmmnt/feat-adapter-stdio-jsonrpc
 
-**Verify a product in any language.** This package speaks the **Feat Host
+Verify a product in any language with [Feature](../../README.md). This package speaks the **Feat Host
 Protocol** (version 2) to a *spec host*: a small program you write, in any
 language, that drives your product and reports what it did. The protocol is
 JSON-RPC 2.0, one line of JSON each way, over the host's stdin and stdout.
@@ -35,21 +35,18 @@ and the **service adapters** of your project.
 }
 ```
 
-## Install
+## Installation
+
+Requires Node.js 22 or newer, for the adapter and the runner. The host can be
+anything that reads and writes stdio.
 
 ```sh
-npm install --save-dev @mmmnt/feat-adapter-stdio-jsonrpc
+npm install -D @mmmnt/feat-adapter-stdio-jsonrpc
 ```
 
-Requirements:
-
-- Node 20 or later, for the adapter and the runner. The host can be anything
-  that reads and writes stdio.
-- `@mmmnt/feature` and `@mmmnt/feat-runtime` in the project (the runner loads
-  the adapter by the name in `feat.config.json`).
-
-Dependencies: `@mmmnt/feat-types`, `ajv` and `ajv-formats`. The package ships
-`dist/` and `schemas/`.
+The project also needs `@mmmnt/feature`, which loads the adapter by the name in
+`feat.config.json`. Dependencies: `@mmmnt/feat-types`, `ajv` and `ajv-formats`.
+The package ships `dist/` and `schemas/`.
 
 ## How it works
 
@@ -100,7 +97,7 @@ The `host` block:
 | `env` | `Record<string, string>` | Added to the runner's environment. `FEAT_NAMESPACE` is always set and wins over a same-named entry. |
 
 A missing or empty `command` is a configuration error: the adapter throws
-`@mmmnt/feat-adapter-stdio-jsonrpc: response.invoke.host must name { command: [...] }`
+`@mmmnt/feat-adapter-stdio-jsonrpc: response.invoke.host must name { command: [...] } — configuration error.`
 (or `services.<key>.options.host` for a service).
 
 `<key>` is the service key your specs use (`store has [ ... ]`). The adapter
@@ -127,14 +124,16 @@ line on stdout is a `PROTOCOL_VIOLATION`.
 | `teardown` | `{ services: string[] }` | `{}` | every role |
 | `reset` | `{}` | `{}` | service roles, before each case |
 | `setClock` | `{ clock: string \| null }` | `{}` | every role, each case |
+| `setSeed` | `{ seed: integer \| null }` | `{}` | response role; only for a case with `random seed <n>`, and `null` on the case after one (ADR-0029). Optional. |
 | `invoke` | `{ command, input, actor? }` | `{ status, body, headers?, metadata? }` | response role |
 | `seed` | `{ service, records: [{ type, schemaName?, values }] }` | `{}` | service roles |
+| `transformSeed` | `{ service, records: [{ type, values }] }` | `{ records: [{ type, values }] }` | a store adapter configured with `options.seedTransform`, twice per seed call (ADR-0035). Optional. |
 | `startCapture` | `{ service, specType? }` | `{}` | service roles |
 | `peekCapture` | `{ service }` | `CapturedRecord[]` | service roles |
 | `stopCapture` | `{ service }` | `CapturedRecord[]` | service roles |
 | `settle` | `{ service }` | `{ settled: boolean }` | service roles |
 | `read` | `{ service, query }` | `null` or an array of objects | service roles |
-| `deliver` | `{ service, event, payload }` | `{}` | service roles; the response role with `service: "response"` for a scenario's `deliver … to response` (ADR-0036) |
+| `deliver` | `{ service, event, payload }` | `{}`, or for the response role an `invoke` result | service roles; the response role with `service: "response"` for a scenario's `deliver … to response` (ADR-0036). A response role's `{ status, body }` answer becomes the case's captured response (ADR-0037). |
 | `fault` | `{ service, kind, times? \| untilReset?, detail? }` | `{}` | service roles |
 
 - A `CapturedRecord` is `{ type, key?, payload, timestamp, metadata? }`.
@@ -171,7 +170,7 @@ import path from "node:path";
 const require = createRequire(import.meta.url);
 const root = path.dirname(require.resolve("@mmmnt/feat-adapter-stdio-jsonrpc/package.json"));
 const schema = JSON.parse(readFileSync(path.join(root, "schemas", "feat-host-protocol.schema.json"), "utf8"));
-console.log(Object.keys(schema.definitions.requests)); // the 13 methods
+console.log(Object.keys(schema.definitions.requests)); // the 15 methods
 ```
 
 ### Errors on the wire
@@ -228,6 +227,20 @@ wall clock), so one case's freeze never reaches the next. The adapter accepts
 only an ISO-8601 instant **with a zone designator** (`2026-11-10T12:00:00Z`,
 `2026-11-10T12:00:00+02:00`). Anything else is `INVALID_CLOCK`, refused before
 the host is called.
+
+### `setSeed` and `transformSeed`
+
+Both are optional. A host that does not implement one answers `-32601`.
+
+- `setSeed` is sent to the response role only for a case that declares
+  `random seed <n>`, and as `null` on the next case after one, so a host without
+  it runs every spec that does not seed. A seed that is not a whole number from
+  0 to 2^53-1 is `INVALID_SEED`, refused before the host is called.
+- `transformSeed` is sent by a store adapter (Neo4j, Redis, Kurrent, DynamoDB)
+  configured with `options.seedTransform`. It joins this file's shared host as a
+  role of no service and asks twice per seed call; the store adapter writes the
+  answer only when both agree. The host answers the records it was sent,
+  transformed, in the same count and order.
 
 ## Faults
 
@@ -287,7 +300,8 @@ A host is a loop: read a line, parse it, answer one line. Rules:
    SIGKILL after a grace period if you do not.
 6. **Be quick.** The adapter waits 30 seconds for an answer to any request and
    then fails with `HOST_TIMEOUT`. The limit is not configurable on a shared host.
-7. **Unknown method:** answer `-32601`.
+7. **Unknown method:** answer `-32601`. That includes the optional `setSeed`
+   and `transformSeed` when the host does not serve them.
 8. **Make `reset` total.** It clears captured records, capture windows and armed
    faults, because the runner calls it before every case.
 
@@ -542,6 +556,10 @@ import {
   defaultRegistry,
   type ExchangeInput,
   type HostConfig,
+  SeedTransform,
+  SeedTransformError,
+  parseSeedTransform,
+  canonicalJson,
 } from "@mmmnt/feat-adapter-stdio-jsonrpc";
 ```
 
@@ -553,7 +571,7 @@ You rarely call these yourself: the runner loads the adapter from
 | Export | Meaning |
 |---|---|
 | `createAdapter(config)` | The adapter factory the runner calls. With no `config.key` it returns a response role built from `config.invoke.host`. With a `key` it returns that service role, built from `config.options.host` and `config.options.faults`. Throws a configuration error when the host has no `command`. |
-| `StdioResponseAdapter` | The response role: `setup()`, `invoke(command, input, actor?)`, `setClock()`, `teardown()`. |
+| `StdioResponseAdapter` | The response role: `setup()`, `invoke(command, input, actor?)`, `deliver(event, payload)`, `setClock()`, `setSeed()`, `teardown()`. |
 | `StdioServiceAdapter` | A service role: `setup()`, `reset()`, `startCapture()`, `peekCapture()`, `stopCapture()`, `settle()`, `read()`, `seed()`, `deliver()`, `fault()`, `setClock()`, `teardown()`. Exposes `faults` and `acceptsFaultDetail`. |
 | `PROTOCOL_VERSION` | `2`. |
 
@@ -620,8 +638,9 @@ const r = await exchange({
 | Export | Meaning |
 |---|---|
 | `HostConnection` | A long-lived host process. `HostConnection.spawn(config, namespace, timeoutMs?)`, `request(method, params)`, `close()`, `pid`, `ended`, `crashed`. Calls are serialised. |
-| `HostRegistry` | The open host of one spec file. `join(config, namespace)` and `leave(host)`. The last role to leave ends the host. |
+| `HostRegistry` | The open host of one spec file. `new HostRegistry(requestTimeoutMs?)`, `join(config, namespace)` and `leave(host)`. The last role to leave ends the host. |
 | `defaultRegistry` | The module-scoped registry the adapters use by default. |
+| `SeedTransform`, `parseSeedTransform`, `canonicalJson`, `SeedTransformError` | The seed transform the store adapters share (ADR-0035). `parseSeedTransform(options.seedTransform)` checks the option; `SeedTransform` joins the host and asks `transformSeed` twice. |
 | `HostConfig` | `{ command: string[], cwd?: string, env?: Record<string, string> }`. |
 
 When the host process exits without being asked to, every pending call and every
@@ -650,65 +669,21 @@ Every refusal is an `ExchangeError` with a `code` and a `detail`.
 | `PROTOCOL_MISMATCH` | The host's `setup` result names a protocol version other than 2. |
 | `NAMESPACE_NOT_HONOURED` | The host's `setup` result names a namespace other than the one sent. |
 | `INVALID_CLOCK` | `setClock` was given a string that is not an ISO-8601 instant with a zone designator. |
+| `INVALID_SEED` | `setSeed` was given a value that is not a whole number from 0 to 9007199254740991. |
 | `HOST_CONFIG_MISMATCH` | A role's host configuration differs from the host already open for its file. |
 | `FAULT_UNSUPPORTED` | The harness refuses an arm outside the service's fault catalog, or with a count the catalog does not declare for that fault. Raised by the runner before the case has any effect. |
 
-## This release (0.8.0)
-
-- **A timeout ends the shared host** (SPEC-RPC-002 amended, founder decision 78a98840, rulings
-  cd46cd64). A request with no answer within the limit fails `HOST_TIMEOUT`. Then nothing more is
-  written to that host. It is ended in the background (stdin closed, killed after 2 s), the registry
-  drops it, and every pending and later call of the file fails the new code `HOST_ENDED`, naming
-  the method that timed out and the limit. Before, the late answer was taken as the next request's
-  (`PROTOCOL_VIOLATION`, ids off by one for the rest of the file). A host that exits by itself still
-  fails them `HOST_CRASHED`. `HostRegistry` takes an optional request limit, for tests; the
-  adapters' limit stays 30 s. The protocol is unchanged and its version stays 2.
-
-## 0.4.0
-
-- **`transformSeed`** (SPEC-RPC-001 amended, ADR-0035): an optional protocol method,
-  `{ service, records: [{ type, values }] }` -> `{ records: [{ type, values }] }`, sent only by a
-  store adapter configured with `options.seedTransform`; the version stays 2, and a host that
-  serves no transform answers -32601. `SeedTransform`, `parseSeedTransform`, `canonicalJson` and
-  `SeedTransformError` are exported for the store adapters (Neo4j, Redis, Kurrent, DynamoDB).
-
-## 0.2.0
-
-- **Fault shape C** (SPEC-RPC-001 amended, founder ruling 2026-11-13). The
-  `fault` request gains `untilReset` and `detail`, both optional; `times` and
-  `untilReset` are exclusive. The adapter carries `until reset` and a fault
-  detail to the host, and its catalog is offered as declared, so a line such as
-  `fault log AppendToStream WRONG_EXPECTED_VERSION { stream: "x" } until reset`
-  reaches a spec host exactly as a native adapter takes it. The protocol
-  version stays 2: a request without the new fields is unchanged.
-
-## 0.1.0 (Feature v0.1.48)
-
-New package, specified by SPEC-RPC-001 (one exchange) and SPEC-RPC-002 (one
-shared host per spec file). Amendments it carries:
-
-- **Protocol version 2.** `setup` carries `protocol`, the `services` and the
-  runner `namespace`, and the host echoes the namespace (SPEC-RT-006).
-- **Fault shape B.** The `fault` request stays `{ service, kind, times }`. The
-  adapter maps the harness arm onto `kind = "<operation>.<fault>"`, and its
-  catalog declares only `once` and `times n`.
-- **Files keyed by name** in the RPC-002 evidence: per-file facts are an object
-  keyed by file name, so a scenario asserts only the facts it lists.
-- The scenario clock reaches every role through `setClock`, and the host's
-  answer to `settle` is relayed unchanged.
-
 ## Specs and design
 
-- [`transport.feat`](https://github.com/mmmnt/feature/blob/main/adapters/stdio-jsonrpc/transport.feat): SPEC-RPC-001.
-- [`host-sharing.feat`](https://github.com/mmmnt/feature/blob/main/adapters/stdio-jsonrpc/host-sharing.feat): SPEC-RPC-002.
-- [`schemas/feat-host-protocol.schema.json`](https://github.com/mmmnt/feature/blob/main/schemas/feat-host-protocol.schema.json): the protocol contract. This package ships a copy.
-- [ADR-0023](https://github.com/mmmnt/feature/blob/main/docs/adr/ADR-0023-adapter-interface-v2.md): adapter interface v2: observation modes, the scenario clock, fault injection.
-- [Draft ADR](https://github.com/mmmnt/feature/blob/main/drafts/stdio-jsonrpc-adapter/ADR-DRAFT.md) for this adapter.
-- [Grammar reference](https://github.com/mmmnt/feature/blob/main/docs/grammar-reference.md): the `fault` and `clock at` lines.
-
-Part of [Feature](https://github.com/mmmnt/feature), the `.feat` execution
-specification language.
+- [`transport.feat`](transport.feat): SPEC-RPC-001.
+- [`host-sharing.feat`](host-sharing.feat): SPEC-RPC-002.
+- [`schemas/feat-host-protocol.schema.json`](../../schemas/feat-host-protocol.schema.json): the protocol contract. This package ships a copy.
+- [ADR-0023](../../docs/adr/ADR-0023-adapter-interface-v2.md): adapter interface v2: observation modes, the scenario clock, fault injection.
+- [Draft ADR](../../drafts/stdio-jsonrpc-adapter/ADR-DRAFT.md) for this adapter.
+- [Grammar reference](../../docs/grammar-reference.md): the `fault` and `clock at` lines.
 
 ## License
 
-MIT
+BSD-3-Clause. See [LICENSE](LICENSE).
+
+Part of [Feature](../../README.md), the .feat execution specification toolchain.

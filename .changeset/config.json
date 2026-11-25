@@ -1,0 +1,46 @@
+{
+  "$schema": "https://unpkg.com/@changesets/config@4/schema.json",
+  "changelog": [
+    "@changesets/changelog-github",
+    {
+      "repo": "mmmnt/feature"
+    }
+  ],
+  "commit": false,
+  "fixed": [
+    [
+      "@mmmnt/feat-adapter-kit",
+      "@mmmnt/feat-analyze",
+      "@mmmnt/feat-cdk",
+      "@mmmnt/feat-core",
+      "@mmmnt/feat-derive",
+      "@mmmnt/feat-emit-ts",
+      "@mmmnt/feat-grammar",
+      "@mmmnt/feat-runner",
+      "@mmmnt/feat-runtime",
+      "@mmmnt/feat-types",
+      "@mmmnt/feature",
+      "@mmmnt/feat-adapter-dynamodb",
+      "@mmmnt/feat-fault-proxy",
+      "@mmmnt/feat-adapter-fs",
+      "@mmmnt/feat-adapter-handler",
+      "@mmmnt/feat-adapter-http",
+      "@mmmnt/feat-adapter-kafka",
+      "@mmmnt/feat-adapter-kms",
+      "@mmmnt/feat-adapter-kurrent",
+      "@mmmnt/feat-adapter-memory",
+      "@mmmnt/feat-adapter-model",
+      "@mmmnt/feat-adapter-neo4j",
+      "@mmmnt/feat-adapter-playwright",
+      "@mmmnt/feat-adapter-redis",
+      "@mmmnt/feat-schema-json",
+      "@mmmnt/feat-adapter-stdio-jsonrpc",
+      "@mmmnt/feat-adapter-stripe"
+    ]
+  ],
+  "linked": [],
+  "access": "public",
+  "baseBranch": "main",
+  "updateInternalDependencies": "patch",
+  "ignore": []
+}

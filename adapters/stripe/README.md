@@ -1,6 +1,6 @@
 # @mmmnt/feat-adapter-stripe
 
-Service adapter for [Feature](https://github.com/mmmnt/feature), the `.feat` execution
+Service adapter for [Feature](../../README.md), the `.feat` execution
 specification language. It turns a Stripe account's **Events API into a capture window**. Every
 Stripe event that occurs while a scenario runs becomes a captured record. An unpredicted charge,
 refund, subscription change or any other account activity fails the case by prediction inversion.
@@ -10,14 +10,15 @@ The adapter reads. It never creates or changes anything in the account.
 **Use test-mode keys only.** The adapter cannot tell a test key from a live one and does not check
 the prefix. A scenario that charges a card against a live account charges it.
 
-## Install
+## Installation
+
+Requires Node.js 22 or newer.
 
 ```sh
-npm install --save-dev @mmmnt/feat-adapter-stripe
+npm install -D @mmmnt/feat-adapter-stripe
 ```
 
-Requires Node 20 or later and `@mmmnt/feature` in the project. There is no Stripe SDK dependency:
-the adapter calls `GET /v1/events` over the global `fetch`.
+The project also needs `@mmmnt/feature`. There is no Stripe SDK dependency: the adapter calls `GET /v1/events` over the global `fetch`.
 
 ## Configuration
 
@@ -117,7 +118,7 @@ The adapter declares `observes = { diff: "native", state: true }` (SPEC-ADPSTR-0
 
 ## Seeding, isolation and state
 
-- **No seeding.** A `seed` line on this service is a configuration error:
+- **No seeding.** A `seed` line on this service fails the case when the seed runs:
   `@mmmnt/feat-adapter-stripe does not support seeding — arrange state via the Stripe API in given: execute steps.`
   Create customers and payment methods through a handler or an `execute` step.
 - **No cleanup.** `reset()` closes the window and clears the cursor. It does not touch the account.
@@ -144,22 +145,14 @@ The adapter defines no error codes.
 - **Webhooks are not used.** The adapter reads the Events API, not webhook deliveries.
 - **Event retention.** The Events API only returns events that Stripe still retains.
 
-## What changed in this release (v0.1.48, package 0.1.7)
-
-- Declares `observes = { diff: "native", state: true }` (SPEC-ADPSTR-001, SPEC-RT-002).
-- Adds `peekCapture()` (ADR-0020).
-- Adds `settle()`, which always declines (ADR-0021).
-- Tracks whether a window is open apart from the cursor, which `peekCapture()` depends on.
-
 ## Specs
 
-- [SPEC-ADPSTR-001, peek and settle](https://github.com/mmmnt/feature/blob/main/adapters/stripe/observe.feat)
-- [Grammar reference, observation modes](https://github.com/mmmnt/feature/blob/main/docs/grammar-reference.md)
-- [ADR-0023, adapter interface v2](https://github.com/mmmnt/feature/blob/main/docs/adr/ADR-0023-adapter-interface-v2.md)
-
-Part of [Feature](https://github.com/mmmnt/feature). Adapter contract:
-https://github.com/mmmnt/feature/wiki/Architecture
+- [SPEC-ADPSTR-001, peek and settle](observe.feat)
+- [Grammar reference, observation modes](../../docs/grammar-reference.md)
+- [ADR-0023, adapter interface v2](../../docs/adr/ADR-0023-adapter-interface-v2.md)
 
 ## License
 
-MIT
+BSD-3-Clause. See [LICENSE](LICENSE).
+
+Part of [Feature](../../README.md), the .feat execution specification toolchain.

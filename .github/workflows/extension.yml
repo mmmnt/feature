@@ -1,10 +1,10 @@
 name: extension
 
 # Publishes the VS Code extension:
-#  - on every toolchain release (v* tags) — the extension version is stamped
-#    from the release tag so each release ships the grammar it syncs
-#    (founder directive 2026-07-27); registries skip idempotently if the
-#    version already exists
+#  - on every toolchain release — release.yml calls this workflow with the
+#    released version and commit, and the extension is stamped with that version
+#    so each release ships the grammar it syncs (founder directive 2026-07-27);
+#    registries skip idempotently if the version already exists
 #  - on ext-v* tags — out-of-band extension-only releases keeping the
 #    version in editors/vscode/package.json
 # Targets:
@@ -19,7 +19,16 @@ on:
   push:
     tags:
       - "ext-v*"
-      - "v*"
+  workflow_call:
+    inputs:
+      version:
+        description: The toolchain version just released (X.Y.Z); the extension is published at it.
+        required: true
+        type: string
+      ref:
+        description: The commit that version was released from.
+        required: false
+        type: string
 
 jobs:
   publish:
@@ -31,6 +40,8 @@ jobs:
         working-directory: editors/vscode
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
 
       - uses: actions/setup-node@v4
         with:
@@ -41,12 +52,14 @@ jobs:
           npm ci
           npm run build
 
-      - name: Stamp version from the release tag
-        # Toolchain releases (v*) carry the extension along: its version tracks
-        # the release so the freshly synced grammar always ships. ext-v* tags
-        # keep the version editors/vscode/package.json declares.
-        if: startsWith(github.ref_name, 'v')
-        run: npm version --no-git-tag-version --allow-same-version "${GITHUB_REF_NAME#v}"
+      - name: Stamp the version of the toolchain release
+        # Toolchain releases carry the extension along: its version tracks the
+        # release so the freshly synced grammar always ships. ext-v* tags keep
+        # the version editors/vscode/package.json declares.
+        if: inputs.version != ''
+        env:
+          VERSION: ${{ inputs.version }}
+        run: npm version --no-git-tag-version --allow-same-version "$VERSION"
 
       - name: Package .vsix
         run: npx --yes @vscode/vsce package --allow-missing-repository

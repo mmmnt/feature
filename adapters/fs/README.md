@@ -1,71 +1,29 @@
 # @mmmnt/feat-adapter-fs
 
-Filesystem service adapter for [Feature](https://github.com/mmmnt/feature), the `.feat` execution
-specification language. It observes a directory tree during the capture window by taking a
-snapshot when the window opens and another when it closes. Every file that was created, modified
-or deleted in between is a captured record. A file the spec did not predict, such as a stray temp
-file or an unexpected write, fails the case by prediction inversion.
+The filesystem service adapter for Feature. It snapshots a directory tree when the capture window opens and again when it closes, and reports every file created, modified or deleted in between as a captured record. A file the spec did not predict (a stray temp file, an unexpected write) fails the case by prediction inversion. The adapter observes; it writes to the tree only when `clearOnReset` is on, and it cannot seed.
 
-The adapter observes. It writes to the tree only when `clearOnReset` is on, and only at reset. It cannot seed it.
+## Installation
 
-## Install
+Requires Node.js 22.15 or newer (archive members need `zlib.zstdDecompressSync`).
 
-```sh
-npm install --save-dev @mmmnt/feat-adapter-fs
+```bash
+npm install -D @mmmnt/feat-adapter-fs
 ```
 
-Requires Node 22.15 or later (the first release with `zlib.zstdDecompressSync`, which archive members need) and
-`@mmmnt/feature` in the project. The adapter has no runtime
-dependencies beyond `@mmmnt/feat-types`.
+`feat init` installs it as the starter project's `filesystem` service.
 
-## Configuration
+## Usage
 
 ```jsonc
-// feat.config.json
-"services": {
-  "filesystem": {
-    "adapter": "@mmmnt/feat-adapter-fs",
-    "consistency": "acid",
-    "options": { "scope": "output" }
-  }
+// feat.config.json, under "services"
+"filesystem": {
+  "adapter": "@mmmnt/feat-adapter-fs",
+  "consistency": "acid",
+  "options": { "scope": "output" }
 }
 ```
 
-| Option | Type | Default | Meaning |
-| --- | --- | --- | --- |
-| `options.scope` | string | `"."` | Directory to watch, relative to the project root (the directory holding `feat.config.json`). |
-| `options.archives` | string[] | none | Globs (`node:path` `matchesGlob`, against the path relative to `scope`, `/`-separated). A written file that matches one is read as a tar+zstd archive and reported with its members (SPEC-ADPFS-002). |
-| `options.clearOnReset` | boolean | `false` | Empty the scope at every reset, so each case starts from an empty tree. The scope must be strictly inside the project root. |
- Declare the service `acid`: the adapter reads the tree as soon as the
-stimulus returns and does not wait for anything.
-
-These names are never descended into, wherever they appear under `scope`: `node_modules`, `dist`,
-`.turbo`, `.git`, `coverage`, `reports`. If your output lives in a directory with one of these
-names, point `scope` at a different directory.
-
-## Example
-
 ```feat
-feat 1.0
-
-spec SPEC-RPT-001 "Export a report"
-context Reports
-aggregate Report
-type command
-status agreed
-
-construct:
-  handler at src/export.mjs
-  touches src/**
-
-enforce:
-  an export writes exactly one file
-
-contract:
-  input ExportInput
-  response ExportResult
-  record FileRow
-
 scenario "the export writes one csv":
   when: ExportReport { name: "q3" }
   predict success:
@@ -73,33 +31,39 @@ scenario "the export writes one csv":
     filesystem has [ FILE_WRITTEN with FileRow { path: "q3.csv" } ]
 ```
 
-`path` is relative to `scope`, with `/` separators on POSIX. A scenario that writes nothing
-predicts `filesystem has []`. A file the handler writes beyond the one predicted fails the case.
+`path` is relative to `scope`, `/`-separated on POSIX. A scenario that writes nothing predicts `filesystem has []`. Declare the service `acid`: the tree is read as soon as the stimulus returns.
 
-## What it captures
+## Options
 
-| Record `type` | When | `key` and `payload` |
+| Option | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `scope` | string | `"."` | Directory to watch, relative to the project root (the directory holding `feat.config.json`). |
+| `archives` | string[] | none | Globs (`path.posix.matchesGlob`, against the path relative to `scope`). A written file that matches one is read as a tar+zstd archive and reported with its members. |
+| `clearOnReset` | boolean | `false` | Empty the scope at every reset, so each case starts from an empty tree. The scope must be strictly inside the project root. |
+
+These names are never descended into, at any depth under `scope`: `node_modules`, `dist`, `.turbo`, `.git`, `coverage`, `reports`.
+
+## Records
+
+| `type` | When | `key` and `payload` |
 | --- | --- | --- |
-| `FILE_WRITTEN` | A file exists now and either did not exist at `startCapture` or has a different modification time. | `key` is the path relative to `scope`. `payload` is `{ path }`. |
-| `FILE_DELETED` | A file existed at `startCapture` and is gone now. | Same shape. |
+| `FILE_WRITTEN` | A file exists now and did not at `startCapture`, or its `mtimeMs` changed. | `key` is the path relative to `scope`; `payload` is `{ path }`, or `{ path, members }` for a matching archive. |
+| `FILE_DELETED` | A file existed at `startCapture` and is gone. | Same shape, `{ path }`. |
+| `ARCHIVE_UNREADABLE` | A written file matches `archives` but cannot be read in full. | `payload` is `{ path, reason, member? }`. |
 
-Directories are not records. Only files are compared, and the comparison is by modification time
-(`mtimeMs`), not by content.
+Records come in path order, the written ones first, then the deleted ones. Directories are not records. The comparison is by modification time, not content.
 
-## Archive members
+### Archive members
 
-With `archives`, a written file that matches a glob is reported as `FILE_WRITTEN` with
-`payload: { path, members }`. `members` lists the archive's regular files in archive order, each named by its path in
-the archive as written:
+`members` lists the archive's regular files in archive order, each named by its path in the archive:
 
 | Member name | Member |
 | --- | --- |
 | ends `.json` | `{ name, json: <the parsed value> }` |
-| ends `.jsonl` | `{ name, lines: [<each line parsed>] }`. A final newline adds no line, and `\r\n` is accepted. |
+| ends `.jsonl` | `{ name, lines: [<each line parsed>] }`; a final newline adds no line, `\r\n` is accepted |
 | anything else | `{ name, text: <the content as UTF-8> }` |
 
-Directory entries are not members. Long names are read whole from a ustar prefix, a GNU long-name entry or a pax
-`path` header. The archive must be zstd-compressed tar.
+Long names are read from a ustar prefix, a GNU long-name entry or a pax `path` header.
 
 ```feat
 files has [ FILE_WRITTEN with ArchiveRow { path: "export.flmnt", members: [
@@ -107,109 +71,49 @@ files has [ FILE_WRITTEN with ArchiveRow { path: "export.flmnt", members: [
 ] } ]
 ```
 
-An archive that cannot be read in full is never skipped and never partly reported. Its record is
-`ARCHIVE_UNREADABLE` with `payload: { path, reason, member? }`, so a spec that predicted its members fails:
+An archive is never skipped or partly reported. `reason` is one of:
 
 | `reason` | Cause |
 | --- | --- |
-| `zstd` | The file is not whole zstd frames: not zstd, cut short, or empty. |
-| `tar` | A header checksum is wrong, a size runs past the data, or an entry is neither a regular file nor a directory (a symlink, for example; `member` names it). |
+| `zstd` | The file cannot be read, or is not whole zstd frames (not zstd, cut short, empty). |
+| `tar` | A header checksum is wrong, a size runs past the data, or an entry is neither a regular file nor a directory (`member` names it). |
 | `json` | A `.json` member, or a line of a `.jsonl` member, does not parse (`member` names it). |
 | `utf8` | A text member is not valid UTF-8 (`member` names it). |
 
-Records are reported in path order, the written ones and then the deleted ones.
+## Observation
 
-## Clear on reset
+The adapter declares `observes = { diff: "snapshot", state: false }` (ADR-0023).
 
-With `clearOnReset: true`, `reset()` removes every file and directory under the scope. It keeps the scope directory
-itself and the names the snapshot never descends into (`node_modules`, `dist`, `.turbo`, `.git`, `coverage`,
-`reports`), at any depth. A scope that does not exist is left absent. The removal happens at reset, outside any capture
-window, so it is never a record.
-
-## Observation modes
-
-The adapter declares `observes = { diff: "snapshot", state: false }` (SPEC-ADPFS-001).
-
-- **Diff is a snapshot comparison.** A file written and then deleted inside one window cancels out
-  and is not reported. A rewrite that lands inside the filesystem's timestamp granularity leaves
-  the modification time unchanged, so it is not reported either. Both are what "snapshot" means,
-  and the evidence bundle records the mode.
-- **State is not observed.** `read()` answers `null`. A `contains` prediction on this service is a
-  configuration error, `MODE_UNSUPPORTED`, raised before the case has any effect:
-
-  ```
-  [MODE_UNSUPPORTED] SPEC-X-001 › "scenario" › filesystem: 'contains' asserts resulting state,
-  which the adapter for 'filesystem' does not serve (observes.state is false).
-  ```
-
-  Use `has` on a `filesystem` service. To assert a file's content, have the handler return it in
-  the response.
-
-## Peek and settle
-
-- `peekCapture()` takes a snapshot now and returns the `FILE_WRITTEN` and `FILE_DELETED` records
-  that `stopCapture()` would return against the same baseline. It does not move the baseline, so
-  repeated peeks and the final stop agree. With no window open it returns `[]`. The harness uses
-  it for its early-exit check. `stopCapture()` with no window open also returns `[]`.
-- `settle()` always resolves `false`. A completed local write is visible to the next `stat`, but a
-  rewrite inside the timestamp granularity is invisible to the diff, so the adapter cannot truthfully
-  vouch that every write was captured. The service is `acid`, so the harness reads it at once and
-  needs no fence. Content digests in the snapshot would make `settle` answerable. That would change
-  the cost and the meaning of the diff, and it is not in this release.
+- **Snapshot diff.** A file written and deleted inside one window cancels out. A rewrite inside the filesystem's timestamp granularity leaves the mtime unchanged and is not reported.
+- **No state.** `read()` answers `null`, so a `contains` prediction on this service is the harness's `MODE_UNSUPPORTED` configuration error, raised before the case runs. Use `has`; to assert a file's content, return it in the response.
+- `peekCapture()` returns what `stopCapture()` would, without moving the baseline. Both return `[]` with no window open.
+- `settle()` always resolves `false`: an mtime diff cannot vouch that every write was seen.
 
 ## Errors
 
 | Code | Raised by | Cause |
 | --- | --- | --- |
-| `MODE_UNSUPPORTED` | The harness, before the case runs. | A prediction uses `contains` on this service. |
 | `OPTIONS_INVALID` | `setup()` | `archives` is not an array of non-empty strings, or `clearOnReset` is not a boolean. |
-| `CLEAR_SCOPE_UNSAFE` | `setup()` | `clearOnReset` is on and `scope` resolves to the project root, an ancestor of it, or outside it. |
-| `CLEAR_FAILED` | `reset()` | `clearOnReset` is on and the scope is not a directory, or an entry under it cannot be removed. |
-| (configuration error, no code) | `seed()` | A `seed` line targets this service: `@mmmnt/feat-adapter-fs does not support seeding`. |
+| `CLEAR_SCOPE_UNSAFE` | `setup()` | `clearOnReset` is on and `scope` is the project root, an ancestor of it, or outside it. |
+| `CLEAR_FAILED` | `reset()` | `clearOnReset` is on and the scope is not a directory, or an entry cannot be removed. |
+| `MODE_UNSUPPORTED` | The harness | A `contains` prediction on this service. |
+| (no code) | `seed()` | `@mmmnt/feat-adapter-fs does not support seeding — configuration error.` |
 
-The three coded refusals are `FsAdapterError`s carrying `code`. `ARCHIVE_UNREADABLE` is a record type, not a refusal.
+The coded refusals are `FsAdapterError`s carrying `code`.
 
 ## Limitations
 
-- **No namespace.** The runner hands every adapter a per-file namespace (SPEC-RT-006). This adapter
-  accepts it and ignores it: the tree is shared. Spec files that run in parallel and write to the
-  same `scope` see each other's writes. Give each file its own subdirectory through the handler,
-  or run them serially.
-- **No seeding.** Arrange files in a `given:` `execute` step, or write them from the handler.
-- **mtime comparison.** See Observation modes.
-- **Unreadable paths.** A directory that cannot be listed is skipped silently.
+- **No namespace.** The runner's per-file namespace is accepted and ignored; spec files that run in parallel against the same `scope` see each other's writes.
+- **No seeding.** Arrange files with a `given:` `execute` step.
+- **Unlistable directories** are skipped silently.
 
-## What changed in 0.1.11
+## See also
 
-- `archives`: a written tar+zstd archive is reported with its members, and an unreadable one as `ARCHIVE_UNREADABLE`
-  (SPEC-ADPFS-002).
-- `clearOnReset`: reset empties the scope (SPEC-ADPFS-002).
-- Records are reported in path order. Before this release the order was the order the snapshot's stats finished in.
-- Requires Node 22.15 or later (`engines`).
-
-## What changed in 0.1.9
-
-- `stopCapture()` with no window open returns `[]`. It used to diff against an empty baseline and
-  report every file in scope as `FILE_WRITTEN` (SPEC-ADPFS-001).
-
-## What changed in v0.1.48 (package 0.1.8)
-
-- Declares `observes = { diff: "snapshot", state: false }`, so `contains` is refused by name
-  instead of silently reading nothing (SPEC-ADPFS-001, SPEC-RT-002, ADR-0023).
-- Adds `peekCapture()` (ADR-0020).
-- Adds `settle()`, which always declines (ADR-0021).
-- `startCapture` accepts the spec type the harness passes (ADR-0011) and ignores it.
-
-## Specs
-
-- [SPEC-ADPFS-001, peek and settle](https://github.com/mmmnt/feature/blob/main/adapters/fs/observe.feat)
-- [SPEC-ADPFS-002, archive members and clear on reset](https://github.com/mmmnt/feature/blob/main/adapters/fs/archive.feat)
-- [Grammar reference, observation modes](https://github.com/mmmnt/feature/blob/main/docs/grammar-reference.md)
-- [ADR-0023, adapter interface v2](https://github.com/mmmnt/feature/blob/main/docs/adr/ADR-0023-adapter-interface-v2.md)
-
-Part of [Feature](https://github.com/mmmnt/feature). Adapter contract:
-https://github.com/mmmnt/feature/wiki/Architecture
+- Specs: [observe.feat](observe.feat) (SPEC-ADPFS-001), [archive.feat](archive.feat) (SPEC-ADPFS-002)
+- [ADR-0023](../../docs/adr/ADR-0023-adapter-interface-v2.md): adapter interface v2
 
 ## License
 
-MIT
+BSD-3-Clause. See [LICENSE](LICENSE).
+
+Part of [Feature](../../README.md), the .feat execution specification toolchain.

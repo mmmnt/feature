@@ -1,14 +1,9 @@
 # @mmmnt/feat-types
 
-**The shared contracts of the Feat toolchain, and the interfaces an adapter
-implements.** If you write an adapter (a module that exports `createAdapter` for
-`response`, a `services.<key>` entry or `schemas` in `feat.config.json`), or a
-tool that reads the BuiltSpec IR, this is the package you import types from.
-
-If you only write `.feat` specs, you do not need it. The `feat` CLI pulls it in
-for you.
-
-## Where it sits
+The shared contracts of the Feature toolchain: the `BuiltSpec` IR, `FeatConfig`, and the interfaces an adapter
+implements. Import types from here when you write an adapter (a module that exports `createAdapter` for `response`,
+a `services.<key>` entry or `schemas` in `feat.config.json`) or a tool that reads the IR. If you only write `.feat`
+specs you do not need it; the `feat` CLI pulls it in.
 
 Every other `@mmmnt` package depends on these types:
 
@@ -25,21 +20,16 @@ The language-neutral source of truth is the JSON Schema set in the repository
 mirror it by hand. Where the two differ, the
 source in `src/index.ts` is what the toolchain compiles against.
 
-## Install
+## Installation
 
-```sh
-npm install --save-dev @mmmnt/feat-types
+Requires Node.js 22 or newer.
+
+```bash
+npm install -D @mmmnt/feat-types
 ```
 
-Requirements:
-
-- Node 20 or later (the repository's `engines` field).
-- A TypeScript project, or JavaScript checked by `tsc`. The package is ESM
-  (`"type": "module"`) and ships `dist/index.js` and `dist/index.d.ts`.
-- No dependencies and no peer dependencies.
-
-The package is types, plus one runtime constant (the `package.json` description says so): `EXCLUSIVE_FAULTS` (see
-[Faults](#faults)). Import everything else with `import type`.
+ESM, no dependencies. The package is types plus one runtime constant, `EXCLUSIVE_FAULTS` (see [Faults](#faults));
+import everything else with `import type`.
 
 ```ts
 import type { BuiltSpec, FeatConfig, FeatServiceAdapter } from "@mmmnt/feat-types";
@@ -150,7 +140,7 @@ export function createAdapter(config: Record<string, unknown>): FeatServiceAdapt
 and where it would count each consumption into `fired`. This sketch arms and
 reports but never fires, so a scenario that used its fault would fail with
 `FAULT_NOT_CONSUMED`. A conformance suite for the capture and invoke contract is
-in [`@mmmnt/feat-adapter-kit`](https://www.npmjs.com/package/@mmmnt/feat-adapter-kit).
+in [`@mmmnt/feat-adapter-kit`](../feat-adapter-kit/README.md).
 
 ## The order the harness calls things
 
@@ -166,7 +156,9 @@ a service) a namespace check. For each case in that file, in this order:
 2. `reset()` on every service adapter.
 3. `setClock(clock | null)` on the response adapter if it has one, and on every
    service adapter that has one. Every case gets a call, with `null` when the
-   case has no `clock at`.
+   case has no `clock at`. Then `setSeed(n)` on the response adapter when the
+   case declares `random seed <n>`, and `setSeed(null)` on the case after one
+   that did (ADR-0029).
 4. `seed(records)` for each `seed` in `given:` and `invoke(...)` on the response
    adapter for each `execute`, interleaved in written order (`given.order`,
    ADR-0025). A service adapter with no `seed` is a configuration error:
@@ -176,7 +168,8 @@ a service) a namespace check. For each case in that file, in this order:
    after the seeds and executes, so setup never consumes one.
 6. `startCapture({ specType })` on every service adapter. This opens the window.
 7. The trigger: `invoke(command, input, actor?)` for `when:`, or
-   `deliver(event, payload)` for each delivery.
+   `deliver(event, payload)` for each delivery (on the response adapter for
+   `deliver … to response`, ADR-0036).
 8. The convergence wait (below).
 9. `stopCapture()` on every service adapter closes the window and returns the
     records.
@@ -207,6 +200,7 @@ then on the response adapter.
 | `fault(arm)` | no | Arm a fault as a precondition. |
 | `firedFaults()` | no | How often each armed fault was consumed. |
 | `setClock(clock)` | no | Receive the scenario clock. |
+| `setSeed(seed)` | no | Receive the case's random seed, or `null` (ADR-0029). |
 | `reportedNamespace()` | no | Report the namespace the adapter is running under. |
 
 ### Records
@@ -395,9 +389,11 @@ because a configured value would be shared by every file.
 ```ts
 interface FeatResponseAdapter extends ReportsNamespace {
   setClock?(clock: string | null): Promise<void>;
+  setSeed?(seed: number | null): Promise<void>;                 // ADR-0029
   setup(config: Record<string, unknown>, context?: ResponseSetupContext): Promise<void>;
   teardown(): Promise<void>;
   invoke(command: string, input: Record<string, unknown>, actor?: string): Promise<CapturedResponse>;
+  deliver?(event: string, payload: Record<string, unknown>): Promise<CapturedResponse | void>; // ADR-0036
 }
 
 interface ResponseSetupContext {
@@ -421,6 +417,10 @@ can load what those commands need there, under the hook timeout, instead of in
 the first case. It may ignore the argument. When
 `response.invoke.timeout` is a number, it is the per-invoke allowance in
 milliseconds that `feat run` uses to size the test timeout (default 30 000).
+
+A case that declares `random seed <n>` is `RANDOM_UNSUPPORTED` without `setSeed`. A scenario that writes
+`deliver <Event> { … } to response` needs `deliver`, or it is `DELIVER_UNSUPPORTED` (service `response`); what
+`deliver` returns becomes the case's captured response, so a delivery-only case can predict `response` (ADR-0037).
 
 ## `FeatSchemaAdapter`
 
@@ -455,63 +455,39 @@ schema's own local pointers. `validate` also checks seed values at generate time
 
 | Type | What it is |
 | --- | --- |
-| `BuiltSpec` | `{ featVersion, identity, construct, enforce, contract, variables?, scenarios }` |
+| `BuiltSpec` | `{ featVersion, identity, observes?, construct, enforce, contract, variables?, scenarios }` (`observes`: ADR-0033) |
 | `SpecIdentity`, `SpecType`, `SpecStatus` | The header. Types: `command`, `query`, `policy`, `projection`, `saga`, `infrastructure`, `integration`, `scaffold`. Statuses: `draft`, `agreed`, `built`, `verified`. |
 | `ConstructInstruction` | `handler`, `import`, `register`, `emitsTo`, `touches`, `needs`, `custom` |
 | `EnforceStep` | `validate`, `load`, `apply`, `onSuccess`, `onRejection`, `constraint`, `rejects` (with `rejectionId`) |
 | `ContractReference` | `input`, `response`, `event`, `record`, `error` with `schemaName`, or `stream` with `pattern` |
 | `Scenario` | `{ name, given?, when?, delivers?, prediction, examples?, loc? }` |
-| `Given` | `{ clock?, context?, executes?, seeds?, order?, faults? }` (`order`: `GivenStep[]`, the seeds and executes in written order, ADR-0025) |
+| `Given` | `{ clock?, random?, context?, executes?, seeds?, order?, faults? }` (`random`: `random seed <n>`, ADR-0029) (`order`: `GivenStep[]`, the seeds and executes in written order, ADR-0025) |
 | `Seed`, `SeedRecord`, `Fault`, `Invocation`, `Delivery` | The preconditions and triggers. A `Seed` is either `{ service, records }` or `{ service, fixture }`. |
 | `Prediction` | `success`, `rejection` (with `rejectionId`) or `error` (with `errorCode`), plus `response` and per-service `services` |
-| `ServicePrediction`, `PredictedRecord`, `ResponsePrediction` | `records` (from `has`), `contains`, `ordering` |
-| `Matcher`, `ValueBlock` | `literal`, `whenRef`, `deliverRef`, `captureRef`, `any`, `regex`, `absent`, `placeholder`, `goldenFixture`, `nested`, `not` (ADR-0027: `{ matcher: "not", operand }`), `f32Digest` (ADR-0030: `{ matcher: "f32Digest", dims, sha256 }`), `list` and `object` (ADR-0034: `{ matcher: "list", items }`, `{ matcher: "object", fields }`) |
+| `ServicePrediction`, `PredictedRecord`, `ResponsePrediction` | `records` (from `has`), `contains`, `ordering`; a record or response may carry `golden` and `partial: true` (ADR-0038) |
+| `Matcher`, `ValueBlock` | `literal`, `whenRef`, `deliverRef`, `captureRef`, `givenRef` (ADR-0028: `@given[i].response.<path>`), `any`, `regex`, `absent`, `placeholder`, `goldenFixture`, `nested`, `not` (ADR-0027: `{ matcher: "not", operand }`), `f32Digest` (ADR-0030: `{ matcher: "f32Digest", dims, sha256 }`), `list` and `object` (ADR-0034: `{ matcher: "list", items }`, `{ matcher: "object", fields }`) |
 | `SpecVariable`, `VariableDefinition`, `VariableType` | The `variables:` block; a source call is `now`, `iso` or `unique`, and `now` and `iso` take an optional `offsetMs` |
 
 `FeatConfig` mirrors `feat.config.json`: `featVersion`, `extends`,
 `environment`, `schemas`, `response` (`ResponseConfig`), `services`
 (`ServiceConfig`, with `Consistency` of `acid`, `strong` or `eventual`), `specs`
 and `report`. The field-by-field reference is in
-[`@mmmnt/feature`](https://www.npmjs.com/package/@mmmnt/feature). To validate a
-file, use
-[`schemas/feat.config.schema.json`](https://github.com/mmmnt/feature/blob/main/schemas/feat.config.schema.json).
-
-## What changed in 0.2.1
-
-- **The file's commands at setup** (SPEC-RT-008): `FeatResponseAdapter.setup`
-  takes an optional second argument, `ResponseSetupContext { commands? }`. An
-  adapter that ignores it is unchanged.
-
-## What changed in 0.2.0
-
-Every addition is an optional member, so an adapter written against 0.1.x still
-compiles and still runs.
-
-- **Observation modes** (ADR-0023, SPEC-RT-002): `ObservationSupport`,
-  `ReadQuery`, and `FeatServiceAdapter.observes`. `read` now receives the hint.
-- **The scenario clock** (SPEC-RT-002): `setClock` on both adapter kinds.
-- **Faults** (ADR-0023, SPEC-RT-003, SPEC-RT-005): `Fault`, `Given.faults`,
-  `FaultCatalog`, `FaultCount`, `FaultArm`, `FaultFiring`,
-  `FeatServiceAdapter.faults`, `acceptsFaultDetail`, `fault`, `firedFaults`, and
-  `EXCLUSIVE_FAULTS`.
-- **Namespace** (SPEC-RT-006): `ReportsNamespace` and `reportedNamespace`.
-- **Tier overlays** (ADR-0024): `FeatConfig.extends` and `specs.exclude`.
+[`@mmmnt/feature`](../feature/README.md). To validate a file, use
+[`schemas/feat.config.schema.json`](../../schemas/feat.config.schema.json).
 
 ## Specs and decisions
 
-- [ADR-0023: adapter interface v2](https://github.com/mmmnt/feature/blob/main/docs/adr/ADR-0023-adapter-interface-v2.md)
-  (observation modes, the scenario clock, fault injection)
-- [ADR-0024: tier bindings](https://github.com/mmmnt/feature/blob/main/docs/adr/ADR-0024-tier-bindings.md)
-- [SPEC-RT-002](https://github.com/mmmnt/feature/blob/main/packages/feat-runtime/harness-observation.feat):
-  clock delivery and observation-mode check
-- [SPEC-RT-003](https://github.com/mmmnt/feature/blob/main/packages/feat-runtime/harness-faults.feat):
-  fault arming, consumption and refusal
-- [SPEC-RT-005](https://github.com/mmmnt/feature/blob/main/packages/feat-runner/serial-faults.feat):
-  exclusive faults run in a serial pass
-- [SPEC-RT-006](https://github.com/mmmnt/feature/blob/main/packages/feat-runtime/harness-namespace.feat):
-  one namespace per spec file
+- [ADR-0023: adapter interface v2](../../docs/adr/ADR-0023-adapter-interface-v2.md) (observation modes, the scenario
+  clock, fault injection)
+- [ADR-0024: tier bindings](../../docs/adr/ADR-0024-tier-bindings.md)
+- [ADR-0029: seeded randomness](../../docs/adr/ADR-0029-seeded-randomness.md)
+- [ADR-0036](../../docs/adr/ADR-0036-deliver-to-response.md) and [ADR-0037](../../docs/adr/ADR-0037-deliver-answer.md):
+  delivery to the response adapter
+- [SPEC-RT-002](../feat-runtime/harness-observation.feat), [SPEC-RT-003](../feat-runtime/harness-faults.feat),
+  [SPEC-RT-005](../feat-runner/serial-faults.feat), [SPEC-RT-006](../feat-runtime/harness-namespace.feat)
 
-Part of [Feature](https://github.com/mmmnt/feature), the `.feat` execution
-specification language. Docs: https://github.com/mmmnt/feature/wiki
+## License
 
-MIT
+BSD-3-Clause. See [LICENSE](LICENSE).
+
+Part of [Feature](../../README.md), the .feat execution specification toolchain.

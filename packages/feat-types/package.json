@@ -2,7 +2,7 @@
   "name": "@mmmnt/feat-types",
   "version": "0.11.0",
   "description": "Feat contracts: TypeScript types derived from the JSON Schema IR/config/report definitions. Zero dependencies; types plus one runtime constant, EXCLUSIVE_FAULTS (DP-8).",
-  "license": "MIT",
+  "license": "BSD-3-Clause",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

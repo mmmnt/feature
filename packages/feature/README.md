@@ -1,17 +1,9 @@
 # @mmmnt/feature
 
-**The `feat` CLI.** The toolchain for the `.feat` execution specification
-language. A `.feat` file instructs how a feature is built, predicts every
-observable effect it will produce, and compiles deterministically into complete
-test suites. Anything unpredicted is a failure.
-
-```sh
-npm install --save-dev @mmmnt/feature
-npx feat init                       # scaffolds config + a first spec, installs everything else
-
-npx feat generate                   # compile specs into test files
-npx feat run                        # execute them with the adapter lifecycle
-```
+The `feat` CLI for the `.feat` execution specification language. A `.feat` file
+tells the builder what to build, predicts every observable effect it will
+produce, and compiles deterministically into a complete Vitest suite. An effect
+that was captured and not predicted is a failure.
 
 ## Where it sits
 
@@ -32,10 +24,13 @@ The package exposes one binary, `feat`. It is not a library: its `main` exports
 only the oclif `Parse` command class, which is an implementation detail. To parse
 in code, use `@mmmnt/feat-core`.
 
-## Install
+## Installation
+
+Requires Node.js 22 or newer.
 
 ```sh
 npm install --save-dev @mmmnt/feature
+npx feat init        # scaffolds a config and a first spec, and installs the rest
 ```
 
 Requirements:
@@ -92,7 +87,7 @@ export async function greet(input: { name: string }) {
 ```sh
 npx feat parse specs/greet.feat      # validate; prints the IR
 npx feat generate                    # writes specs/greet.test.ts
-npx feat run                         # 2 tests pass
+npx feat run                         # 2 tests pass; junit: reports/feat-junit.xml
 ```
 
 `feat run` needs an environment name, and the scaffolded config sets one:
@@ -438,9 +433,17 @@ configs, paths, discovery, parse, boundaries.
 
 ### `feat lint [-c <config>]`
 
-Language-quality warnings: unused schema declarations, unused variables,
-duplicate contract declarations, and a note for `draft` specs. Exit `1` only
-when a spec does not parse. Warnings never fail the run.
+Language-quality findings, per spec:
+
+| Level | Finding |
+| --- | --- |
+| error | `OPTIONAL_UNSTATED`: a predicted response or record value block leaves out an optional property of its schema and is not marked `partial` (ADR-0038) |
+| warn | `NESTED_SCHEMA_OPEN`: a nested value block whose schema leaves the object open, so a key the block does not state fails the scenario (ADR-0039) |
+| warn | a schema declared in `contract:` and never referenced, a variable declared and never referenced, a duplicate contract declaration |
+| info | `status draft — not buildable until agreed` |
+
+Exit `1` when a spec does not parse or has an error finding. Warnings and
+notes never fail the run.
 
 ### `feat fmt [-c <config>] [--check]`
 
@@ -448,8 +451,8 @@ Conservative formatting: strips trailing whitespace, collapses blank-line runs,
 ends the file with one newline. Content-preserving and idempotent. Without
 `--check` it rewrites files. With `--check` it prints `would format <file>` and
 changes nothing. Exit `1` with `--check` when any file would change, and exit
-`1` when a file has a tab as its first character (it reports and does not touch
-that file).
+`1` when any line of a file starts with a tab (a parse error: it reports the
+file and does not touch it).
 
 ### `feat watch [-c <config>] [--run] [--json] [--src <dir>...]`
 
@@ -607,7 +610,8 @@ The rules:
 - **Ordering and timing follow the active tier.** The default `has` ordering is
   resolved by the harness from the active config's `consistency`, and `feat run`
   computes Vitest's `testTimeout` (the per-invoke allowance times the steps of
-  the worst case, plus the longest `convergenceTimeout`, plus 30 s) and
+  the worst case, plus the longest `convergenceTimeout` of an `eventual`
+  service, plus 30 s) and
   `hookTimeout` (120 s) from the active config.
 - **Two unrelated config files are not an overlay.** Nothing then keeps their
   spaces equal, and the generated files differ per tier.
@@ -882,7 +886,7 @@ description is
 | Code | Meaning |
 | --- | --- |
 | `0` | success |
-| `1` | validation failure: a parse error, a seed violation, drift (`verify`), a failed prediction, a failed audit, a change outside its `touches` (`audit --changed`: `OUTSIDE_TOUCHES`, `HANDLER_OUTSIDE_FEATURE`, `SPEC_UNPARSEABLE`), a failed `fmt --check` |
+| `1` | validation failure: a parse error, a seed violation, drift (`verify`), a failed prediction, a failed audit, a `feat lint` error, a change outside its `touches` (`audit --changed`: `OUTSIDE_TOUCHES`, `HANDLER_OUTSIDE_FEATURE`, `SPEC_UNPARSEABLE`), a failed `fmt --check` |
 | `2` | configuration error: a refused config (`CONFIG_NOT_FOUND`, `INVALID_CONFIG`, the `EXTENDS_*` codes, `TIER_SPACE_MISMATCH`, ...), a module named as an adapter that cannot be resolved or loaded (`INVALID_CONFIG`), no environment to name (`NO_ENVIRONMENT`), a harness refusal during `run` (`CLOCK_UNSUPPORTED`, `MODE_UNSUPPORTED`, `FAULT_*`, `NAMESPACE_*`, `SEED_UNSUPPORTED`, `DELIVER_UNSUPPORTED`), no vitest installed in the project (`VITEST_NOT_INSTALLED`, `run`), `NO_REPORT`, `ALREADY_INITIALIZED`, `CONFIG_MULTIPLE` (`audit`), and the `audit --changed` refusals that are not a violation (`PATH_OUTSIDE_ROOT`, `NO_SPECS_FOUND`, `GIT_UNAVAILABLE`, `NOT_A_GIT_REPO`, `BASE_NOT_FOUND`, `NO_MERGE_BASE`) |
 
 Each exit `2` prints a `[CODE]`.
@@ -901,77 +905,6 @@ with the environment set (`ENVIRONMENT=ci`). Add `feat audit` to gate on
 buildability, and `feat report --evidence` to archive the bundle as a build
 artifact. For the integration tier add
 `feat run --config feat.integration.config.json`.
-
-## What changed in 0.16.0 (breaking)
-
-- **Breaking:** it runs with `@mmmnt/feat-runtime` 0.10.0, where a nested value block is exact (ADR-0039). An
-  undeclared key of a nested block's object fails the scenario, inside `partial` blocks too. The top-level block
-  stays partial. To migrate, state every key of the object, or write the field `any`.
-- `feat lint` adds the warning `NESTED_SCHEMA_OPEN` (`@mmmnt/feat-analyze` 0.3.0, SPEC-ANL-001). It names each nested
-  block whose schema lets the object carry undeclared keys, the places an unstated key can now fail a scenario.
-  Warnings never fail `feat lint`.
-
-## What changed in 0.7.0
-
-- **`feat run` runs the project's own Vitest, never a fetched one (SPEC-RT-010,
-  ADR-0026).** It used to spawn `npx vitest run`, and npx fetched the latest
-  vitest from the registry when the project had none (`npm warn exec The
-  following package was not found and will be installed: vitest@...`), outside
-  the project's lockfile and release-age policy. It now runs the vitest found in
-  the project's `node_modules` (or a parent's). Without one, `feat run` exits
-  `2` with `VITEST_NOT_INSTALLED`: add vitest as a dev dependency. vitest is a
-  peer dependency, `>=3.2.0`.
-
-## What changed in 0.5.0
-
-- **The `touches` gate (SPEC-CHG-001).** `feat audit --changed <base>` checks a
-  change against the `touches` of the specs it falls under: the branch's commits
-  since the merge base, plus the working tree. One run covers many workspaces:
-  `-c` repeats and takes a glob. Paths and globs are read from the repository
-  root. A violation or an unparseable spec is exit `1`. A missing config, a
-  workspace with no specs, or no repository, base or merge base is exit `2`. See
-  [`feat audit --changed`](#feat-audit---changed-base--c-config-or-glob).
-- **`feat audit` without `--changed`** is unchanged, and still takes one config.
-  More than one `-c`, or a glob, is refused with exit `2` and `CONFIG_MULTIPLE`.
-- No other package changes, and no generated file changes beyond its
-  `Inputs-hash` line.
-
-## What changed in 0.4.1
-
-- **Generated suites hand the harness their cases (SPEC-RT-008).** `feat generate` now emits
-  `createHarness({ configPath, specPath, cases: CASES })` (`@mmmnt/feat-emit-ts` 0.2.1), and the
-  harness (`@mmmnt/feat-runtime` 0.2.2) sets the response adapter up with the commands those cases
-  invoke. With the handler adapter (0.2.1) the routes a file uses load in `beforeAll`, under the hook
-  timeout, not in the first case. A route that cannot load stops `feat run` with exit `2` and
-  `[ROUTE_UNLOADABLE]`. Every committed generated file changes once: run `feat generate` and commit.
-
-## What changed in 0.4.0
-
-Release v0.1.48.
-
-- **Tier overlays (ADR-0024).** `extends`, `specs.exclude`, `TIER_SPACE_MISMATCH`,
-  `EXTENDS_NOT_FOUND`, `EXTENDS_CHAIN`. Every command reads the config through
-  one loader. Generation is environment-agnostic: the `Inputs-hash` covers only
-  the closed spaces, ordering resolves in the harness, and the timing envelope and
-  `FEAT_CONFIG` come from `feat run`. This is a one-time change to every committed
-  generated file: run `feat generate` once and commit.
-- **Seed checks (SPEC-GEN-001, SPEC-DRV-001).** Fixtures are validated and
-  inlined at generate time with all violations reported together. An outline
-  row's inline seeds are substituted and checked on their own, refused as
-  `SEED_ROW_VALUES_INVALID`.
-- **Evidence.** The bundle records the overlay, its base and the tier's bindings
-  (ADR-0024).
-- **Namespaces, faults and the serial pass (SPEC-RT-005, SPEC-RT-006, ADR-0023).**
-  One namespace per spec file, `feat run` stops on a collision, and exclusive
-  faults run in a serial pass after the parallel one.
-- **Exit codes.** Exit `2` is a configuration error everywhere, with its code:
-  `generate` and `verify` on a refused config or schema adapter; `run` on a
-  harness configuration error, an adapter that cannot be loaded, or no
-  environment; `report --evidence` with no environment; `diff` with an
-  unloadable config. A parse failure or a seed violation stays exit `1`. The
-  generated suite tears down only a harness that was created.
-
-Re-run `feat generate` after upgrading.
 
 ## Specs and decisions
 
@@ -1006,9 +939,12 @@ The toolchain is specified in `.feat` and built with itself.
 
 ## Documentation
 
-- Repository: https://github.com/mmmnt/feature
-- Getting started, language guide, CLI reference: https://github.com/mmmnt/feature/wiki
+- Repository and the toolchain overview: [Feature](../../README.md)
+- Release notes: [GitHub Releases](https://github.com/mmmnt/feature/releases). Every `@mmmnt/feat*` package and
+  `@mmmnt/feature` share one version.
 
 ## License
 
-MIT
+BSD-3-Clause. See [LICENSE](LICENSE).
+
+Part of [Feature](../../README.md), the .feat execution specification toolchain.

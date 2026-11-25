@@ -2,7 +2,7 @@
   "name": "@mmmnt/feature",
   "version": "0.16.0",
   "description": "The feat CLI — Feature, the quality spine of AI-native delivery.",
-  "license": "MIT",
+  "license": "BSD-3-Clause",
   "type": "module",
   "bin": {
     "feat": "./bin/run.js"

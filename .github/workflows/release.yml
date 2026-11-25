@@ -1,29 +1,72 @@
 name: Release
 
-# Publishes all public packages to npm on a version tag (v*), authenticating via
-# OpenID Connect (npm Trusted Publishing) — no long-lived tokens. Each package on
-# npmjs.com must have this repository + workflow configured as its trusted
-# publisher. The release gate is the same chain CI runs.
-
+# Runs after CI succeeds on main (and by hand from the Actions UI, as a safety valve when
+# workflow_run does not fire, e.g. right after this file changes, or to re-run a failed publish).
+# CI on main is the release gate: corpus, typecheck, workspace tests and the spec chain.
+#
+# Every @mmmnt/feat* package and @mmmnt/feature share one version (the `fixed` group in
+# .changeset/config.json). A run does one of two things:
+#
+#   - Pending changesets (a hand-written one, or the one generated below from the commit title):
+#     the mmmnt bot opens or updates the "chore: version packages" pull request.
+#   - The version PR was just merged (no pending changesets): every package whose version npm does
+#     not have yet is published, then one vX.Y.Z tag and GitHub Release are created for the version
+#     and the VS Code extension is published at it.
+#
+# The file name is load-bearing: each package's npm trusted publisher names this repository and
+# release.yml. npm authenticates through OIDC (id-token: write); no token is stored.
 on:
-  push:
-    tags: ["v*"]
+  workflow_dispatch:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
 
 jobs:
   release:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write # OIDC for npm trusted publishing + provenance
+    outputs:
+      # The version this run tagged and released; empty when it only opened or updated the PR.
+      released: ${{ steps.tag.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      # The mmmnt GitHub App (APP_ID / APP_PRIVATE_KEY are organization secrets) authors the version
+      # PR, its branch and the release. Pushes made with GITHUB_TOKEN start no other workflows, so a
+      # version PR opened with it would never get CI runs.
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
 
-      - uses: pnpm/action-setup@v4
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
 
-      - uses: actions/setup-node@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js 24 (ships npm 11+ for OIDC trusted publishing)
+        uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
+          registry-url: https://registry.npmjs.org
 
       - name: Install
         run: pnpm install --frozen-lockfile
@@ -31,12 +74,113 @@ jobs:
       - name: Build
         run: pnpm build
 
-      - name: Gate — corpus, tests, verify, run
+      # A changeset from the head commit's conventional title, so nobody has to remember
+      # `pnpm changeset`. Left uncommitted on purpose: changesets/action switches to the version
+      # branch and hard-resets it to this commit; untracked files survive that reset, so
+      # `changeset version` consumes it.
+      - name: Generate a changeset from the commit title
         run: |
-          pnpm corpus:validate
-          npx turbo run test
-          node packages/feature/bin/run.js verify
-          node packages/feature/bin/run.js run
+          set -euo pipefail
+          HEAD_SHA=$(git rev-parse --short HEAD)
+          HEAD_SUBJECT=$(git log -1 --pretty=%s)
+          HEAD_BODY=$(git log -1 --pretty=%b)
+          echo "Head: $HEAD_SHA $HEAD_SUBJECT"
 
-      - name: Publish changed packages (OIDC trusted publishing)
-        run: node scripts/publish-changed.mjs
+          if [[ "$HEAD_SUBJECT" == "chore: version packages"* ]]; then
+            echo "The version-packages commit; nothing to generate."
+            exit 0
+          fi
+          if git diff --name-only --diff-filter=A HEAD~1 HEAD -- '.changeset/*.md' | grep -q .; then
+            echo "The commit adds a changeset; nothing to generate."
+            exit 0
+          fi
+
+          # A releasable type with ! or a BREAKING CHANGE footer → major, feat → minor,
+          # fix / perf / refactor → patch, anything else → no release.
+          if echo "$HEAD_SUBJECT" | grep -qE '^(feat|fix|perf|refactor)(\([^)]+\))?!:'; then
+            BUMP="major"
+          elif echo "$HEAD_BODY" | grep -qE '^BREAKING[ -]CHANGE:'; then
+            BUMP="major"
+          elif echo "$HEAD_SUBJECT" | grep -qE '^feat(\([^)]+\))?:'; then
+            BUMP="minor"
+          elif echo "$HEAD_SUBJECT" | grep -qE '^(fix|perf|refactor)(\([^)]+\))?:'; then
+            BUMP="patch"
+          else
+            echo "Not a releasable conventional-commit type; no changeset."
+            exit 0
+          fi
+
+          # The fixed group bumps every package together, so naming one is enough.
+          FILE=".changeset/auto-${HEAD_SHA}.md"
+          printf -- "---\n'@mmmnt/feature': %s\n---\n\n%s\n" "$BUMP" "$HEAD_SUBJECT" > "$FILE"
+          echo "Wrote $FILE ($BUMP)"
+
+      - name: Open or update the version PR, or publish
+        id: changesets
+        uses: changesets/action@v2
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          version-script: pnpm changeset:version
+          # Publishes each package whose version npm does not have yet (idempotent, OIDC,
+          # provenance). The tag and GitHub Release are made once for the version below, not one
+          # per package.
+          publish-script: node scripts/publish-changed.mjs
+          create-github-releases: false
+          pr-title: 'chore: version packages'
+          commit-message: 'chore: version packages'
+        env:
+          NPM_CONFIG_PROVENANCE: true
+
+      # Only the merged version PR releases: on any other commit with nothing pending, the publish
+      # script finds every version on npm already and nothing is tagged. A re-run of a release
+      # whose tag exists does nothing.
+      - name: Tag and release the version
+        id: tag
+        if: steps.changesets.outputs.hasChangesets == 'false'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+        run: |
+          set -euo pipefail
+          SUBJECT=$(git log -1 --pretty=%s "$SHA")
+          if [[ "$SUBJECT" != "chore: version packages"* ]]; then
+            echo "Not the version-packages commit; nothing to release."
+            exit 0
+          fi
+          VERSION=$(node -p "require('./packages/feature/package.json').version")
+          TAG="v$VERSION"
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" > /dev/null; then
+            echo "$TAG already exists; nothing to release."
+            exit 0
+          fi
+          if ! npm view "@mmmnt/feature@$VERSION" version > /dev/null 2>&1; then
+            echo "::error::@mmmnt/feature@$VERSION is not on npm after the publish step."
+            exit 1
+          fi
+          # The release notes are this version's section of the CLI's changelog.
+          node -e '
+            const fs = require("fs");
+            const v = process.argv[1];
+            const file = "packages/feature/CHANGELOG.md";
+            const text = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
+            const start = text.indexOf("## " + v);
+            let notes = "";
+            if (start !== -1) {
+              const rest = text.slice(start + 3 + v.length);
+              const end = rest.search(/^## /m);
+              notes = (end === -1 ? rest : rest.slice(0, end)).trim();
+            }
+            fs.writeFileSync("release-notes.md", (notes || "Release " + v + ".") +
+              "\n\nEvery @mmmnt/feat* package and @mmmnt/feature is published at " + v + " on npm.\n");
+          ' "$VERSION"
+          gh release create "$TAG" --target "$SHA" --title "$TAG" --notes-file release-notes.md --latest
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+  extension:
+    needs: release
+    if: needs.release.outputs.released != ''
+    uses: ./.github/workflows/extension.yml
+    with:
+      version: ${{ needs.release.outputs.released }}
+      ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+    secrets: inherit

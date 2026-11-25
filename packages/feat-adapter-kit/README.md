@@ -1,10 +1,10 @@
 # @mmmnt/feat-adapter-kit
 
-**Executable conformance suites for Feat adapter authors.** Drop one call into
+Executable conformance suites for Feature adapter authors. Drop one call into
 your vitest suite and the harness-facing contract is asserted for you: capture
 window discipline, record shape, reset semantics, optional-method behavior.
-Feature's own first-party adapters (memory, fs, handler, and the DynamoDB
-adapter against DynamoDB Local) run these same suites.
+Feature's own first-party adapters (memory, fs, handler, model, and the
+DynamoDB adapter against DynamoDB Local) run these same suites.
 
 If you only write `.feat` specs, you do not need this package. It is for people
 who write an adapter: a module that exports `createAdapter(config)` for the
@@ -20,23 +20,22 @@ discipline: nothing outside the window is captured, a reset leaves no stale
 state, seeds are not effects.
 
 The kit asserts that discipline for the two adapter kinds in
-[`@mmmnt/feat-types`](https://github.com/mmmnt/feature/blob/main/packages/feat-types/src/index.ts):
+[`@mmmnt/feat-types`](../feat-types/README.md):
 
 - a **service adapter** (`FeatServiceAdapter`): the thing a `services.<key>`
   entry names, observed through `startCapture` and `stopCapture`;
 - a **response adapter** (`FeatResponseAdapter`): the thing `response` names,
   driven through `invoke`.
 
-## Install
+## Installation
 
-```sh
-npm install --save-dev @mmmnt/feat-adapter-kit vitest
+Requires Node.js 22 or newer.
+
+```bash
+npm install -D @mmmnt/feat-adapter-kit vitest
 ```
 
-Requirements:
-
-- Node 20 or later.
-- `vitest` 1.0 or later. It is a **peer dependency**: the kit registers
+- `vitest` 1.0 or later (this repository tests against 3.2). It is a **peer dependency**: the kit registers
   `describe` and `it` blocks in your vitest run.
 - `@mmmnt/feat-types` (a dependency of the kit; you will import its types
   yourself when you write the adapter).
@@ -278,23 +277,15 @@ An adapter reference is an npm package name or a local path.
 `consistency` is `acid`, `strong` or `eventual`; `eventual` also needs
 `convergenceTimeout` (milliseconds).
 
-## This release
+## References
 
-No source change to the kit in Feature v0.1.48. It is republished as 0.1.7 against
-`@mmmnt/feat-types` 0.2.0, with this README. The adapter
-interface it asserts against grew optional members in that release (namespace,
-faults, observation modes, `setClock`); the kit does not assert them.
-
-## Docs
-
-- [ADR-0023](https://github.com/mmmnt/feature/blob/main/docs/adr/ADR-0023-adapter-interface-v2.md): adapter interface v2: observation modes, the scenario clock, fault injection.
-- [Adapter interface types](https://github.com/mmmnt/feature/blob/main/packages/feat-types/src/index.ts).
-- [Grammar reference](https://github.com/mmmnt/feature/blob/main/docs/grammar-reference.md).
-- [`@mmmnt/feat-adapter-dynamodb`](https://github.com/mmmnt/feature/blob/main/adapters/dynamodb/README.md): a first-party adapter that runs the kit.
-
-Part of [Feature](https://github.com/mmmnt/feature), the `.feat` execution
-specification language.
+- [ADR-0023](../../docs/adr/ADR-0023-adapter-interface-v2.md): adapter interface v2: observation modes, the scenario clock, fault injection.
+- [Adapter interface types](../feat-types/src/index.ts).
+- [Grammar reference](../../docs/grammar-reference.md).
+- [`@mmmnt/feat-adapter-dynamodb`](../../adapters/dynamodb/README.md): a first-party adapter that runs the kit.
 
 ## License
 
-MIT
+BSD-3-Clause. See [LICENSE](LICENSE).
+
+Part of [Feature](../../README.md), the .feat execution specification toolchain.
