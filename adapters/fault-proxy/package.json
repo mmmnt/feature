@@ -2,7 +2,7 @@
   "name": "@mmmnt/feat-fault-proxy",
   "version": "0.1.0",
   "description": "Feat fault-proxy library: transport faults (timeout, connection reset, partition, broker loss) for the product adapters, through Toxiproxy",
-  "license": "MIT",
+  "license": "BSD-3-Clause",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

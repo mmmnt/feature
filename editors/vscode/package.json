@@ -4,7 +4,7 @@
   "description": "Syntax highlighting and live spec-anchored test feedback for .feat files",
   "version": "0.1.55",
   "publisher": "mmmnt",
-  "license": "MIT",
+  "license": "BSD-3-Clause",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/mmmnt/feature.git",

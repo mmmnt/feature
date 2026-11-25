@@ -2,7 +2,7 @@
   "name": "@mmmnt/feat-core",
   "version": "0.13.0",
   "description": "Feat language core: Langium grammar, parser, AST->BuiltSpec IR, closed-reference-space validation.",
-  "license": "MIT",
+  "license": "BSD-3-Clause",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

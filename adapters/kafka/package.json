@@ -2,7 +2,7 @@
   "name": "@mmmnt/feat-adapter-kafka",
   "version": "0.1.1",
   "description": "Kafka service adapter for Feat: namespaced topics become a capture window read at the last stable offset — an unpredicted record fails the suite",
-  "license": "MIT",
+  "license": "BSD-3-Clause",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

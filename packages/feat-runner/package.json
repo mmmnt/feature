@@ -2,7 +2,7 @@
   "name": "@mmmnt/feat-runner",
   "version": "0.4.0",
   "description": "Feat runner: thin vitest subprocess orchestrator (GAP-D09). Spec filtering, exit-code passthrough, JUnit collection.",
-  "license": "MIT",
+  "license": "BSD-3-Clause",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

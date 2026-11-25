@@ -2,7 +2,7 @@
   "name": "@mmmnt/feat-derive",
   "version": "0.6.0",
   "description": "Feat derive: BuiltSpec IR + FeatConfig -> TestTopology. Pure and deterministic (INV-2); outline expansion, ordering resolution, query implicit-zero synthesis.",
-  "license": "MIT",
+  "license": "BSD-3-Clause",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
