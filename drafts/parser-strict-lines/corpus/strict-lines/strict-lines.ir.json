@@ -1,0 +1,95 @@
+{
+  "featVersion": "1.0",
+  "identity": {
+    "id": "SPEC-NTE-001",
+    "name": "AddNote keeps a note's title as written",
+    "context": "Notes",
+    "aggregate": "Note",
+    "type": "command",
+    "status": "agreed"
+  },
+  "construct": [
+    {
+      "kind": "handler",
+      "path": "features/add-note/handler.ts"
+    },
+    {
+      "kind": "touches",
+      "glob": "features/add-note/**"
+    },
+    {
+      "kind": "custom",
+      "text": "context matters"
+    }
+  ],
+  "enforce": [
+    {
+      "kind": "constraint",
+      "text": "keep the title byte for byte, see ticket #12"
+    }
+  ],
+  "contract": [
+    {
+      "kind": "input",
+      "schemaName": "NoteInput"
+    },
+    {
+      "kind": "response",
+      "schemaName": "NoteReceipt"
+    },
+    {
+      "kind": "event",
+      "schemaName": "NoteEvent"
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "a title with an accent, written \"café\", is kept",
+      "given": {
+        "clock": "2026-07-16T00:00:00Z",
+        "context": [
+          "notes start empty, see ticket #12"
+        ]
+      },
+      "when": {
+        "command": "AddNote",
+        "payload": {
+          "title": "café #1"
+        }
+      },
+      "prediction": {
+        "type": "success",
+        "response": {
+          "status": 201,
+          "schemaName": "NoteReceipt",
+          "valueBlock": {
+            "noteId": {
+              "matcher": "any",
+              "ofType": "string"
+            },
+            "title": {
+              "matcher": "literal",
+              "value": "café #1"
+            }
+          }
+        },
+        "services": {
+          "log": {
+            "records": [
+              {
+                "type": "NoteAdded",
+                "schemaName": "NoteEvent",
+                "valueBlock": {
+                  "title": {
+                    "matcher": "whenRef",
+                    "path": "title"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

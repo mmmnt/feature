@@ -1,0 +1,77 @@
+{
+  "featVersion": "1.0",
+  "identity": {
+    "id": "SPEC-OK-203",
+    "name": "Header-shaped lines after the header",
+    "context": "Ok",
+    "aggregate": "Thing",
+    "type": "command",
+    "status": "draft"
+  },
+  "construct": [
+    {
+      "kind": "handler",
+      "path": "src/do-thing.ts"
+    },
+    {
+      "kind": "touches",
+      "glob": "src/**"
+    },
+    {
+      "kind": "custom",
+      "text": "status agreed"
+    },
+    {
+      "kind": "custom",
+      "text": "type safety"
+    }
+  ],
+  "enforce": [
+    {
+      "kind": "constraint",
+      "text": "do the thing"
+    },
+    {
+      "kind": "constraint",
+      "text": "context matters"
+    }
+  ],
+  "contract": [
+    {
+      "kind": "input",
+      "schemaName": "ThingInput"
+    },
+    {
+      "kind": "response",
+      "schemaName": "ThingResult"
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "does the thing",
+      "given": {
+        "context": [
+          "aggregate Other"
+        ]
+      },
+      "when": {
+        "command": "DoThing",
+        "payload": {
+          "value": 1
+        }
+      },
+      "prediction": {
+        "type": "success",
+        "response": {
+          "status": "OK",
+          "schemaName": "ThingResult"
+        },
+        "services": {
+          "eventStore": {
+            "records": []
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "featVersion": "1.0",
+  "schemas": { "adapter": "@mmmnt/feat-schema-json" },
+  "response": {
+    "adapter": "@mmmnt/feat-adapter-handler",
+    "commands": {
+      "AddNote": { "module": "features/add-note/handler.ts", "export": "addNote" }
+    }
+  },
+  "services": {
+    "log": { "adapter": "@mmmnt/feat-adapter-memory", "consistency": "strong" }
+  },
+  "specs": { "dir": ".", "pattern": "*.feat", "contractPattern": "*.contract.json", "outputPattern": "{name}.test.ts" },
+  "report": { "format": ["console"] }
+}

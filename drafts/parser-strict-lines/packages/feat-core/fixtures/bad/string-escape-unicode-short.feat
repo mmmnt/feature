@@ -1,0 +1,25 @@
+feat 1.0
+
+spec SPEC-BAD-146 "A unicode escape with three hex digits"
+context Bad
+aggregate Thing
+type command
+status draft
+
+construct:
+  handler at src/do-thing.ts
+  touches src/**
+
+enforce:
+  do the thing
+
+contract:
+  input ThingInput
+  response ThingResult
+  record ThingRow
+
+scenario "does the thing":
+  when: DoThing { value: "caf\u00e" }
+  predict success:
+    response OK ThingResult
+    eventStore has []

@@ -1,0 +1,34 @@
+feat 1.0
+
+# ADR-0040 (draft): header directives are read in the header only. After the first section opener a
+# header-shaped line is whatever its zone makes it: a directive in construct: and enforce:, a context
+# line in given:. The header keeps the values it was written with; `status agreed` below never flips
+# this draft spec.
+
+spec SPEC-OK-203 "Header-shaped lines after the header"
+context Ok
+aggregate Thing
+type command
+status draft
+
+construct:
+  handler at src/do-thing.ts
+  touches src/**
+  status agreed
+  type safety
+
+enforce:
+  do the thing
+  context matters
+
+contract:
+  input ThingInput
+  response ThingResult
+
+scenario "does the thing":
+  given:
+    aggregate Other
+  when: DoThing { value: 1 }
+  predict success:
+    response OK ThingResult
+    eventStore has []

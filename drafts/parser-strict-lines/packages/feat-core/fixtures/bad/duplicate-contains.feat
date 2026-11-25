@@ -1,0 +1,27 @@
+feat 1.0
+
+spec SPEC-BAD-150 "A prediction with two contains lines for one service"
+context Bad
+aggregate Thing
+type command
+status draft
+
+construct:
+  handler at src/do-thing.ts
+  touches src/**
+
+enforce:
+  do the thing
+
+contract:
+  input ThingInput
+  response ThingResult
+  record ThingRow
+
+scenario "does the thing":
+  when: DoThing { value: 1 }
+  predict success:
+    response OK ThingResult
+    eventStore has []
+    eventStore contains [ Wrote with ThingRow { ref: "a" } ]
+    eventStore contains [ Wrote with ThingRow { ref: "b" } ]

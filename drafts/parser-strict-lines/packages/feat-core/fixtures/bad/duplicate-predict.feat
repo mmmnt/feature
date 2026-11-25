@@ -1,0 +1,29 @@
+feat 1.0
+
+spec SPEC-BAD-152 "A scenario with two predict blocks"
+context Bad
+aggregate Thing
+type command
+status draft
+
+construct:
+  handler at src/do-thing.ts
+  touches src/**
+
+enforce:
+  do the thing
+  rejects NOT_ALLOWED when the thing is not allowed
+
+contract:
+  input ThingInput
+  response ThingResult
+  record ThingRow
+
+scenario "does the thing":
+  when: DoThing { value: 1 }
+  predict rejection NOT_ALLOWED:
+    response ERR ThingResult
+    eventStore has []
+  predict success:
+    response OK ThingResult
+    eventStore has []

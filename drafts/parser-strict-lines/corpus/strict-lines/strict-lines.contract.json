@@ -1,0 +1,9 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-NTE-001",
+  "schemas": {
+    "NoteInput": { "type": "object", "required": ["title"], "properties": { "title": { "type": "string" } } },
+    "NoteReceipt": { "type": "object", "properties": { "noteId": { "type": "string" }, "title": { "type": "string" } } },
+    "NoteEvent": { "type": "object", "properties": { "noteId": { "type": "string" }, "title": { "type": "string" } } }
+  }
+}

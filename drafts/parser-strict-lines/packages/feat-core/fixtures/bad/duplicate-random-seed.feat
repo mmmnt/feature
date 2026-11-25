@@ -1,0 +1,28 @@
+feat 1.0
+
+spec SPEC-BAD-154 "A given with two random seed lines"
+context Bad
+aggregate Thing
+type command
+status draft
+
+construct:
+  handler at src/do-thing.ts
+  touches src/**
+
+enforce:
+  do the thing
+
+contract:
+  input ThingInput
+  response ThingResult
+  record ThingRow
+
+scenario "does the thing":
+  given:
+    random seed 1
+    random seed 2
+  when: DoThing { value: 1 }
+  predict success:
+    response OK ThingResult
+    eventStore has []
