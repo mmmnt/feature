@@ -105,16 +105,15 @@ Each `specs[]` entry carries, beyond its digests and status, the identity the
 spec declares — `name`, `context`, `aggregate`, `type`, the construct's
 `handler` path — and `excerpt`: zone-tagged source lines (`header` · `agent` ·
 `compiler` · `blank`) up to the second scenario, capped at 60. The excerpt is
-deterministic — same source, same excerpt — so the dashboard's spec-detail
-view renders the contract's face without a second fetch or a second truth.
+deterministic — same source, same excerpt — so a consumer of the bundle can
+show the contract's face without a second fetch or a second truth.
 Unparseable specs carry none of these; the honest inventory row stands alone.
 
 ## The spec's IR facets (`feat-evidence/2` additive)
 
 Parseable entries also carry the raw material of a *semantic diff between two
 stored versions* — the comparison `feat diff` makes against a git ref, made
-possible against a ledger where the versions live in the workspace chain, not
-in anyone's working tree:
+possible between two stored bundles, with no working tree:
 
 - `scenarios` — one `{ name, digest }` per scenario, the digest taken over the
   scenario's IR with source locations excluded. Two versions differ

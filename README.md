@@ -70,7 +70,8 @@ contract (`specs/greet.contract.json`). It refuses with exit 2 (`ALREADY_INITIAL
 three exists. It creates a `package.json` if there is none, then installs `@mmmnt/feat-runtime`,
 `@mmmnt/feat-adapter-handler`, `@mmmnt/feat-adapter-fs`, `@mmmnt/feat-schema-json` and `vitest`
 with the package manager it detects (pnpm, yarn or npm). `--no-install` prints the install command
-instead.
+instead. `feat init` does not set `"type": "module"`, and the handler example is an ES module, so in a
+CommonJS project run `npm pkg set type=module` first.
 
 ```sh
 npx feat parse specs/greet.feat   # validate the spec and print its IR

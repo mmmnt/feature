@@ -1,7 +1,8 @@
 // Evidence bundle production (feat-evidence/2, schemas/evidence.schema.json).
 // A digest-anchored record of spec state + verification results at a point in
-// time. Free, local, account-less — the account lane signs bundles on
-// ingestion; locally `signature` is null.
+// time. Free, local, account-less; locally `signature` is null. Signed
+// attestations stored in a hosted ledger are the commercial version of
+// Feature, which is paid; free accounts have no dashboard access.
 //
 // feat-evidence/2 (ADR-0020) is a strict superset of /1: it adds `runs` —
 // per-scenario results with parsed prediction violations, derived from the

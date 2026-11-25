@@ -84,6 +84,9 @@ export async function greet(input: { name: string }) {
 }
 ```
 
+`feat init` does not set `"type": "module"`, and the handler is an ES module, so in a CommonJS project
+run `npm pkg set type=module` first.
+
 ```sh
 npx feat parse specs/greet.feat      # validate; prints the IR
 npx feat generate                    # writes specs/greet.test.ts
