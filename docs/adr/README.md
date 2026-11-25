@@ -9,6 +9,11 @@ ADRs and the grammar reference still cite them by number.
 Two different records carry the number ADR-0028: the given's response as a matcher, and the model
 adapter. Both are listed; the files are not renumbered, so links to either file keep working.
 
+ADR-0021 is likewise cited for two different decisions: the fence, where the harness asks each eventual
+service's adapter to `settle()` before it reads (`packages/feat-runtime`, the model adapter's README),
+and cross-surface capture references, `@<service>[i].<path>` (grammar reference §5.4). Neither record is
+in the repository.
+
 | ADR | Decision |
 | --- | --- |
 | [ADR-0022](ADR-0022-uppercamel-rejection-ids.md) | Rejection ids may be UPPER_SNAKE or UpperCamel, kept verbatim and compared case-sensitively. |
@@ -22,7 +27,7 @@ adapter. Both are listed; the files are not renumbered, so links to either file 
 | [ADR-0029](ADR-0029-seeded-randomness.md) | The given line `random seed <n>` (IR `given.random`) reaches the response adapter's optional `setSeed`, and `setSeed(null)` on the next case; a seed with no `setSeed` is `RANDOM_UNSUPPORTED`; the Host Protocol gains `setSeed`, still version 2. |
 | [ADR-0030](ADR-0030-f32-digest-matcher.md) | The f32 digest matcher `f32 <dims> sha256 "<hex>"`: an array of exactly dims numbers, each exactly an f32, whose little-endian f32 bytes hash to the digest; `not f32 …` refused. |
 | [ADR-0031](ADR-0031-local-gate.md) | The local gate is the explicit `scripts/ci-local.sh`, and pre-push only checks its pass record; one gate at a time by the host-wide `~/.flmnt/gate.lock` and a CPU check; jobs serial; turbo's build cache kept and bounded; `--changed`/`--rebased` scoped checks. |
-| [ADR-0032](ADR-0032-pr-report-action.md) | A pull request build report Action (`actions/pr-report`): one updating comment and a required check, a chain of evidence from PR head to signed provenance and the transparency log; every push to main is attested under `pr-merge/v2`. |
+| [ADR-0032](ADR-0032-pr-report-action.md) | A pull request build report Action (`actions/pr-report`): one updating comment and a required check, a chain of evidence from PR head to signed provenance verified against the repository's own key (no transparency log); every push to main is attested under `pr-merge/v2`. |
 | [ADR-0033](ADR-0033-observes.md) | A spec may declare `observes <service>, ...`; no line means every configured service; `UNKNOWN_SERVICE_KEY` and `UNOBSERVED_SERVICE`; a rejection and a query still prove zero effects on every configured service. |
 | [ADR-0034](ADR-0034-list-matchers.md) | Matchers inside a list: `{ matcher: "list", items }`, exact in length and order, with `{ matcher: "object", fields }` for an object item; a list with no matcher stays a literal. |
 | [ADR-0035](ADR-0035-seed-transform.md) | A spec host may transform the store adapters' seeds (`options.seedTransform: { host }`, protocol method `transformSeed`); every seed is checked against its store's storable forms (`SEED_VALUE_UNSTORABLE`) before anything is written. |
