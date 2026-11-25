@@ -1,6 +1,6 @@
 # @mmmnt/feat-derive
 
-**The derivation stage of Feature: a parsed spec plus the config in, a test topology out.**
+The derivation stage of Feature: a parsed spec plus the config in, a test topology out.
 `derive(spec, config)` turns the BuiltSpec IR of one `.feat` file into a `TestTopology`: a flat
 list of concrete test cases, one per plain scenario and one per row of every scenario outline.
 
@@ -22,18 +22,20 @@ number. The same IR and the same config give the same topology, which is what le
                       feat-runtime (harness) + feat-runner (vitest)
 ```
 
-Most users get this package through [`@mmmnt/feature`](https://www.npmjs.com/package/@mmmnt/feature)
+Most users get this package through [`@mmmnt/feature`](../feature/README.md)
 and never import it. Depend on it directly when you embed the pipeline: a service, an editor
 plugin or a custom generator that parses specs with `@mmmnt/feat-core` and needs the cases a spec
 expands to. It does not parse and it does not write files.
 
-## Install
+## Installation
 
-```sh
+Requires Node.js 22 or newer.
+
+```bash
 npm install @mmmnt/feat-derive @mmmnt/feat-types
 ```
 
-- Node 20 or later. The package is ESM only.
+- The package is ESM only.
 - The only runtime dependency is `@mmmnt/feat-types`, which holds the `BuiltSpec` and `FeatConfig`
   types `derive` takes. Install it beside this package to name those types in your own code.
 - To get a `BuiltSpec` you need a parser. `@mmmnt/feat-core` is the one Feature ships.
@@ -98,7 +100,7 @@ for (const c of cases) {
 console.log(serviceKeys);
 ```
 
-With a config whose only service is `store`, this prints:
+With a config whose only service is `store` and whose only command is `AddItem`, this prints:
 
 ```
 SPEC-ITM-002 › "adding items" › row[1]
@@ -173,8 +175,8 @@ derived topology therefore does not depend on the config's `consistency`, and th
 identical in every tier.
 
 **Carried through.** Each case also carries `specType` (so an adapter can tell a query from a
-command), `given.clock`, `given.context` and the spec's `variables` table (ADR-0017) when it has
-one. The harness resolves variables once per case.
+command), `given.clock`, `given.random` (ADR-0029), `given.context`, `given.order` (ADR-0025) and the
+spec's `variables` table (ADR-0017) when it has one. The harness resolves variables once per case.
 
 `topology.serviceKeys` is the config's service keys, sorted. Of the config, derive reads only those
 keys.
@@ -187,7 +189,7 @@ function derive(spec: BuiltSpec, config: FeatConfig): TestTopology;
 
 | Type | Fields |
 | --- | --- |
-| `TestTopology` | `specId`, `specName`, `cases: TestCase[]`, `serviceKeys: string[]` |
+| `TestTopology` | `specId`, `specName`, `cases: TestCase[]`, `serviceKeys: string[]`, `observes?: string[]` |
 | `TestCase` | `anchor`, `name`, `specType?`, `given?`, `when?`, `delivers?`, `prediction: ResolvedPrediction`, `variables?` |
 | `ResolvedPrediction` | `type` (`"success" \| "rejection" \| "error"`), `rejectionId?`, `errorCode?`, `response?`, `services: Record<string, ResolvedServiceAssertion>` |
 | `ResolvedServiceAssertion` | `ordering?`, `records?`, `contains?` |
@@ -198,40 +200,30 @@ generated file, and the harness in `@mmmnt/feat-runtime` receives it as `Harness
 
 ## Errors
 
-`derive` has no error codes. It throws a plain `Error` in one case:
+`derive` throws in two cases:
 
-| Message | When |
+| Error | When |
 | --- | --- |
-| `Outline row is missing a value for placeholder '<name>'` | A placeholder in a payload, a value block, a seed, a fault detail, a rejection id or a regex argument names a column the row does not have. |
+| `Outline row is missing a value for placeholder '<name>'` (plain `Error`) | A placeholder in a payload, a value block, a seed, a fault detail, a rejection id or a regex argument names a column the row does not have. |
+| `Spec <ID> observes service '<key>', which this config does not configure. …` (`code: "UNKNOWN_SERVICE_KEY"`) | The spec's `observes` names a service the config passed to `derive` lacks (SPEC-DRV-002). |
 
 The parser (`@mmmnt/feat-core`) catches undeclared services, commands, schemas and actors earlier,
-with codes. `feat generate` does not wrap a throw from derive, so it propagates as it is. SPEC-DRV-001
-calls this refusal `DERIVE_THREW`. That is the label its test probe gives the throw, not a code on
-the error.
+with codes. `feat generate` prints a throw from derive as `ERROR <message>` and exits 1, and writes
+no file. SPEC-DRV-001 calls this refusal `DERIVE_THREW`: the label its test probe gives the throw, not a
+code on the error.
 
-
-## What changed in 0.2.0
-
-- **Outline seeds (SPEC-DRV-001).** A row's values are substituted into its own copy of every inline
-  seed record. Before, every row received the same seeds array with its `{ "$placeholder": ... }`
-  objects intact, and the adapters were seeded with those literal objects. Fixture seeds and
-  scenarios that are not outlines are unchanged.
-- **Ordering is no longer baked in (ADR-0024).** `ordering` appears only when the spec wrote it. The
-  default comes from the active tier's config at run time.
-- **Fault preconditions (ADR-0023).** `given.faults` is carried into each case, with outline values
-  substituted into a fault's `detail`.
 
 ## Specs and decisions
 
-- [SPEC-DRV-001](https://github.com/mmmnt/feature/blob/main/packages/feat-derive/derive-seeds.feat): derive substitutes each outline row into its own seeds.
-- [SPEC-GEN-001](https://github.com/mmmnt/feature/blob/main/packages/feature/generate-seed-fixtures.feat): the generator checks each row's seeds after derive and inlines fixtures.
-- [ADR-0023](https://github.com/mmmnt/feature/blob/main/docs/adr/ADR-0023-adapter-interface-v2.md): observation modes, the scenario clock and fault injection.
-- [ADR-0024](https://github.com/mmmnt/feature/blob/main/docs/adr/ADR-0024-tier-bindings.md): tier bindings and environment-agnostic generation.
-- [Grammar reference](https://github.com/mmmnt/feature/blob/main/docs/grammar-reference.md): outlines, seeds, `has` and `contains`, queries.
+- [SPEC-DRV-001](derive-seeds.feat): derive substitutes each outline row into its own seeds.
+- [SPEC-DRV-002](derive-observes.feat): derive resolves each prediction over the services the spec observes (ADR-0033).
+- [SPEC-GEN-001](../feature/generate-seed-fixtures.feat): the generator checks each row's seeds after derive and inlines fixtures.
+- [ADR-0023](../../docs/adr/ADR-0023-adapter-interface-v2.md): observation modes, the scenario clock and fault injection.
+- [ADR-0024](../../docs/adr/ADR-0024-tier-bindings.md): tier bindings and environment-agnostic generation.
+- [Grammar reference](../../docs/grammar-reference.md): outlines, seeds, `has` and `contains`, queries.
 
 ## License
 
-MIT
+BSD-3-Clause. See [LICENSE](LICENSE).
 
-Part of [Feature](https://github.com/mmmnt/feature) — the `.feat` execution specification
-language. Docs: https://github.com/mmmnt/feature/wiki
+Part of [Feature](../../README.md), the .feat execution specification toolchain.
