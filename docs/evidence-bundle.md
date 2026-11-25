@@ -1,6 +1,6 @@
 # The evidence bundle (`feat-evidence/2`)
 
-`feat report --evidence <path>` writes a self-contained, digest-anchored record
+`feat report --evidence [--out <path>]` writes a self-contained, digest-anchored record
 of a project's spec state and verification results at a point in time:
 
 - **spec inventory** — every discovered spec with its id, lifecycle status, and
@@ -10,7 +10,7 @@ of a project's spec state and verification results at a point in time:
 - **run** — the most recent `feat run` result (test/failure/error counts and a
   digest of the JUnit artifact), when one exists;
 - **producer** — the exact `@mmmnt` toolchain versions in effect;
-- **project** — the language version and a digest of `feat.config.json`.
+- **project** — the language version, the config digests, the adapter bindings and the environment.
 
 The schema is `schemas/evidence.schema.json` (also shipped inside the
 `@mmmnt/feature` package for programmatic consumers).
@@ -30,14 +30,14 @@ pointed at. Absent from the config, absent from the bundle.
 
 Producing bundles is free, local, and requires no account — like every
 capability in the toolchain. The `signature` field is null when produced
-locally; attestation (signing on ingestion, and the ledger of bundles over
-time) is account-side functionality.
+locally. Signed attestations stored in a hosted ledger are the commercial
+version of Feature, which is paid; free accounts have no dashboard access.
 
 ## Producing
 
 ```sh
 feat run                             # optional — populates the run block
-feat report --evidence evidence.json
+feat report --evidence --out evidence.json
 ```
 
 Production never fails the build by itself: a project whose specs don't parse
@@ -87,10 +87,9 @@ spec text keeps its ${expressions}; the bundle replays the substitution.
 `/2` is a strict superset of `/1`: every `/1` field is unchanged, and when a
 run artifact exists the bundle additionally carries `runs` — one entry per
 scenario with its spec id, pass/fail status, duration, and the parsed
-prediction-violation rows (`{path, expected, got}` at spec coordinates). This
-is the exact envelope the dashboard's violation view renders (its demand
-contract: feature-dashboard `SPEC-FD-037`): what was predicted, what was
-captured, and where they diverged — provenance-grade, not prose.
+prediction-violation rows (`{path, expected, got}` at spec coordinates): what
+was predicted, what was captured, and where they diverged — provenance-grade,
+not prose.
 
 Stage 1 (this contract) derives `runs` from the JUnit artifact; the parse is
 lenient — an unparseable failure still records the failed scenario, never
@@ -98,8 +97,7 @@ drops it. Stage 2 moves production to a structured run sidecar written by the
 harness itself (the ADR-0017 sidecar pattern), replacing text parsing with
 recorded fact; the bundle shape does not change.
 
-Consumers accepting `/1` accept `/2` by ignoring `runs`; the dashboard ledger
-accepts both contracts.
+Consumers accepting `/1` accept `/2` by ignoring `runs`.
 
 ## The spec's face (`feat-evidence/2` additive)
 
