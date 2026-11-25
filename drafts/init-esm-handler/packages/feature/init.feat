@@ -1,0 +1,103 @@
+feat 1.0
+
+# SPEC-INIT-001 (DRAFT, drafts/init-esm-handler, awaiting the owner) — `feat init` scaffolds a project whose
+# starter handler loads, whatever module system the project's package.json declares.
+#
+# No spec owns `feat init` today: packages/feature/src/commands/init.ts was built without one and its tests
+# are packages/feature/init.test.ts. This spec states what init does now (the three scaffold files, the
+# ALREADY_INITIALIZED refusal that writes nothing, the package.json it creates, the install of what
+# package.json does not declare) and the fix.
+#
+# THE BUG. The scaffold routes `Greet` to `src/greet.ts` (feat.config.json) and its spec says
+# `handler at src/greet.ts`; the README's starter handler is an ES module (`export async function greet`).
+# The handler adapter loads a route with a native dynamic import (adapters/handler/src/index.ts:112). Node
+# reads a .ts file under the nearest package.json's "type": in a project whose package.json says
+# "type": "commonjs", which `npm init -y` writes on npm 11, the import fails with "Unexpected token 'export'"
+# and setup refuses with ROUTE_UNLOADABLE. Reproduced: `npm init -y` (npm 11.17.0), `feat init` (the
+# worktree's CLI; it installed @mmmnt/* 0.17.0 and vitest 5.1.2), the README's handler at src/greet.ts, the spec
+# flipped to agreed, `feat generate`, `feat run`: ROUTE_UNLOADABLE, 2 tests skipped, exit 1 (1, not 2, because
+# of the Vitest 5 reporter defect, drafts/run-exit-codes-vitest). Without a package.json, init writes one
+# with no "type" and the same steps pass on Node 24.19.0 (2 passed): Node's module-syntax detection loads it,
+# with a MODULE_TYPELESS_PACKAGE_JSON warning. The README documents the workaround
+# (packages/feature/README.md:87-88, "run `npm pkg set type=module` first").
+#
+# THE FIX (option B of drafts/init-esm-handler/README.md, recommended; option A refuses instead):
+#  1. When init creates package.json it writes "type": "module" beside name, version and private.
+#  2. When package.json exists and its "type" is "module", the scaffold is unchanged: src/greet.ts.
+#  3. When package.json exists and its "type" is anything else (absent, "commonjs"), init leaves
+#     package.json's "type" as it is and scaffolds the handler as an ES module whatever the package says:
+#     the route is `src/greet.mts` in feat.config.json and the spec says `handler at src/greet.mts`. It
+#     prints why: `handler: src/greet.mts (an ES module: package.json is not "type": "module")`. The
+#     "Next steps" line names the same path.
+#  4. The README's quick start shows both names, and the workaround sentence goes.
+#
+# Driven through packages/feature/fixtures/init-probe.mjs (part of the build, not shipped).
+# `InitProject { packageJson }` makes a throwaway directory with no package.json (`none`) or with one whose
+# "type" is "commonjs" (as `npm init -y` writes it on npm 11), absent (`typeless`) or "module", runs the CLI's
+# `feat init --no-install` there (no network), and answers: `exit`; `type`, package.json's "type" after init
+# ("" when absent); `route`, the module feat.config.json routes Greet to; `specHandler`, the spec's
+# `handler at` path; and `loads`, whether the README's starter handler, written at `route`, imports with Node
+# from that directory as the handler adapter imports a route (true), or fails (false).
+
+spec SPEC-INIT-001 "feat init: the starter handler loads in any package"
+context Toolchain
+aggregate Cli
+type command
+status draft
+
+construct:
+  handler at packages/feature/src/commands/init.ts
+  touches packages/feature/src/commands/init.ts
+  touches packages/feature/init.test.ts
+  touches packages/feature/init.feat
+  touches packages/feature/init.contract.json
+  touches packages/feature/fixtures/init-probe.mjs
+  touches packages/feature/README.md
+  touches feat.config.json
+  Read package.json before writing anything, after the ALREADY_INITIALIZED check. With no package.json,
+  write { name, version: "0.0.0", private: true, type: "module" }. With one whose "type" is "module", the
+  scaffold routes Greet to src/greet.ts. With one whose "type" is absent or anything else, it routes Greet
+  to src/greet.mts, writes `handler at src/greet.mts` in specs/greet.feat, leaves package.json's "type"
+  untouched, and prints `handler: src/greet.mts (an ES module: package.json is not "type": "module")`.
+  feat.config.json gains the command InitProject routed to packages/feature/fixtures/init-probe.mjs.
+
+enforce:
+  rejects ALREADY_INITIALIZED when feat.config.json, specs/greet.feat or specs/greet.contract.json exists, writing nothing
+  scaffold a handler route that Node loads as an ES module under the project's package.json
+  set "type": "module" only in a package.json init creates, never in one the project already has
+  keep the config's route and the spec's handler at the same path
+
+contract:
+  input InitProjectInput
+  response InitProjectResult
+  error InitProjectError
+
+scenario "with no package.json, init writes one that is an ES module package":
+  when: InitProject { packageJson: "none" }
+  predict success:
+    response OK InitProjectResult { exit: 0, type: "module", route: "src/greet.ts", specHandler: "src/greet.ts", loads: true }
+    filesystem has []
+
+scenario "a CommonJS package.json, as npm init -y writes it, keeps its type and gets an .mts handler":
+  when: InitProject { packageJson: "commonjs" }
+  predict success:
+    response OK InitProjectResult { exit: 0, type: "commonjs", route: "src/greet.mts", specHandler: "src/greet.mts", loads: true }
+    filesystem has []
+
+scenario "a package.json with no type gets an .mts handler and keeps no type":
+  when: InitProject { packageJson: "typeless" }
+  predict success:
+    response OK InitProjectResult { exit: 0, type: "", route: "src/greet.mts", specHandler: "src/greet.mts", loads: true }
+    filesystem has []
+
+scenario "an ES module package.json keeps the .ts handler":
+  when: InitProject { packageJson: "module" }
+  predict success:
+    response OK InitProjectResult { exit: 0, type: "module", route: "src/greet.ts", specHandler: "src/greet.ts", loads: true }
+    filesystem has []
+
+scenario "a project already initialized is refused and nothing is written":
+  when: InitProject { packageJson: "commonjs", existing: "feat.config.json" }
+  predict rejection ALREADY_INITIALIZED:
+    response ERR InitProjectError { code: "ALREADY_INITIALIZED", detail: matching "feat.config.json already exists", exit: 2, type: "commonjs" }
+    filesystem has []

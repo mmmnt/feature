@@ -1,0 +1,38 @@
+{
+  "$schema": "https://feat.dev/schemas/contract.json",
+  "specId": "SPEC-INIT-001",
+  "schemas": {
+    "InitProjectInput": {
+      "type": "object",
+      "required": ["packageJson"],
+      "additionalProperties": false,
+      "properties": {
+        "packageJson": { "enum": ["none", "commonjs", "typeless", "module"] },
+        "existing": { "enum": ["feat.config.json", "specs/greet.feat", "specs/greet.contract.json"] }
+      }
+    },
+    "InitProjectResult": {
+      "type": "object",
+      "required": ["exit", "type", "route", "specHandler", "loads"],
+      "additionalProperties": false,
+      "properties": {
+        "exit": { "type": "integer" },
+        "type": { "type": "string" },
+        "route": { "type": "string" },
+        "specHandler": { "type": "string" },
+        "loads": { "type": "boolean" }
+      }
+    },
+    "InitProjectError": {
+      "type": "object",
+      "required": ["code", "exit"],
+      "additionalProperties": false,
+      "properties": {
+        "code": { "enum": ["ALREADY_INITIALIZED"] },
+        "detail": { "type": "string" },
+        "exit": { "type": "integer" },
+        "type": { "type": "string" }
+      }
+    }
+  }
+}
