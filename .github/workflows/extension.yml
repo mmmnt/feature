@@ -5,6 +5,8 @@ name: extension
 #    released version and commit, and the extension is stamped with that version
 #    so each release ships the grammar it syncs (founder directive 2026-07-27);
 #    registries skip idempotently if the version already exists
+#  - by hand (workflow_dispatch) with a released version and its commit, when
+#    the release run did not publish it
 #  - on ext-v* tags — out-of-band extension-only releases keeping the
 #    version in editors/vscode/package.json
 # Targets:
@@ -27,6 +29,18 @@ on:
         type: string
       ref:
         description: The commit that version was released from.
+        required: false
+        type: string
+  # A safety valve, as in release.yml: publish a released toolchain version by hand when the
+  # release run could not (e.g. the release was created outside the workflow).
+  workflow_dispatch:
+    inputs:
+      version:
+        description: The released toolchain version (X.Y.Z) to publish the extension at.
+        required: true
+        type: string
+      ref:
+        description: The commit that version was released from (its vX.Y.Z tag works).
         required: false
         type: string
 
