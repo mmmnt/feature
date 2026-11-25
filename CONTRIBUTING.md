@@ -61,8 +61,9 @@ the release. The `commit-msg` hook checks them with commitlint (`commitlint.conf
 - **Scopes:** optional and free, usually the package or adapter (`fix(kurrent): …`)
 - Titles and bodies may be long, and a subject may start with a spec id or an error code.
 
-For example: `feat(stdio-jsonrpc): fault shape C carries untilReset`. Every `@mmmnt` package is in one fixed version group and is released at the same
-version.
+For example: `feat(stdio-jsonrpc): fault shape C carries untilReset`.
+
+Every `@mmmnt` package is in one fixed version group and is released at the same version.
 
 - After CI passes on `main`, `release.yml` writes a changeset from the commit title:
   - `feat` → minor;

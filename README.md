@@ -144,7 +144,7 @@ Every command that reads a config takes `-c, --config <path>` (default `feat.con
 | `feat generate` | Compile every spec into its test file (parse, derive, emit). |
 | `feat verify` | Regenerate in memory and compare with the committed test files; a missing or differing file is `VERIFY_FAILED`. |
 | `feat run [--spec <ID>] [--coverage] [--shard <i>/<n>]` | Run the generated suites with the adapter lifecycle (a missing generated file is `NOT_GENERATED`). `--spec` runs one spec, `--coverage` uses the runner's coverage provider, `--shard` runs slice *i* of *n* (each shard needs its own instruments). |
-| `feat report [--junit] [--evidence [--out <path>] [--force]]` | Summarize the last run from its JUnit XML; `--junit` prints the XML path. `--evidence` writes a `feat-evidence/2` bundle to `.feature/evidence/<environment>/<sha>.json` ([format](docs/evidence-bundle.md)); the `local` environment is skipped unless `--force`. |
+| `feat report [--junit] [--evidence [--out <path>] [--force]]` | Summarize the last run from its JUnit XML; `--junit` prints the XML path. `--evidence` writes a `feat-evidence/2` bundle to `.feature/evidence/<environment>/<commit-sha>[-<config-slug>][-dirty].json` ([format](docs/evidence-bundle.md)); the `local` environment is skipped unless `--force`. |
 | `feat audit` | Buildability gate (B1 to B3): a code-producing spec has its `handler at`, every spec declares `touches`, and every predicted rejection has its `rejects` line and the reverse. Warns on a draft, a missing paired contract or a missing generated test. |
 | `feat audit --changed <base> [-c <config>...]` | The touches gate: every path changed since the merge base of `<base>` and `HEAD`, plus the working tree, is checked against the specs' `touches`. `-c` is repeatable and takes globs. |
 | `feat lint` | Language-quality findings: unused or duplicate declarations, drafts, an optional property left unstated (`OPTIONAL_UNSTATED`), a nested block over an open schema (`NESTED_SCHEMA_OPEN`). |
@@ -174,7 +174,8 @@ The full reference, configuration included, is in [`packages/feature`](packages/
 - [`corpus/`](corpus/README.md): the exemplars, each a `.feat`, its `.contract.json`, its expected
   IR (`.ir.json`) and its `feat.config.json`. The parser is tested against them.
 - [`schemas/`](schemas): the language-neutral JSON Schemas for the IR (`builtspec.schema.json`),
-  contracts and config. `pnpm corpus:validate` checks the corpus against them.
+  contracts, config, the evidence bundle (`evidence.schema.json`) and the Feat Host Protocol
+  (`feat-host-protocol.schema.json`). `pnpm corpus:validate` checks the corpus against them.
 - [`docs/evidence-bundle.md`](docs/evidence-bundle.md): the `feat report --evidence` format.
 - [`docs/adr/`](docs/adr/README.md): the architecture decision records.
 
@@ -196,7 +197,7 @@ loaded by package name.
 | Package | Purpose |
 | --- | --- |
 | [`@mmmnt/feature`](packages/feature) | The `feat` CLI. |
-| [`@mmmnt/feat-core`](packages/feat-core) | Recursive-descent parser, AST to BuiltSpec IR, closed-reference validation. |
+| [`@mmmnt/feat-core`](packages/feat-core) | Recursive-descent parser (parse: `.feat` → BuiltSpec IR, built directly), closed-reference validation. |
 | [`@mmmnt/feat-types`](packages/feat-types) | TypeScript types for the IR, config and reports, mirroring `schemas/`. No dependencies. |
 | [`@mmmnt/feat-derive`](packages/feat-derive) | BuiltSpec IR and config to a test topology: outline expansion, ordering, query implicit-zero. Pure and deterministic. |
 | [`@mmmnt/feat-emit-ts`](packages/feat-emit-ts) | Test topology to a complete, deterministic Vitest file. |
