@@ -1,5 +1,12 @@
 # @mmmnt/feat-adapter-http
 
+## 0.18.1
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @mmmnt/feat-types@0.18.1
+
 ## 0.18.0
 
 ### Patch Changes

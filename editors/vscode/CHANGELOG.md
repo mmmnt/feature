@@ -2,6 +2,20 @@
 
 The extension is released at the toolchain's version; these are the toolchain's changes (`@mmmnt/feature`).
 
+## 0.18.1
+
+### Patch Changes
+
+- fix(core): a second given: in a scenario, and a second ordering for one service across its has and contains lines, are MALFORMED_SYNTAX at the second line naming the first (ADR-0040 amendment)
+- Updated dependencies []:
+  - @mmmnt/feat-analyze@0.18.1
+  - @mmmnt/feat-core@0.18.1
+  - @mmmnt/feat-derive@0.18.1
+  - @mmmnt/feat-emit-ts@0.18.1
+  - @mmmnt/feat-runner@0.18.1
+  - @mmmnt/feat-runtime@0.18.1
+  - @mmmnt/feat-types@0.18.1
+
 ## 0.18.0
 
 ### Minor Changes

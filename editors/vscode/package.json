@@ -2,7 +2,7 @@
   "name": "feat-vscode",
   "displayName": "Feature — execution specifications",
   "description": "Syntax highlighting and live spec-anchored test feedback for .feat files",
-  "version": "0.18.0",
+  "version": "0.18.1",
   "publisher": "mmmnt",
   "license": "BSD-3-Clause",
   "homepage": "https://feature.mmmnt.ai",

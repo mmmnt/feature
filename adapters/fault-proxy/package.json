@@ -1,6 +1,6 @@
 {
   "name": "@mmmnt/feat-fault-proxy",
-  "version": "0.18.0",
+  "version": "0.18.1",
   "description": "Feat fault-proxy library: transport faults (timeout, connection reset, partition, broker loss) for the product adapters, through Toxiproxy",
   "license": "BSD-3-Clause",
   "author": "listenrightmeow <@listenrightmeow> (https://sdd.mmmnt.dev/)",
