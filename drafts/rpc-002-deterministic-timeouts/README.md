@@ -1,7 +1,7 @@
 # SPEC-RPC-002: the timeout scenarios race the clock (DRAFT)
 
-Status: draft, awaiting the owner. Nothing is built; the amended spec beside this file is a copy of
-SPEC-RPC-002 at `status draft` (`adapters/stdio-jsonrpc/host-sharing.feat`).
+Status: draft, revised to owner ruling 13 (2026-11-25, "Injected clock"); awaiting the flip. Nothing is built; the
+amended spec beside this file is a copy of SPEC-RPC-002 at `status draft`, with `ADR-0041-DRAFT.md` for the seam.
 
 ## The failure
 
@@ -37,31 +37,31 @@ gets a fresh host and never the ended one", `lateRoleOutcome: expected "ok", got
 
 A 200 ms limit is the same size as the thing it is supposed to leave alone.
 
-## The amendment (the spec's header, items 1 to 5)
+## The amendment (the spec's header, items 1 to 6; ADR-0041 draft)
 
-The short limit applies only to the request meant to time out (`invoke`); the fixture withholds that answer
-until the client has ended the host, so the timeout is certain; the ended host stays up until RunFiles releases
-it after the late setup, so "still exiting" is a fact; no sleeps. Every predicted fact is unchanged, and one
-scenario is added to prove that a setup slower than the short limit is served. No adapter behaviour changes: the
-adapters keep their 30 s limit, 2 s grace and HOST_TIMEOUT/HOST_ENDED handling.
+- **Clock:** `interface Clock { setTimeout(fn, ms): handle; clearTimeout(handle) }` in `src/clock.ts`; `systemClock` is
+  the global pair. It drives the adapter's three timers: the request limit (`src/host.ts:100`), the grace kill on a
+  timeout (`:127`) and on close (`:141`).
+- **Where it is injected:** `HostRegistry(requestTimeoutMs = 30_000, clock = systemClock)`, handed to each
+  `HostConnection`. A test-only seam: `defaultRegistry`, which every adapter uses, passes neither, so production
+  is the real clock, 30 s and 2 s. No adapter option or `feat.config.json` key reaches it.
+- **Ruling cd46cd64 (3):** the limit parameter is unchanged (shape and meaning); the clock is a second constructor
+  parameter under the same "only the test driver passes it" rule. Unlike the earlier draft, nothing is limited to
+  `invoke`.
+- **How the scenarios advance it:** RunFiles uses a `ManualClock` (`advance(ms)` fires due timers in order). After
+  an invoke it waits for the invoke to settle or for the host to log `hold invoke` (watched with `fs.watch`), and
+  on hold advances by the limit: HOST_TIMEOUT, certain. For a `lateRole` file, after the late setup is recorded,
+  it advances by the grace period: the registry's SIGKILL ends the held host. The fake host holds the late answer
+  until stdin closes (no 600 ms) and `late-invoke-held` stays up until killed (no 1500 ms). The 20 ms sleep goes.
+- **Facts unchanged**; one scenario added (a setup 500 ms late in wall time, limit 200, serves).
 
-## Decisions for the owner
+## For the owner before agreeing
 
-1. **How the timeout scenarios stop racing.**
-   - **A. The short limit applies to `invoke` only, the fake host withholds the late answer until the client
-     ends it, and the ended host exits when RunFiles releases it (Recommended).** Nothing is left to the clock:
-     each request meant to be answered runs under the adapters' own 30 s limit, and each event the scenario
-     depends on happens because the previous one did. It changes the shape of the RunFiles-only registry
-     parameter of ruling cd46cd64 (3) (it now names the methods it limits), and adds a second one (no grace
-     kill for a `lateRole` file).
-   - B. An injected clock: the registry takes a timer factory, and RunFiles fires the invoke's timeout itself
-     once the fake host has logged the invoke. No wall clock at all, but a test seam in `HostConnection`.
-   - C. Keep one limit for every request and raise it by measurement: about 5 s, over 20 times the slowest
-     setup measured here. Each of the six timeout scenarios then waits about 5 s, and a start-up stall over 5 s
-     still fails them.
-2. **The fake host's mode name.** `late-invoke-slow-exit` becomes `late-invoke-held` (it no longer exits on a
-   timer). Keep the old name if the owner prefers fewer changed lines; the behaviour changes either way.
-3. **Node 26.** Not reproduced on Node 26 here (Node 24 only on this host); the mechanism does not depend on the
-   Node version, only on start-up time.
-4. **ADR.** Not needed: a test-driver and fixture change; the adapter's design (ADR for stdio-jsonrpc, rulings
-   cd46cd64) is unchanged.
+1. **ADR-0041 is needed:** `HostRegistry` and `HostConnection` are exported (`src/index.ts:6`), so the clock
+   parameter is public API. The draft keeps `systemClock` and `ManualClock` internal and exposes only the type.
+2. **A hang instead of a timeout:** under the manual clock nothing times out unless RunFiles advances it, so a
+   fake host that wrongly never answers hangs that scenario until the test timeout, rather than HOST_TIMEOUT.
+3. **One event from outside the process:** RunFiles learns that the host holds the invoke from the fake
+   host's log via `fs.watch` (event, not polling). The timeout scenarios run on Linux, where it is inotify.
+4. **SPEC-RPC-001** (`src/exchange.ts:47`) keeps the real clock; its one timeout scenario uses a silent host.
+5. Not reproduced on Node 26 (Node 24 only here); the cause does not depend on the version.

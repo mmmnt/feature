@@ -49,7 +49,7 @@ feat 1.0
 # the first invoke 600 ms late, so the requests written after it wait behind it. It logs every method
 # it receives; receivedAfterTimeout is what reached it after the client saw the timeout.
 #
-# AMENDMENT DRAFT (drafts/rpc-002-deterministic-timeouts, status draft, awaiting the owner): the timeout scenarios
+# AMENDMENT DRAFT (drafts/rpc-002-deterministic-timeouts, status draft, revised to owner ruling 13 of 2026-11-25): the timeout scenarios
 # run without a race. The last scenario failed CI on Node 26 with `lateRoleOutcome: expected "ok", got
 # "HOST_TIMEOUT"`. Cause: RunFiles's requestTimeoutMs (200 ms) is the limit of EVERY request of the file's registry
 # (src/host.ts:100-106, the timer each request starts as it writes the request; src/host.ts:177, the registry hands the
@@ -63,22 +63,38 @@ feat 1.0
 # risks. Two more clocks race in the fixture: the first invoke is answered 600 ms late against the 200 ms limit,
 # and late-invoke-slow-exit exits 1500 ms after stdin closes against the registry's 2 s kill, so "the ended host is
 # still exiting" when the late role sets up is a margin, not a fact; and RunFiles sleeps 20 ms before counting live
-# hosts (src/run-files.ts:168). WHAT CHANGES (RunFiles and the fake host only; the adapters' own limit, grace and
-# behaviour do not change):
-#  1. requestTimeoutMs limits the invoke requests of the file only. Every other request (setup, reset, setClock,
-#     capture, settle, teardown) keeps the adapters' 30 s limit, so a request that must be answered never races the
-#     short limit. The limit stays a HostRegistry constructor parameter only the test driver passes (ruling
-#     cd46cd64 (3)); it now names the methods it applies to.
-#  2. The late-invoke modes never answer the first invoke on time: they hold its answer until their stdin closes,
-#     which is the client ending the host after HOST_TIMEOUT, then write it (the late line the client must not take
-#     for another request's). The timeout is then certain whatever the limit and the load.
-#  3. late-invoke-slow-exit becomes late-invoke-held: after its stdin closes it does not exit until it receives
-#     SIGTERM. RunFiles records endedHostAliveAtLateSetup, sets the late role up, records its outcome, and only then
-#     sends SIGTERM to the ended host. For a file with lateRole, RunFiles's registry does not kill an ended host
-#     after 2 s; it waits for it to exit (a registry parameter only the test driver passes, as the limit). So the
-#     ended host is alive at the late setup by construction.
-#  4. RunFiles counts live hosts after every role's teardown has awaited its host's exit, with no sleep.
-#  5. One new scenario proves (1): a host that answers setup 500 ms late, under requestTimeoutMs 200, serves.
+# hosts (src/run-files.ts:168).
+# WHAT CHANGES (owner ruling 2026-11-25, "Injected clock"; ADR-0041, draft). The adapter's timers run on an injected
+# clock; RunFiles injects a manual one and advances it on events, so no scenario depends on wall time:
+#  1. A Clock is { setTimeout(fn, ms): handle; clearTimeout(handle) } (src/clock.ts). The three adapter timers use the
+#     connection's clock: the request limit (src/host.ts:100), the kill after the grace period on a timeout (:127)
+#     and on close (:141). systemClock is the global setTimeout and clearTimeout.
+#  2. It is injected where the limit is: HostRegistry(requestTimeoutMs = 30_000, clock = systemClock) hands both to
+#     every HostConnection it spawns. defaultRegistry, the one every adapter uses, passes neither, so production runs
+#     on the real clock with the 30 s limit and 2 s grace, unchanged. No adapter or feat.config.json option reaches
+#     the clock; only a caller that builds its own registry does, and RunFiles is the only one. The limit parameter
+#     of ruling cd46cd64 (3) is unchanged in shape and meaning (one limit, every request); the clock is a second
+#     constructor parameter under the same rule.
+#  3. RunFiles builds each file's registry with a ManualClock (src/manual-clock.ts, not exported from the package):
+#     time moves only by advance(ms), which fires the due timers in due order. RunFiles advances it twice, each time
+#     after an event:
+#     a. after it issues an invoke, it waits for the first of: the invoke settles, or the host logs that it holds
+#        the invoke (a `hold invoke` line in FAKE_HOST_LOG, read on fs.watch events, never on a timer). On hold it
+#        advances the clock by the file's limit (requestTimeoutMs, else 30 000), so the invoke fails HOST_TIMEOUT
+#        with the limit in its detail. A host that answers is never timed out, whatever its speed.
+#     b. for a file with lateRole, after the late role's setup and the facts about it, it advances the clock by the
+#        grace period, so the registry's own SIGKILL ends the held host. Every other file's ended host exits by
+#        itself when its stdin closes, which clears its kill timer.
+#  4. The fake host's late-invoke modes hold the first invoke and log `hold invoke` instead of answering 600 ms
+#     late; they answer it when their stdin closes (the late line the client must not take for another
+#     request's). late-invoke-slow-exit becomes late-invoke-held: after its stdin closes it stays up until it is
+#     killed, instead of exiting 1500 ms later. So "the ended host is still exiting" at the late setup holds by
+#     construction.
+#  5. RunFiles counts live hosts after every role's teardown has awaited its host's exit, without the 20 ms sleep.
+#  6. One new scenario: a host that answers setup 500 ms late, under requestTimeoutMs 200, serves, because only the
+#     manual clock can fire the limit.
+# Not changed: the one-shot exchange of SPEC-RPC-001 (src/exchange.ts:47) keeps the real clock; its timeout
+# scenario uses the silent host, so the timeout is certain and only costs its 300 ms.
 # The facts every scenario predicts are unchanged.
 #
 # Scope: the lifecycle (who spawns, who ends, what a crash does, what a mismatch does) and
@@ -121,7 +137,7 @@ construct:
   role whose host configuration differs from the open host's is refused. When the host process
   exits, every pending and every later call of every role of that file fails with HOST_CRASHED;
   the registry entry is dropped so no other file is affected. When a request has no answer within
-  the limit (30 s; a RunFiles file may name requestTimeoutMs, which limits its invoke requests only), that request fails
+  the limit (30 s; a RunFiles file may name requestTimeoutMs for its registry; the registry's timers run on its clock, the real one unless the test driver injects another), that request fails
   HOST_TIMEOUT, the connection writes nothing more to the host and ends it (close stdin, then kill
   after the grace period), and every pending and every later call of every role of that file fails
   HOST_ENDED, its detail naming the method that timed out and the limit (a host that exits by
@@ -145,7 +161,7 @@ enforce:
   rejects HOST_ENDED when a role of a file calls after the file's host was ended after a timeout, the detail naming the method that timed out and the limit
   never take a line the host writes after a timeout as the answer to another request
   on every outcome leave no host process running
-  make every timeout scenario certain by construction: the fake host withholds the answer meant to be late until the client has ended it, a request meant to be answered runs under the 30 s limit, and the ended host exits when the driver releases it, never on a timer
+  run the request limit and the grace kill on the registry's clock: the real clock in every adapter, a manual clock that only the test driver injects and advances on events
 
 contract:
   input RunFilesInput
@@ -332,7 +348,7 @@ scenario "a role that sets up after a timeout, while the ended host is still exi
     response OK RunFilesResult { files: { a: { roleOutcomes: { response: "HOST_TIMEOUT", log: "HOST_ENDED" }, endedHostAliveAtLateSetup: true, lateRoleOutcome: "ok", lateRoleSpawnedHost: true, hostsSpawned: 2, hostsAlive: 0, spawnedBy: "response", endedBy: "response", aliveAfterTeardown: [false,false], setups: [[],["log"]], setupNamespaces: ["s0599e33863c1","s0599e33863c1"], hostEnvNamespace: "s0599e33863c1", clocks: [null,null], clockRoles: ["response","log"], resetsBeforeClock: true, settled: {}, peeks: [], receivedAfterTimeout: ["setup","teardown"] } }, distinctHosts: 2 }
     filesystem has []
 
-scenario "a file's short request limit applies to invoke only, so a host that answers setup after it still serves":
+scenario "under the injected clock a host that answers setup later than the file's limit, in wall time, still serves":
   when: RunFiles { files: [{ name: "a", namespace: "s0599e33863c1", host: { command: ["node", "adapters/stdio-jsonrpc/fixtures/fake-host.mjs", "--mode", "slow-setup"] }, roles: ["response", "log"], requestTimeoutMs: 200 }] }
   predict success:
     response OK RunFilesResult { files: { a: { hostsSpawned: 1, hostsAlive: 0, spawnedBy: "response", endedBy: "log", aliveAfterTeardown: [true,false], roleOutcomes: {"response":"ok","log":"ok"}, setups: [[],["log"]], setupNamespaces: ["s0599e33863c1","s0599e33863c1"], hostEnvNamespace: "s0599e33863c1", clocks: [null,null], clockRoles: ["response","log"], resetsBeforeClock: true, settled: {"log":true}, peeks: [2,2], stopped: 2, recordsVisibleAfterSettle: 2 } }, distinctHosts: 1 }
