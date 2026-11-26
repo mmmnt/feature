@@ -94,6 +94,21 @@ backslashes, and under decision 2b it is recorded with the quotes.
 - The LSP and any embedder of `parseSource` stop seeing raw `TypeError` and `SyntaxError` throws from
   ordinary input: every refusal is a `{ status: "ERR", body: { code, message, line?, hint? } }`.
 
+## Amendment (2026-11-26): the two remaining overwrites
+
+The owner's ruling, 2026-11-26: "fix them", treated as decision 3 ("Refuse all of them"). Building decision 3 left
+two silent overwrites:
+
+- a second `given:` in a scenario merged into the first, so two blocks read as one;
+- a service's `ordered`/`unordered` is one IR field (`prediction.services.<key>.ordering`) that both its `has`
+  and its `contains` line could write, and the later one replaced the earlier. Only the `has` diff reads it, so a
+  `contains unordered` after `has ordered` silently changed how the captured records are compared.
+
+Both are now `MALFORMED_SYNTAX` at the second line, the message naming the first: a second `given:`, and the second
+of a service's `has` and `contains` lines to write an ordering. An ordering written on one line only is unchanged
+(also on a `contains` line, as before). No IR field changes; SPEC-CORE-001 gains three refusal fixtures (SPEC-BAD-164
+to -166), and no tracked spec writes either form.
+
 ## Rejected alternatives
 
 - **Strip trailing comments everywhere** (the other option for decision 4). It is the shell and YAML habit

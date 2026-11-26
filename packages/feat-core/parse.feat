@@ -83,6 +83,13 @@ feat 1.0
 # One new exemplar, corpus/strict-lines (#22), one ok fixture (SPEC-OK-203) and twenty refusal fixtures
 # (SPEC-BAD-144 to -163). No IR field changes, so every other exemplar's IR is unchanged; SPEC-RT-014's recorded
 # name changes under rule 2 (its name held \"<hex>\").
+#
+# AMENDMENT (ADR-0040 amendment; the owner's ruling 2026-11-26, "fix them", on the two silent overwrites left by
+# rule 3). A second given: in a scenario is MALFORMED_SYNTAX at the second, naming the first (before, it merged into
+# the first). A service's ordering (ordered/unordered) is one slot that its has and contains lines share: the second
+# of them to write one is MALFORMED_SYNTAX at that line, naming the first (before, it replaced the first's, so a
+# contains line could change how its service's has records are compared). Three refusal fixtures (SPEC-BAD-164 to
+# -166); no IR changes.
 
 spec SPEC-CORE-001 "Parse a .feat file to BuiltSpec IR"
 context Toolchain
@@ -158,10 +165,11 @@ construct:
   and on a line (spec name, scenario name, clock at, seed from, equals fixture, stream, contract from, a variables
   template), is a JSON string: the escapes are \" \\ \/ \b \f \n \r \t and \uXXXX with four hex digits, the IR records
   the decoded string, and any other escape is MALFORMED_SYNTAX naming it (no line inside a value, the line on a
-  line). A second when: or predict in a scenario, a second response in a prediction, a second has or a second
+  line). A second given:, when: or predict in a scenario, a second response in a prediction, a second has or a second
   contains for one service, a second clock at or random seed in a given, and a second spec, context, aggregate,
   type or status line in the header are MALFORMED_SYNTAX at the second line, the message naming the first one's
-  line. A trailing comment, a # outside a string with a space or tab before it, is MALFORMED_SYNTAX with its line
+  line. A service's ordering, ordered or unordered on its has or its contains line, is written once: the second
+  of the two lines to write one is MALFORMED_SYNTAX at that line, naming the first. A trailing comment, a # outside a string with a space or tab before it, is MALFORMED_SYNTAX with its line
   on every compiler-zone line and on a construct: line that is a typed directive once the comment is removed; in
   freeform text (a construct or enforce directive, a given context line) it stays text. Header directives are read
   between the pragma and the first section opener only; after it a header-shaped line is a directive in an agent
@@ -572,6 +580,9 @@ scenario outline "refuses a second line where one is allowed, naming the first o
     | "packages/feat-core/fixtures/bad/duplicate-clock.feat"         | "^A second 'clock at' .*the first is on line 23" | 24 |
     | "packages/feat-core/fixtures/bad/duplicate-random-seed.feat"   | "^A second 'random seed' .*the first is on line 23" | 24 |
     | "packages/feat-core/fixtures/bad/duplicate-header-status.feat" | "^A second 'status' .*the first is on line 7"  | 8    |
+    | "packages/feat-core/fixtures/bad/duplicate-given.feat"         | "^A second 'given:' .*the first is on line 22" | 24 |
+    | "packages/feat-core/fixtures/bad/ordering-contains-after-has.feat" | "^A second ordering for 'eventStore' .*the first is on line 25" | 26 |
+    | "packages/feat-core/fixtures/bad/ordering-has-after-contains.feat" | "^A second ordering for 'eventStore' .*the first is on line 25" | 26 |
 
 scenario outline "refuses a trailing comment on a line the parser reads by keyword":
   when: Parse { spec: <spec>, config: "packages/feat-core/fixtures/parse.config.json" }

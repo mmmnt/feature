@@ -1,0 +1,29 @@
+feat 1.0
+
+spec SPEC-BAD-164 "A scenario with two given blocks"
+context Bad
+aggregate Thing
+type command
+status draft
+
+construct:
+  handler at src/do-thing.ts
+  touches src/**
+
+enforce:
+  do the thing
+
+contract:
+  input ThingInput
+  response ThingResult
+  record ThingRow
+
+scenario "does the thing":
+  given:
+    clock at "2026-01-01T00:00:00Z"
+  given:
+    random seed 1
+  when: DoThing { value: 1 }
+  predict success:
+    response OK ThingResult
+    eventStore has []

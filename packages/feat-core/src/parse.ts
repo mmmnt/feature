@@ -977,7 +977,12 @@ function parseFeat(source: string, ctx: ConfigContext): Record<string, unknown> 
 
     if (section === "scenario" && scenario) {
       // given:
-      if (t === "given:") { scenarioPhase = "given"; continue; }
+      if (t === "given:") {
+        // ADR-0040 amendment (2026-11-26): a second given: no longer merges into the first.
+        once(scenario, "given:", "a scenario", s.line, "Write 'given:' once per scenario, with every precondition under it.");
+        scenarioPhase = "given";
+        continue;
+      }
 
       // when [(as actor)]:
       if ((m = WHEN_LINE.exec(t))) {
@@ -1103,7 +1108,23 @@ function parseFeat(source: string, ctx: ConfigContext): Record<string, unknown> 
             s.line,
             `Write '${m[1]} ${m[2]}' once per prediction, with every record in one list.`,
           );
-          if (m[3]) entry.ordering = m[3];
+          if (m[3]) {
+            // ADR-0040 amendment (2026-11-26): a service's ordering is one slot, which its has and contains lines
+            // share; the second line that writes it would silently replace the first's. has and contains are each
+            // written once (above), so the first one is always the other kind.
+            const lines = firstLines.get(entry) ?? new Map<string, number>();
+            const first = lines.get("ordering");
+            if (first !== undefined)
+              throw new ParseFailure(
+                "MALFORMED_SYNTAX",
+                `A second ordering for '${m[1]}' in a prediction ('${m[2]} ${m[3]}'); the first is on line ${first} ('${m[2] === "has" ? "contains" : "has"} ${entry.ordering}').`,
+                s.line,
+                `Write 'ordered' or 'unordered' once per service, on one of its lines: it orders the '${m[1]} has' records, and 'contains' does not read it.`,
+              );
+            lines.set("ordering", s.line);
+            firstLines.set(entry, lines);
+            entry.ordering = m[3];
+          }
           const records = parseRecordList(m[4]!, "predict");
           if (m[2] === "has") entry.records = records;
           else entry.contains = records;

@@ -92,9 +92,10 @@ feat 1.x". Minor versions are strictly additive; majors may break.
   \" \\ \/ \b \f \n \r \t \uXXXX."); inside a value it carries no line, as every refusal inside a value.
 - **One of each per scope** (ADR-0040). These lines are written once in their scope, and a second one is
   `MALFORMED_SYNTAX` at the second, its message naming the first one's line: each header directive
-  (`spec`, `context`, `aggregate`, `type`, `status`, and `observes`, ADR-0033); in a scenario, `when:`
-  and `predict`; in a prediction, `response`, and `has` and `contains` for each service; in a given,
-  `clock at` and `random seed`. The repeatable lines stay repeatable: `execute`, `seed`, `fault`,
+  (`spec`, `context`, `aggregate`, `type`, `status`, and `observes`, ADR-0033); in a scenario, `given:`,
+  `when:` and `predict`; in a prediction, `response`, and `has` and `contains` for each service, and each
+  service's ordering (`ordered` or `unordered`, written on its `has` or its `contains` line, not both: it orders
+  the `has` records, and `contains` does not read it); in a given, `clock at` and `random seed`. The repeatable lines stay repeatable: `execute`, `seed`, `fault`,
   `deliver`, `touches`, `needs`, `imports`, `register`, `emit to`, the contract entries and the
   variables.
 
