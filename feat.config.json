@@ -198,6 +198,10 @@
         "module": "packages/feature/fixtures/changed/probe.mjs",
         "export": "readChanged"
       },
+      "InitProject": {
+        "module": "packages/feature/fixtures/init-probe.mjs",
+        "export": "initProject"
+      },
       "MatchValue": {
         "module": "packages/feat-runtime/fixtures/matcher/probe.mjs",
         "export": "matchValue"

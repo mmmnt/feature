@@ -67,17 +67,18 @@ npx feat init
 
 `feat init` writes `feat.config.json`, a first spec (`specs/greet.feat`, `status draft`) and its
 contract (`specs/greet.contract.json`). It refuses with exit 2 (`ALREADY_INITIALIZED`) if any of the
-three exists. It creates a `package.json` if there is none, then installs `@mmmnt/feat-runtime`,
+three exists. It creates a `package.json` with `"type": "module"` if there is none, then installs `@mmmnt/feat-runtime`,
 `@mmmnt/feat-adapter-handler`, `@mmmnt/feat-adapter-fs`, `@mmmnt/feat-schema-json` and `vitest`
 with the package manager it detects (pnpm, yarn or npm). `--no-install` prints the install command
-instead. `feat init` does not set `"type": "module"`, and the handler example is an ES module, so in a
-CommonJS project run `npm pkg set type=module` first.
+instead. The handler is an ES module: it is `src/greet.ts`, or `src/greet.mts` when an existing
+`package.json` is not `"type": "module"` (`npm init -y` writes `"type": "commonjs"`), so Node loads it
+either way. `feat init` never changes a `package.json` you already have.
 
 ```sh
 npx feat parse specs/greet.feat   # validate the spec and print its IR
 # edit the spec, then change `status draft` to `status agreed`
 npx feat generate                 # compile specs/greet.feat into specs/greet.test.ts
-# implement src/greet.ts: an exported async function that returns { status, body }
+# implement src/greet.ts (or the src/greet.mts init named): an async function that returns { status, body }
 npx feat run                      # red until the handler does what the spec predicts
 ```
 

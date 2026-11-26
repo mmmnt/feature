@@ -3,20 +3,24 @@
 // project needs (runtime, starter adapters, vitest) with the detected package
 // manager, so `npm i -D @mmmnt/feature && npx feat init` is a complete start.
 // Refuses to overwrite existing files. --no-install prints the command instead.
+//
+// The starter handler is an ES module (SPEC-INIT-001). A package.json init creates is "type": "module"; one the
+// project already has is never changed, and when it is not "type": "module" (a missing "type" included) the
+// handler is scaffolded as src/greet.mts, which Node loads as an ES module whatever the package declares.
 
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { Command, Flags } from "@oclif/core";
 
-const CONFIG = `{
+const config = (handler: string): string => `{
   "featVersion": "1.0",
   "environment": "spec",
   "schemas": { "adapter": "@mmmnt/feat-schema-json" },
   "response": {
     "adapter": "@mmmnt/feat-adapter-handler",
     "commands": {
-      "Greet": { "module": "src/greet.ts", "export": "greet" }
+      "Greet": { "module": "${handler}", "export": "greet" }
     }
   },
   "services": {
@@ -36,7 +40,7 @@ const CONFIG = `{
 }
 `;
 
-const SPEC = `feat 1.0
+const spec = (handler: string): string => `feat 1.0
 
 spec SPEC-EX-001 "Greet"
 context Example
@@ -45,7 +49,7 @@ type command
 status draft
 
 construct:
-  handler at src/greet.ts
+  handler at ${handler}
   touches src/**
 
 enforce:
@@ -142,21 +146,26 @@ export default class Init extends Command {
         this.exit(2);
       }
     }
-    writeFileSync(configPath, CONFIG);
+    // Read before anything is written: the project's module system picks the handler's file name.
+    const pkgPath = path.join(root, "package.json");
+    const existingPkg = existsSync(pkgPath) ? (JSON.parse(readFileSync(pkgPath, "utf8")) as { type?: unknown }) : undefined;
+    const handler = existingPkg === undefined || existingPkg.type === "module" ? "src/greet.ts" : "src/greet.mts";
+
+    writeFileSync(configPath, config(handler));
     mkdirSync(path.join(root, "specs"), { recursive: true });
-    writeFileSync(path.join(root, "specs/greet.feat"), SPEC);
+    writeFileSync(path.join(root, "specs/greet.feat"), spec(handler));
     writeFileSync(path.join(root, "specs/greet.contract.json"), CONTRACT);
 
     this.log("created feat.config.json");
     this.log("created specs/greet.feat");
     this.log("created specs/greet.contract.json");
+    if (handler.endsWith(".mts")) this.log(`handler: ${handler} (an ES module: package.json is not "type": "module")`);
 
     // ── Dependency completion ──
-    const pkgPath = path.join(root, "package.json");
-    if (!existsSync(pkgPath)) {
+    if (existingPkg === undefined) {
       writeFileSync(
         pkgPath,
-        JSON.stringify({ name: path.basename(root), version: "0.0.0", private: true }, null, 2) + "\n",
+        JSON.stringify({ name: path.basename(root), version: "0.0.0", private: true, type: "module" }, null, 2) + "\n",
       );
       this.log("created package.json");
     }
@@ -193,7 +202,7 @@ export default class Init extends Command {
     this.log("  1. feat parse specs/greet.feat      # validate the spec");
     this.log("  2. Change `status draft` to `status agreed` once the spec says what you mean");
     this.log("  3. feat generate                    # compile specs into test files");
-    this.log("  4. Implement src/greet.ts, then: feat run");
+    this.log(`  4. Implement ${handler}, then: feat run`);
     this.log("");
     this.log("The handler contract: export an async function that returns { status, body }.");
   }

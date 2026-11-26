@@ -72,20 +72,29 @@ created specs/greet.contract.json
 created package.json              # only when there was none
 ```
 
-The scaffold is a one-command project: a `Greet` handler at `src/greet.ts`, a
-filesystem service, and a spec in `draft`. Write the handler, flip the spec to
-`agreed` when it says what you mean, and run the chain:
+The scaffold is a one-command project: a `Greet` handler, a filesystem service,
+and a spec in `draft`. The handler is an ES module, and `init` picks its file so
+that Node loads it as one:
+
+- With no `package.json`, `init` creates one with `"type": "module"`, and the
+  handler is `src/greet.ts`.
+- With a `package.json` that has `"type": "module"`, the handler is `src/greet.ts`.
+- With any other `package.json` (`"type": "commonjs"`, as `npm init -y` writes it,
+  or no `"type"`), `init` leaves the file alone and the handler is `src/greet.mts`,
+  which Node loads as an ES module whatever the package says. `init` prints
+  `handler: src/greet.mts (an ES module: package.json is not "type": "module")`.
+
+The config's route and the spec's `handler at` name the same file. Write the
+handler there, flip the spec to `agreed` when it says what you mean, and run the
+chain:
 
 ```ts
-// src/greet.ts
+// src/greet.ts (src/greet.mts when init printed that name)
 export async function greet(input: { name: string }) {
   if (input.name === "") return { status: "ERR", body: { code: "EMPTY_NAME", message: "blank" } };
   return { status: "OK", body: { message: `Hello, ${input.name}` } };
 }
 ```
-
-`feat init` does not set `"type": "module"`, and the handler is an ES module, so in a CommonJS project
-run `npm pkg set type=module` first.
 
 ```sh
 npx feat parse specs/greet.feat      # validate; prints the IR
@@ -254,7 +263,9 @@ Every command takes `-c, --config <path>` (default `feat.config.json`) except
 ### `feat init [--no-install]`
 
 Scaffolds the project (see [Quick start](#quick-start)). `--no-install` skips
-the install and prints it. Exit `2` with `ALREADY_INITIALIZED` when
+the install and prints it. It creates `package.json` with `"type": "module"` when there is none and
+never changes an existing one; in a package that is not `"type": "module"` the handler is scaffolded as
+`src/greet.mts` instead of `src/greet.ts`. Exit `2` with `ALREADY_INITIALIZED` when
 `feat.config.json`, `specs/greet.feat` or `specs/greet.contract.json` exists; the
 message names the file and nothing is written. If the install fails, `init` warns, prints the command
 to run yourself, and still exits `0`.

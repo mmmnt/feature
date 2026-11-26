@@ -1,10 +1,12 @@
 feat 1.0
 
-# SPEC-INIT-001 (DRAFT, drafts/init-esm-handler, awaiting the owner) — `feat init` scaffolds a project whose
-# starter handler loads, whatever module system the project's package.json declares.
+# SPEC-INIT-001 — `feat init` scaffolds a project whose starter handler loads, whatever module system the
+# project's package.json declares (owner ruling 2026-11-25, "Scaffold src/greet.mts", and the owner's flip to
+# agreed; promoted from drafts/init-esm-handler).
 #
-# No spec owns `feat init` today: packages/feature/src/commands/init.ts was built without one and its tests
-# are packages/feature/init.test.ts. This spec states what init does now (the three scaffold files, the
+# No spec owned `feat init`: packages/feature/src/commands/init.ts was built without one and its tests
+# were packages/feature/init.test.ts, now packages/feature/init-cli.test.ts (init.test.ts is this spec's
+# generated suite). This spec states what init does now (the three scaffold files, the
 # ALREADY_INITIALIZED refusal that writes nothing, the package.json it creates, the install of what
 # package.json does not declare) and the fix.
 #
@@ -16,12 +18,12 @@ feat 1.0
 # and setup refuses with ROUTE_UNLOADABLE. Reproduced: `npm init -y` (npm 11.17.0), `feat init` (the
 # worktree's CLI; it installed @mmmnt/* 0.17.0 and vitest 5.1.2), the README's handler at src/greet.ts, the spec
 # flipped to agreed, `feat generate`, `feat run`: ROUTE_UNLOADABLE, 2 tests skipped, exit 1 (1, not 2, because
-# of the Vitest 5 reporter defect, drafts/run-exit-codes-vitest). Without a package.json, init writes one
+# of the Vitest 5 reporter defect, fixed by the SPEC-RT-010 amendment). Without a package.json, init writes one
 # with no "type" and the same steps pass on Node 24.19.0 (2 passed): Node's module-syntax detection loads it,
 # with a MODULE_TYPELESS_PACKAGE_JSON warning. The README documents the workaround
 # (packages/feature/README.md:87-88, "run `npm pkg set type=module` first").
 #
-# THE FIX (option B of drafts/init-esm-handler/README.md, recommended; option A refuses instead):
+# THE FIX (the owner's ruling "Scaffold src/greet.mts"; a package.json without "type" counts as not ESM):
 #  1. When init creates package.json it writes "type": "module" beside name, version and private.
 #  2. When package.json exists and its "type" is "module", the scaffold is unchanged: src/greet.ts.
 #  3. When package.json exists and its "type" is anything else (absent, "commonjs"), init leaves
@@ -43,12 +45,12 @@ spec SPEC-INIT-001 "feat init: the starter handler loads in any package"
 context Toolchain
 aggregate Cli
 type command
-status draft
+status agreed
 
 construct:
   handler at packages/feature/src/commands/init.ts
   touches packages/feature/src/commands/init.ts
-  touches packages/feature/init.test.ts
+  touches packages/feature/init-cli.test.ts
   touches packages/feature/init.feat
   touches packages/feature/init.contract.json
   touches packages/feature/fixtures/init-probe.mjs
