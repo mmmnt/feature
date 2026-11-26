@@ -186,20 +186,59 @@ function parseLiteralValue(c: ValueCursor): unknown {
   return Number(m[0]);
 }
 
+const ESCAPE_HINT = "Valid escapes: \\\" \\\\ \\/ \\b \\f \\n \\r \\t \\uXXXX.";
+const SINGLE_ESCAPES: Record<string, string> = { '"': '"', "\\": "\\", "/": "/", b: "\b", f: "\f", n: "\n", r: "\r", t: "\t" };
+
+/**
+ * ADR-0040: every quoted string is a JSON string. `raw` is the text between the quotes as written; the result is
+ * the decoded string. JSON's escapes are \" \\ \/ \b \f \n \r \t and \uXXXX (exactly four hex digits; a
+ * surrogate pair is two escapes and decodes to one code point). Any other escape is MALFORMED_SYNTAX naming it,
+ * with no line: a caller on a line adds its own.
+ */
+function decodeString(raw: string): string {
+  let out = "";
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i]!;
+    if (ch !== "\\") {
+      out += ch;
+      continue;
+    }
+    const e = raw[i + 1] ?? "";
+    if (e in SINGLE_ESCAPES) {
+      out += SINGLE_ESCAPES[e];
+      i++;
+    } else if (e === "u" && /^[0-9A-Fa-f]{4}$/.test(raw.slice(i + 2, i + 6))) {
+      out += String.fromCharCode(parseInt(raw.slice(i + 2, i + 6), 16));
+      i += 5;
+    } else {
+      throw new ParseFailure("MALFORMED_SYNTAX", `Invalid escape '\\${e}' in a string.`, undefined, ESCAPE_HINT);
+    }
+  }
+  return out;
+}
+
+/** A quoted string captured on a line by a regex: decoded, an invalid escape refused at that line. */
+function lineString(raw: string, line: number): string {
+  try {
+    return decodeString(raw);
+  } catch (e) {
+    if (e instanceof ParseFailure) throw withLine(e, line);
+    throw e;
+  }
+}
+
 function parseString(c: ValueCursor): string {
   if (c.peek() !== '"') c.fail("string");
   c.pos++;
-  let out = "";
+  const start = c.pos;
   while (c.peek() !== '"') {
     if (c.peek() === "") c.fail("string (unterminated)");
-    if (c.peek() === "\\") {
-      c.pos++;
-      out += JSON.parse(`"\\${c.peek()}"`);
-    } else out += c.peek();
+    if (c.peek() === "\\") c.pos++;
     c.pos++;
   }
+  const raw = c.src.slice(start, c.pos);
   c.pos++;
-  return out;
+  return decodeString(raw);
 }
 
 function parseKey(c: ValueCursor): string {
@@ -550,10 +589,10 @@ interface PredictedRecord {
   partial?: true;
 }
 
-const withLine = (f: ParseFailure, line: number): ParseFailure => {
+function withLine(f: ParseFailure, line: number): ParseFailure {
   f.line ??= line;
   return f;
-};
+}
 const partialBesideGolden = (): ParseFailure =>
   new ParseFailure(
     "MALFORMED_SYNTAX",
@@ -674,7 +713,7 @@ function parseVariableDefinition(src: string, line: number): Record<string, unkn
   }
   if (/^-?\d+(\.\d+)?$/.test(src)) return { kind: "number", value: Number(src) };
   if ((m = /^"((?:[^"\\]|\\.)*)"$/.exec(src))) {
-    const raw = m[1]!;
+    const raw = lineString(m[1]!, line);
     const parts: (string | { ref: string })[] = [];
     let last = 0;
     for (const r of raw.matchAll(VAR_REF)) {
@@ -699,6 +738,60 @@ function collectVarRefs(value: unknown, into: Set<string>): void {
 }
 const DELIVER_TYPES = new Set(["projection", "policy", "saga"]);
 
+// ── ADR-0040: one of each per scope, trailing comments ───────────────────────
+// The line of the first of each once-per-scope line, kept off the IR (as givenSteps is).
+const firstLines = new WeakMap<object, Map<string, number>>();
+
+/** Note `what` on `line` in `scope`; a second one is MALFORMED_SYNTAX at the second, naming the first. */
+function once(owner: object, what: string, scopeName: string, line: number, hint?: string): void {
+  const lines = firstLines.get(owner) ?? new Map<string, number>();
+  const first = lines.get(what);
+  if (first !== undefined)
+    throw new ParseFailure(
+      "MALFORMED_SYNTAX",
+      `A second '${what}' in ${scopeName}; the first is on line ${first}.`,
+      line,
+      hint ?? (scopeName === "the header" ? `Write '${what}' once, in the header.` : `Write '${what}' once per ${scopeName.replace(/^a /, "")}.`),
+    );
+  lines.set(what, line);
+  firstLines.set(owner, lines);
+}
+
+/**
+ * The index of a trailing comment in a statement: the first `#` outside a string with a space or tab before it,
+ * or -1. A `#` with no blank before it is part of its token, and one inside a string is data.
+ */
+function trailingComment(t: string): number {
+  let inStr = false;
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    if (inStr) {
+      if (c === "\\") i++;
+      else if (c === '"') inStr = false;
+    } else if (c === '"') inStr = true;
+    else if (c === "#" && i > 0 && (t[i - 1] === " " || t[i - 1] === "\t")) return i;
+  }
+  return -1;
+}
+
+const SCENARIO_OPENER = /^scenario([ \t]+outline)?[ \t]+"((?:[^"\\]|\\.)*)":$/;
+const WHEN_LINE = /^when(?:[ \t]*\(as[ \t]+([A-Za-z0-9_-]+)\))?:[ \t]+([A-Za-z_][A-Za-z0-9_]*)[ \t]+(\{[\s\S]*\})$/;
+const DELIVER_LINE = /^deliver[ \t]+([A-Za-z_][A-Za-z0-9_]*)[ \t]+(\{[\s\S]*\})[ \t]+to[ \t]+([A-Za-z_][A-Za-z0-9_]*)$/;
+const CONSTRUCT_TYPED = [
+  /^handler[ \t]+at[ \t]+(\S+)$/,
+  /^imports[ \t]+(\S+)[ \t]+from[ \t]+(\S+)$/,
+  /^register[ \t]+(\S+)[ \t]+(\S+)[ \t]+in[ \t]+(\S+)$/,
+  /^emit[ \t]+to[ \t]+(\S+)$/,
+  /^touches[ \t]+(\S+)$/,
+  /^needs[ \t]+(\S+)$/,
+];
+const isSectionOpener = (t: string): boolean =>
+  t === "construct:" || t === "enforce:" || t === "contract:" || t === "variables:" || SCENARIO_OPENER.test(t);
+/** A given line the parser reads by its first word (ADR-0023, ADR-0029, ADR-0040). */
+const isGivenKeywordLine = (t: string): boolean =>
+  /^(?:execute|seed|fault)(?:[ \t(]|$)/.test(t) || /^clock[ \t]+at(?:[ \t]|$)/.test(t) || /^random[ \t]+seed(?:[ \t]|$)/.test(t);
+const COMMENT_HINT = "Comments are whole-line: move '# …' to a line of its own.";
+
 function parseFeat(source: string, ctx: ConfigContext): Record<string, unknown> {
   const stmts = scan(source);
 
@@ -717,6 +810,8 @@ function parseFeat(source: string, ctx: ConfigContext): Record<string, unknown> 
   const contract: Record<string, unknown>[] = [];
   const declaredSchemas = new Set<string>();
   const scenarios: Record<string, unknown>[] = [];
+  // ADR-0040: each scenario's opener line, kept off the IR, for the scenario-level refusals.
+  const scenarioOpeners = new WeakMap<Record<string, unknown>, number>();
 
   type Section = "none" | "construct" | "enforce" | "contract" | "variables" | "scenario";
   const variables: Record<string, unknown>[] = [];
@@ -739,25 +834,54 @@ function parseFeat(source: string, ctx: ConfigContext): Record<string, unknown> 
     const t = s.text;
     let m: RegExpExecArray | null;
 
-    // ── Header ──
-    if ((m = /^spec[ \t]+(\S+)[ \t]+"((?:[^"\\]|\\.)*)"$/.exec(t))) {
-      identity.id = m[1];
-      identity.name = m[2];
-      continue;
+    // ── ADR-0040: a trailing comment is refused on every line the parser reads by its keywords ──
+    {
+      const ci = trailingComment(t);
+      if (ci >= 0) {
+        const bare = t.slice(0, ci).trimEnd();
+        const keyworded =
+          isSectionOpener(bare) ||
+          section === "none" ||
+          section === "contract" ||
+          section === "variables" ||
+          (section === "construct" && CONSTRUCT_TYPED.some((r) => r.test(bare))) ||
+          (section === "scenario" &&
+            (scenarioPhase !== "given" ||
+              bare === "given:" ||
+              bare === "examples:" ||
+              WHEN_LINE.test(bare) ||
+              DELIVER_LINE.test(bare) ||
+              /^predict[ \t]/.test(bare) ||
+              isGivenKeywordLine(bare)));
+        if (keyworded)
+          throw new ParseFailure("MALFORMED_SYNTAX", `A comment must be on its own line: '${t}'.`, s.line, COMMENT_HINT);
+      }
     }
-    if ((m = /^context[ \t]+(\S+)$/.exec(t))) { identity.context = m[1]; continue; }
-    if ((m = /^aggregate[ \t]+(\S+)$/.exec(t))) { identity.aggregate = m[1]; continue; }
-    if ((m = /^type[ \t]+(\S+)$/.exec(t))) {
-      if (!SPEC_TYPES.includes(m[1]!))
-        throw new ParseFailure("MALFORMED_SYNTAX", `Unknown spec type '${m[1]}'.`, s.line, `Valid types: ${SPEC_TYPES.join(", ")}`);
-      identity.type = m[1];
-      continue;
-    }
-    if ((m = /^status[ \t]+(\S+)$/.exec(t))) {
-      if (!STATUSES.includes(m[1]!))
-        throw new ParseFailure("MALFORMED_SYNTAX", `Unknown status '${m[1]}'.`, s.line, `Valid statuses: ${STATUSES.join(", ")}`);
-      identity.status = m[1];
-      continue;
+
+    // ── Header (ADR-0040: read in the header only, each directive once) ──
+    if (section === "none") {
+      if ((m = /^spec[ \t]+(\S+)[ \t]+"((?:[^"\\]|\\.)*)"$/.exec(t))) {
+        once(identity, "spec", "the header", s.line);
+        identity.id = m[1];
+        identity.name = lineString(m[2]!, s.line);
+        continue;
+      }
+      if ((m = /^context[ \t]+(\S+)$/.exec(t))) { once(identity, "context", "the header", s.line); identity.context = m[1]; continue; }
+      if ((m = /^aggregate[ \t]+(\S+)$/.exec(t))) { once(identity, "aggregate", "the header", s.line); identity.aggregate = m[1]; continue; }
+      if ((m = /^type[ \t]+(\S+)$/.exec(t))) {
+        if (!SPEC_TYPES.includes(m[1]!))
+          throw new ParseFailure("MALFORMED_SYNTAX", `Unknown spec type '${m[1]}'.`, s.line, `Valid types: ${SPEC_TYPES.join(", ")}`);
+        once(identity, "type", "the header", s.line);
+        identity.type = m[1];
+        continue;
+      }
+      if ((m = /^status[ \t]+(\S+)$/.exec(t))) {
+        if (!STATUSES.includes(m[1]!))
+          throw new ParseFailure("MALFORMED_SYNTAX", `Unknown status '${m[1]}'.`, s.line, `Valid statuses: ${STATUSES.join(", ")}`);
+        once(identity, "status", "the header", s.line);
+        identity.status = m[1];
+        continue;
+      }
     }
 
     // ── observes (ADR-0033): a header line naming the services this spec observes ──
@@ -785,10 +909,11 @@ function parseFeat(source: string, ctx: ConfigContext): Record<string, unknown> 
     if (t === "enforce:") { finishScenario(); section = "enforce"; continue; }
     if (t === "contract:") { finishScenario(); section = "contract"; continue; }
     if (t === "variables:") { finishScenario(); section = "variables"; continue; }
-    if ((m = /^scenario([ \t]+outline)?[ \t]+"((?:[^"\\]|\\.)*)":$/.exec(t))) {
+    if ((m = SCENARIO_OPENER.exec(t))) {
       finishScenario();
       section = "scenario";
-      scenario = { name: m[2] };
+      scenario = { name: lineString(m[2]!, s.line) };
+      scenarioOpeners.set(scenario, s.line);
       scenarioPhase = "none";
       continue;
     }
@@ -820,13 +945,13 @@ function parseFeat(source: string, ctx: ConfigContext): Record<string, unknown> 
     if (section === "contract") {
       if ((m = /^(input|response|event|record|error)[ \t]+([A-Za-z_][A-Za-z0-9_]*)(?:[ \t]+from[ \t]+"((?:[^"\\]|\\.)*)")?$/.exec(t))) {
         const entry: Record<string, unknown> = { kind: m[1], schemaName: m[2] };
-        if (m[3] !== undefined) entry.from = m[3];
+        if (m[3] !== undefined) entry.from = lineString(m[3], s.line);
         contract.push(entry);
         declaredSchemas.add(m[2]!);
         continue;
       }
       if ((m = /^stream[ \t]+"((?:[^"\\]|\\.)*)"$/.exec(t))) {
-        contract.push({ kind: "stream", pattern: m[1] });
+        contract.push({ kind: "stream", pattern: lineString(m[1]!, s.line) });
         continue;
       }
       throw new ParseFailure("MALFORMED_SYNTAX", `Unrecognized contract line: '${t}'.`, s.line, `Contract roles: ${CONTRACT_KINDS.join(", ")}, stream`);
@@ -855,7 +980,8 @@ function parseFeat(source: string, ctx: ConfigContext): Record<string, unknown> 
       if (t === "given:") { scenarioPhase = "given"; continue; }
 
       // when [(as actor)]:
-      if ((m = /^when(?:[ \t]*\(as[ \t]+([A-Za-z0-9_-]+)\))?:[ \t]+([A-Za-z_][A-Za-z0-9_]*)[ \t]+(\{[\s\S]*\})$/.exec(t))) {
+      if ((m = WHEN_LINE.exec(t))) {
+        once(scenario, "when:", "a scenario", s.line);
         const when: Record<string, unknown> = { command: m[2] };
         if (m[1]) when.actor = m[1];
         when.payload = parseInlinePayload(m[3]!);
@@ -865,7 +991,7 @@ function parseFeat(source: string, ctx: ConfigContext): Record<string, unknown> 
       }
 
       // deliver <Event> { } to <service>
-      if ((m = /^deliver[ \t]+([A-Za-z_][A-Za-z0-9_]*)[ \t]+(\{[\s\S]*\})[ \t]+to[ \t]+([A-Za-z_][A-Za-z0-9_]*)$/.exec(t))) {
+      if ((m = DELIVER_LINE.exec(t))) {
         const delivers = (scenario.delivers as unknown[] | undefined) ?? [];
         delivers.push({ event: m[1], payload: parseInlinePayload(m[2]!), service: m[3] });
         scenario.delivers = delivers;
@@ -879,6 +1005,7 @@ function parseFeat(source: string, ctx: ConfigContext): Record<string, unknown> 
         (m = /^predict[ \t]+(success|rejection|error)(?:[ \t]+([A-Z][A-Za-z0-9]*|[A-Z0-9_]+|<[A-Za-z_][A-Za-z0-9_-]*>))?:$/.exec(t)) &&
         (m[1] !== "error" || m[2] === undefined || /^(?:[A-Z0-9_]+|<.*>)$/.test(m[2]))
       ) {
+        once(scenario, "predict", "a scenario", s.line, "Write 'predict' once per scenario: one scenario predicts one outcome.");
         const prediction: Record<string, unknown> = { type: m[1] };
         if (m[1] === "rejection" && m[2]) prediction.rejectionId = m[2];
         if (m[1] === "error" && m[2]) prediction.errorCode = m[2];
@@ -895,12 +1022,14 @@ function parseFeat(source: string, ctx: ConfigContext): Record<string, unknown> 
       if (scenarioPhase === "given") {
         const given = (scenario.given as Record<string, unknown> | undefined) ?? {};
         if ((m = /^clock[ \t]+at[ \t]+"((?:[^"\\]|\\.)*)"$/.exec(t))) {
-          given.clock = m[1];
+          once(given, "clock at", "a given", s.line);
+          given.clock = lineString(m[1]!, s.line);
         } else if (/^random[ \t]+seed(?:[ \t]|$)/.test(t)) {
           // ADR-0029: `random seed <n>` makes the system's random source deterministic for this case.
           const sm = /^random[ \t]+seed[ \t]+(\d+)$/.exec(t);
           if (!sm || !Number.isSafeInteger(Number(sm[1])))
             throw new ParseFailure("MALFORMED_SYNTAX", `Malformed random seed: '${t}'.`, s.line, "Write 'random seed <n>', n a whole number from 0 to 9007199254740991.");
+          once(given, "random seed", "a given", s.line);
           given.random = Number(sm[1]);
         } else if ((m = /^execute(?:[ \t]*\(as[ \t]+([A-Za-z0-9_-]+)\))?[ \t]+([A-Za-z_][A-Za-z0-9_]*)[ \t]+(\{[\s\S]*\})$/.exec(t))) {
           const executes = (given.executes as unknown[] | undefined) ?? [];
@@ -918,7 +1047,7 @@ function parseFeat(source: string, ctx: ConfigContext): Record<string, unknown> 
           given.faults = faults;
         } else if ((m = /^seed[ \t]+([A-Za-z_][A-Za-z0-9_]*)[ \t]+from[ \t]+"((?:[^"\\]|\\.)*)"$/.exec(t))) {
           const seeds = (given.seeds as unknown[] | undefined) ?? [];
-          seeds.push({ service: m[1], fixture: m[2] });
+          seeds.push({ service: m[1], fixture: lineString(m[2]!, s.line) });
           given.seeds = seeds;
           recordGivenStep(given, "seed");
         } else if ((m = /^seed[ \t]+([A-Za-z_][A-Za-z0-9_]*)[ \t]+(\[[\s\S]*\])$/.exec(t))) {
@@ -938,6 +1067,7 @@ function parseFeat(source: string, ctx: ConfigContext): Record<string, unknown> 
       if (scenarioPhase === "predict") {
         const prediction = scenario.prediction as Record<string, unknown>;
         if ((m = /^response[ \t]+(\S+)[ \t]+([A-Za-z_][A-Za-z0-9_]*)(?:[ \t]+([\s\S]+))?$/.exec(t))) {
+          once(prediction, "response", "a prediction", s.line);
           const status: string | number = /^\d+$/.test(m[1]!) ? Number(m[1]) : m[1]!;
           const response: Record<string, unknown> = { status, schemaName: m[2] };
           if (m[3]) {
@@ -951,9 +1081,14 @@ function parseFeat(source: string, ctx: ConfigContext): Record<string, unknown> 
             }
             if (/^equals[ \t]+fixture[ \t]+"(?:[^"\\]|\\.)*"[ \t]+partial\b/.test(rest)) throw withLine(partialBesideGolden(), s.line);
             const g = /^equals[ \t]+fixture[ \t]+"((?:[^"\\]|\\.)*)"$/.exec(rest);
-            if (g) response.golden = g[1];
-            else if (rest.startsWith("{")) response.valueBlock = parseValueBlock(new ValueCursor(rest));
-            else throw new ParseFailure("MALFORMED_SYNTAX", `Unrecognized response tail: '${rest}'.`, s.line);
+            if (g) response.golden = lineString(g[1]!, s.line);
+            else if (rest.startsWith("{")) {
+              const vc = new ValueCursor(rest);
+              response.valueBlock = parseValueBlock(vc);
+              vc.skipWs();
+              if (vc.pos < vc.src.length)
+                throw new ParseFailure("MALFORMED_SYNTAX", `Unrecognized response tail: '${vc.src.slice(vc.pos)}'.`, s.line);
+            } else throw new ParseFailure("MALFORMED_SYNTAX", `Unrecognized response tail: '${rest}'.`, s.line);
           }
           prediction.response = response;
           continue;
@@ -961,6 +1096,13 @@ function parseFeat(source: string, ctx: ConfigContext): Record<string, unknown> 
         if ((m = /^([A-Za-z_][A-Za-z0-9_]*)[ \t]+(has|contains)[ \t]+(?:(ordered|unordered)[ \t]+)?(\[[\s\S]*\])$/.exec(t))) {
           const services = (prediction.services as Record<string, Record<string, unknown>> | undefined) ?? {};
           const entry = services[m[1]!] ?? {};
+          once(
+            prediction,
+            `${m[1]} ${m[2]}`,
+            "a prediction",
+            s.line,
+            `Write '${m[1]} ${m[2]}' once per prediction, with every record in one list.`,
+          );
           if (m[3]) entry.ordering = m[3];
           const records = parseRecordList(m[4]!, "predict");
           if (m[2] === "has") entry.records = records;
@@ -1027,6 +1169,14 @@ function parseFeat(source: string, ctx: ConfigContext): Record<string, unknown> 
       throw new ParseFailure("TRIGGER_MISMATCH", `type ${specType} scenarios are triggered by 'when:', not 'deliver'.`);
     if (!hasWhen && !hasDeliver)
       throw new ParseFailure("MALFORMED_SYNTAX", `Scenario '${sc.name}' has no trigger.`);
+    // ── ADR-0040: a scenario with no prediction is a missing minimum, at its opener ──
+    if (sc.prediction === undefined)
+      throw new ParseFailure(
+        "MISSING_MINIMUM",
+        `Scenario '${sc.name}' has no prediction.`,
+        scenarioOpeners.get(sc),
+        "Add 'predict success:', 'predict rejection <ID>:' or 'predict error <CODE>:' with its lines (grammar reference §1.2).",
+      );
 
     // ── Closed spaces: commands, actors, services, schemas ──
     const invocations: Record<string, unknown>[] = [];

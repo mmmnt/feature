@@ -1,7 +1,7 @@
-# The `.feat` Language — Grammar Reference v1.3
+# The `.feat` Language — Grammar Reference v1.4
 
 > Language version: `feat 1.0`
-> Design decisions are recorded as ADRs (ADR-0001…0039; 0022 onward are in docs/adr/) in the project decision log.
+> Design decisions are recorded as ADRs (ADR-0001…0040; 0022 onward are in docs/adr/) in the project decision log.
 > The `corpus/` directory holds canonical exemplars paired with expected-IR fixtures —
 > when this document and the corpus disagree, that is a bug in one of them; fix the spec first.
 
@@ -54,18 +54,22 @@ feat 1.x". Minor versions are strictly additive; majors may break.
   in this reference is conventional: it is how specs are written, but a spec
   with none parses to the same IR. A line whose `{` or `[` is not closed continues on the next lines
   until it is. Spaces only: a tab in leading whitespace is a parse error (`MALFORMED_SYNTAX`).
-- **Comments**: whole-line only. A line whose first non-blank character is `#` is skipped, outside a
-  multi-line `{ … }` / `[ … ]` value (inside one it is part of the value, and a parse error). A `#`
-  after content on the same line is not a comment:
-  - on a compiler-zone line (a `when:` or `predict` line, a `has` line, a `contract:` entry, a header
-    directive, a `scenario` opener) it is `MALFORMED_SYNTAX`, and on the pragma line `MISSING_PRAGMA`;
-  - in an agent zone it is part of the line's text: `mint an invite  # note` is captured verbatim, and a
-    `touches` or `handler at` line that carries one is no longer recognized and becomes a freeform
-    directive;
-  - on a `given:` line it turns an `execute`, `seed` or `clock at` line into freeform context;
-  - after a `response` line's closing `}` it is dropped without an error.
+- **Comments**: whole-line only (ADR-0040). A line whose first non-blank character is `#` is skipped,
+  outside a multi-line `{ … }` / `[ … ]` value (inside one it is part of the value, and a parse error).
+  A **trailing comment** is a `#` outside a string with a space or tab before it. It is
+  `MALFORMED_SYNTAX` (hint: "Comments are whole-line: move '# …' to a line of its own.") on every line
+  the parser reads by its keywords:
+  - every compiler-zone line: a header directive, a `contract:` entry, a `variables:` definition, a
+    `scenario` opener, `given:` lines that begin `execute`, `seed`, `clock at`, `random seed` or
+    `fault`, `when:`, `deliver`, `predict`, `response` (after its block too), `has`, `contains`, an
+    examples row; on the pragma line it is `MISSING_PRAGMA`, as before;
+  - a `construct:` line that is a typed directive once the comment is removed (`handler at`,
+    `imports … from`, `register … in`, `emit to`, `touches`, `needs`), so a change boundary or a
+    handler is never turned into a freeform directive.
 
-  Write comments on their own line.
+  Freeform text keeps a `#` as text: `mint an invite, see ticket #12` in an agent zone and a `given:`
+  context line are captured verbatim. A `#` with no space before it is part of its token
+  (`touches src/#gen/**`), and a `#` inside a string is data (`{ title: "#1" }`).
 - **Rejection ids** (ADR-0022): the `<ID>` of `rejects <ID> when …` and `predict rejection <ID>:`
   is one token, either **UPPER_SNAKE** (`[A-Z0-9_]+`, e.g. `UNIQUE_NAME`) or **UpperCamel**
   (`[A-Z][A-Za-z0-9]*`, e.g. `NotOperator`). The two forms are both valid and may be mixed in one
@@ -78,17 +82,27 @@ feat 1.x". Minor versions are strictly additive; majors may break.
   (`spec`, `context`, `aggregate`, `type`, `status`), at least one construct directive, one enforce
   directive, one contract entry and one scenario. Every scenario also needs a trigger (`when:` or
   `deliver`; without one it is `MALFORMED_SYNTAX`, "has no trigger") and a prediction: a scenario
-  without a `predict` is not a valid spec, though `MISSING_MINIMUM` does not cover it and the parser
-  reports it with no error code today.
-- **Strings**: a string in a payload, seed record or value block is `"…"`. A backslash escapes the next character, and the valid escapes are
-  JSON's single-character ones: `\"`, `\\`, `\/`, `\b`, `\f`, `\n`, `\r`, `\t`. Any other escape, including
-  `\uXXXX`, is refused with a raw `SyntaxError` from the parser rather than a coded parse error.
+  without a `predict` is `MISSING_MINIMUM` at the scenario's opener, naming the scenario (ADR-0040).
+- **Strings** (ADR-0040): every quoted string is a JSON string: in a payload, a seed record and a value
+  block, and on a line (the spec name, a scenario name, `clock at`, `seed … from`, `equals fixture`,
+  `stream`, `contract … from`, a `variables:` template). The escapes are JSON's: `\"`, `\\`, `\/`, `\b`,
+  `\f`, `\n`, `\r`, `\t` and `\uXXXX` (exactly four hexadecimal digits; a surrogate pair is two escapes and
+  one character). The IR records the decoded string: `scenario "say \"hi\""` is named `say "hi"`. Any
+  other escape, and a `\u` without four hex digits, is `MALFORMED_SYNTAX` naming it (hint: "Valid escapes:
+  \" \\ \/ \b \f \n \r \t \uXXXX."); inside a value it carries no line, as every refusal inside a value.
+- **One of each per scope** (ADR-0040). These lines are written once in their scope, and a second one is
+  `MALFORMED_SYNTAX` at the second, its message naming the first one's line: each header directive
+  (`spec`, `context`, `aggregate`, `type`, `status`, and `observes`, ADR-0033); in a scenario, `when:`
+  and `predict`; in a prediction, `response`, and `has` and `contains` for each service; in a given,
+  `clock at` and `random seed`. The repeatable lines stay repeatable: `execute`, `seed`, `fault`,
+  `deliver`, `touches`, `needs`, `imports`, `register`, `emit to`, the contract entries and the
+  variables.
 
 ### 1.3 The two zones (DP-5, non-negotiable)
 
 | Zone | Sections | Parser behavior |
 | --- | --- | --- |
-| **Agent** | `construct:`, `enforce:` | Freeform natural language. Keyword-matching lines produce typed IR nodes; every other line is captured verbatim as an opaque directive. Header directives are still read here, as on any line of the file: a line of exactly the form `spec <ID> "<name>"`, `context <Name>`, `aggregate <Name>`, `type <type>` or `status <status>` (one token after the keyword) sets that header field, overwriting the header's value (`context Other` replaces the header context), and an unknown `type` or `status` (`status shipped`) is `MALFORMED_SYNTAX`. A line that merely starts with the word (`context matters here`) stays a directive. Section openers (`construct:`, `enforce:`, `contract:`, `variables:`, `scenario "…":`) end the zone. |
+| **Agent** | `construct:`, `enforce:` | Freeform natural language. Keyword-matching lines produce typed IR nodes; every other line is captured verbatim as an opaque directive, and freeform text is never a parse error. Header directives are read in the header only (§2): here `status agreed`, `context matters` or `type safety` is a directive like any other and never changes the header. Section openers (`construct:`, `enforce:`, `contract:`, `variables:`, `scenario "…":`) end the zone. |
 | **Compiler** | `contract:`, `scenario`, `predict` | Strict typed grammar. Malformation is a parse error, never a silent failure. |
 
 ### 1.4 Token classes (ADR-0007 — normative)
@@ -120,6 +134,12 @@ KEYWORD-qualifier (`uuid`); `flowId: any zebra` is a parse error, not a comment.
 | `type` | `type command` | One of: `command`, `query`, `policy`, `projection`, `saga`, `infrastructure`, `integration`, `scaffold` |
 | `status` | `status agreed` | Lifecycle (ADR-0008): `draft` → `agreed` → `built` → `verified`. The agent refuses to build a spec that is not `agreed`; the agent may *propose* the draft→agreed flip, the human can revert. Nothing in the toolchain writes a status: `built` and `verified` are set by hand, by convention. |
 | `observes` | `observes log, cache` | Optional, at most once (ADR-0033). The services this spec observes, each a key of the config's `services` (closed space: an unknown key is `UNKNOWN_SERVICE_KEY`). Absent = every configured service, as before. A key written twice, a bare `observes`, an empty item or a second line is `MALFORMED_SYNTAX`. Recorded in the IR as top-level `observes`, in written order. |
+
+The header is the lines between the pragma and the first section opener, and the header directives are
+read there only (ADR-0040). Each is written once (§1.2, "One of each per scope"); their order is free.
+After the header a header-shaped line belongs to its zone: a directive in `construct:` and `enforce:`, a
+context line in `given:`, an unrecognized line elsewhere. A header field that is missing from the header
+is `MISSING_MINIMUM` wherever else it is written.
 
 ---
 
@@ -212,7 +232,8 @@ generated test files (ADR-0001) — nothing resolves at run time.
 ```
 scenario "rejects duplicate flow name":
   given:
-    A flow already exists for this tenant.                          # freeform context
+    # a freeform context line
+    A flow already exists for this tenant.
     seed projectionStore [ TenantRecord with TenantSchema { id: "tenant-1", plan: "pro" } ]
     execute CreateFlow { name: "Welcome", tenantId: "tenant-1" }
   when: CreateFlow { name: "Welcome", tenantId: "tenant-1" }
@@ -282,6 +303,10 @@ inline seed records (SPEC-DRV-001; `"Item-<n>"` inside a string stays literal, a
 substituted) and each row is checked on its own: a failing record is `SEED_ROW_VALUES_INVALID`, anchored
 `given › seed[i] record j › row[n]` (n 1-based), in place of `SEED_VALUES_INVALID`; a fixture is checked once.
 
+The same holds for the other given keywords (ADR-0040): a line that begins `execute`, `seed`,
+`clock at` or `random seed` and carries a trailing comment is `MALFORMED_SYNTAX`, never context, so a
+step is never skipped because of a comment.
+
 ### 5.1b Spec variables — `variables:` (ADR-0017)
 
 The **only expressions in the language**, confined to one block; scenario
@@ -321,7 +346,7 @@ The spec `type` declares its trigger discipline (parse error on mismatch):
 
 | Spec types | Trigger | Form |
 | --- | --- | --- |
-| `command`, `query` | `when:` | `when [(as <actor>)]: <Command> { <json> }` — one per scenario; a second `when:` replaces the first (the last one wins); command ∈ `response.commands`; actor ∈ `response.actors` or reserved `anonymous`, omitted = `actors.default` (ADR-0012) |
+| `command`, `query` | `when:` | `when [(as <actor>)]: <Command> { <json> }` — one per scenario; a second `when:` is `MALFORMED_SYNTAX` (§1.2, ADR-0040); command ∈ `response.commands`; actor ∈ `response.actors` or reserved `anonymous`, omitted = `actors.default` (ADR-0012) |
 | `projection`, `policy`, `saga` | `deliver` | `deliver <EventType> { <json> }` `to <service>` or `to response` (ADR-0036: the response role's invoke host; `response` is reserved, never a service key) — one or more, in order; saga sequences chain multiple lines |
 
 Delivered stimuli are **excluded from capture** — they are the input, not the output — so
@@ -341,15 +366,17 @@ Three types, fixed grammar:
 | `predict rejection <ID>:` | Error response + **zero effects across ALL configured services**, including the services the spec does not observe: derive asserts `has []` on each of them (ADR-0033). `<ID>` is UPPER_SNAKE or UpperCamel (§1.2). |
 | `predict error <CODE>:` | Error response + zero or compensating effects |
 
+One `predict` per scenario; a second is `MALFORMED_SYNTAX`.
+
 Prediction lines:
 
 | Form | Meaning |
 | --- | --- |
 | `response <status> <Schema> [{ <value block> }]` | Response surface: status + body schema (+ optional value assertions) |
-| `<service> has [ <record>, ... ]` | Exactly these records **captured** (writes during the window). One per service: a second `has` for the same service replaces the earlier one (the last one wins). |
+| `<service> has [ <record>, ... ]` | Exactly these records **captured** (writes during the window). One per service: a second `has` for the same service is `MALFORMED_SYNTAX`; put every record in one list (ADR-0040). |
 | `<service> has []` | Zero records captured (explicit absence assertion) |
 | `<service> has ordered [...]` / `has unordered [...]` | Ordering override (ADR-0004) |
-| `<service> contains [ <record>, ... ]` | **Resulting state** via adapter `read()` (ADR-0011) — polled to convergence for eventual services; may appear alongside `has` for the same service |
+| `<service> contains [ <record>, ... ]` | **Resulting state** via adapter `read()` (ADR-0011) — polled to convergence for eventual services; may appear alongside `has` for the same service. One per service, as `has`. |
 
 **Completeness (INV-6)**: every service the spec observes must appear in every prediction: every configured service
 when the spec has no `observes` line, the declared ones when it has (ADR-0033). `has []` is the explicit "nothing

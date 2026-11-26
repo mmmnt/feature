@@ -1,11 +1,13 @@
-# ADR-0040 (DRAFT): the parser refuses what it silently drops, replaces or rewrites
+# ADR-0040: the parser refuses what it silently drops, replaces or rewrites
 
-Status: draft, awaiting the owner. Not accepted, nothing built. The number is the next free one on main
-(ADR-0039 is the last); renumber if another ADR lands first.
+Status: Accepted (the owner's rulings 2026-11-25, recorded in flmnt, workspace feature; each the recommended
+option): decision 1 "MISSING_MINIMUM"; decision 2a "JSON escapes + \uXXXX"; decision 2b "Same JSON rule,
+decoded"; decision 3 "Refuse all of them"; decision 4 "Refuse on keyword lines"; decision 5 "Header only";
+decision 6 "Stay feat 1.0", with one ADR-0040. Built in SPEC-CORE-001 (amended).
 Inputs: the owner's ruling "Parser wins" (commits 1d0a075 and 5e5136c, 2026-11-25), which made
 `docs/grammar-reference.md` describe what the parser does today, including five behaviours the reference
 now has to state as defects. This ADR proposes the rules that let the reference state stricter ones.
-Governs: SPEC-CORE-001 (`packages/feat-core/parse.feat`, amended beside this file), `docs/grammar-reference.md`,
+Governs: SPEC-CORE-001 (`packages/feat-core/parse.feat`, amended), `docs/grammar-reference.md`,
 the corpus (exemplar #22, `corpus/strict-lines/`), the parse fixtures.
 
 ## Context
@@ -14,8 +16,8 @@ the corpus (exemplar #22, `corpus/strict-lines/`), the parse fixtures.
 SPEC-CORE-001 says of the agent zones: "parse errors inside construct:/enforce: freeform text are impossible."
 The parser breaks both. Each item below was run on main (72f71de) with
 `node packages/feature/bin/run.js parse <fixture> --config packages/feat-core/fixtures/parse.config.json`;
-the fixtures are in `packages/feat-core/fixtures/bad/` beside this file. `README.md` has the commands and
-outputs.
+the fixtures are in `packages/feat-core/fixtures/bad/`. The draft's README (`drafts/parser-strict-lines/README.md`,
+commit 55373d5) has the commands and outputs.
 
 | | Input | What the parser does today | Where |
 | --- | --- | --- | --- |
@@ -29,14 +31,14 @@ outputs.
 | d | `eventStore has [] # c`, `when: X { } # c` | `MALFORMED_SYNTAX` "Unrecognized prediction line" / "scenario line", hint none | `:972`, `:997` |
 | e | `status agreed` in `construct:`, `context X` in `enforce:`, `aggregate Y` in `given:` | sets the header field, overwriting the header; a `draft` spec reads as `agreed`. `type safety` in `construct:` is `MALFORMED_SYNTAX` ("Unknown spec type") | `parse.ts:743`-`:760`: the header regexes run before the section dispatch, for every line of the file |
 
-A sweep of every tracked `.feat` file (275 on main) with the scratch scripts described in `README.md` found
+A sweep of every tracked `.feat` file (275 on main) with the scratch scripts described in the draft's README found
 none that uses a trailing comment, a string escape outside JSON's single-character set, a header line after
 the header, a second `when:` or a second `has` for a service, or a `construct:` or `given:` line that begins
 with a keyword and does not parse. The only tracked spec whose IR the decisions below change is
 SPEC-RT-014: its name `"Matcher: the f32 digest f32 <dims> sha256 \"<hex>\""` is recorded today with the
 backslashes, and under decision 2b it is recorded with the quotes.
 
-## Decision (proposed; each has its alternatives in the README for the owner)
+## Decision
 
 1. **A scenario without a prediction is `MISSING_MINIMUM`.** The message names the scenario, the line is the
    scenario's opener, and the hint names the three forms. It is checked with the trigger, before anything
@@ -88,7 +90,7 @@ backslashes, and under decision 2b it is recorded with the quotes.
 - Decision 2b changes SPEC-RT-014's recorded name; its generated suite is regenerated in the same change
   (`feat generate`, then `feat verify`). Nothing else regenerates.
 - The TextMate grammars should follow decision 4 (scope `#` as a comment only at the start of a line) and
-  decision 2 (escapes inside strings). That is SPEC-GRM-001's (drafts/textmate-grammar), not this ADR's.
+  decision 2 (escapes inside strings). That is SPEC-GRM-001's (`packages/feat-grammar/grammar.feat`), not this ADR's.
 - The LSP and any embedder of `parseSource` stop seeing raw `TypeError` and `SyntaxError` throws from
   ordinary input: every refusal is a `{ status: "ERR", body: { code, message, line?, hint? } }`.
 

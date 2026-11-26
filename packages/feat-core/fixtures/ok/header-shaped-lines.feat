@@ -1,6 +1,6 @@
 feat 1.0
 
-# ADR-0040 (draft): header directives are read in the header only. After the first section opener a
+# ADR-0040: header directives are read in the header only. After the first section opener a
 # header-shaped line is whatever its zone makes it: a directive in construct: and enforce:, a context
 # line in given:. The header keeps the values it was written with; `status agreed` below never flips
 # this draft spec.

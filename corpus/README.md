@@ -28,6 +28,7 @@ is tested against. The corpus grows with every language change, forever.
 | 19 | `f32-digest/` | SPEC-EMB-001 | The f32 digest matcher (ADR-0030): `f32 <dims> sha256 "<hex>"` in a response value block, a record's value block and a nested block, beside `absent` for an entry with no text; recorded as `{ matcher: "f32Digest", dims, sha256 }` |
 | 20 | `spec-observes/` | SPEC-PAU-001 | A spec observes a subset of the configured services (ADR-0033): `observes log, cache` with a third service (`files`) configured and never named; every prediction names exactly the observed two; recorded as top-level `observes` in written order |
 | 21 | `list-matcher/` | SPEC-ARC-001 | Matchers inside a list (ADR-0034): an archive's members as a list in which one member's text is `matching "<regex>"`, another's `not ""`, and, in an outline, `any` and `any string` fields beside literal ones; matcher-free lists (`tags`, the response's `members`, `tags: [<tag>]`) stay `literal`; recorded as `{ matcher: "list", items }` with `{ matcher: "object", fields }` for an object item that holds a matcher |
+| 22 | `strict-lines/` | SPEC-NTE-001 | The stricter line rules (ADR-0040): whole-line comments between given, when and predict lines; `\u00e9` and `\"` decoded in a payload, a value block and a scenario name; a `#` kept as text in an enforce constraint and a given context line and as data in a string; `context matters` in `construct:` recorded as a directive with the header unchanged |
 
 Validate every exemplar's IR, contract and config against `schemas/`:
 

@@ -131,16 +131,14 @@ spec declares `observes`); `has []` is the explicit zero-assertion.
 
 ## Error codes
 
-A spec failure is a returned `{ status: "ERR", body }`, with two exceptions that throw today: a string with an
-escape other than `\"`, `\\`, `\/`, `\b`, `\f`, `\n`, `\r` or `\t` (including `\uXXXX`) throws a raw `SyntaxError`, and a
-scenario with no `predict` throws a `TypeError`. `body` is `{ code, message, line?, hint? }`;
+A spec failure is a returned `{ status: "ERR", body }`, never a throw (ADR-0040). `body` is `{ code, message, line?, hint? }`;
 `line` is 1-based and is present where the scanner can place the error.
 
 | Code | When |
 | --- | --- |
 | `MISSING_PRAGMA` | the first non-comment line is not `feat <major>.<minor>` |
 | `UNSUPPORTED_VERSION` | the pragma's major is not 1 |
-| `MALFORMED_SYNTAX` | a compiler-zone block breaks the grammar: an unknown type, status or contract role; a malformed value, payload, record list, `fault`, `observes` or `random seed` line; an unknown prediction form; a scenario with no trigger; a rejection id that is neither `UPPER_SNAKE` nor `UpperCamel`; `partial` in data, inside a value or beside `equals fixture`; a refused `not` form; a tab in leading whitespace; a bad variable |
+| `MALFORMED_SYNTAX` | a compiler-zone block breaks the grammar: an unknown type, status or contract role; a malformed value, payload, record list, `fault`, `observes` or `random seed` line; an unknown prediction form; a scenario with no trigger; a rejection id that is neither `UPPER_SNAKE` nor `UpperCamel`; `partial` in data, inside a value or beside `equals fixture`; a refused `not` form; a tab in leading whitespace; a bad variable; a string escape JSON does not have; a second line where one is allowed per scope (header directive, `when:`, `predict`, `response`, a service's `has` or `contains`, `clock at`, `random seed`); a trailing `#` comment on a line read by keyword (ADR-0040) |
 | `UNKNOWN_SERVICE_KEY` | a prediction, delivery, `fault` line, capture reference or `observes` line names an unconfigured service |
 | `UNKNOWN_COMMAND` | a `when:` or `execute` names a command absent from `response.commands` |
 | `UNKNOWN_ACTOR` | an `as <actor>` clause names an actor absent from `response.actors` |
@@ -150,11 +148,12 @@ scenario with no `predict` throws a `TypeError`. `body` is `{ code, message, lin
 | `QUERY_SIDE_EFFECT` | a `query` spec predicts a non-empty `has` |
 | `INCOMPLETE_PREDICTION` | a non-`query` prediction has no `has` for a configured (or observed) service |
 | `UNOBSERVED_SERVICE` | a spec that declares `observes` names another configured service (ADR-0033) |
-| `MISSING_MINIMUM` | the spec lacks a complete header, a construct directive, an enforce directive, a contract entry or a scenario |
+| `MISSING_MINIMUM` | the spec lacks a complete header, a construct directive, an enforce directive, a contract entry or a scenario, or a scenario has no `predict` (ADR-0040) |
 | `UNKNOWN_VARIABLE` | a `${name}` names a variable `variables:` does not declare |
 
 The agent-zone blocks (`construct:` and `enforce:`) are freeform: a keyword line becomes a typed node, any other line
-is kept verbatim as a directive.
+is kept verbatim as a directive. Header directives are read in the header only, so a header-shaped line in a zone is
+that zone's line (ADR-0040). Every quoted string is a JSON string, `\uXXXX` included, and the IR records it decoded.
 
 A config problem is not returned as `ERR`: `parse` throws `Error("Configuration error [CODE] message")` when
 `loadConfig` refuses the config (for example `CONFIG_NOT_FOUND`, `INVALID_CONFIG`, `EXTENDS_NOT_FOUND`,

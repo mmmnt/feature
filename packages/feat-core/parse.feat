@@ -65,6 +65,25 @@ feat 1.0
 # `equals fixture` (before or after), or with no block after it is refused MALFORMED_SYNTAX naming where it goes. One
 # new exemplar (fixtures/ok/partial-blocks, SPEC-OK-202) and eight refusal fixtures (SPEC-BAD-136 to -143).
 
+# AMENDMENT (ADR-0040, the parser refuses what it silently drops, replaces or rewrites; the owner's rulings
+# 2026-11-25: (a) "MISSING_MINIMUM", (b) "JSON escapes + \uXXXX", (b') "Same JSON rule, decoded", (c) "Refuse all
+# of them", (d) "Refuse on keyword lines", (e) "Header only", and "Stay feat 1.0", with one ADR-0040). The ruling
+# "Parser wins" (2026-11-25) had made the grammar reference describe five behaviours of the parser that break its
+# own rules (§1.3: "Malformation is a parse error, never a silent failure"; this spec: "parse errors inside
+# construct:/enforce: freeform text are impossible"). This amendment states the stricter rules:
+#  1. a scenario with no predict is MISSING_MINIMUM at its opener (before, an uncaught TypeError);
+#  2. every quoted string is a JSON string: \uXXXX is decoded, any other non-JSON escape is MALFORMED_SYNTAX
+#     (before, an uncaught SyntaxError in a value, and raw, unrefused text on a line);
+#  3. a second when:, predict, response, has or contains for one service, clock at, random seed or header key is
+#     MALFORMED_SYNTAX (before, the last one won, silently);
+#  4. a trailing comment on a line the parser reads by keyword is MALFORMED_SYNTAX (before, a given step became
+#     context, a touches or handler at line a custom directive, and a comment after a response block was dropped);
+#  5. header directives are read in the header only; after it a header-shaped line belongs to its zone (before,
+#     `status agreed` in construct: set the header's status).
+# One new exemplar, corpus/strict-lines (#22), one ok fixture (SPEC-OK-203) and twenty refusal fixtures
+# (SPEC-BAD-144 to -163). No IR field changes, so every other exemplar's IR is unchanged; SPEC-RT-014's recorded
+# name changes under rule 2 (its name held \"<hex>\").
+
 spec SPEC-CORE-001 "Parse a .feat file to BuiltSpec IR"
 context Toolchain
 aggregate Language
@@ -134,6 +153,19 @@ construct:
   `not` over a list of literals stays a literal operand. A capture reference inside a list joins the closed service
   space and, when the spec declares observes, the observed space, as one outside it does. A `{ ... }` outside any
   list keeps its value-block meaning, { matcher: "nested", fields }.
+  ADR-0040. A scenario with no predict is MISSING_MINIMUM, its line the scenario's opener, its message naming the
+  scenario; it is checked with the trigger, before anything reads the prediction. Every quoted string, in a value
+  and on a line (spec name, scenario name, clock at, seed from, equals fixture, stream, contract from, a variables
+  template), is a JSON string: the escapes are \" \\ \/ \b \f \n \r \t and \uXXXX with four hex digits, the IR records
+  the decoded string, and any other escape is MALFORMED_SYNTAX naming it (no line inside a value, the line on a
+  line). A second when: or predict in a scenario, a second response in a prediction, a second has or a second
+  contains for one service, a second clock at or random seed in a given, and a second spec, context, aggregate,
+  type or status line in the header are MALFORMED_SYNTAX at the second line, the message naming the first one's
+  line. A trailing comment, a # outside a string with a space or tab before it, is MALFORMED_SYNTAX with its line
+  on every compiler-zone line and on a construct: line that is a typed directive once the comment is removed; in
+  freeform text (a construct or enforce directive, a given context line) it stays text. Header directives are read
+  between the pragma and the first section opener only; after it a header-shaped line is a directive in an agent
+  zone, a context line in given:, and an unrecognized line elsewhere.
 
 enforce:
   read the version pragma before anything else
@@ -153,6 +185,10 @@ enforce:
   rejects UNKNOWN_SERVICE_KEY when an observes line names a service absent from the config services
   rejects MALFORMED_SYNTAX when an observes line names no service, names one twice, has an empty item, or is written twice
   rejects MISSING_MINIMUM when a spec lacks the required minimum sections
+  rejects MISSING_MINIMUM when a scenario has no predict block (ADR-0040)
+  rejects MALFORMED_SYNTAX when a string holds an escape JSON does not have, a line that is written once per scope is written twice, or a line the parser reads by keyword carries a trailing comment (ADR-0040)
+  read header directives in the header only, so a header-shaped line in a zone never changes the header (ADR-0040)
+  never throw anything but a coded parse error for any input text (ADR-0040)
 
 contract:
   input ParseInput
@@ -486,3 +522,69 @@ scenario outline "refuses 'partial' anywhere but a predicted record's or respons
     | spec                                                            | message                                       | hint | line |
     | "packages/feat-core/fixtures/bad/partial-response-golden.feat"  | "^'partial' is refused beside 'equals fixture'" | "^Use either a golden or a partial" | 26 |
     | "packages/feat-core/fixtures/bad/partial-no-block.feat"         | "^'partial' must be followed by a value block" | "^Write '<Schema> partial" | 26 |
+
+scenario "parses the stricter-lines exemplar (strict-lines, ADR-0040)":
+  when: Parse { spec: "corpus/strict-lines/strict-lines.feat", config: "corpus/strict-lines/feat.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "../../corpus/strict-lines/strict-lines.ir.json"
+    filesystem has []
+
+scenario "a header-shaped line after the header is its zone's line and never changes the header":
+  when: Parse { spec: "packages/feat-core/fixtures/ok/header-shaped-lines.feat", config: "packages/feat-core/fixtures/parse.config.json" }
+  predict success:
+    response OK BuiltSpec equals fixture "../../packages/feat-core/fixtures/ok/header-shaped-lines.ir.json"
+    filesystem has []
+
+scenario "a scenario with no predict is a missing minimum at its opener":
+  when: Parse { spec: "packages/feat-core/fixtures/bad/missing-predict.feat", config: "packages/feat-core/fixtures/parse.config.json" }
+  predict rejection MISSING_MINIMUM:
+    response ERR ParseError { code: "MISSING_MINIMUM", message: "Scenario 'does the thing' has no prediction.", line: 21, hint: matching "^Add 'predict success:', 'predict rejection <ID>:' or 'predict error <CODE>:'" }
+    filesystem has []
+
+scenario outline "refuses a string escape JSON does not have inside a value, naming it, with no line":
+  when: Parse { spec: <spec>, config: "packages/feat-core/fixtures/parse.config.json" }
+  predict rejection MALFORMED_SYNTAX:
+    response ERR ParseError { code: "MALFORMED_SYNTAX", message: matching <message>, hint: "Valid escapes: \\\" \\\\ \\/ \\b \\f \\n \\r \\t \\uXXXX.", line: absent }
+    filesystem has []
+  examples:
+    | spec                                                              | message                    |
+    | "packages/feat-core/fixtures/bad/string-escape-invalid.feat"       | "^Invalid escape '\\\\q'" |
+    | "packages/feat-core/fixtures/bad/string-escape-unicode-short.feat" | "^Invalid escape '\\\\u'" |
+
+scenario "refuses a string escape JSON does not have on a line, naming it and the line":
+  when: Parse { spec: "packages/feat-core/fixtures/bad/string-escape-scenario-name.feat", config: "packages/feat-core/fixtures/parse.config.json" }
+  predict rejection MALFORMED_SYNTAX:
+    response ERR ParseError { code: "MALFORMED_SYNTAX", message: matching "^Invalid escape '\\\\q'", hint: "Valid escapes: \\\" \\\\ \\/ \\b \\f \\n \\r \\t \\uXXXX.", line: 21 }
+    filesystem has []
+
+scenario outline "refuses a second line where one is allowed, naming the first one's line":
+  when: Parse { spec: <spec>, config: "packages/feat-core/fixtures/parse.config.json" }
+  predict rejection MALFORMED_SYNTAX:
+    response ERR ParseError { code: "MALFORMED_SYNTAX", message: matching <message>, hint: matching "^Write '", line: <line> }
+    filesystem has []
+  examples:
+    | spec                                                          | message                                       | line |
+    | "packages/feat-core/fixtures/bad/duplicate-when.feat"          | "^A second 'when:' .*the first is on line 22" | 23   |
+    | "packages/feat-core/fixtures/bad/duplicate-predict.feat"       | "^A second 'predict' .*the first is on line 24" | 27 |
+    | "packages/feat-core/fixtures/bad/duplicate-response.feat"      | "^A second 'response' .*the first is on line 24" | 25 |
+    | "packages/feat-core/fixtures/bad/duplicate-has.feat"           | "^A second 'eventStore has' .*the first is on line 25" | 26 |
+    | "packages/feat-core/fixtures/bad/duplicate-contains.feat"      | "^A second 'eventStore contains' .*the first is on line 26" | 27 |
+    | "packages/feat-core/fixtures/bad/duplicate-clock.feat"         | "^A second 'clock at' .*the first is on line 23" | 24 |
+    | "packages/feat-core/fixtures/bad/duplicate-random-seed.feat"   | "^A second 'random seed' .*the first is on line 23" | 24 |
+    | "packages/feat-core/fixtures/bad/duplicate-header-status.feat" | "^A second 'status' .*the first is on line 7"  | 8    |
+
+scenario outline "refuses a trailing comment on a line the parser reads by keyword":
+  when: Parse { spec: <spec>, config: "packages/feat-core/fixtures/parse.config.json" }
+  predict rejection MALFORMED_SYNTAX:
+    response ERR ParseError { code: "MALFORMED_SYNTAX", message: matching "^A comment must be on its own line", hint: "Comments are whole-line: move '# …' to a line of its own.", line: <line> }
+    filesystem has []
+  examples:
+    | spec                                                            | line |
+    | "packages/feat-core/fixtures/bad/comment-trailing-execute.feat"  | 23   |
+    | "packages/feat-core/fixtures/bad/comment-trailing-seed.feat"     | 23   |
+    | "packages/feat-core/fixtures/bad/comment-trailing-clock.feat"    | 23   |
+    | "packages/feat-core/fixtures/bad/comment-trailing-touches.feat"  | 12   |
+    | "packages/feat-core/fixtures/bad/comment-trailing-handler.feat"  | 10   |
+    | "packages/feat-core/fixtures/bad/comment-trailing-response.feat" | 24   |
+    | "packages/feat-core/fixtures/bad/comment-trailing-has.feat"      | 25   |
+    | "packages/feat-core/fixtures/bad/comment-trailing-when.feat"     | 22   |

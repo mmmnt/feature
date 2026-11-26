@@ -1,6 +1,6 @@
 feat 1.0
 
-# Corpus exemplar #22 — the parser's stricter line rules (ADR-0040, draft). Comments are whole-line,
+# Corpus exemplar #22 — the parser's stricter line rules (ADR-0040). Comments are whole-line,
 # and here they sit between given, when and predict lines. A string escape is JSON's whole set,
 # `\u00e9` included, in a payload, a value block and a scenario name. A `#` inside a string is data,
 # and a `#` in freeform text (an enforce constraint, a given context line) is kept as text. A

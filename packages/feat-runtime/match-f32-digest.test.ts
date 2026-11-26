@@ -575,7 +575,7 @@ const CASES: HarnessCase[] = [
   }
 ];
 
-describe("SPEC-RT-014: Matcher: the f32 digest f32 <dims> sha256 \\\"<hex>\\\"", () => {
+describe("SPEC-RT-014: Matcher: the f32 digest f32 <dims> sha256 \"<hex>\"", () => {
   let h: Harness;
   beforeAll(async () => {
     h = await createHarness({ configPath: CONFIG_PATH, specPath: SPEC_PATH, cases: CASES });
