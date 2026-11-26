@@ -148,8 +148,16 @@ jobs:
             echo "$TAG already exists; nothing to release."
             exit 0
           fi
-          if ! npm view "@mmmnt/feature@$VERSION" version > /dev/null 2>&1; then
-            echo "@mmmnt/feature@$VERSION is not on npm; nothing to release."
+          # The registry can take a few minutes to serve a version the publish step just pushed:
+          # 0.17.1 was published, read back as absent half a second later, and left untagged. Wait up
+          # to five minutes. A version npm still lacks then was not published, and is not released.
+          FOUND=""
+          for _ in 1 2 3 4 5 6 7 8 9 10; do
+            if npm view "@mmmnt/feature@$VERSION" version --prefer-online > /dev/null 2>&1; then FOUND=1; break; fi
+            sleep 30
+          done
+          if [ -z "$FOUND" ]; then
+            echo "@mmmnt/feature@$VERSION is not on npm after five minutes; nothing to release."
             exit 0
           fi
           SHA=$(git log -1 --format=%H -S"\"version\": \"$VERSION\"" -- packages/feature/package.json)
