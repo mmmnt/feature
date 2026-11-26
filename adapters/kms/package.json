@@ -1,6 +1,6 @@
 {
   "name": "@mmmnt/feat-adapter-kms",
-  "version": "0.17.0",
+  "version": "0.17.1",
   "description": "KMS service adapter for Feat: a snapshot diff of key state (keys, aliases, tags, rotation) against a KMS endpoint — an unpredicted key change fails the suite",
   "type": "module",
   "main": "dist/index.js",

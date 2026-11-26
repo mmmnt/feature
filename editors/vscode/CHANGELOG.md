@@ -2,6 +2,20 @@
 
 The extension is released at the toolchain's version; these are the toolchain's changes (`@mmmnt/feature`).
 
+## 0.17.1
+
+### Patch Changes
+
+- fix(extension): the marketplace listing is Feature's, its links resolve, and it carries a changelog
+- Updated dependencies []:
+  - @mmmnt/feat-analyze@0.17.1
+  - @mmmnt/feat-core@0.17.1
+  - @mmmnt/feat-derive@0.17.1
+  - @mmmnt/feat-emit-ts@0.17.1
+  - @mmmnt/feat-runner@0.17.1
+  - @mmmnt/feat-runtime@0.17.1
+  - @mmmnt/feat-types@0.17.1
+
 ## 0.17.0
 
 ### Minor Changes
