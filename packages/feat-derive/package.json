@@ -1,6 +1,6 @@
 {
   "name": "@mmmnt/feat-derive",
-  "version": "0.17.1",
+  "version": "0.18.0",
   "description": "Feat derive: BuiltSpec IR + FeatConfig -> TestTopology. Pure and deterministic (INV-2); outline expansion, ordering resolution, query implicit-zero synthesis.",
   "license": "BSD-3-Clause",
   "author": "listenrightmeow <@listenrightmeow> (https://sdd.mmmnt.dev/)",
