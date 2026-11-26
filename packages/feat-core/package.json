@@ -1,6 +1,6 @@
 {
   "name": "@mmmnt/feat-core",
-  "version": "0.17.1",
+  "version": "0.18.0",
   "description": "Feat language core: recursive-descent parser, BuiltSpec IR, closed-reference-space validation.",
   "license": "BSD-3-Clause",
   "author": "listenrightmeow <@listenrightmeow> (https://sdd.mmmnt.dev/)",

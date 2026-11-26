@@ -1,6 +1,6 @@
 {
   "name": "@mmmnt/feat-adapter-kurrent",
-  "version": "0.17.1",
+  "version": "0.18.0",
   "description": "KurrentDB service adapter for Feat: the $all log is the capture window, a fence marker read back through it makes settle truthful, and the namespace's streams are the state",
   "type": "module",
   "main": "dist/index.js",
