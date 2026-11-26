@@ -79,7 +79,7 @@ Creates the handle; no network until `open()`.
 | `arm(fault, detail?)` | Arms a fault by name (a plain string). |
 | `disarm()` | Removes this proxy's toxics, re-enables it, and unpauses or starts a container this handle paused or stopped. Never calls Toxiproxy's global reset. |
 | `armed()` | The faults armed now, in arming order. |
-| `traffic()` | `{ received, sent }` bytes through the proxy since the last `arm()`, or `"unobserved"` without `metrics`. |
+| `traffic()` | `{ received, sent }` bytes of the connections through the proxy that closed since the last `arm()`, or `"unobserved"` without `metrics`. |
 | `close()` | Disarms, then removes the proxy. A no-op if never opened. |
 
 ### Faults
@@ -96,6 +96,8 @@ Creates the handle; no network until `open()`.
 Faults stack until `disarm()`; arming the same fault again replaces it. The library has no count: a byte stream cannot honor "once" or "times n", so adapters declare each `Connection` fault as until-reset and the harness refuses `once` and `times n` with `FAULT_UNSUPPORTED`. `BrokerLoss` is shared fate (pausing a container hits every namespace that uses it), so a spec file that arms it runs in the runner's serial pass.
 
 `traffic()` counts bytes that crossed the proxy, which is evidence of exposure, not of consumption. An adapter with only this reports its fault evidence as `unobserved`.
+
+Toxiproxy adds a connection's bytes to its counters only when the connection closes, so `traffic()` counts the connections that have closed since the last `arm()`; a connection still open is not counted yet. Read it after the connections you mean to count have closed.
 
 ### Errors
 

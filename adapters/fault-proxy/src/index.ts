@@ -50,6 +50,11 @@ export interface FaultProxy {
   arm(fault: string, detail?: ArmDetail): Promise<void>;
   disarm(): Promise<void>;
   armed(): readonly FaultName[];
+  /**
+   * The bytes of this proxy since the last arm, as Toxiproxy counts them: it adds a connection's bytes when the
+   * connection closes, so only connections closed since the last arm are counted; one still open is not.
+   * "unobserved" without `metrics`.
+   */
   traffic(): Promise<Traffic>;
   close(): Promise<void>;
 }

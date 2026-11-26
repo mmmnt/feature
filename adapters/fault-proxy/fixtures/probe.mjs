@@ -27,19 +27,71 @@ const ECHO_PORT = 19001;
 const CONTROL_PORT = 19002;
 const PRODUCT = "echo";
 
+// The agent in the peer container. Nothing it answers waits on a timer, except a send's 300 ms bound for the
+// absence a Timeout predicts (SPEC-FPX-001 as amended, items 2 to 5; owner rulings 14 and 15):
+//   count                    the messages the echo server has received
+//   mark                     a script begins: closes are counted from here, for connections accepted from here
+//   send <port> <t> <text>   connect, write, answer the first client event: echo, refused, reset, closed; <t> is
+//                            the Timeout the script armed on that path: none (no timer at all), down (the 300 ms
+//                            bound starts once the echo server has received and echoed the text) or up (it starts
+//                            at the write); the bound answers timeout
+//   hold <key> <port> <text> connect, write, keep the client open; answers once the echo server has echoed the text
+//   release <key>            close the held client; answers once the echo server has seen its connection close
+//   closed <n>               answers once the echo server has seen n connections close since the mark
 const AGENT = `
 const net = require("net");
 let count = 0;
-net.createServer((s) => { s.on("data", (d) => { count++; s.write(d); }); s.on("error", () => {}); }).listen(${ECHO_PORT}, "127.0.0.1");
-function send(port, text, reply) {
+let epoch = 0;
+let closed = 0;
+const echoed = [];
+const closeWaiters = [];
+const held = new Map();
+const wakeClosed = () => {
+  for (let i = closeWaiters.length - 1; i >= 0; i--) if (closed >= closeWaiters[i].n) closeWaiters.splice(i, 1)[0].fn();
+};
+net.createServer((s) => {
+  const e = epoch;
+  s.on("data", (d) => { count++; s.write(d, () => { const w = echoed.shift(); if (w) w(s); }); });
+  s.on("error", () => {});
+  s.on("close", () => { s.gone = true; if (e === epoch) { closed++; wakeClosed(); } });
+}).listen(${ECHO_PORT}, "127.0.0.1");
+function send(port, timeout, text, reply) {
   let done = false;
+  let timer;
+  const bound = () => { if (!done) timer = setTimeout(() => fin("timeout"), 300); };
   const s = net.connect(Number(port), "127.0.0.1");
-  const fin = (r) => { if (done) return; done = true; try { s.destroy(); } catch {} reply(r); };
-  s.on("connect", () => s.write(text));
+  const fin = (r) => {
+    if (done) return;
+    done = true;
+    clearTimeout(timer);
+    const i = echoed.indexOf(bound);
+    if (i >= 0) echoed.splice(i, 1);
+    try { s.destroy(); } catch {}
+    reply(r);
+  };
+  if (timeout === "down") echoed.push(bound);
+  s.on("connect", () => s.write(text, () => { if (timeout === "up") bound(); }));
   s.on("data", () => fin("echo"));
   s.on("error", (e) => fin(e.code === "ECONNREFUSED" ? "refused" : e.code === "ECONNRESET" ? "reset" : "error:" + e.code));
   s.on("close", () => fin("closed"));
-  setTimeout(() => fin("timeout"), 300);
+}
+function hold(key, port, text, reply) {
+  let done = false;
+  const s = net.connect(Number(port), "127.0.0.1");
+  const fin = (r) => { if (done) return; done = true; const i = echoed.indexOf(onEcho); if (i >= 0) echoed.splice(i, 1); reply(r); };
+  const onEcho = (server) => { held.set(key, { client: s, server }); fin("held"); };
+  echoed.push(onEcho);
+  s.on("connect", () => s.write(text));
+  s.on("error", (e) => fin("error:" + e.code));
+  s.on("close", () => fin("closed"));
+}
+function release(key, reply) {
+  const h = held.get(key);
+  if (!h) return reply("error:not-held");
+  held.delete(key);
+  if (!h.server.gone) h.server.once("close", () => reply("released"));
+  h.client.destroy();
+  if (h.server.gone) reply("released");
 }
 net.createServer((c) => {
   let buf = "";
@@ -50,10 +102,23 @@ net.createServer((c) => {
     while ((i = buf.indexOf("\\n")) >= 0) {
       const line = buf.slice(0, i);
       buf = buf.slice(i + 1);
-      if (line === "count") c.write(count + "\\n");
-      else if (line.startsWith("send ")) {
-        const [, port, ...rest] = line.split(" ");
-        send(port, rest.join(" "), (r) => c.write(r + "\\n"));
+      const answer = (r) => c.write(r + "\\n");
+      const [verb, ...args] = line.split(" ");
+      if (verb === "count") answer(String(count));
+      else if (verb === "mark") {
+        epoch++;
+        closed = 0;
+        echoed.length = 0;
+        for (const h of held.values()) h.client.destroy();
+        held.clear();
+        answer("ok");
+      } else if (verb === "send") send(args[0], args[1], args.slice(2).join(" "), answer);
+      else if (verb === "hold") hold(args[0], args[1], args.slice(2).join(" "), answer);
+      else if (verb === "release") release(args[0], answer);
+      else if (verb === "closed") {
+        const n = Number(args[0]);
+        if (closed >= n) answer(String(closed));
+        else closeWaiters.push({ n, fn: () => answer(String(closed)) });
       }
     }
   });
@@ -204,7 +269,17 @@ export async function probe(input) {
   const proxyName = (ns) => `feat-${ns}-${PRODUCT}`;
 
   const countAt = async () => Number(await control(env.controlPort, "count"));
+  // Closes are counted from here, for the connections this script opens: none that an earlier script left closing.
+  await control(env.controlPort, "mark");
   const before = await countAt();
+  // Per namespace: the Timeout streams the script has armed (the agent bounds a send only on such a path), and the
+  // proxied connections it has opened by a send that was not refused (Toxiproxy dials the upstream when it accepts).
+  const timeouts = new Map();
+  const opened = new Map();
+  const portOf = (ns) => {
+    const listen = lib(ns).listen;
+    return listen.slice(listen.lastIndexOf(":") + 1);
+  };
   const trace = [];
   let lastIsOpen = false;
   try {
@@ -222,11 +297,27 @@ export async function probe(input) {
           break;
         }
         case "send": {
-          const entry = lib(a);
-          const port = entry.listen.slice(entry.listen.lastIndexOf(":") + 1);
+          const port = portOf(a);
           const text = step.slice(kind.length + a.length + 2);
-          const outcome = await control(env.controlPort, `send ${port} ${text}`);
+          const armed = timeouts.get(a) ?? new Set();
+          const timeout = armed.has("upstream") ? "up" : armed.has("downstream") ? "down" : "none";
+          const outcome = await control(env.controlPort, `send ${port} ${timeout} ${text}`);
+          if (outcome !== "refused") opened.set(a, (opened.get(a) ?? 0) + 1);
           trace.push(`send:${a}=${outcome}`);
+          break;
+        }
+        case "hold": {
+          const port = portOf(a);
+          const text = step.slice(kind.length + a.length + 2);
+          const outcome = await control(env.controlPort, `hold ${a} ${port} ${text}`);
+          if (outcome !== "held") throw new Error(`hold:${a} did not hold its connection: ${outcome}`);
+          trace.push(`hold:${a}`);
+          break;
+        }
+        case "release": {
+          const outcome = await control(env.controlPort, `release ${a}`);
+          if (outcome !== "released") throw new Error(`release:${a} failed: ${outcome}`);
+          trace.push(`release:${a}`);
           break;
         }
         case "arm": {
@@ -234,11 +325,13 @@ export async function probe(input) {
           if (b === "BrokerLoss") detail.mode = c ?? "pause";
           else if (c !== undefined) detail.stream = c;
           await lib(a).lib.arm(b, detail);
+          if (b === "Timeout") timeouts.set(a, (timeouts.get(a) ?? new Set()).add(c ?? "downstream"));
           trace.push(`arm:${a}`);
           break;
         }
         case "disarm":
           await lib(a).lib.disarm();
+          timeouts.delete(a);
           trace.push(`disarm:${a}`);
           break;
         case "armed":
@@ -260,6 +353,10 @@ export async function probe(input) {
           break;
         }
         case "traffic": {
+          // Toxiproxy counts a connection when it closes, and closes the upstream after adding both upstream-direction
+          // counters: wait, on the echo server's close events and with no timer, for as many closes as the sends
+          // through <ns> opened, then read once.
+          if (metrics !== undefined) await control(env.controlPort, `closed ${opened.get(a) ?? 0}`);
           const t = await lib(a).lib.traffic();
           trace.push(`traffic:${a}=${t === "unobserved" ? "unobserved" : t.received + t.sent > 0 ? "seen" : "none"}`);
           break;
