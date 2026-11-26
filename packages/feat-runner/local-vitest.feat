@@ -23,6 +23,34 @@ feat 1.0
 # Unchanged: the run config, the reporters, the passes, the environment handed to vitest, the zero-files
 # refusal (exit 1).
 #
+# Amended 2026-11-25 (from drafts/run-exit-codes-vitest), owner rulings "onTestRunEnd only", "Keep >=3.2.0 open"
+# and "CI matrix per major" with "Keep latest", flipped to agreed by the owner: exit 2 on every vitest major CI
+# proves. `feat run` exits 2 when a pass failed on a harness configuration error (README, exit
+# codes; fix ad2a65d, 2026-11-10). The runner tells that failure from a failed test by a reporter it writes
+# beside the run config (CONFIG_ERROR_REPORTER_SOURCE, packages/feat-runner/src/index.ts:266-275): the reporter
+# walks the finished task tree for an error whose message holds `Configuration error (exit 2):` and writes the
+# marker file that afterPass reads (:208-210). It implements only `onFinished`. Vitest 4 and 5 no longer call a
+# reporter's `onFinished` (in 4.1.12 and 5.1.2 the only `onFinished` call left is the browser websocket client's);
+# they call `onTestRunEnd(testModules, unhandledErrors, reason)`, which 3.2 already calls too. So under the
+# vitest `feat init` installs today (5.1.2, the latest) the marker is never written and `feat run` exits 1 on a
+# configuration error. Reproduced on 3.2.0, 3.2.7, 4.1.12, 5.0.0 and 5.1.2 with packages/feature/fixtures/fault
+# (FAULT_UNSUPPORTED) and its namespaced config (NAMESPACE_CONFIGURED): exit 2 on 3.2.x, exit 1 on 4.1.12 and
+# 5.x, the `Configuration error (exit 2): [FAULT_UNSUPPORTED]` line printed in every case. WHAT CHANGES:
+#  4. The configuration-error reporter implements `onTestRunEnd(testModules, unhandledErrors)` and walks the
+#     reported tree: each module's, suite's and test's errors (`errors()` on a module and a suite,
+#     `result().errors` on a test, the children of each) and the unhandled errors. A hit writes the marker. It
+#     keeps no `onFinished`: 3.2 calls `onTestRunEnd` as well, and one hook is one code path on every version.
+#     Writing the marker is idempotent.
+#  5. The peer range stays >=3.2.0, open (owner ruling 2026-11-25, "Keep >=3.2.0 open"). A new major is caught by
+#     CI, not refused by the package manager: see 6.
+#  6. CI proves each major (owner ruling 2026-11-25, "CI matrix per major"): ci.yml gains the job runner-vitest,
+#     matrix vitest ["3.2.7", "4.1.12", "5.1.2", "latest"], Node 24. Each instance installs that vitest into a
+#     scratch directory outside the workspace and runs `feat run --spec SPEC-RT-010` with FEAT_PROBE_VITEST naming
+#     it. The scenarios that run a real vitest predict `ran` as one of the proved majors (3.2, 4, 5), so the
+#     `latest` instance turns red the first CI run after a new major is published, whatever its exit codes, and
+#     the major is admitted by amending this spec: its matrix entry and its `ran` pattern. The Spec chain runs the
+#     same scenarios on the workspace's own vitest (FEAT_PROBE_VITEST unset).
+#
 # Driven through packages/feat-runner/fixtures/probe.mjs (part of the build). `RunVitest { vitest }` builds
 # a throwaway project in the temporary directory, with a stub vitest package (version 3.2.99, its bin
 # records that it ran and exits 0) at the root (`installed`), in the parent directory of the root, as a
@@ -31,6 +59,13 @@ feat 1.0
 # as runTests, spawned without blocking the vitest worker the probe runs in) over one file. It
 # answers `ran` (the version of the vitest that ran, "" if none) and `fetched` (whether any stub was
 # called), with the result's exit code; a refusal answers ERR with its code and message.
+# Amendment: `vitest` may also be `probe`: the project's node_modules/vitest is then a link to the real vitest
+# at FEAT_PROBE_VITEST, or, unset, to the workspace's own (the directory of the vitest/package.json the probe
+# resolves), and `suite` picks the one test file the probe writes:
+# `config-error-in-test` (a test throws an Error whose message is the harness's
+# `Configuration error (exit 2): [FAULT_UNSUPPORTED] ...`), `config-error-in-setup` (a beforeAll throws it, so
+# the tests are skipped, as when createHarness refuses), `failing` (a test fails an expect) or `passing`. The
+# answer gains `configurationError`, the result's flag (false when absent), and `ran` is the real version.
 
 spec SPEC-RT-010 "Runner: vitest resolves from the project, never fetched"
 context Toolchain
@@ -45,6 +80,8 @@ construct:
   touches packages/feature/package.json
   touches packages/feature/README.md
   touches packages/feature/run-exit-codes.test.ts
+  touches .github/workflows/ci.yml
+  touches scripts/ci-local-plan.mjs
   needs SPEC-RT-005
   resolveVitest(root) takes the first <dir>/node_modules/vitest/package.json from root upward, takes its
   bin (`bin.vitest`, or `bin` when a string), and returns { bin, version }; it throws VitestNotInstalled
@@ -52,12 +89,23 @@ construct:
   the zero-files check and before any pass writes or spawns anything, and spawns each pass as
   process.execPath with the bin and vitest's arguments, without a shell. On VITEST_NOT_INSTALLED it prints
   the refusal to stderr and returns { exitCode: 2, configurationError: true, refusal: { code, message } }.
+  CONFIG_ERROR_REPORTER_SOURCE exports a reporter class with onTestRunEnd(testModules = [], unhandledErrors = [])
+  and no onFinished; it writes the FEAT_CONFIG_ERROR_MARKER file when any module, suite or test error, at any
+  depth, or any unhandled error has a message matching /Configuration error \(exit 2\):/. The peer range of
+  vitest stays ">=3.2.0". ci.yml's job runner-vitest has the matrix vitest ["3.2.7", "4.1.12", "5.1.2", "latest"]
+  on Node 24, installs the matrix's vitest with npm into a mktemp directory (--no-save --no-package-lock
+  --ignore-scripts) and runs feat run --spec SPEC-RT-010 with FEAT_PROBE_VITEST=<dir>/node_modules/vitest, in one
+  step. scripts/ci-local-plan.mjs names an instance's step files and log by its job key and every matrix value
+  but node, so the instances of one job on one Node version no longer overwrite each other's steps.
 
 enforce:
   rejects VITEST_NOT_INSTALLED when vitest does not resolve from the project root
   run the vitest the project installed, resolved from the root, never one fetched by npx, npm exec or pnpm dlx
   spawn nothing and write nothing when vitest is not installed
   tell the user to add vitest as a dev dependency in the refusal
+  exit 2 on a harness configuration error under every vitest major the CI matrix proves, with the same scenarios run once per major
+  tell a configuration error from a failed test by the reported errors' messages, never by the exit code vitest returns
+  admit a new vitest major by amending this spec: its CI matrix entry and the majors the scenarios' ran names
 
 contract:
   input RunVitestInput
@@ -67,13 +115,13 @@ contract:
 scenario "vitest installed at the project root is the one that runs":
   when: RunVitest { vitest: "installed" }
   predict success:
-    response OK RunVitestResult { exit: 0, ran: "3.2.99", fetched: false }
+    response OK RunVitestResult { exit: 0, ran: "3.2.99", fetched: false, configurationError: false }
     filesystem has []
 
 scenario "vitest hoisted to a parent directory, as a workspace installs it, is found":
   when: RunVitest { vitest: "hoisted" }
   predict success:
-    response OK RunVitestResult { exit: 0, ran: "3.2.99", fetched: false }
+    response OK RunVitestResult { exit: 0, ran: "3.2.99", fetched: false, configurationError: false }
     filesystem has []
 
 scenario "a project without vitest is refused before anything runs, and nothing is fetched":
@@ -81,3 +129,23 @@ scenario "a project without vitest is refused before anything runs, and nothing 
   predict rejection VITEST_NOT_INSTALLED:
     response ERR RunVitestError { code: "VITEST_NOT_INSTALLED", detail: matching "add vitest as a dev dependency", exit: 2, ran: "", fetched: false }
     filesystem has []
+
+scenario outline "a configuration error exits 2 under the vitest the probe runs, a major this spec has proved":
+  when: RunVitest { vitest: "probe", suite: <suite> }
+  predict success:
+    response OK RunVitestResult { exit: 2, ran: matching "^(3\\.2|4|5)\\.", fetched: false, configurationError: true }
+    filesystem has []
+  examples:
+    | suite                   |
+    | "config-error-in-test"  |
+    | "config-error-in-setup" |
+
+scenario outline "a failed test stays exit 1 and a passing run exit 0 under the vitest the probe runs":
+  when: RunVitest { vitest: "probe", suite: <suite> }
+  predict success:
+    response OK RunVitestResult { exit: <exit>, ran: matching "^(3\\.2|4|5)\\.", fetched: false, configurationError: false }
+    filesystem has []
+  examples:
+    | suite     | exit |
+    | "failing" | 1    |
+    | "passing" | 0    |

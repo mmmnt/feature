@@ -1,5 +1,6 @@
 // The probes behind `PlanRun` and `PreflightSerial` (SPEC-RT-005) and `RunVitest` (SPEC-RT-010).
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { faultsOf, plan, runPlan } from "../src/plan.ts";
@@ -70,6 +71,31 @@ function stubVitest(dir, ranFile) {
   writeFileSync(path.join(pkg, "vitest.mjs"), `import { writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(ranFile)}, "3.2.99");\n`);
 }
 
+// The configuration error the harness throws, as a generated suite surfaces it (HarnessConfigurationError's message).
+const CONFIG_ERROR = "Configuration error (exit 2): [FAULT_UNSUPPORTED] fault store Append Nonsense is not offered by the adapter";
+
+/** The one test file a `probe` run writes, by suite; each records the version of the vitest that loaded it. */
+function probeSuite(suite, ranFile, version) {
+  const ran = `import { writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(ranFile)}, ${JSON.stringify(version)});\n`;
+  const error = JSON.stringify(CONFIG_ERROR);
+  const bodies = {
+    "config-error-in-test": `import { it } from "vitest";\nit("refuses", () => { throw new Error(${error}); });\n`,
+    // As when createHarness refuses: the suite's beforeAll throws, so its tests are skipped.
+    "config-error-in-setup": `import { beforeAll, describe, it } from "vitest";\ndescribe("suite", () => {\n  beforeAll(() => { throw new Error(${error}); });\n  it("never runs", () => {});\n});\n`,
+    failing: `import { expect, it } from "vitest";\nit("fails", () => { expect(1).toBe(2); });\n`,
+    passing: `import { expect, it } from "vitest";\nit("passes", () => { expect(1).toBe(1); });\n`,
+  };
+  const body = bodies[suite];
+  if (body === undefined) throw new Error(`probe: unknown suite ${suite}`);
+  return ran + body;
+}
+
+/** The real vitest a `probe` run links: FEAT_PROBE_VITEST, or the workspace's own. */
+function probeVitestDir() {
+  if (process.env.FEAT_PROBE_VITEST) return path.resolve(process.env.FEAT_PROBE_VITEST);
+  return path.dirname(createRequire(import.meta.url).resolve("vitest/package.json"));
+}
+
 /** Stubs for every command that could fetch a package at run time; each records that it was called. */
 function stubFetchers(dir, fetchedFile) {
   mkdirSync(dir, { recursive: true });
@@ -88,7 +114,15 @@ export async function runVitest(input) {
   const root = input.vitest === "hoisted" ? path.join(tmp, "workspace", "app") : path.join(tmp, "app");
   mkdirSync(root, { recursive: true });
   writeFileSync(path.join(root, "package.json"), JSON.stringify({ name: "app", private: true, type: "module" }));
-  writeFileSync(path.join(root, "gen.test.ts"), "");
+  if (input.vitest === "probe") {
+    const real = probeVitestDir();
+    const version = JSON.parse(readFileSync(path.join(real, "package.json"), "utf8")).version;
+    mkdirSync(path.join(root, "node_modules"), { recursive: true });
+    symlinkSync(real, path.join(root, "node_modules", "vitest"), "junction");
+    writeFileSync(path.join(root, "gen.test.ts"), probeSuite(input.suite, ranFile, version));
+  } else {
+    writeFileSync(path.join(root, "gen.test.ts"), "");
+  }
   if (input.vitest === "installed") stubVitest(root, ranFile);
   if (input.vitest === "hoisted") stubVitest(path.join(tmp, "workspace"), ranFile);
   const bin = path.join(tmp, "bin");
@@ -107,5 +141,9 @@ export async function runVitest(input) {
   const fetched = existsSync(fetchedFile);
   rmSync(tmp, { recursive: true, force: true });
   if (r.refusal) return { status: "ERR", body: { code: r.refusal.code, detail: r.refusal.message, exit: r.exitCode, ran, fetched } };
-  return { status: "OK", body: { exit: r.exitCode, ran, fetched } };
+  // `exit` is the exit `feat run` takes from this result (packages/feature/src/commands/run.ts): 2 on a configuration
+  // error, else 1 on any failure, else 0. The runner itself returns vitest's own code beside the flag.
+  const configurationError = r.configurationError === true;
+  const exit = configurationError ? 2 : r.exitCode !== 0 ? 1 : 0;
+  return { status: "OK", body: { exit, ran, fetched, configurationError } };
 }

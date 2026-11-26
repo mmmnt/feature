@@ -162,9 +162,11 @@ Shards that share one store are not isolated. Give each shard its own instrument
 A harness configuration error is something the harness refuses before any effect: an adapter that
 cannot honour `clock at`, a fault it does not offer, a namespace conflict. It is raised in
 `beforeAll` of a suite, so vitest reports skipped tests rather than a failed one, and its message
-would be easy to lose. The runner attaches a small reporter that reads vitest's task tree, including
-failed hooks. It marks the run as a configuration error when any error message contains
-`Configuration error (exit 2):`.
+would be easy to lose. The runner attaches a small reporter that reads vitest's reported tree when the
+run ends (`onTestRunEnd`, which every vitest from 3.2 calls): module, suite and test errors at any depth,
+failed hooks included, and the run's unhandled errors. It marks the run as a configuration error when any
+error message contains `Configuration error (exit 2):`. CI proves this on each vitest major the peer range
+admits (3.2, 4 and 5) and on `latest`.
 
 | Level | Exit | Meaning |
 | --- | --- | --- |

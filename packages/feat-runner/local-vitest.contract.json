@@ -13,7 +13,16 @@
           "enum": [
             "installed",
             "hoisted",
-            "missing"
+            "missing",
+            "probe"
+          ]
+        },
+        "suite": {
+          "enum": [
+            "config-error-in-test",
+            "config-error-in-setup",
+            "failing",
+            "passing"
           ]
         }
       }
@@ -23,7 +32,8 @@
       "required": [
         "exit",
         "ran",
-        "fetched"
+        "fetched",
+        "configurationError"
       ],
       "additionalProperties": false,
       "properties": {
@@ -34,6 +44,9 @@
           "type": "string"
         },
         "fetched": {
+          "type": "boolean"
+        },
+        "configurationError": {
           "type": "boolean"
         }
       }

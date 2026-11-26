@@ -260,15 +260,24 @@ export async function runTestsAsync(opts: RunOptions): Promise<RunResult> {
 
 /**
  * A vitest reporter that records a harness configuration error. The JSON reporter drops a failed hook's
- * error (a suite whose createHarness threw has only skipped tests), so the reporter reads the task tree:
- * file, suite and test errors alike. It writes the marker named by FEAT_CONFIG_ERROR_MARKER.
+ * error (a suite whose createHarness threw has only skipped tests), so the reporter reads the reported tree:
+ * module, suite and test errors alike, at any depth, and the run's unhandled errors. It writes the marker
+ * named by FEAT_CONFIG_ERROR_MARKER.
+ *
+ * It implements `onTestRunEnd` only (SPEC-RT-010): vitest 4 and 5 no longer call a reporter's `onFinished`,
+ * and 3.2 calls `onTestRunEnd` too, so one hook is one code path on every version the peer range admits.
  */
 export const CONFIG_ERROR_REPORTER_SOURCE = [
   'import { writeFileSync } from "node:fs";',
-  "const hit = (t) => (t.result?.errors ?? []).some((e) => /Configuration error \\(exit 2\\):/.test(String(e?.message))) || (t.tasks ?? []).some(hit);",
+  "const isConfigError = (e) => /Configuration error \\(exit 2\\):/.test(String(e?.message));",
+  // A module and a suite answer errors(); a test answers result().errors.
+  'const errorsOf = (t) => (typeof t.errors === "function" ? t.errors() : typeof t.result === "function" ? t.result()?.errors : undefined) ?? [];',
+  "const hit = (t) => errorsOf(t).some(isConfigError) || Array.from(t.children ?? []).some(hit);",
   "export default class FeatConfigErrorReporter {",
-  "  onFinished(files = []) {",
-  '    if (files.some(hit)) writeFileSync(process.env.FEAT_CONFIG_ERROR_MARKER, "1");',
+  "  onTestRunEnd(testModules = [], unhandledErrors = []) {",
+  "    if (testModules.some(hit) || unhandledErrors.some(isConfigError)) {",
+  '      writeFileSync(process.env.FEAT_CONFIG_ERROR_MARKER, "1");',
+  "    }",
   "  }",
   "}",
   "",

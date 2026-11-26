@@ -162,3 +162,32 @@ jobs:
             .feature/reports/feat-junit.xml
             .feature/coverage/lcov.info
           if-no-files-found: ignore
+
+  runner-vitest:
+    # SPEC-RT-010: `feat run` exits 2 on a configuration error under every vitest major the peer range admits.
+    # One job per proved major, plus `latest`, which fails SPEC-RT-010 when it resolves to a major the spec has
+    # not proved yet (the scenarios' `ran` names the proved majors).
+    name: Runner exit codes (Vitest ${{ matrix.vitest }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        vitest: ["3.2.7", "4.1.12", "5.1.2", "latest"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Build
+        run: pnpm build
+      - name: SPEC-RT-010 under Vitest ${{ matrix.vitest }}
+        # The vitest under test goes in a scratch directory, never the workspace: ci-local runs every Node 24 job
+        # one after another on one tree. One step, since ci-local never sources GITHUB_ENV between steps.
+        run: |
+          scratch=$(mktemp -d)
+          npm install --prefix "$scratch" --no-save --no-package-lock --ignore-scripts --no-audit --no-fund "vitest@${{ matrix.vitest }}"
+          FEAT_PROBE_VITEST="$scratch/node_modules/vitest" node packages/feature/bin/run.js run --spec SPEC-RT-010
