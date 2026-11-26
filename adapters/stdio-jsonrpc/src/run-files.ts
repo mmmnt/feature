@@ -5,12 +5,16 @@
 // service role; one invoke from the response role; then on every service role settle, peekCapture
 // twice and stopCapture. Teardown runs every role in order. What reached the host is read back from
 // the log the fake host keeps (FAKE_HOST_LOG), so the answer is the host's view, not the client's.
+// Each file's registry runs on a ManualClock (ADR-0041) that moves only after an event: when the host logs that it
+// holds an invoke, by the file's limit, so the invoke fails HOST_TIMEOUT; for a lateRole file, once the late role
+// has set up, by the grace period, so the registry's kill ends the held host. No step waits on wall time.
 
-import { mkdtempSync, readFileSync, existsSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, existsSync, writeFileSync, watch } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createAdapter } from "./adapters.js";
-import { HostRegistry, type HostConfig } from "./host.js";
+import { DEFAULT_REQUEST_TIMEOUT_MS, GRACE_MS, HostRegistry, type HostConfig } from "./host.js";
+import { ManualClock } from "./manual-clock.js";
 import { ExchangeError } from "./protocol.js";
 
 interface FileSpec {
@@ -42,7 +46,9 @@ const alive = (pid: number): boolean => {
 };
 
 async function runFile(f: FileSpec, tmp: string) {
-  const registry = new HostRegistry(f.requestTimeoutMs);
+  const manualClock = new ManualClock();
+  const limit = f.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+  const registry = new HostRegistry(limit, manualClock);
   const logFile = path.join(tmp, `${f.name}.log`);
   writeFileSync(logFile, "");
   const hostConfig: HostConfig = { command: f.host.command, env: { FAKE_HOST_LOG: logFile } };
@@ -73,6 +79,29 @@ async function runFile(f: FileSpec, tmp: string) {
   const hostAlive = (): boolean => pids().some(alive);
   const received = (): string[] => readFileSync(logFile, "utf8").split("\n").filter((l) => l.startsWith("recv ")).map((l) => l.slice(5));
   let receivedAtTimeout: number | undefined;
+  const holds = (): number => readFileSync(logFile, "utf8").split("\n").filter((l) => l === "hold invoke").length;
+  // The first of two events: the host logs one more `hold invoke` than `after` (true), or `settled` settles (false).
+  // The log is read on fs.watch events, never on a timer.
+  const untilHold = (after: number, settled: Promise<unknown>): Promise<boolean> =>
+    new Promise((resolve, reject) => {
+      let done = false;
+      const watcher = watch(logFile, () => {
+        if (holds() > after) finish(true);
+      });
+      const finish = (held: boolean) => {
+        if (done) return;
+        done = true;
+        watcher.close();
+        resolve(held);
+      };
+      watcher.on("error", (e) => {
+        if (done) return;
+        done = true;
+        reject(e);
+      });
+      void settled.then(() => finish(false), () => finish(false));
+      if (holds() > after) finish(true);
+    });
   const note = (role: string, e: unknown) => {
     if (!(e instanceof ExchangeError)) throw e;
     if (e.code === "HOST_TIMEOUT" && receivedAtTimeout === undefined) receivedAtTimeout = received().length;
@@ -113,7 +142,13 @@ async function runFile(f: FileSpec, tmp: string) {
         if (response && seed !== undefined)
           await (response.adapter as never as { setSeed(s: number | null): Promise<void> }).setSeed(seed);
         for (const r of services) await guard(r.name, () => (r.adapter as never as { startCapture(c: object): Promise<void> }).startCapture({ specType: "command" }));
-        if (response) await guard("response", () => (response.adapter as never as { invoke(c: string, i: object): Promise<unknown> }).invoke("Ping", {}));
+        if (response) {
+          const holdsBefore = holds();
+          const invoked = guard("response", () => (response.adapter as never as { invoke(c: string, i: object): Promise<unknown> }).invoke("Ping", {}));
+          // The host holds the invoke: the limit passes on the file's clock, so the invoke fails HOST_TIMEOUT.
+          if (await untilHold(holdsBefore, invoked)) manualClock.advance(limit);
+          await invoked;
+        }
         if (f.lateRole !== undefined && receivedAtTimeout !== undefined && late === undefined) {
           const endedAlive = pids().slice(0, 1).some(alive);
           const before = registry.spawned;
@@ -126,6 +161,8 @@ async function runFile(f: FileSpec, tmp: string) {
             outcome = e.code;
           }
           lateFacts = { lateRoleOutcome: outcome, lateRoleSpawnedHost: registry.spawned > before, endedHostAliveAtLateSetup: endedAlive };
+          // The ended host holds on until it is killed: the grace period passes, and the registry's kill ends it.
+          manualClock.advance(GRACE_MS);
         }
         for (const r of services) {
           const a = r.adapter as never as { settle(): Promise<boolean>; peekCapture(): Promise<unknown[]>; stopCapture(): Promise<unknown[]> };
@@ -165,7 +202,7 @@ async function runFile(f: FileSpec, tmp: string) {
   const setupNamespaces = lines.filter((l) => l.startsWith("setup ")).map((l) => l.split(" ")[1]!);
   const clocks = lines.filter((l) => l.startsWith("clock ")).map((l) => JSON.parse(l.slice(6)) as string | null);
   const seedsSent = lines.filter((l) => l.startsWith("seed ")).map((l) => JSON.parse(l.slice(5)) as number | null);
-  await new Promise((r) => setTimeout(r, 20));
+  // Every role's teardown has awaited its host's exit, so the live hosts are counted now.
   const all = pids();
   const base = { hostsSpawned: all.length, hostsAlive: all.filter(alive).length };
   if (failure) {

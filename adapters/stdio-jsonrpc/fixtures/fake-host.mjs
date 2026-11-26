@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // The fake spec host the SPEC-RPC-001/002 scenarios drive. `--mode <m>` picks what it does; it keeps
 // serving lines until stdin closes. Not shipped; part of the build.
-//   FAKE_HOST_LOG=<file>: appends `pid`, `env <FEAT_NAMESPACE>`, `setup <ns> <services>` and `clock <v>` lines
-//   so a test can see what reached the host.
+//   FAKE_HOST_LOG=<file>: appends `pid`, `env <FEAT_NAMESPACE>`, `setup <ns> <services>`, `clock <v>`, `recv <method>`
+//   and `hold invoke` lines so a test can see what reached the host.
 import { appendFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 
@@ -13,9 +13,22 @@ log(`pid ${process.pid}`);
 log(`env ${process.env.FEAT_NAMESPACE ?? ""}`);
 
 const rl = createInterface({ input: process.stdin });
-// late-invoke-slow-exit: as late-invoke, and it takes 1500 ms to exit once stdin closes (inside the
-// adapter's 2 s grace), so a role can set up while an ended host is still running.
-rl.on("close", () => (mode === "late-invoke-slow-exit" ? setTimeout(() => process.exit(0), 1500) : process.exit(0)));
+// late-invoke and late-invoke-held: requests are answered one at a time, in order, as a host is bound to, and the
+// first invoke is held (logged `hold invoke`) until stdin closes, so every request written after it waits behind it;
+// when stdin closes the held invoke is answered (the late line the client must not take for another request's).
+// late-invoke then exits; late-invoke-held, once it has held an invoke, stays up until it is killed, so a role can set
+// up while an ended host is still running. A late-invoke-held host that held nothing exits when stdin closes, as
+// every other mode does. No mode waits on a timer for any of this (ADR-0041).
+const lateModes = new Set(["late-invoke", "late-invoke-held"]);
+let chain = Promise.resolve();
+let held = false;
+let releaseHeld;
+rl.on("close", () => {
+  if (!lateModes.has(mode)) return process.exit(0);
+  releaseHeld?.();
+  if (mode === "late-invoke-held" && held) return void setInterval(() => {}, 60_000);
+  void chain.then(() => process.exit(0));
+});
 
 const record = { type: "log.entry", payload: { n: 1 }, timestamp: 1000 };
 const state = { ns: undefined, services: new Set(), captured: new Map(), tasks: 0, failed: false };
@@ -31,6 +44,8 @@ async function canned(req) {
   const p = req.params;
   switch (req.method) {
     case "setup": {
+      // slow-setup: every setup is answered 500 ms late in wall time, past a 200 ms limit that only a clock fires.
+      if (mode === "slow-setup") await delay(500);
       if (state.ns !== undefined && p.namespace !== state.ns) return { error: { code: -32602, message: `namespace ${p.namespace} is not this host's ${state.ns}` } };
       state.ns ??= p.namespace;
       for (const s of p.services) state.services.add(s);
@@ -95,20 +110,18 @@ async function canned(req) {
   }
 }
 
-// late-invoke: requests are answered one at a time, in order, as a host is bound to, and the first
-// invoke is answered 600 ms late, so every request written after it waits behind it.
-let chain = Promise.resolve();
-let lateDone = false;
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
 rl.on("line", (line) => {
   const req = JSON.parse(line);
   log(`recv ${req.method}`);
-  if (mode !== "late-invoke" && mode !== "late-invoke-slow-exit") return void handle(req);
+  if (!lateModes.has(mode)) return void handle(req);
   chain = chain.then(async () => {
-    if (req.method === "invoke" && !lateDone) {
-      lateDone = true;
-      await delay(600);
+    if (req.method === "invoke" && !held) {
+      held = true;
+      const released = new Promise((r) => (releaseHeld = r));
+      log("hold invoke");
+      await released;
     }
     await handle(req);
   });

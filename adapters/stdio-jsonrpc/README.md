@@ -637,11 +637,12 @@ const r = await exchange({
 
 | Export | Meaning |
 |---|---|
-| `HostConnection` | A long-lived host process. `HostConnection.spawn(config, namespace, timeoutMs?)`, `request(method, params)`, `close()`, `pid`, `ended`, `crashed`. Calls are serialized. |
-| `HostRegistry` | The open host of one spec file. `new HostRegistry(requestTimeoutMs?)`, `join(config, namespace)` and `leave(host)`. The last role to leave ends the host. |
+| `HostConnection` | A long-lived host process. `HostConnection.spawn(config, namespace, timeoutMs?, clock?)`, `request(method, params)`, `close()`, `pid`, `ended`, `crashed`. Calls are serialized. |
+| `HostRegistry` | The open host of one spec file. `new HostRegistry(requestTimeoutMs?, clock?)`, `join(config, namespace)` and `leave(host)`. The last role to leave ends the host. The request limit (30 s) and the 2 s kill run on `clock`, the real clock by default (ADR-0041). |
 | `defaultRegistry` | The module-scoped registry the adapters use by default. |
 | `SeedTransform`, `parseSeedTransform`, `canonicalJson`, `SeedTransformError` | The seed transform the store adapters share (ADR-0035). `parseSeedTransform(options.seedTransform)` checks the option; `SeedTransform` joins the host and asks `transformSeed` twice. |
 | `HostConfig` | `{ command: string[], cwd?: string, env?: Record<string, string> }`. |
+| `Clock` | `{ setTimeout(fn, ms): unknown, clearTimeout(handle): void }`: the type of `HostRegistry`'s second parameter. Only a test driver passes one; the adapters use the real clock. |
 
 When the host process exits without being asked to, every pending call and every
 later call of every role of that file fails with `HOST_CRASHED`. When a request

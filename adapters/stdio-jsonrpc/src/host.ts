@@ -4,9 +4,11 @@
 // of a file and ends it when the last role leaves. A request with no answer within the limit fails
 // HOST_TIMEOUT and ends the connection: nothing more is written to the host, it is ended in the
 // background (stdin closed, killed after the grace period), the registry drops it, and every pending
-// and later call fails HOST_ENDED (founder rulings cd46cd64, agreed 78a98840).
+// and later call fails HOST_ENDED (founder rulings cd46cd64, agreed 78a98840). Its three timers run on the clock the
+// registry is given, the real one unless the test driver injects another (ADR-0041).
 
 import { spawn, type ChildProcess } from "node:child_process";
+import { systemClock, type Clock } from "./clock.js";
 import { checkAnswer, checkRequest, ExchangeError } from "./protocol.js";
 
 export interface HostConfig {
@@ -16,13 +18,13 @@ export interface HostConfig {
 }
 
 export const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
-const GRACE_MS = 2_000;
+export const GRACE_MS = 2_000;
 
 export class HostConnection {
   private child: ChildProcess;
   private buffer = "";
   private nextId = 1;
-  private pending = new Map<number, { method: string; resolve: (v: unknown) => void; reject: (e: unknown) => void; timer: NodeJS.Timeout }>();
+  private pending = new Map<number, { method: string; resolve: (v: unknown) => void; reject: (e: unknown) => void; timer: unknown }>();
   private queue: Promise<unknown> = Promise.resolve();
   /** True once the process is gone, however it went. */
   ended = false;
@@ -35,14 +37,18 @@ export class HostConnection {
   /** Told once, when the connection breaks, so the registry can drop it. */
   onBroken: (() => void) | undefined;
 
-  private constructor(child: ChildProcess, private readonly timeoutMs: number) {
+  private constructor(
+    child: ChildProcess,
+    private readonly timeoutMs: number,
+    private readonly clock: Clock,
+  ) {
     this.child = child;
     this.exited = new Promise((resolve) => {
       child.once("close", () => {
         this.ended = true;
         if (!this.asked) this.crashed = true;
         for (const [, p] of this.pending) {
-          clearTimeout(p.timer);
+          this.clock.clearTimeout(p.timer);
           p.reject(this.broken ?? new ExchangeError("HOST_CRASHED", "the host process exited", true));
         }
         this.pending.clear();
@@ -53,7 +59,7 @@ export class HostConnection {
     child.stdin!.on("error", () => {});
   }
 
-  static async spawn(config: HostConfig, namespace: string, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS): Promise<HostConnection> {
+  static async spawn(config: HostConfig, namespace: string, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS, clock: Clock = systemClock): Promise<HostConnection> {
     const [cmd, ...args] = config.command;
     const child = spawn(cmd!, args, {
       stdio: ["pipe", "pipe", "ignore"],
@@ -65,7 +71,7 @@ export class HostConnection {
       child.once("error", () => resolve(false));
     });
     if (!ok) throw new ExchangeError("HOST_SPAWN_FAILED", `could not start '${config.command.join(" ")}'`, false);
-    return new HostConnection(child, timeoutMs);
+    return new HostConnection(child, timeoutMs, clock);
   }
 
   private onData(chunk: string): void {
@@ -80,7 +86,7 @@ export class HostConnection {
       const [id, p] = [...this.pending.entries()][0] ?? [];
       if (id === undefined || p === undefined) continue;
       this.pending.delete(id);
-      clearTimeout(p.timer);
+      this.clock.clearTimeout(p.timer);
       try {
         p.resolve(checkAnswer(line, id, p.method));
       } catch (e) {
@@ -97,7 +103,7 @@ export class HostConnection {
       const id = this.nextId++;
       const request = checkRequest(id, method, params); // INVALID_REQUEST never reaches the host
       return new Promise<unknown>((resolve, reject) => {
-        const timer = setTimeout(() => {
+        const timer = this.clock.setTimeout(() => {
           this.pending.delete(id);
           reject(new ExchangeError("HOST_TIMEOUT", `no answer to ${method} within ${this.timeoutMs} ms`, true));
           this.breakAfterTimeout(method);
@@ -116,7 +122,7 @@ export class HostConnection {
     if (this.broken) return;
     this.broken = new ExchangeError("HOST_ENDED", `the host was ended after ${method} had no answer within ${this.timeoutMs} ms`, true);
     for (const [, p] of this.pending) {
-      clearTimeout(p.timer);
+      this.clock.clearTimeout(p.timer);
       p.reject(this.broken);
     }
     this.pending.clear();
@@ -124,8 +130,8 @@ export class HostConnection {
     this.asked = true;
     if (!this.ended) {
       this.child.stdin!.end();
-      const kill = setTimeout(() => this.child.kill("SIGKILL"), GRACE_MS);
-      void this.exited.then(() => clearTimeout(kill));
+      const kill = this.clock.setTimeout(() => this.child.kill("SIGKILL"), GRACE_MS);
+      void this.exited.then(() => this.clock.clearTimeout(kill));
     }
   }
 
@@ -138,9 +144,9 @@ export class HostConnection {
     this.asked = true;
     if (!this.ended) {
       this.child.stdin!.end();
-      const timer = setTimeout(() => this.child.kill("SIGKILL"), GRACE_MS);
+      const timer = this.clock.setTimeout(() => this.child.kill("SIGKILL"), GRACE_MS);
       await this.exited;
-      clearTimeout(timer);
+      this.clock.clearTimeout(timer);
     }
   }
 }
@@ -163,8 +169,14 @@ export class HostRegistry {
   private entry: Entry | undefined;
   spawned = 0;
 
-  /** RunFiles alone names a shorter request limit; the adapters' registry keeps the 30 s default. */
-  constructor(private readonly requestTimeoutMs: number = DEFAULT_REQUEST_TIMEOUT_MS) {}
+  /**
+   * RunFiles alone names a shorter request limit and a clock of its own; the adapters' registry keeps the 30 s default
+   * and the real clock (ADR-0041).
+   */
+  constructor(
+    private readonly requestTimeoutMs: number = DEFAULT_REQUEST_TIMEOUT_MS,
+    private readonly clock: Clock = systemClock,
+  ) {}
 
   async join(config: HostConfig, namespace: string): Promise<{ host: HostConnection; spawnedNow: boolean }> {
     const key = canonical(config);
@@ -174,7 +186,7 @@ export class HostRegistry {
       this.entry.roles++;
       return { host: this.entry.host, spawnedNow: false };
     }
-    const host = await HostConnection.spawn(config, namespace, this.requestTimeoutMs);
+    const host = await HostConnection.spawn(config, namespace, this.requestTimeoutMs, this.clock);
     this.spawned++;
     const entry: Entry = { key, host, roles: 1 };
     this.entry = entry;

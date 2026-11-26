@@ -5,6 +5,8 @@ export type { ExchangeInput } from "./exchange.js";
 export { createAdapter, StdioResponseAdapter, StdioServiceAdapter, PROTOCOL_VERSION } from "./adapters.js";
 export { HostConnection, HostRegistry, defaultRegistry } from "./host.js";
 export type { HostConfig } from "./host.js";
+// ADR-0041 — the type of HostRegistry's second constructor parameter; the system and manual clocks stay internal.
+export type { Clock } from "./clock.js";
 // ADR-0035 — the seed transform the store adapters share (transformSeed, asked twice).
 export { SeedTransform, SeedTransformError, parseSeedTransform, canonicalJson } from "./seed-transform.js";
 export type { SeedTransformCode, SeedTransformOptions, SeedIdentity } from "./seed-transform.js";
