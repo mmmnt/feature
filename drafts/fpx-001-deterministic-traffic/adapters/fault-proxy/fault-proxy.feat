@@ -20,14 +20,14 @@ feat 1.0
 # the probe starts and removes. `ProbeFaultProxy { script, api?, runtime? }` runs a space-separated
 # script. Steps:
 #   open:<ns>                        library.open(): create or fetch the proxy for <ns>
-#   send:<ns>:<text>                 a client connects to <ns>'s listen address, sends <text>, waits 300 ms for the echo
+#   send:<ns>:<text>                 a client connects to <ns>'s listen address, sends <text>, and takes the first event (amended: 4, 5)
 #   arm:<ns>:<Fault>[:upstream|:downstream]   library.arm() (default stream: downstream for Timeout, upstream for ConnectionReset; BrokerLoss takes :pause, the default, or :stop)
 #   disarm:<ns>                      library.disarm()
 #   armed:<ns> / toxics:<ns> / enabled:<ns>   what the library and Toxiproxy say now
 #   container:<state>                the throwaway container's state: running, paused or stopped
 #   traffic:<ns>                     library.traffic(): bytes seen since the last arm, or unobserved
 # The trace shows each step: a send is `send:a=echo` (the text came back), `send:a=timeout` (nothing
-# came back in 300 ms), `send:a=reset`, `send:a=refused`; a trailing `listen=distinct` or `listen=same`
+# came back in 300 ms; amended: 5), `send:a=reset`, `send:a=refused`; a trailing `listen=distinct` or `listen=same`
 # is appended only when the last step is an open that follows an earlier open, comparing the two; armed, toxics and enabled print their value. `upstreamSaw` is the
 # number of messages the echo server received since the script began.
 #   (amendment) hold:<ns>:<text>          a client connects to <ns>'s listen address, sends <text> and keeps the
@@ -35,7 +35,7 @@ feat 1.0
 #   (amendment) release:<ns>         the held client closes; the step ends when the echo server has seen the
 #                                    proxied connection close
 #
-# AMENDMENT DRAFT (drafts/fpx-001-deterministic-traffic, status draft, awaiting the owner; GitHub issue #4): the
+# AMENDMENT DRAFT (drafts/fpx-001-deterministic-traffic, status draft, revised to owner rulings 14 and 15 of 2026-11-25; GitHub issue #4): the
 # traffic scenario reads the metrics after Toxiproxy has counted the connection, by an event, not by a window.
 # "traffic is reported when the metrics endpoint is configured" fails under host load with `traffic:a=none`
 # (issue #4: three local gate runs at a 1-minute load of 21 to 24, and Spec chain Node 24 on PR #7). Cause: Toxiproxy
@@ -58,9 +58,17 @@ feat 1.0
 #     fails at the test's timeout, never as a pass.
 #  3. Two steps, hold and release, and one scenario prove the accounting: a held connection is `none`, the same
 #     connection after release is `seen`.
-# Not changed here (a sibling for the owner): `send` still classifies its outcome by a 300 ms window, so the
-# four scenarios that predict `send:<ns>=echo` need the echo back within 300 ms; drafts/fpx-001-deterministic-
-# traffic/README.md has the options.
+#  4. `send` is decided by events (owner ruling 15, 2026-11-25, "Fold into this one"). Today every outcome races
+#     one 300 ms timer (fixtures/probe.mjs, AGENT, send(): `setTimeout(() => fin("timeout"), 300)`), so the four
+#     scenarios that predict `send:<ns>=echo` need the echo back within 300 ms. Amended, the outcome is the first
+#     event on the client: data (`echo`), ECONNREFUSED (`refused`), ECONNRESET (`reset`), a close (`closed`).
+#     There is no timer on a send whose path the script has not armed with a Timeout: an `echo` waits for the
+#     echo, however slow, and a path that never answers fails at the test's timeout, never as a pass.
+#  5. `timeout` is an absence, so it alone keeps a bound, and only on a send whose namespace has a Timeout armed
+#     (the probe tracks its own arm and disarm steps and tells the agent). The 300 ms starts after an event where
+#     there is one: on a downstream Timeout, once the echo server has received the text and echoed it (the answer
+#     is then held by the toxic); on an upstream Timeout, from the write (the product never hears it, which
+#     upstreamSaw checks independently). A data event inside the bound is still `echo`, a failure of the scenario.
 #
 # BrokerLoss is shared-fate across every namespace using the container; founder ruling c7af7871
 # makes it run serially (SPEC-RT-005).
@@ -114,6 +122,7 @@ enforce:
   disarm leaves the proxy enabled with no toxic and restores a paused or stopped container
   a transport fault applies to the system's path only because the adapter never connects through the proxy
   read traffic only after the events that make it final, Toxiproxy's close of each proxied connection, never after a fixed wait
+  decide a send by the first event on the client, with a bound only for the absence a Timeout armed on that path predicts
 
 contract:
   input ProbeInput

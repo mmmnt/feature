@@ -1,6 +1,6 @@
 # SPEC-FPX-001: traffic is read before Toxiproxy has counted it (DRAFT)
 
-Status: draft, awaiting the owner. Nothing is built; the amended spec beside this file is a copy of
+Status: draft, revised to owner rulings 14 ("wait for the close") and 15 ("Fold into this one") of 2026-11-25; awaiting the flip. Nothing is built; the amended spec beside this file is a copy of
 SPEC-FPX-001 at `status draft` (`adapters/fault-proxy/fault-proxy.feat`). GitHub issue #4.
 
 ## The failure (issue #4)
@@ -46,26 +46,17 @@ which by `link.go`'s order comes after both upstream counters are added; then it
 steps (`hold`, `release`) and one scenario prove the rule: a held connection is `none`, the same one released is
 `seen`. The library's code does not change.
 
-## Decisions for the owner
+## Rulings (2026-11-25) and what the owner should know
 
-1. **Where the wait lives.**
-   - **A. In the probe: the `traffic` step waits for the echo server to see the proxied connections close, an
-     event, then reads once; `traffic()` is documented as counting closed connections (Recommended).** No adapter
-     calls `traffic()` yet (checked: no `.traffic()` call under `adapters/` or `packages/` outside the probe), so
-     the library's contract can say what Toxiproxy gives.
-   - B. In the library: `traffic()` polls `/metrics` until this proxy's counters pass the baseline or a bound
-     stated in the spec passes (the option in issue #4). It helps a future adapter that reads traffic right after
-     the system's call; it is still a wall-clock bound, and a true `none` costs the whole bound.
-   - C. Widen the window (a longer `send` or a sleep before `traffic`). A margin, not a fix.
-2. **The prove-the-rule scenario** ("traffic counts a connection once it has closed, not while it is open").
-   Recommended: add it. If a later Toxiproxy counts live connections, it fails and says so, rather than the
-   main scenario turning flaky the other way.
-3. **Sibling: the 300 ms `send` window.** Four scenarios predict `send:<ns>=echo`: the echo must come back within
-   300 ms of the write, the same kind of dependence on load (not seen failing yet).
-   - **A. A separate amendment, so issue #4's fix is not held up (Recommended).** Its likely shape: `send` ends on
-     the first event (echo data, an error, a close), and only a send whose path the script armed with a Timeout
-     ends on the window, since its answer never comes.
-   - B. Fold that change into this amendment.
-   - C. Leave it, or widen the window by measurement.
-4. **ADR.** Not needed: a probe and documentation change; the library's design (rulings 58a4ac88, c7af7871) is
-   unchanged.
+1. Where the wait lives: in the probe, on the close event (ruled, 14). The library's code is unchanged.
+2. The hold/release scenario is in.
+3. The 300 ms `send` window is folded in (ruled, 15; spec header items 4 and 5). Every outcome is the first event
+   on the client, so the four `send:<ns>=echo` scenarios have no timer at all. Before agreeing, note:
+   - `timeout` is an absence and cannot be proved by an event, so it keeps the 300 ms bound, only on a send whose
+     namespace has a Timeout armed; on a downstream Timeout the bound starts after the echo server has received
+     and echoed the text. A Timeout toxic that failed to hold and delivered the echo later than 300 ms after that
+     would be missed by the trace (the traffic and upstreamSaw facts are unaffected).
+   - A send on an unarmed path that never answers now hangs until the test timeout instead of reading `timeout`.
+   - The probe has to track what it armed per namespace (arm and disarm steps) to tell the agent; a fault armed
+     outside the script would not be known to it (the scenarios arm only through the script).
+4. ADR: not needed.
