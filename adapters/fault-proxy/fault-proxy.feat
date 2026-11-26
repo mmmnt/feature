@@ -20,16 +20,55 @@ feat 1.0
 # the probe starts and removes. `ProbeFaultProxy { script, api?, runtime? }` runs a space-separated
 # script. Steps:
 #   open:<ns>                        library.open(): create or fetch the proxy for <ns>
-#   send:<ns>:<text>                 a client connects to <ns>'s listen address, sends <text>, waits 300 ms for the echo
+#   send:<ns>:<text>                 a client connects to <ns>'s listen address, sends <text>, and takes the first event (amended: 4, 5)
 #   arm:<ns>:<Fault>[:upstream|:downstream]   library.arm() (default stream: downstream for Timeout, upstream for ConnectionReset; BrokerLoss takes :pause, the default, or :stop)
 #   disarm:<ns>                      library.disarm()
 #   armed:<ns> / toxics:<ns> / enabled:<ns>   what the library and Toxiproxy say now
 #   container:<state>                the throwaway container's state: running, paused or stopped
 #   traffic:<ns>                     library.traffic(): bytes seen since the last arm, or unobserved
 # The trace shows each step: a send is `send:a=echo` (the text came back), `send:a=timeout` (nothing
-# came back in 300 ms), `send:a=reset`, `send:a=refused`; a trailing `listen=distinct` or `listen=same`
+# came back in 300 ms; amended: 5), `send:a=reset`, `send:a=refused`; a trailing `listen=distinct` or `listen=same`
 # is appended only when the last step is an open that follows an earlier open, comparing the two; armed, toxics and enabled print their value. `upstreamSaw` is the
 # number of messages the echo server received since the script began.
+#   (amendment) hold:<ns>:<text>          a client connects to <ns>'s listen address, sends <text> and keeps the
+#                                    connection open; the step ends when the echo server has received the text
+#   (amendment) release:<ns>         the held client closes; the step ends when the echo server has seen the
+#                                    proxied connection close
+#
+# AMENDED and agreed by owner rulings 14 ("Wait for the close") and 15 ("Fold into this one") of 2026-11-25 (GitHub issue #4): the
+# traffic scenario reads the metrics after Toxiproxy has counted the connection, by an event, not by a window.
+# "traffic is reported when the metrics endpoint is configured" fails under host load with `traffic:a=none`
+# (issue #4: three local gate runs at a 1-minute load of 21 to 24, and Spec chain Node 24 on PR #7). Cause: Toxiproxy
+# 2.12.0 adds a connection's bytes to toxiproxy_proxy_received_bytes_total and _sent_bytes_total only when the
+# connection's link ends (link.go at v2.12.0: read() adds ReceivedBytesTotal after io.Copy from the client returns,
+# line 122-131, then closes its input, 133; write() adds SentBytesTotal after its io.Copy returns, 152-160, then
+# closes the upstream connection, 163). Checked against the image: a client connected through a proxy, wrote 5
+# bytes and held the connection; /metrics had no series for the proxy at 50 ms, 300 ms, 1 s and 3 s; after the
+# client closed, upstream received 5 and sent 5. The probe's `send` closes its client when its 300 ms window ends
+# (fixtures/probe.mjs, AGENT, send()), answers, and the next step, `traffic`, reads /metrics once
+# (src/index.ts:260-266, readCounters at :162). Nothing orders that read after Toxiproxy has seen the close, so under
+# load the read comes first and the counters still equal the baseline taken at the arm: `none`. WHAT CHANGES:
+#  1. traffic() is documented as Toxiproxy counts: the bytes of the connections that have CLOSED since the last
+#     arm; a connection still open is not counted. The library's code does not change.
+#  2. When the library has a metrics URL, the probe's `traffic:<ns>` step first waits until the echo server has
+#     seen as many proxied connections close as the script has sent through <ns>'s proxy without being refused
+#     (each such send opened one proxied connection: Toxiproxy dials the upstream when it accepts the client),
+#     then reads traffic() once. By link.go's order the upstream connection closes after both upstream-direction
+#     counters are added, so the read sees them. The wait has no timer: if the close never comes the scenario
+#     fails at the test's timeout, never as a pass.
+#  3. Two steps, hold and release, and one scenario prove the accounting: a held connection is `none`, the same
+#     connection after release is `seen`.
+#  4. `send` is decided by events (owner ruling 15, 2026-11-25, "Fold into this one"). Today every outcome races
+#     one 300 ms timer (fixtures/probe.mjs, AGENT, send(): `setTimeout(() => fin("timeout"), 300)`), so the four
+#     scenarios that predict `send:<ns>=echo` need the echo back within 300 ms. Amended, the outcome is the first
+#     event on the client: data (`echo`), ECONNREFUSED (`refused`), ECONNRESET (`reset`), a close (`closed`).
+#     There is no timer on a send whose path the script has not armed with a Timeout: an `echo` waits for the
+#     echo, however slow, and a path that never answers fails at the test's timeout, never as a pass.
+#  5. `timeout` is an absence, so it alone keeps a bound, and only on a send whose namespace has a Timeout armed
+#     (the probe tracks its own arm and disarm steps and tells the agent). The 300 ms starts after an event where
+#     there is one: on a downstream Timeout, once the echo server has received the text and echoed it (the answer
+#     is then held by the toxic); on an upstream Timeout, from the write (the product never hears it, which
+#     upstreamSaw checks independently). A data event inside the bound is still `echo`, a failure of the scenario.
 #
 # BrokerLoss is shared-fate across every namespace using the container; founder ruling c7af7871
 # makes it run serially (SPEC-RT-005).
@@ -65,7 +104,8 @@ construct:
   named `feat-<fault>`. Several arms stack until disarm. disarm(): remove this proxy's toxics,
   enable the proxy, unpause or start the container if the library paused or stopped it; never
   POST /reset. traffic(): with `metrics` set to the Toxiproxy /metrics URL (the server runs with
-  -proxy-metrics) the byte counters of this proxy since the last arm, else "unobserved".
+  -proxy-metrics) the byte counters of this proxy since the last arm, else "unobserved". Toxiproxy adds a
+  connection's bytes when the connection closes, so traffic() counts the connections closed since the last arm.
   Counts are not the library's business: every fault holds until disarm, so an adapter
   declares each Connection fault as ["reset"] in its catalog and the harness refuses once or
   times n (SPEC-RT-003 as amended). BrokerLoss is exclusive: SPEC-RT-005 runs the files that arm it
@@ -81,6 +121,8 @@ enforce:
   disarm never uses Toxiproxy's global reset
   disarm leaves the proxy enabled with no toxic and restores a paused or stopped container
   a transport fault applies to the system's path only because the adapter never connects through the proxy
+  read traffic only after the events that make it final, Toxiproxy's close of each proxied connection, never after a fixed wait
+  decide a send by the first event on the client, with a bound only for the absence a Timeout armed on that path predicts
 
 contract:
   input ProbeInput
@@ -163,6 +205,12 @@ scenario "traffic is reported when the metrics endpoint is configured":
   when: ProbeFaultProxy { script: "open:a arm:a:Timeout:downstream send:a:hello traffic:a", metrics: "on" }
   predict success:
     response OK ProbeResult { trace: "open:a arm:a send:a=timeout traffic:a=seen", upstreamSaw: 1 }
+    filesystem has []
+
+scenario "traffic counts a connection once it has closed, not while it is open":
+  when: ProbeFaultProxy { script: "open:a arm:a:Timeout:downstream hold:a:hello traffic:a release:a traffic:a", metrics: "on" }
+  predict success:
+    response OK ProbeResult { trace: "open:a arm:a hold:a traffic:a=none release:a traffic:a=seen", upstreamSaw: 1 }
     filesystem has []
 
 scenario "traffic is unobserved without the metrics endpoint, so no activation is claimed":
