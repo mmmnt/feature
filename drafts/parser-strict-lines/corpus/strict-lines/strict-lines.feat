@@ -2,7 +2,7 @@ feat 1.0
 
 # Corpus exemplar #22 — the parser's stricter line rules (ADR-0040, draft). Comments are whole-line,
 # and here they sit between given, when and predict lines. A string escape is JSON's whole set,
-# `é` included, in a payload, a value block and a scenario name. A `#` inside a string is data,
+# `\u00e9` included, in a payload, a value block and a scenario name. A `#` inside a string is data,
 # and a `#` in freeform text (an enforce constraint, a given context line) is kept as text. A
 # header-shaped line in an agent zone (`context matters`) is a directive and never touches the
 # header. Each line kind appears once per scope.
@@ -26,14 +26,14 @@ contract:
   response NoteReceipt
   event NoteEvent
 
-scenario "a title with an accent, written \"café\", is kept":
+scenario "a title with an accent, written \"caf\u00e9\", is kept":
   given:
     # the clock is frozen so the note's id is stable
     clock at "2026-07-16T00:00:00Z"
     notes start empty, see ticket #12
   # the trigger
-  when: AddNote { title: "café #1" }
+  when: AddNote { title: "caf\u00e9 #1" }
   # what the system answers and records
   predict success:
-    response 201 NoteReceipt { noteId: any string, title: "café #1" }
+    response 201 NoteReceipt { noteId: any string, title: "caf\u00e9 #1" }
     log has [ NoteAdded with NoteEvent { title: @when.title } ]

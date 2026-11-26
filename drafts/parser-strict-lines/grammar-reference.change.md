@@ -148,4 +148,4 @@ And under the table of three types: "One `predict` per scenario; a second is `MA
 
 ## 12. Corpus README (layer 2): add a row
 
-> | 22 | `strict-lines/` | SPEC-NTE-001 | The stricter line rules (ADR-0040): whole-line comments between given, when and predict lines; `é` and `\"` decoded in a payload, a value block and a scenario name; a `#` kept as text in an enforce constraint and a given context line and as data in a string; `context matters` in `construct:` recorded as a directive with the header unchanged |
+> | 22 | `strict-lines/` | SPEC-NTE-001 | The stricter line rules (ADR-0040): whole-line comments between given, when and predict lines; `\u00e9` and `\"` decoded in a payload, a value block and a scenario name; a `#` kept as text in an enforce constraint and a given context line and as data in a string; `context matters` in `construct:` recorded as a directive with the header unchanged |
