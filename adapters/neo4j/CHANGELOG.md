@@ -1,5 +1,14 @@
 # @mmmnt/feat-adapter-neo4j
 
+## 0.18.1
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @mmmnt/feat-fault-proxy@0.18.1
+  - @mmmnt/feat-adapter-stdio-jsonrpc@0.18.1
+  - @mmmnt/feat-types@0.18.1
+
 ## 0.18.0
 
 ### Patch Changes

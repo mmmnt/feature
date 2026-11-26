@@ -1,6 +1,6 @@
 {
   "name": "@mmmnt/feat-adapter-model",
-  "version": "0.18.0",
+  "version": "0.18.1",
   "description": "Recorded-judge service adapter for Feat: a judgment port's seeded answers and captured asks in one JSON Lines file per namespace; no network, never calls a model",
   "type": "module",
   "main": "dist/index.js",
