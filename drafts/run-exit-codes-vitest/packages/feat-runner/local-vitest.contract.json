@@ -14,9 +14,7 @@
             "installed",
             "hoisted",
             "missing",
-            "3.2",
-            "4",
-            "5"
+            "probe"
           ]
         },
         "suite": {

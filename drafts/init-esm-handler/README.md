@@ -78,6 +78,6 @@ Controls, same steps:
 4. **Should init write the starter handler?** Today the user writes it from the README. Writing it (at the
    routed path) would make the scaffold run with no copy and paste; it is a scope addition, not part of the
    bug, and the spec as drafted does not do it.
-5. **Vitest range.** If the owner takes decision 2A of `drafts/run-exit-codes-vitest` (peer range
-   `>=3.2.0 <6`), init should install `vitest@">=3.2.0 <6"` instead of `latest`. Not in this draft's scenarios.
+5. **Vitest range.** Moot: the owner kept the peer range `>=3.2.0` open (2026-11-25), so init keeps installing
+   `latest`.
 6. **ADR.** Not needed: no language change; the scaffold's file name is a CLI behaviour stated by this spec.

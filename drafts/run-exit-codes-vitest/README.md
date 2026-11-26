@@ -1,12 +1,13 @@
 # `feat run` exits 1, not 2, on a configuration error under Vitest 4 and 5 (DRAFT)
 
-Status: draft, awaiting the owner. Nothing is built; the amended spec beside this file is a copy of
+Status: draft, revised to the owner's rulings of 2026-11-25 (1 "onTestRunEnd only", 2 "Keep >=3.2.0 open", 3 "CI matrix per major"); awaiting the flip. Nothing is built; the amended spec beside this file is a copy of
 SPEC-RT-010 at `status draft`.
 
 | File | |
 | --- | --- |
-| `packages/feat-runner/local-vitest.feat` | SPEC-RT-010 amended: changes 4 to 6, three enforce lines, two outlines (twelve cases) |
-| `packages/feat-runner/local-vitest.contract.json` | `RunVitestInput` gains `vitest: "3.2" \| "4" \| "5"` and `suite`; `RunVitestResult` gains `configurationError` |
+| `packages/feat-runner/local-vitest.feat` | SPEC-RT-010 amended: changes 4 to 6, three enforce lines, two outlines (four cases, run once per CI matrix entry) |
+| `packages/feat-runner/local-vitest.contract.json` | `RunVitestInput` gains `vitest: "probe"` and `suite`; `RunVitestResult` gains `configurationError` |
+| `ci.change.md` | the ci.yml job `runner-vitest` (matrix 3.2.7, 4.1.12, 5.1.2, latest), the planner fix it needs, and what runs locally |
 
 ## Which spec owns it
 
@@ -72,25 +73,19 @@ The proposed hook, checked: a scratch reporter with only
 for the in-test refusal; and on 3.2.7, 4.1.12 and 5.1.2 for the `beforeAll` refusal. This was a check of the
 API, not product code; nothing was changed in `packages/`.
 
-## Decisions for the owner
+## Rulings (2026-11-25) and what remains open
 
-1. **The reporter hook.**
-   - **A. `onTestRunEnd` only (Recommended).** 3.2 calls it too, so one code path covers 3.2 to 5.
-   - B. `onTestRunEnd` and `onFinished`, both writing the marker. Covers a 3.x before 3.2, which the peer
-     range already excludes.
-2. **The peer range.**
-   - **A. `>=3.2.0 <6`; a new major is admitted by amending SPEC-RT-010 with its scenarios (Recommended).**
-     The reporter API changed between majors once already; an open range let 4 and 5 in unproved.
-   - B. Keep `>=3.2.0` open.
-3. **How the build proves each major.**
-   - **A. Aliased exact devDependencies of feat-runner (`vitest-3.2`, `vitest-4`, `vitest-5`), linked into the
-     probe's throwaway project; every run of the spec chain proves all three (Recommended).** Adds
-     `touches pnpm-lock.yaml` to the spec.
-   - B. A CI matrix job per major that overrides the workspace's vitest. The spec then holds one scenario
-     set and the matrix is outside the spec chain; the local gate proves one major.
-4. **`feat init`'s vitest.** It installs `vitest` at `latest` (packages/feature/src/commands/init.ts:99-105).
-   With decision 2A, init should install `vitest@">=3.2.0 <6"` so a vitest 6 at `latest` is not installed
-   against a peer range that refuses it. That is `feat init`'s spec (drafts/init-esm-handler), noted here.
-5. **ADR.** Not needed as drafted: no language or design change, the documented exit code is restored. If
-   the owner takes 2A, the peer-range policy ("a major is admitted by its scenarios") may deserve a line in
-   ADR-0026's consequences.
+1. Reporter hook: `onTestRunEnd` only (ruled).
+2. Peer range: stays `>=3.2.0`, open (ruled). A new major is caught by CI: the matrix's `latest` entry runs the
+   scenarios, whose `ran` names the proved majors, so the first CI run after vitest 6 ships is red until
+   SPEC-RT-010 is amended.
+3. Proof: a CI matrix job per major (ruled); `ci.change.md` has the job. Open points for the owner:
+   - `latest` floats, so a red build can appear on a commit that changed nothing, and the local gate goes red too
+     (it runs the Node 24 instances by default). Dropping `latest` keeps CI reproducible and loses the catch.
+   - The planner names a job instance's files by job key only; four instances of one job overwrite each
+     other's steps today (checked). The change includes that fix to `scripts/ci-local-plan.mjs`, so the spec
+     touches it.
+   - The job fetches vitest from the registry at CI time, outside the lockfile: exact versions and
+     `--ignore-scripts`, `latest` excepted.
+4. `feat init`'s vitest: with the open range, init keeps installing `latest`; nothing to change.
+5. ADR: not needed.
