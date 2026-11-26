@@ -1,13 +1,17 @@
 feat 1.0
 
-# SPEC-GRM-001 (DRAFT, drafts/textmate-grammar, awaiting the owner) — the TextMate grammar scopes every word
-# the parser reads as a keyword, in the forms the parser reads it, and leaves the same word in prose alone.
+# SPEC-GRM-001 — the TextMate grammar scopes every word the parser reads as a keyword, in the forms the parser
+# reads it, and leaves the same word in prose alone. Adopted by the owner (2026-11-25, recorded in flmnt, workspace
+# feature) as drafted: one scenario per form, prose controls, a corpus sweep keyed to §9 of the grammar reference,
+# the draft's scope names, and a trailing `#` that is not a comment, following ADR-0040 decision 4 ("Refuse on
+# keyword lines").
 #
-# No spec owns packages/feat-grammar today. Its tests (tokenize.test.ts, copies.test.ts, language.test.ts)
+# Before this spec no spec owned packages/feat-grammar. Its tests (tokenize.test.ts, copies.test.ts, language.test.ts)
 # pin some scopes and the two byte-identical editor copies (editor/feat.tmLanguage.json,
 # editors/vscode/syntaxes/feat.tmLanguage.json). The grammar has fallen behind the language: tokenized with
-# vscode-textmate 9.2 and vscode-oniguruma 2.0 (the package's devDependencies) at main 72f71de, these get no
-# scope but source.feat (drafts/textmate-grammar/README.md has each line and its output):
+# vscode-textmate 9.2 and vscode-oniguruma 2.0 (the package's devDependencies) at main 72f71de, these got no
+# scope but source.feat (the draft's README, drafts/textmate-grammar/README.md at commit 73d2d4b, has each line
+# and its output):
 #   `variables:`; an indented `given:` (the opener matches only at column 0, and every corpus given is
 #   indented); `random seed 42`; a given `seed eventStore [ … ]` and `seed … from "…"`; `needs SPEC-…`;
 #   `register mutation createFlow in …`; `emit to …`; a contract `stream "…"`; `from` in `imports … from`,
@@ -46,7 +50,7 @@ spec SPEC-GRM-001 "TextMate grammar: every keyword the parser reads is scoped"
 context Toolchain
 aggregate Editor
 type infrastructure
-status draft
+status agreed
 
 construct:
   handler at packages/feat-grammar/feat.tmLanguage.json

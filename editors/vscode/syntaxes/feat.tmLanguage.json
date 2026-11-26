@@ -42,8 +42,13 @@
   ],
   "repository": {
     "comment": {
-      "match": "#.*$",
-      "name": "comment.line.number-sign.feat"
+      "comment": "ADR-0040: a comment is '#' as the first non-blank character only; a trailing '#' is not one",
+      "match": "^\\s*(#.*)$",
+      "captures": {
+        "1": {
+          "name": "comment.line.number-sign.feat"
+        }
+      }
     },
     "pragma": {
       "match": "^(feat)\\s+(\\d+\\.\\d+)\\s*$",
@@ -130,7 +135,7 @@
     "sections": {
       "patterns": [
         {
-          "match": "^(construct|enforce|contract|given)\\s*:",
+          "match": "^\\s*(construct|enforce|contract|variables|given|examples)\\s*:\\s*$",
           "captures": {
             "1": {
               "name": "keyword.control.section.feat"
@@ -138,19 +143,162 @@
           }
         },
         {
-          "match": "^\\s+(handler at|touches|imports|input|response|record|event|error|rejects|clock at|execute|fault)\\b",
+          "match": "^\\s*(handler[ \\t]+at)[ \\t]+\\S+\\s*$",
           "captures": {
             "1": {
               "name": "keyword.other.directive.feat"
             }
           }
+        },
+        {
+          "match": "^\\s*(imports)[ \\t]+\\S+[ \\t]+(from)[ \\t]+\\S+\\s*$",
+          "captures": {
+            "1": {
+              "name": "keyword.other.directive.feat"
+            },
+            "2": {
+              "name": "keyword.other.directive.feat"
+            }
+          }
+        },
+        {
+          "match": "^\\s*(register)[ \\t]+\\S+[ \\t]+\\S+[ \\t]+(in)[ \\t]+\\S+\\s*$",
+          "captures": {
+            "1": {
+              "name": "keyword.other.directive.feat"
+            },
+            "2": {
+              "name": "keyword.other.directive.feat"
+            }
+          }
+        },
+        {
+          "match": "^\\s*(emit[ \\t]+to)[ \\t]+\\S+\\s*$",
+          "captures": {
+            "1": {
+              "name": "keyword.other.directive.feat"
+            }
+          }
+        },
+        {
+          "match": "^\\s*(touches|needs)[ \\t]+\\S+\\s*$",
+          "captures": {
+            "1": {
+              "name": "keyword.other.directive.feat"
+            }
+          }
+        },
+        {
+          "match": "^\\s*(rejects)\\b",
+          "captures": {
+            "1": {
+              "name": "keyword.other.directive.feat"
+            }
+          }
+        },
+        {
+          "comment": "contract: entries",
+          "match": "^\\s*(input|response|record|event|error)[ \\t]+[A-Za-z_][A-Za-z0-9_]*(?:[ \\t]+(from)(?=[ \\t]+\"))?",
+          "captures": {
+            "1": {
+              "name": "keyword.other.directive.feat"
+            },
+            "2": {
+              "name": "keyword.other.directive.feat"
+            }
+          }
+        },
+        {
+          "match": "^\\s*(stream)(?=[ \\t]+\")",
+          "captures": {
+            "1": {
+              "name": "keyword.other.directive.feat"
+            }
+          }
+        },
+        {
+          "comment": "given: seed <service> from \"<path>\"",
+          "match": "^\\s*(seed)[ \\t]+([A-Za-z_][A-Za-z0-9_]*)[ \\t]+(from)(?=[ \\t]+\")",
+          "captures": {
+            "1": {
+              "name": "keyword.other.directive.feat"
+            },
+            "2": {
+              "name": "variable.other.service.feat"
+            },
+            "3": {
+              "name": "keyword.other.directive.feat"
+            }
+          }
+        },
+        {
+          "comment": "given: seed <service> [ … ]",
+          "match": "^\\s*(seed)[ \\t]+([A-Za-z_][A-Za-z0-9_]*)(?=[ \\t]*\\[)",
+          "captures": {
+            "1": {
+              "name": "keyword.other.directive.feat"
+            },
+            "2": {
+              "name": "variable.other.service.feat"
+            }
+          }
+        },
+        {
+          "match": "^\\s*(random[ \\t]+seed)(?=[ \\t]|$)",
+          "captures": {
+            "1": {
+              "name": "keyword.other.directive.feat"
+            }
+          }
+        },
+        {
+          "match": "^\\s*(clock[ \\t]+at)(?=[ \\t]|$)",
+          "captures": {
+            "1": {
+              "name": "keyword.other.directive.feat"
+            }
+          }
+        },
+        {
+          "match": "^\\s*(execute)(?=[ \\t]*\\([ \\t]*as\\b|[ \\t]+[A-Za-z_][A-Za-z0-9_]*[ \\t]*\\{)",
+          "captures": {
+            "1": {
+              "name": "keyword.other.directive.feat"
+            }
+          }
+        },
+        {
+          "comment": "ADR-0023: fault <service> <Operation> <Fault> [{ json }] [once | times <n> | until reset]",
+          "begin": "^\\s*(fault)(?=[ \\t]|$)",
+          "beginCaptures": {
+            "1": {
+              "name": "keyword.other.directive.feat"
+            }
+          },
+          "end": "$",
+          "patterns": [
+            {
+              "match": "(?<=[ \\t])(once|until[ \\t]+reset)(?=[ \\t]*$)",
+              "name": "keyword.other.fault-count.feat"
+            },
+            {
+              "match": "(?<=[ \\t])(times)(?=[ \\t]+[0-9]+[ \\t]*$)",
+              "name": "keyword.other.fault-count.feat"
+            },
+            {
+              "include": "#strings"
+            },
+            {
+              "include": "#numbers"
+            }
+          ]
         }
       ]
     },
     "scenario": {
       "patterns": [
         {
-          "match": "^(scenario)(\\s+outline)?\\s+(\".*\")\\s*:",
+          "match": "^\\s*(scenario)(\\s+outline)?\\s+(\".*\")\\s*:",
           "captures": {
             "1": {
               "name": "keyword.control.scenario.feat"
@@ -162,46 +310,65 @@
               "name": "string.quoted.double.scenario-name.feat"
             }
           }
-        },
-        {
-          "match": "^\\s+(examples)\\s*:",
-          "captures": {
-            "1": {
-              "name": "keyword.control.section.feat"
-            }
-          }
         }
       ]
     },
     "trigger": {
       "patterns": [
         {
-          "match": "^\\s+(when)\\s*:\\s*([A-Z][A-Za-z0-9]*)",
+          "match": "^\\s*(when)[ \\t]*(?:\\((as)[ \\t]+([A-Za-z0-9_-]+)\\))?[ \\t]*:[ \\t]*([A-Za-z_][A-Za-z0-9_]*)?",
           "captures": {
             "1": {
               "name": "keyword.control.trigger.feat"
             },
             "2": {
+              "name": "keyword.other.actor.feat"
+            },
+            "3": {
+              "name": "variable.other.actor.feat"
+            },
+            "4": {
               "name": "entity.name.function.command.feat"
             }
           }
         },
         {
-          "match": "^\\s+(deliver)\\s+([A-Z][A-Za-z0-9]*)\\s.*\\b(to)\\s+(\\w+)",
-          "captures": {
+          "comment": "ADR-0036: `to response` names the response role, never a service",
+          "begin": "^\\s*(deliver)[ \\t]+([A-Za-z_][A-Za-z0-9_]*)",
+          "beginCaptures": {
             "1": {
               "name": "keyword.control.trigger.feat"
             },
             "2": {
               "name": "entity.name.function.event.feat"
-            },
-            "3": {
+            }
+          },
+          "end": "(?:(?<=[ \\t}])(to)[ \\t]+(?:(response)|([A-Za-z_][A-Za-z0-9_]*))[ \\t]*$)|$",
+          "endCaptures": {
+            "1": {
               "name": "keyword.control.trigger.feat"
             },
-            "4": {
+            "2": {
+              "name": "keyword.other.response.feat"
+            },
+            "3": {
               "name": "variable.other.service.feat"
             }
-          }
+          },
+          "patterns": [
+            {
+              "include": "#refs"
+            },
+            {
+              "include": "#placeholders"
+            },
+            {
+              "include": "#strings"
+            },
+            {
+              "include": "#numbers"
+            }
+          ]
         },
         {
           "match": "\\b(as)\\s+(\\w+)",
@@ -219,7 +386,7 @@
     "prediction": {
       "patterns": [
         {
-          "match": "^\\s+(predict)\\s+(success|error)\\b(\\s+[A-Z0-9_]+)?",
+          "match": "^\\s*(predict)\\s+(success|error)\\b(\\s+[A-Z0-9_]+)?",
           "captures": {
             "1": {
               "name": "keyword.control.predict.feat"
@@ -233,7 +400,7 @@
           }
         },
         {
-          "match": "^\\s+(predict)\\s+(rejection)\\s+(<?[A-Za-z0-9_-]+>?)",
+          "match": "^\\s*(predict)\\s+(rejection)\\s+(<?[A-Za-z0-9_-]+>?)",
           "captures": {
             "1": {
               "name": "keyword.control.predict.feat"
@@ -247,7 +414,7 @@
           }
         },
         {
-          "match": "^\\s+(response)\\s+(\\w+)\\s+([A-Z][A-Za-z0-9]*)",
+          "match": "^\\s*(response)\\s+(\\w+)\\s+([A-Za-z_][A-Za-z0-9_]*)",
           "captures": {
             "1": {
               "name": "keyword.other.response.feat"
@@ -261,7 +428,7 @@
           }
         },
         {
-          "match": "^\\s+(\\w+)\\s+(has|contains)\\s+(ordered|unordered)?",
+          "match": "^\\s*([A-Za-z_][A-Za-z0-9_]*)\\s+(has|contains)\\b(?:\\s+(ordered|unordered)\\b)?",
           "captures": {
             "1": {
               "name": "variable.other.service.feat"
@@ -275,7 +442,23 @@
           }
         },
         {
-          "match": "\\b([A-Z][A-Za-z0-9_]*)\\s+(with)\\s+([A-Z][A-Za-z0-9]*)",
+          "comment": "a record in a list: <Type> with <Schema>, the type dotted or lowercase (ADR-0015)",
+          "match": "(?<=[\\[,])[ \\t]*([A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*)[ \\t]+(with)[ \\t]+([A-Z][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "entity.name.type.record.feat"
+            },
+            "2": {
+              "name": "keyword.other.with.feat"
+            },
+            "3": {
+              "name": "entity.name.type.schema.feat"
+            }
+          }
+        },
+        {
+          "comment": "a record that opens a line of a multi-line list, before its block",
+          "match": "^[ \\t]*([A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*)[ \\t]+(with)[ \\t]+([A-Z][A-Za-z0-9_]*)(?=[ \\t]*(?:\\{|partial\\b|equals[ \\t]+fixture\\b))",
           "captures": {
             "1": {
               "name": "entity.name.type.record.feat"
@@ -292,6 +475,18 @@
     },
     "matchers": {
       "patterns": [
+        {
+          "comment": "`any` with or without a type, in a field's value position or as a list item",
+          "match": "(?<=[:\\[,])[ \\t]*(any)\\b(?:[ \\t]+(uuid|timestamp|string|number|boolean)\\b)?",
+          "captures": {
+            "1": {
+              "name": "support.function.matcher.feat"
+            },
+            "2": {
+              "name": "support.type.matcher.feat"
+            }
+          }
+        },
         {
           "match": "\\b(any)\\s+(uuid|timestamp|string|number|boolean)\\b",
           "captures": {
@@ -351,18 +546,26 @@
     "placeholders": {
       "patterns": [
         {
-          "match": "\\{\\$[A-Za-z_][A-Za-z0-9_]*\\}",
-          "name": "variable.parameter.placeholder.feat"
-        },
-        {
           "match": "<[A-Za-z_][A-Za-z0-9_-]*>",
           "name": "variable.parameter.placeholder.feat"
         }
       ]
     },
     "strings": {
-      "match": "\"[^\"]*\"",
-      "name": "string.quoted.double.feat"
+      "comment": "ADR-0040: a JSON string; ADR-0017: a ${name} spec-variable reference is written inside one",
+      "begin": "\"",
+      "end": "\"|$",
+      "name": "string.quoted.double.feat",
+      "patterns": [
+        {
+          "match": "\\\\(?:[\"\\\\/bfnrt]|u[0-9A-Fa-f]{4})",
+          "name": "constant.character.escape.feat"
+        },
+        {
+          "match": "\\$\\{[A-Za-z_][A-Za-z0-9_]*\\}",
+          "name": "variable.parameter.placeholder.feat"
+        }
+      ]
     },
     "numbers": {
       "match": "\\b\\d+(\\.\\d+)?\\b",

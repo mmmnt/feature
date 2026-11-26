@@ -8,7 +8,10 @@ it does not parse. A line can be coloured as a keyword and still be a parse erro
 This package is the source of truth for `.feat` highlighting. `editor/feat.tmLanguage.json` and
 `editors/vscode/syntaxes/feat.tmLanguage.json` are byte-identical copies, refreshed by
 `editors/vscode/scripts-sync-grammar.mjs`; `copies.test.ts` fails if either drifts. The grammar is tested by
-tokenizing corpus exemplars with `vscode-textmate`, the engine VS Code uses.
+tokenizing corpus exemplars with `vscode-textmate`, the engine VS Code uses. Its spec is SPEC-GRM-001
+([`grammar.feat`](grammar.feat)): every keyword the parser reads is scoped in the forms the parser reads it, the same
+word in prose is not, and a sweep of the corpus, keyed to the keyword list in §9 of the grammar reference, fails when a
+keyword the parser reads goes unscoped.
 
 ## Installation
 
@@ -94,32 +97,31 @@ Every scope name ends in `.feat`.
 | `keyword.declaration.feat` | `context`, `aggregate`, `type`, `status`, `observes` |
 | `entity.name.namespace.feat` | the context and aggregate names |
 | `constant.language.spec-type.feat`, `constant.language.status.feat` | `command`, `saga`, …; `draft`, `agreed`, … |
-| `keyword.control.section.feat` | `construct`, `enforce`, `contract`, `examples` |
-| `keyword.other.directive.feat` | `handler at`, `touches`, `imports`, `input`, `response`, `record`, `event`, `error`, `rejects`, `clock at`, `execute`, `fault` |
+| `keyword.control.section.feat` | `construct`, `enforce`, `contract`, `variables`, `given`, `examples`, indented or not |
+| `keyword.other.directive.feat` | `handler at`, `touches`, `needs`, `imports … from`, `register … in`, `emit to`, each in its typed form; `rejects`; a contract entry's `input`, `response`, `record`, `event`, `error`, `stream` and `from`; a given's `execute`, `seed` (and its `from`), `clock at`, `random seed` and `fault` |
+| `keyword.other.fault-count.feat` | `once`, `times`, `until reset` at the end of a `fault` line |
 | `keyword.control.scenario.feat`, `string.quoted.double.scenario-name.feat` | `scenario` and `scenario outline`, and the scenario's name |
-| `keyword.control.trigger.feat` | `when`, `deliver`, `to` |
+| `keyword.control.trigger.feat` | `when` (also `when (as <actor>):`), `deliver`, `to` |
+| `keyword.other.response.feat` | `response` in `deliver … to response` (ADR-0036: never a service), and a prediction's `response` |
+| `constant.numeric.status.feat` | the status of a prediction's `response <status> <Schema>` |
 | `keyword.other.actor.feat`, `variable.other.actor.feat` | `as`, and the actor name (`anonymous` included) |
 | `entity.name.function.command.feat`, `entity.name.function.event.feat` | the command after `when:` or `execute`; the event after `deliver` |
 | `keyword.control.predict.feat`, `constant.language.prediction-type.feat` | `predict`; `success`, `rejection`, `error` |
 | `constant.other.rejection-id.feat`, `constant.other.error-code.feat` | the id after `predict rejection`; the code after `predict error` |
-| `entity.name.type.schema.feat` | the schema name after `with` |
-| `variable.other.service.feat`, `keyword.other.assertion.feat`, `entity.name.type.record.feat` | the service key (also each service on an `observes` line); `has` and `contains`; the record type (`INSERT`, `OrderPlaced`, …) |
+| `entity.name.type.schema.feat` | the schema name after `with`, and after a prediction's `response <status>` |
+| `variable.other.service.feat`, `keyword.other.assertion.feat`, `entity.name.type.record.feat` | the service key (also each service on an `observes` line); `has` and `contains`; the record type (`INSERT`, `OrderPlaced`, `stripe.charge`, `userCreated`, …) |
 | `keyword.other.with.feat`, `keyword.other.ordering.feat` | `with`; `ordered`, `unordered` |
-| `support.function.matcher.feat`, `support.type.matcher.feat` | `any`, `matching`, `absent`, `not`, `partial`, `f32` and `sha256` (digest form), `equals fixture`; the `uuid`, `timestamp`, `string`, `number`, `boolean` qualifiers |
+| `support.function.matcher.feat`, `support.type.matcher.feat` | `any` (bare or typed, in a value position), `matching`, `absent`, `not`, `partial`, `f32` and `sha256` (digest form), `equals fixture`; the `uuid`, `timestamp`, `string`, `number`, `boolean` qualifiers |
 | `variable.language.stimulus-ref.feat` | `@when.email`, `@deliver[1].orderId`, `@payments[0].id` |
-| `variable.parameter.placeholder.feat` | outline placeholders such as `<email>` |
-| `string.quoted.double.feat`, `constant.numeric.feat` | string and number literals, including a response's status code |
-| `comment.line.number-sign.feat` | `#` to the end of the line |
+| `variable.parameter.placeholder.feat` | outline placeholders such as `<email>`; a spec-variable reference `${name}` inside the string that holds it |
+| `string.quoted.double.feat`, `constant.numeric.feat` | string and number literals |
+| `constant.character.escape.feat` | a JSON escape inside a string: `\"`, `\\`, `\/`, `\b`, `\f`, `\n`, `\r`, `\t`, `\uXXXX` |
+| `comment.line.number-sign.feat` | a line whose first non-blank character is `#`; a trailing `#` is not a comment (ADR-0040: the parser refuses it on a line it reads by keyword, and keeps it as text in prose) |
 
 ### What the grammar does not scope
 
-- The grammar defines `keyword.other.response.feat` and `constant.numeric.status.feat` for `response <status>
-  <Schema>` lines, but the directive rule matches `response` first, so `response` takes
-  `keyword.other.directive.feat`, the status takes `constant.numeric.feat`, and the schema name after the status is
-  plain text.
-- `given:`, `variables:`, `seed` and `random seed` carry no scope of their own.
-- On a `fault` line only the word `fault` is scoped. The service, operation, fault and `times` clause are plain text
-  (a number takes `constant.numeric.feat`).
+- On a `fault` line the service, operation and fault are plain text (a number takes `constant.numeric.feat`).
+- A `deliver` whose payload spans lines scopes `to` and its target only when they are on the `deliver` line.
 - `predict rejection` colours any id made of letters, digits, `_` and `-`, so `not-operator` is coloured although the
   parser refuses it.
 

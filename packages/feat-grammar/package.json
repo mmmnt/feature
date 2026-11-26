@@ -13,9 +13,10 @@
   "scripts": {
     "build": "true",
     "typecheck": "true",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --exclude '**/grammar.test.ts' --passWithNoTests"
   },
   "devDependencies": {
+    "@mmmnt/feat-runtime": "workspace:^",
     "vitest": "^3.2.0",
     "vscode-oniguruma": "^2.0.1",
     "vscode-textmate": "^9.2.0"

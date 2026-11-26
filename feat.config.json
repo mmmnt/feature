@@ -205,6 +205,14 @@
       "LintNested": {
         "module": "packages/feat-analyze/fixtures/probe.mjs",
         "export": "lintNested"
+      },
+      "Tokenize": {
+        "module": "packages/feat-grammar/fixtures/probe.mjs",
+        "export": "tokenize"
+      },
+      "SweepCorpus": {
+        "module": "packages/feat-grammar/fixtures/probe.mjs",
+        "export": "sweepCorpus"
       }
     }
   },
